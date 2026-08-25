@@ -1,0 +1,30 @@
+{
+  "candidateCommit": "3143e7c",
+  "candidateParent": "fef5c26",
+  "environment": "disposable-staging-fixture-only",
+  "productionUse": false,
+  "employeeData": false,
+  "endpoints": {
+    "web": "http://127.0.0.1:5178",
+    "api": "http://127.0.0.1:8080",
+    "apiProxy": "http://127.0.0.1:5178/api",
+    "realtime": "ws://127.0.0.1:8081"
+  },
+  "database": {
+    "engine": "postgresql",
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "smt_factory_rc_3143e7c",
+    "schema": "public",
+    "disposable": true,
+    "seedSource": "database/seeds only; fixture data only"
+  },
+  "excluded": [
+    "production MES endpoints and databases",
+    "production SQLite files",
+    "real station/device endpoints",
+    "Excel source files",
+    "employee/customer/vendor personal data",
+    "remote hosts and shared network paths"
+  ]
+}
