@@ -6,6 +6,7 @@ import { Camera, CheckCircle, AlertTriangle, X, RotateCcw, Package, Check } from
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi } from "../api";
+import { receivingActions, validateInboundReceiving } from "../../../../packages/business-rules/src/warehouse-receiving";
 
 type Step = "scan" | "confirm" | "msd" | "done";
 
@@ -169,6 +170,22 @@ export function WmsPdaReceivingMobile({ locale }: { locale: Locale }) {
   const handleSubmit = async () => {
     setBusy(true);
     setFeedback(null);
+    const qcDecision = msdAllOk ? "PASS" as const : "HOLD" as const;
+    const receivingDraft = {
+      scanValue: form.lotNo,
+      materialCode: form.materialCode,
+      lotNo: form.lotNo,
+      quantity: form.qty,
+      operator: form.operator,
+      qcDecision,
+      locationCode: form.locationCode,
+    };
+    const validation = validateInboundReceiving(receivingDraft);
+    if (!validation.ok) {
+      setFeedback({ ok: false, msg: validation.errors.join("; ") });
+      setBusy(false);
+      return;
+    }
     try {
       // Record PDA inspection result
       if (form.materialLotId) {
@@ -190,8 +207,16 @@ export function WmsPdaReceivingMobile({ locale }: { locale: Locale }) {
           // Non-fatal — still record the receive transaction
         }
       }
-      // Confirm receive transaction
-      await wmsApi.postTransaction("RECEIVE", { lotNo: form.lotNo, operator: form.operator });
+      // Keep the ledger sequence explicit: failed MSD checks are held and
+      // must never be silently put away.
+      for (const action of receivingActions(receivingDraft)) {
+        await wmsApi.postTransaction(action, {
+          lotNo: form.lotNo,
+          qty: form.qty,
+          operator: form.operator,
+          toLocation: action === "PUT_AWAY" ? form.locationCode : undefined,
+        });
+      }
       setStep("done");
       setFeedback({ ok: true, msg: `${form.lotNo} → 收料成功` });
     } catch (err) {
