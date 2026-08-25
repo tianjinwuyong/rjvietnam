@@ -1,0 +1,59 @@
+# SMT设备适配器配置
+# Grill: B统一框架+插件式注册, 30秒采集
+
+settings:
+  mes_host: "localhost"
+  mes_port: "8080"
+  poll_interval_ms: 30000
+  log_level: "info"
+
+devices:
+  # NPM贴片机 (Panasonic NPM-01, 线别L001)
+  - code: "NPM-01"
+    name: "Panasonic NPM 贴片机 01"
+    type: "npm"
+    enabled: true
+    host: "192.168.1.101"
+    port: 5000
+    protocol: " proprietary"
+    station: "L001-05"
+
+  # 回流焊 (Vitronics Delta)
+  - code: "REFLOW-01"
+    name: "回流焊 01"
+    type: "reflow"
+    enabled: true
+    host: "192.168.1.102"
+    port: 5001
+    protocol: "modbus"
+    station: "L001-07"
+
+  # SPI (锡膏检测) — 镭晨 AIS63X
+  - code: "SPI-01"
+    name: "SPI 锡膏检测 01"
+    type: "spi"
+    enabled: true
+    host: "192.168.6.13"
+    port: 5002
+    protocol: "smic"
+    station: "L001-04"
+
+  # AOI (自动光学检测)
+  - code: "AOI-01"
+    name: "AOI 自动光学检测 01"
+    type: "aoi"
+    enabled: true
+    host: "192.168.6.15"
+    port: 5003
+    protocol: "smic"
+    station: "L001-08"
+
+  # FCT (功能测试)
+  - code: "FCT-01"
+    name: "FCT 功能测试 01"
+    type: "fct"
+    enabled: true
+    host: "192.168.1.105"
+    port: 5004
+    protocol: "smic"
+    station: "L001-10"

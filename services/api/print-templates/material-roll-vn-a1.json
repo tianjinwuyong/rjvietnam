@@ -1,0 +1,23 @@
+{
+  "templateId": "DataMatrix-material-VN-A1",
+  "file": "DataMatrix-material - 越南 A1.btw",
+  "sha256": "037CE4CBE122D88B4B9B43BF2068D3A0E7A138F2969A4E36E0D7092ED998D964",
+  "barTender": {
+    "version": "10.1 SR3",
+    "build": 2954,
+    "edition": "Enterprise Automation"
+  },
+  "role": "FORMAL_PRINT_TEMPLATE",
+  "webPreviewIsAuthoritative": false,
+  "fields": [
+    "vietnamMaterialCode",
+    "lotNo",
+    "dateCode",
+    "quantity",
+    "msdLevel",
+    "receivingRollSn",
+    "dataMatrixPayload",
+    "shenzhenRuijingMaterialCode",
+    "description"
+  ]
+}

@@ -1,0 +1,168 @@
+{
+  "$schema": "./mes-sop-schema.json",
+  "name": "MES Patrol SOP v1.0",
+  "description": "Standard operating procedure for MES AI patrol — queries line state, evaluates anomalies, dispatches actions, optionally runs vision inspection, generates digest, and self-evaluates.",
+  "version": "1.0.0",
+  "scripts": {
+    "query": "mes-query.js",
+    "execute": "mes-execute.js",
+    "evaluator": "mes-evaluator.js",
+    "vision": "mes-vision-inspect.js",
+    "manager": "mes-manager.js"
+  },
+  "steps": [
+    {
+      "id": "query-lines",
+      "type": "query",
+      "description": "Query all active SMT production lines",
+      "params": {
+        "scope": "lines",
+        "mode": "patrol"
+      },
+      "retry": 2,
+      "transitions": [
+        {
+          "condition": "result_defect_found eq true",
+          "target": "notify-lines-anomaly"
+        }
+      ]
+    },
+    {
+      "id": "query-runs",
+      "type": "query",
+      "description": "Query currently active production runs per line",
+      "params": {
+        "scope": "runs",
+        "mode": "patrol"
+      },
+      "retry": 2,
+      "transitions": [
+        {
+          "condition": "result_defect_found eq true",
+          "target": "notify-runs-anomaly"
+        }
+      ]
+    },
+    {
+      "id": "query-stagnant",
+      "type": "query",
+      "description": "Detect stagnant PCBs (no events > 15 min)",
+      "params": {
+        "scope": "stagnation",
+        "threshold_minutes": 15,
+        "mode": "patrol"
+      },
+      "retry": 1
+    },
+    {
+      "id": "evaluate-stagnation",
+      "type": "condition",
+      "description": "If stagnant PCBs found, attempt auto-resolve",
+      "params": {
+        "condition": "result_stagnation_defect_found eq true"
+      }
+    },
+    {
+      "id": "resolve-stagnation",
+      "type": "execute",
+      "description": "Auto-resolve stagnation for flagged PCBs",
+      "params": {
+        "action": "resolve-stagnation",
+        "scope": "all"
+      }
+    },
+    {
+      "id": "query-scraps",
+      "type": "query",
+      "description": "Query pending scrap requests",
+      "params": {
+        "scope": "scraps",
+        "mode": "patrol"
+      },
+      "retry": 1
+    },
+    {
+      "id": "evaluate-scraps",
+      "type": "condition",
+      "description": "If scraps found, auto-approve low-value ones",
+      "params": {
+        "condition": "result_scraps_defect_found eq true"
+      }
+    },
+    {
+      "id": "approve-scraps",
+      "type": "execute",
+      "description": "Auto-approve scrap requests within threshold",
+      "params": {
+        "action": "approve-scrap",
+        "scope": "pending"
+      }
+    },
+    {
+      "id": "check-feeders",
+      "type": "execute",
+      "description": "Check feeder setup alignment",
+      "params": {
+        "action": "check-feeder"
+      }
+    },
+    {
+      "id": "query-oee",
+      "type": "query",
+      "description": "Query OEE metrics",
+      "params": {
+        "scope": "oee",
+        "mode": "patrol"
+      },
+      "retry": 1
+    },
+    {
+      "id": "evaluate-yield",
+      "type": "condition",
+      "description": "If yield dropped below threshold, send alert",
+      "params": {
+        "condition": "result_yield_warning eq true"
+      }
+    },
+    {
+      "id": "yield-warning",
+      "type": "execute",
+      "description": "Issue yield warning if below threshold",
+      "params": {
+        "action": "yield-warning",
+        "scope": "all"
+      }
+    },
+    {
+      "id": "evaluate-self",
+      "type": "eval",
+      "description": "Self-evaluate recent decisions",
+      "params": {
+        "command": "score-recent",
+        "limit": 5
+      }
+    },
+    {
+      "id": "notify-digest",
+      "type": "notify",
+      "description": "Send patrol digest notification",
+      "params": {
+        "message": "MES Patrol complete for {{ var_line }}. Lines: {{ result_query-lines_defect_found }}, Stagnant: {{ result_query-stagnant_defect_found }}, Scraps: {{ result_query-scraps_defect_found }}"
+      }
+    },
+    {
+      "id": "complete",
+      "type": "set-variable",
+      "description": "Mark patrol cycle complete",
+      "params": {
+        "key": "last_patrol_complete",
+        "value": "{{ var_timestamp }}"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "MES AI Manager",
+    "created_at": "2026-06-28T00:00:00Z",
+    "tags": ["patrol", "mes", "smt", "sop"]
+  }
+}

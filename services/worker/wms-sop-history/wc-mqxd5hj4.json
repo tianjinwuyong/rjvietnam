@@ -1,0 +1,119 @@
+{
+  "sopVersion": "1.0.0",
+  "cycleId": "wc-mqxd5hj4",
+  "startedAt": "2026-06-28T05:43:45.664Z",
+  "currentStepId": null,
+  "currentLotNo": null,
+  "currentStepStartedAt": "2026-06-28T05:44:06.731Z",
+  "history": [
+    {
+      "stepId": "step_query",
+      "enteredAt": "2026-06-28T05:43:45.665Z",
+      "exitedAt": "2026-06-28T05:43:45.826Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_delta",
+      "enteredAt": "2026-06-28T05:43:45.826Z",
+      "exitedAt": "2026-06-28T05:43:45.827Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_ornith",
+      "enteredAt": "2026-06-28T05:43:45.827Z",
+      "exitedAt": "2026-06-28T05:44:01.222Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_vision",
+      "enteredAt": "2026-06-28T05:44:01.223Z",
+      "exitedAt": "2026-06-28T05:44:01.223Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_execute",
+      "enteredAt": "2026-06-28T05:44:01.224Z",
+      "exitedAt": "2026-06-28T05:44:01.224Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_escalation",
+      "enteredAt": "2026-06-28T05:44:01.225Z",
+      "exitedAt": "2026-06-28T05:44:01.225Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_audit",
+      "enteredAt": "2026-06-28T05:44:01.225Z",
+      "exitedAt": "2026-06-28T05:44:06.728Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_pending",
+      "enteredAt": "2026-06-28T05:44:06.729Z",
+      "exitedAt": "2026-06-28T05:44:06.729Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_line",
+      "enteredAt": "2026-06-28T05:44:06.730Z",
+      "exitedAt": "2026-06-28T05:44:06.730Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "step_save",
+      "enteredAt": "2026-06-28T05:44:06.731Z",
+      "exitedAt": "2026-06-28T05:44:06.733Z",
+      "status": "OK"
+    },
+    {
+      "stepId": "END",
+      "enteredAt": "2026-06-28T05:44:06.733Z",
+      "exitedAt": "2026-06-28T05:44:06.733Z",
+      "status": "OK"
+    }
+  ],
+  "stepHistoryMap": {
+    "step_query": {
+      "status": "OK",
+      "durationMs": 160
+    },
+    "step_delta": {
+      "status": "OK",
+      "durationMs": 0
+    },
+    "step_ornith": {
+      "status": "OK",
+      "durationMs": 15394
+    },
+    "step_vision": {
+      "status": "OK",
+      "durationMs": 0
+    },
+    "step_execute": {
+      "status": "OK",
+      "durationMs": 0
+    },
+    "step_escalation": {
+      "status": "OK",
+      "durationMs": 0
+    },
+    "step_audit": {
+      "status": "OK",
+      "durationMs": 5502
+    },
+    "step_pending": {
+      "status": "OK",
+      "durationMs": 0
+    },
+    "step_line": {
+      "status": "OK",
+      "durationMs": 0
+    },
+    "step_save": {
+      "status": "OK",
+      "durationMs": 2
+    }
+  },
+  "completed": true
+}

@@ -1,0 +1,148 @@
+{
+  "$schema": "./mes-sop-schema.json",
+  "name": "AGV Task Dispatch SOP v1.0",
+  "description": "Standard operating procedure for AGV AI task lifecycle — receives delivery requests, assigns AGVs, monitors execution, handles battery/alert escalation, and self-evaluates dispatch decisions.",
+  "version": "1.0.0",
+  "scripts": {
+    "query":      "agv-query.js",
+    "execute":    "agv-execute.js",
+    "evaluator": "agv-evaluator.js",
+    "manager":    "agv-manager.js"
+  },
+  "steps": [
+    {
+      "id": "query-fleet",
+      "type": "query",
+      "description": "Query current AGV fleet status (idle/busy/charging/error/offline, battery)",
+      "params": {
+        "scope": "fleet"
+      },
+      "retry": 2
+    },
+    {
+      "id": "query-pending-tasks",
+      "type": "query",
+      "description": "Query all pending AGV transport tasks",
+      "params": {
+        "scope": "tasks",
+        "status": "pending"
+      },
+      "retry": 2
+    },
+    {
+      "id": "check-battery",
+      "type": "condition",
+      "description": "Check if any AGV battery is below threshold",
+      "params": {
+        "condition": "result_query-fleet_low_battery_count gt 0"
+      }
+    },
+    {
+      "id": "route-low-battery",
+      "type": "execute",
+      "description": "Route low-battery AGVs to charging stations",
+      "params": {
+        "action": "route-low-battery"
+      }
+    },
+    {
+      "id": "filter-available",
+      "type": "condition",
+      "description": "Filter available AGVs (idle + sufficient battery)",
+      "params": {
+        "condition": "result_available_agv_count gt 0"
+      }
+    },
+    {
+      "id": "assign-tasks",
+      "type": "execute",
+      "description": "Assign highest-priority pending tasks to best available AGVs",
+      "params": {
+        "action": "assign-pending-tasks"
+      }
+    },
+    {
+      "id": "query-active-tasks",
+      "type": "query",
+      "description": "Query in-progress AGV tasks for monitoring",
+      "params": {
+        "scope": "tasks",
+        "status": "en_route,in_progress"
+      },
+      "retry": 1
+    },
+    {
+      "id": "check-task-stuck",
+      "type": "condition",
+      "description": "Detect tasks stuck in en_route or in_progress beyond threshold",
+      "params": {
+        "condition": "result_stuck_task_count gt 0"
+      }
+    },
+    {
+      "id": "alert-stuck-tasks",
+      "type": "execute",
+      "description": "Alert operators about stuck AGV tasks",
+      "params": {
+        "action": "alert-stuck-tasks"
+      }
+    },
+    {
+      "id": "query-alerts",
+      "type": "query",
+      "description": "Query unresolved AGV alerts",
+      "params": {
+        "scope": "alerts"
+      },
+      "retry": 1
+    },
+    {
+      "id": "check-critical-alerts",
+      "type": "condition",
+      "description": "If critical alerts exist, escalate to LINE",
+      "params": {
+        "condition": "result_critical_alert_count gt 0"
+      }
+    },
+    {
+      "id": "escalate-alerts",
+      "type": "execute",
+      "description": "Send critical alert to LINE",
+      "params": {
+        "action": "escalate-alerts"
+      }
+    },
+    {
+      "id": "query-kpi",
+      "type": "query",
+      "description": "Query AGV KPI metrics for self-evaluation",
+      "params": {
+        "scope": "kpi"
+      },
+      "retry": 1
+    },
+    {
+      "id": "evaluate-dispatch",
+      "type": "eval",
+      "description": "Self-evaluate recent task dispatch decisions",
+      "params": {
+        "command": "score-recent",
+        "limit": 5
+      }
+    },
+    {
+      "id": "complete",
+      "type": "set-variable",
+      "description": "Mark AGV patrol cycle complete",
+      "params": {
+        "key": "last_patrol_complete",
+        "value": "{{ var_timestamp }}"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "AGV AI Manager",
+    "created_at": "2026-06-29T00:00:00Z",
+    "tags": ["agv", "dispatch", "fleet", "battery", "patrol"]
+  }
+}

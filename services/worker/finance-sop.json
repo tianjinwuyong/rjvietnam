@@ -1,0 +1,246 @@
+{
+  "version": "1.0",
+  "last_updated": "2026-07-02",
+  "description": "Finance AI Manager standard operating procedures — state machine definitions",
+  "sops": {
+    "ar_overdue_escalation": {
+      "name": "AR Overdue Escalation",
+      "description": "Handles customer invoices overdue > 90 days with escalating actions",
+      "trigger": "ar_days_overdue >= 90",
+      "initial_state": "warning",
+      "states": {
+        "warning": {
+          "description": "Send payment reminder to customer",
+          "action": "send_ar_reminder",
+          "autoExecute": true,
+          "next_state_after_hours": 48,
+          "transitions": {
+            "no_payment": "escalate",
+            "partial_payment": "review",
+            "payment_received": "resolved"
+          }
+        },
+        "escalate": {
+          "description": "Escalate to finance manager, LINE alert",
+          "action": "line_alert_ar_escalate",
+          "autoExecute": true,
+          "next_state_after_hours": 24,
+          "transitions": {
+            "no_response": "suspend",
+            "payment_agreed": "monitor"
+          }
+        },
+        "suspend": {
+          "description": "Suspend shipment until payment received",
+          "action": "suspend_customer_shipment",
+          "autoExecute": false,
+          "requires_approval": true,
+          "approval_role": "FIN_MGR",
+          "transitions": {
+            "approved": "executed",
+            "rejected": "review"
+          }
+        },
+        "resolved": {
+          "description": "Payment received, case closed",
+          "action": "close_ar_case",
+          "autoExecute": true,
+          "transitions": {}
+        }
+      }
+    },
+    "ap_payment_flow": {
+      "name": "AP Payment Flow",
+      "description": "Process AP invoices with payment scheduling and early-payment discounts",
+      "trigger": "ap_invoice_due_date_within_7_days",
+      "initial_state": "pending_review",
+      "states": {
+        "pending_review": {
+          "description": "Verify invoice against PO and receiving",
+          "action": "verify_invoice_against_po",
+          "autoExecute": true,
+          "next_state_after_hours": 24,
+          "transitions": {
+            "verified": "pending_payment",
+            "discrepancy": "dispute"
+          }
+        },
+        "pending_payment": {
+          "description": "Schedule payment based on due date and discounts",
+          "action": "schedule_ap_payment",
+          "autoExecute": true,
+          "next_state_after_hours": 48,
+          "transitions": {
+            "due_now": "pay_on_due",
+            "early_discount_available": "pay_early"
+          }
+        },
+        "pay_early": {
+          "description": "Pay early to capture supplier discount",
+          "action": "execute_early_payment",
+          "autoExecute": false,
+          "requires_approval": true,
+          "approval_role": "FIN_MGR",
+          "transitions": {}
+        },
+        "pay_on_due": {
+          "description": "Pay on due date (standard)",
+          "action": "execute_payment_on_due",
+          "autoExecute": true,
+          "transitions": {}
+        },
+        "dispute": {
+          "description": "Raise dispute with supplier",
+          "action": "raise_supplier_dispute",
+          "autoExecute": true,
+          "transitions": {}
+        }
+      }
+    },
+    "wo_cost_variance": {
+      "name": "Work Order Cost Variance",
+      "description": "Investigate and resolve work order cost overruns",
+      "trigger": "wo_variance_pct > 10",
+      "initial_state": "review",
+      "states": {
+        "review": {
+          "description": "Analyze variance cause",
+          "action": "analyze_wo_variance_cause",
+          "autoExecute": true,
+          "next_state_after_hours": 24,
+          "transitions": {
+            "material_cost": "material_price_change",
+            "labor_efficiency": "labor_review",
+            "scope_change": "budget_amendment",
+            "overhead": "overhead_review"
+          }
+        },
+        "material_price_change": {
+          "description": "Update standard cost for material",
+          "action": "update_material_standard_cost",
+          "autoExecute": false,
+          "requires_approval": true,
+          "approval_role": "PMC_MGR",
+          "transitions": {}
+        },
+        "scope_change": {
+          "description": "Request budget amendment from PMC",
+          "action": "request_budget_amendment",
+          "autoExecute": true,
+          "transitions": {}
+        },
+        "labor_review": {
+          "description": "Review labor efficiency with HR",
+          "action": "review_labor_efficiency",
+          "autoExecute": true,
+          "transitions": {}
+        },
+        "overhead_review": {
+          "description": "Review overhead allocation",
+          "action": "review_overhead_allocation",
+          "autoExecute": true,
+          "transitions": {}
+        }
+      }
+    },
+    "month_end_close": {
+      "name": "Month-End Close SOP",
+      "description": "Standard month-end financial close procedure",
+      "trigger": "last_day_of_month",
+      "initial_state": "fx_revaluation",
+      "states": {
+        "fx_revaluation": {
+          "description": "Run FX revaluation on all open AR/AP balances",
+          "action": "run_fx_revaluation",
+          "autoExecute": true,
+          "next_state_after_hours": 2,
+          "transitions": {
+            "complete": "post_wo_costs"
+          }
+        },
+        "post_wo_costs": {
+          "description": "Post all work order actual costs to GL",
+          "action": "post_all_wo_costs",
+          "autoExecute": true,
+          "next_state_after_hours": 4,
+          "transitions": {
+            "complete": "post_ar_ap"
+          }
+        },
+        "post_ar_ap": {
+          "description": "Post all open AR and AP invoices",
+          "action": "post_open_ar_ap_invoices",
+          "autoExecute": true,
+          "next_state_after_hours": 4,
+          "transitions": {
+            "complete": "review_gl"
+          }
+        },
+        "review_gl": {
+          "description": "Finance manager reviews all draft GL entries",
+          "action": "review_draft_gl_entries",
+          "autoExecute": false,
+          "requires_approval": true,
+          "approval_role": "FIN_MGR",
+          "transitions": {
+            "approved": "close_period",
+            "rejected": "correct_gl"
+          }
+        },
+        "correct_gl": {
+          "description": "Correct GL entries and resubmit for review",
+          "action": "correct_gl_entries",
+          "autoExecute": true,
+          "transitions": {
+            "complete": "review_gl"
+          }
+        },
+        "close_period": {
+          "description": "Close the fiscal period",
+          "action": "close_fiscal_period",
+          "autoExecute": true,
+          "transitions": {}
+        }
+      }
+    },
+    "material_loss_alert": {
+      "name": "Material Loss Alert",
+      "description": "Handle material financial events with significant loss",
+      "trigger": "material_loss_amount > 1000 USD",
+      "initial_state": "investigate",
+      "states": {
+        "investigate": {
+          "description": "Investigate cause of material loss",
+          "action": "investigate_material_loss",
+          "autoExecute": true,
+          "next_state_after_hours": 24,
+          "transitions": {
+            "supplier_defect": "supplier_claim",
+            "internal_waste": "internal_scrap",
+            "no_fault": "write_off"
+          }
+        },
+        "supplier_claim": {
+          "description": "File compensation claim with supplier",
+          "action": "file_supplier_claim",
+          "autoExecute": true,
+          "transitions": {}
+        },
+        "internal_scrap": {
+          "description": "Record as internal scrap, review process",
+          "action": "record_internal_scrap",
+          "autoExecute": true,
+          "transitions": {}
+        },
+        "write_off": {
+          "description": "Write off loss after investigation",
+          "action": "write_off_material_loss",
+          "autoExecute": false,
+          "requires_approval": true,
+          "approval_role": "FIN_MGR",
+          "transitions": {}
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+# ── SMT Factory API Server ────────────────────────────────────────────────────
+FROM node:20-slim
+
+WORKDIR /app
+
+# Copy all workspace source (node_modules excluded by .dockerignore)
+COPY apps/ apps/
+COPY database/ database/
+COPY integrations/ integrations/
+COPY packages/ packages/
+COPY services/ services/
+
+# Copy workspace root files
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+
+# Install all deps at workspace root
+RUN npm install --omit=dev --ignore-scripts
+
+EXPOSE 8080
+
+CMD ["node", "services/api/server.js"]

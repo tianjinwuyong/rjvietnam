@@ -1,0 +1,110 @@
+{"kind":"deck","id":"pr/ayr4f4","name":"Deck"}
+{"kind":"layout","layoutId":"bc008908-60ef-47dc-8843-f2a966e665d0","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"3b714e25-2623-411c-b154-4986f1e585ed","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/fyi89b","slide":1,"title":"员工登记 · 操作教程","textShapes":7}
+{"kind":"shape","id":"sh/32hwjudc","slide":1,"name":"accent","bbox":[0,0,18,720]}
+{"kind":"textbox","id":"sh/o3qdczux","slide":1,"name":"step","text":"员工登记 · 操作教程","textPreview":"员工登记 · 操作教程","textChars":11,"textLines":1,"bbox":[64,48,420,28]}
+{"kind":"textbox","id":"sh/p4zel4vi","slide":1,"name":"title","text":"员工登记与人脸录入","textPreview":"员工登记与人脸录入","textChars":9,"textLines":1,"bbox":[64,90,1110,78]}
+{"kind":"textbox","id":"sh/exov6pwv","slide":1,"name":"subtitle","text":"人事部统一注册 · 手机采集 · 审核后启用","textPreview":"人事部统一注册 · 手机采集 · 审核后启用","textChars":22,"textLines":1,"bbox":[66,169,1080,52]}
+{"kind":"shape","id":"sh/fyxwfudg","slide":1,"name":"hero","bbox":[64,260,1152,300]}
+{"kind":"textbox","id":"sh/gz6d8fu1","slide":1,"name":"hero-number","text":"6","textPreview":"6","textChars":1,"textLines":1,"bbox":[108,304,210,150]}
+{"kind":"textbox","id":"sh/10zehkvm","slide":1,"name":"hero-label","text":"个步骤完成注册","textPreview":"个步骤完成注册","textChars":7,"textLines":1,"bbox":[115,445,260,42]}
+{"kind":"textbox","id":"sh/69ov25wz","slide":1,"name":"hero-copy","text":"资料建档 → 身份核验 → 组织岗位 → 手机人脸采集 → HR审核 → 权限启用","textPreview":"资料建档 → 身份核验 → 组织岗位 → 手机人脸采集 → HR审核 → 权限启用","textChars":41,"textLines":1,"bbox":[390,328,745,130]}
+{"kind":"textbox","id":"sh/raxcbad4","slide":1,"name":"footer","text":"适用于人事部新员工登记与PDA快速登录","textPreview":"适用于人事部新员工登记与PDA快速登录","textChars":19,"textLines":1,"bbox":[66,630,900,28]}
+{"kind":"notes","id":"nt/fyi89b","slide":1,"text":""}
+{"kind":"slide","id":"sl/t6qd49","slide":2,"title":"员工登记 · 01","textShapes":12}
+{"kind":"shape","id":"sh/25o7ud8r","slide":2,"name":"accent","bbox":[0,0,18,720]}
+{"kind":"textbox","id":"sh/p8fq5872","slide":2,"name":"step","text":"员工登记 · 01","textPreview":"员工登记 · 01","textChars":9,"textLines":1,"bbox":[64,48,420,28]}
+{"kind":"textbox","id":"sh/o76pwnqh","slide":2,"name":"title","text":"先建立唯一员工档案","textPreview":"先建立唯一员工档案","textChars":9,"textLines":1,"bbox":[64,90,1110,78]}
+{"kind":"textbox","id":"sh/f2d8zy90","slide":2,"name":"subtitle","text":"所有设备和系统只认同一个员工编号","textPreview":"所有设备和系统只认同一个员工编号","textChars":16,"textLines":1,"bbox":[66,169,1080,52]}
+{"kind":"shape","id":"sh/e147qt8f","slide":2,"name":"card-1","bbox":[64,270,340,240]}
+{"kind":"shape","id":"sh/14vq1876","slide":2,"name":"no-1","bbox":[86,292,48,48]}
+{"kind":"textbox","id":"sh/g3mps3ql","slide":2,"name":"no-text-1","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[86,299,48,34]}
+{"kind":"textbox","id":"sh/red8vy94","slide":2,"name":"card-title-1","text":"输入基本资料","textPreview":"输入基本资料","textChars":6,"textLines":1,"bbox":[88,356,292,42]}
+{"kind":"textbox","id":"sh/6dk7mt8j","slide":2,"name":"card-body-1","text":"姓名、员工编号、手机号、入职日期。必填项不完整不能提交。","textPreview":"姓名、员工编号、手机号、入职日期。必填项不完整不能提交。","textChars":28,"textLines":1,"bbox":[88,406,292,78]}
+{"kind":"shape","id":"sh/czu1sr2d","slide":2,"name":"card-2","bbox":[470,270,340,240]}
+{"kind":"shape","id":"sh/dk3i1wjy","slide":2,"name":"no-2","bbox":[492,292,48,48]}
+{"kind":"textbox","id":"sh/qxcjqhkn","slide":2,"name":"no-text-2","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[492,299,48,34]}
+{"kind":"textbox","id":"sh/ryl0zm1s","slide":2,"name":"card-title-2","text":"扫描身份证件","textPreview":"扫描身份证件","textChars":6,"textLines":1,"bbox":[494,356,292,42]}
+{"kind":"textbox","id":"sh/4vu1or2h","slide":2,"name":"card-body-2","text":"核对证件号码与本人一致。敏感信息只向授权HR人员显示。","textPreview":"核对证件号码与本人一致。敏感信息只向授权HR人员显示。","textChars":27,"textLines":1,"bbox":[494,406,292,78]}
+{"kind":"shape","id":"sh/pw3ixcj2","slide":2,"name":"card-3","bbox":[876,270,340,240]}
+{"kind":"shape","id":"sh/itsjmhkb","slide":2,"name":"no-3","bbox":[898,292,48,48]}
+{"kind":"textbox","id":"sh/3ul0vm1w","slide":2,"name":"no-text-3","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[898,299,48,34]}
+{"kind":"textbox","id":"sh/ore10bil","slide":2,"name":"card-title-3","text":"检查重复","textPreview":"检查重复","textChars":4,"textLines":1,"bbox":[900,356,292,42]}
+{"kind":"textbox","id":"sh/9sn29gj6","slide":2,"name":"card-body-3","text":"员工编号、证件号和手机号重复时立即拦截，避免建立两个身份。","textPreview":"员工编号、证件号和手机号重复时立即拦截，避免建立两个身份。","textChars":29,"textLines":1,"bbox":[900,406,292,78]}
+{"kind":"notes","id":"nt/t6qd49","slide":2,"text":""}
+{"kind":"slide","id":"sl/gcttz3","slide":3,"title":"员工登记 · 02","textShapes":12}
+{"kind":"shape","id":"sh/xgna5wni","slide":3,"name":"accent","bbox":[0,0,18,720]}
+{"kind":"textbox","id":"sh/adcba14r","slide":3,"name":"step","text":"员工登记 · 02","textPreview":"员工登记 · 02","textChars":9,"textLines":1,"bbox":[64,48,420,28]}
+{"kind":"textbox","id":"sh/bels3m5c","slide":3,"name":"title","text":"岗位决定可见范围与操作权限","textPreview":"岗位决定可见范围与操作权限","textChars":13,"textLines":1,"bbox":[64,90,1110,78]}
+{"kind":"textbox","id":"sh/obut8rml","slide":3,"name":"subtitle","text":"部门、岗位、班次和直属主管必须准确","textPreview":"部门、岗位、班次和直属主管必须准确","textChars":17,"textLines":1,"bbox":[66,169,1080,52]}
+{"kind":"shape","id":"sh/9c3a1wn6","slide":3,"name":"card-1","bbox":[64,270,340,240]}
+{"kind":"shape","id":"sh/m9cb6h4v","slide":3,"name":"no-1","bbox":[86,292,48,48]}
+{"kind":"textbox","id":"sh/nalszm50","slide":3,"name":"no-text-1","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[86,299,48,34]}
+{"kind":"textbox","id":"sh/0nut476p","slide":3,"name":"card-title-1","text":"选择部门","textPreview":"选择部门","textChars":4,"textLines":1,"bbox":[88,356,292,42]}
+{"kind":"textbox","id":"sh/1o3axcna","slide":3,"name":"card-body-1","text":"从组织架构选择，不允许手工输入不存在的部门。","textPreview":"从组织架构选择，不允许手工输入不存在的部门。","textChars":22,"textLines":1,"bbox":[88,406,292,78]}
+{"kind":"shape","id":"sh/h8jatkju","slide":3,"name":"card-2","bbox":[470,270,340,240]}
+{"kind":"shape","id":"sh/g7at0f29","slide":3,"name":"no-2","bbox":[492,292,48,48]}
+{"kind":"textbox","id":"sh/f6hsra1o","slide":3,"name":"no-text-2","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[492,299,48,34]}
+{"kind":"textbox","id":"sh/u58by5kj","slide":3,"name":"card-title-2","text":"选择岗位","textPreview":"选择岗位","textChars":4,"textLines":1,"bbox":[494,356,292,42]}
+{"kind":"textbox","id":"sh/t4zap0jy","slide":3,"name":"card-body-2","text":"岗位自动带出可用系统与操作范围。","textPreview":"岗位自动带出可用系统与操作范围。","textChars":16,"textLines":1,"bbox":[494,406,292,78]}
+{"kind":"shape","id":"sh/s3qtwv2d","slide":3,"name":"card-3","bbox":[876,270,340,240]}
+{"kind":"shape","id":"sh/7ihsna1s","slide":3,"name":"no-3","bbox":[898,292,48,48]}
+{"kind":"textbox","id":"sh/6h8ru5k7","slide":3,"name":"no-text-3","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[898,299,48,34]}
+{"kind":"textbox","id":"sh/5gzal03m","slide":3,"name":"card-title-3","text":"确认主管与班次","textPreview":"确认主管与班次","textChars":7,"textLines":1,"bbox":[900,356,292,42]}
+{"kind":"textbox","id":"sh/kfq9sv21","slide":3,"name":"card-body-3","text":"用于审批、考勤、培训和异常通知。","textPreview":"用于审批、考勤、培训和异常通知。","textChars":16,"textLines":1,"bbox":[900,406,292,78]}
+{"kind":"notes","id":"nt/gcttz3","slide":3,"text":""}
+{"kind":"slide","id":"sl/1fzfrq","slide":4,"title":"员工登记 · 03","textShapes":12}
+{"kind":"shape","id":"sh/kbmpwf2p","slide":4,"name":"accent","bbox":[0,0,18,720]}
+{"kind":"textbox","id":"sh/zado3al4","slide":4,"name":"step","text":"员工登记 · 03","textPreview":"员工登记 · 03","textChars":9,"textLines":1,"bbox":[64,48,420,28]}
+{"kind":"textbox","id":"sh/y9k7u5kj","slide":4,"name":"title","text":"用手机完成本人活体采集","textPreview":"用手机完成本人活体采集","textChars":11,"textLines":1,"bbox":[64,90,1110,78]}
+{"kind":"textbox","id":"sh/9gvq9436","slide":4,"name":"subtitle","text":"环境明亮、正视镜头、不要佩戴口罩或墨镜","textPreview":"环境明亮、正视镜头、不要佩戴口罩或墨镜","textChars":19,"textLines":1,"bbox":[66,169,1080,52]}
+{"kind":"shape","id":"sh/8fmp0z2l","slide":4,"name":"card-1","bbox":[64,270,340,240]}
+{"kind":"shape","id":"sh/7ed87ul0","slide":4,"name":"no-1","bbox":[86,292,48,48]}
+{"kind":"textbox","id":"sh/md47ypkv","slide":4,"name":"no-text-1","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[86,299,48,34]}
+{"kind":"textbox","id":"sh/h4fqd43i","slide":4,"name":"card-title-1","text":"打开录入二维码","textPreview":"打开录入二维码","textChars":7,"textLines":1,"bbox":[88,356,292,42]}
+{"kind":"textbox","id":"sh/w36p4z2x","slide":4,"name":"card-body-1","text":"HR在员工档案中生成一次性人脸录入二维码。","textPreview":"HR在员工档案中生成一次性人脸录入二维码。","textChars":21,"textLines":1,"bbox":[88,406,292,78]}
+{"kind":"shape","id":"sh/ytk7ih0j","slide":4,"name":"card-2","bbox":[470,270,340,240]}
+{"kind":"shape","id":"sh/zutorm14","slide":4,"name":"no-2","bbox":[492,292,48,48]}
+{"kind":"textbox","id":"sh/0v2pkri9","slide":4,"name":"no-text-2","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[492,299,48,34]}
+{"kind":"textbox","id":"sh/lgb6twju","slide":4,"name":"card-title-2","text":"手机活体采集","textPreview":"手机活体采集","textChars":6,"textLines":1,"bbox":[494,356,292,42]}
+{"kind":"textbox","id":"sh/mhk7mh0f","slide":4,"name":"card-body-2","text":"员工按提示转头、眨眼。系统只保存加密模板，不作为普通照片使用。","textPreview":"员工按提示转头、眨眼。系统只保存加密模板，不作为普通照片使用。","textChars":31,"textLines":1,"bbox":[494,406,292,78]}
+{"kind":"shape","id":"sh/nidovm10","slide":4,"name":"card-3","bbox":[876,270,340,240]}
+{"kind":"shape","id":"sh/8jmporil","slide":4,"name":"no-3","bbox":[898,292,48,48]}
+{"kind":"textbox","id":"sh/9kv6xwj6","slide":4,"name":"no-text-3","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[898,299,48,34]}
+{"kind":"textbox","id":"sh/2l0naxkb","slide":4,"name":"card-title-3","text":"现场核对本人","textPreview":"现场核对本人","textChars":6,"textLines":1,"bbox":[900,356,292,42]}
+{"kind":"textbox","id":"sh/3m9oj21w","slide":4,"name":"card-body-3","text":"HR确认手机画面与证件和本人一致，再提交审核。","textPreview":"HR确认手机画面与证件和本人一致，再提交审核。","textChars":23,"textLines":1,"bbox":[900,406,292,78]}
+{"kind":"notes","id":"nt/1fzfrq","slide":4,"text":""}
+{"kind":"slide","id":"sl/ox9lsg","slide":5,"title":"员工登记 · 04","textShapes":6}
+{"kind":"shape","id":"sh/u9c7ylcv","slide":5,"name":"accent","bbox":[0,0,18,720]}
+{"kind":"textbox","id":"sh/hcnq90b6","slide":5,"name":"step","text":"员工登记 · 04","textPreview":"员工登记 · 04","textChars":9,"textLines":1,"bbox":[64,48,420,28]}
+{"kind":"textbox","id":"sh/gbep0vul","slide":5,"name":"title","text":"HR审核通过后才允许快速登录","textPreview":"HR审核通过后才允许快速登录","textChars":14,"textLines":1,"bbox":[64,90,1110,78]}
+{"kind":"textbox","id":"sh/7ml83qt4","slide":5,"name":"subtitle","text":"未审核、停用或离职员工不能使用人脸进入PDA","textPreview":"未审核、停用或离职员工不能使用人脸进入PDA","textChars":22,"textLines":1,"bbox":[66,169,1080,52]}
+{"kind":"shape","id":"sh/6lc7ulcj","slide":5,"name":"review","bbox":[64,260,720,300]}
+{"kind":"textbox","id":"sh/t83q5gba","slide":5,"name":"review-title","text":"审核清单","textPreview":"审核清单","textChars":4,"textLines":1,"bbox":[98,294,620,46]}
+{"kind":"textbox","id":"sh/s7upwvup","slide":5,"name":"review-list","text":"✓ 员工编号唯一\n✓ 证件与本人一致\n✓ 部门岗位正确\n✓ 人脸质量合格\n✓ 已告知用途和保存规则","textPreview":"✓ 员工编号唯一 | ✓ 证件与本人一致 | ✓ 部门岗位正确 | ✓ 人脸质量合格 | ✓ 已告知用途和保存规则","textChars":49,"textLines":5,"bbox":[105,355,600,160]}
+{"kind":"shape","id":"sh/ji18z6t8","slide":5,"name":"approved","bbox":[840,304,310,160]}
+{"kind":"textbox","id":"sh/ihs7q1cn","slide":5,"name":"approved-text","text":"审核通过\n账号启用","textPreview":"审核通过 | 账号启用","textChars":9,"textLines":2,"bbox":[870,340,250,88]}
+{"kind":"notes","id":"nt/ox9lsg","slide":5,"text":""}
+{"kind":"slide","id":"sl/xu1y3l","slide":6,"title":"员工登记 · 05","textShapes":13}
+{"kind":"shape","id":"sh/8vahkjup","slide":6,"name":"accent","bbox":[0,0,18,720]}
+{"kind":"textbox","id":"sh/7u10red4","slide":6,"name":"step","text":"员工登记 · 05","textPreview":"员工登记 · 05","textChars":9,"textLines":1,"bbox":[64,48,420,28]}
+{"kind":"textbox","id":"sh/mtszi9cj","slide":6,"name":"title","text":"注册完成后这样使用","textPreview":"注册完成后这样使用","textChars":9,"textLines":1,"bbox":[64,90,1110,78]}
+{"kind":"textbox","id":"sh/h03ixov6","slide":6,"name":"subtitle","text":"PDA识别只负责登录，业务扫码仍按工位规则执行","textPreview":"PDA识别只负责登录，业务扫码仍按工位规则执行","textChars":23,"textLines":1,"bbox":[66,169,1080,52]}
+{"kind":"shape","id":"sh/wzuhojul","slide":6,"name":"card-1","bbox":[64,270,340,240]}
+{"kind":"shape","id":"sh/vy10vyd0","slide":6,"name":"no-1","bbox":[86,292,48,48]}
+{"kind":"textbox","id":"sh/uxszmtcf","slide":6,"name":"no-text-1","text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[86,299,48,34]}
+{"kind":"textbox","id":"sh/5o3i18v2","slide":6,"name":"card-title-1","text":"看向摄像头","textPreview":"看向摄像头","textChars":5,"textLines":1,"bbox":[88,356,292,42]}
+{"kind":"textbox","id":"sh/4nuhs3uh","slide":6,"name":"card-body-1","text":"进入快速登录页，保持脸部完整出现在取景框内。","textPreview":"进入快速登录页，保持脸部完整出现在取景框内。","textChars":22,"textLines":1,"bbox":[88,406,292,78]}
+{"kind":"shape","id":"sh/q94369ov","slide":6,"name":"card-2","bbox":[470,270,340,240]}
+{"kind":"shape","id":"sh/radkfepg","slide":6,"name":"no-2","bbox":[492,292,48,48]}
+{"kind":"textbox","id":"sh/sbml8j61","slide":6,"name":"no-text-2","text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[492,299,48,34]}
+{"kind":"textbox","id":"sh/dcfmho7m","slide":6,"name":"card-title-2","text":"确认姓名岗位","textPreview":"确认姓名岗位","textChars":6,"textLines":1,"bbox":[494,356,292,42]}
+{"kind":"textbox","id":"sh/edo3ato7","slide":6,"name":"card-body-2","text":"识别成功后核对员工姓名、工号和当前工位。","textPreview":"识别成功后核对员工姓名、工号和当前工位。","textChars":20,"textLines":1,"bbox":[494,406,292,78]}
+{"kind":"shape","id":"sh/fyx4jypc","slide":6,"name":"card-3","bbox":[876,270,340,240]}
+{"kind":"shape","id":"sh/0z6lc36x","slide":6,"name":"no-3","bbox":[898,292,48,48]}
+{"kind":"textbox","id":"sh/10fmloni","slide":6,"name":"no-text-3","text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[898,299,48,34]}
+{"kind":"textbox","id":"sh/uhk3ypon","slide":6,"name":"card-title-3","text":"开始业务操作","textPreview":"开始业务操作","textChars":6,"textLines":1,"bbox":[900,356,292,42]}
+{"kind":"textbox","id":"sh/vitk7up8","slide":6,"name":"card-body-3","text":"所有上料、确认和异常处理继续保留员工、时间、设备审计记录。","textPreview":"所有上料、确认和异常处理继续保留员工、时间、设备审计记录。","textChars":29,"textLines":1,"bbox":[900,406,292,78]}
+{"kind":"textbox","id":"sh/zm90fq50","slide":6,"name":"close","text":"识别失败可使用员工卡或工号登录，不阻断现场工作。","textPreview":"识别失败可使用员工卡或工号登录，不阻断现场工作。","textChars":24,"textLines":1,"bbox":[66,610,1100,34]}
+{"kind":"notes","id":"nt/xu1y3l","slide":6,"text":""}

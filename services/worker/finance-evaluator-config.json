@@ -1,0 +1,619 @@
+{
+  "prompt_weights": {
+    "accuracy": 1,
+    "timeliness": 1,
+    "business_value": 1,
+    "risk_management": 1
+  },
+  "score_history": [
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "info",
+        "area": "ap",
+        "title": "应付账款正常监控",
+        "detail": "河内PCB供应商2750美元发票全部挂账，无逾期情况，建议持续跟踪付款到期日。",
+        "action": "确认供应商付款条款后制定付款计划",
+        "amount": "2750.00",
+        "urgency": "this_week"
+      },
+      "scored_at": "2026-07-01T19:14:49.470Z",
+      "score": 6,
+      "accuracy": 9,
+      "timeliness": 7,
+      "business_value": 5,
+      "risk_management": 8,
+      "reasoning": "数据描述准确，逻辑合理，但告警级别设为info导致业务驱动力不足。监控挂账本身有风险管理价值，但缺乏对潜在风险（如供应商关系、汇率变动等）的深入分析。",
+      "improvement_suggestion": "建议提升告警级别至warning并提供供应商付款条款到期日详情，以便制定更具体的付款计划并评估现金流影响。"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内PCB供应商",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P2",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-01T19:14:54.558Z",
+      "score": 5,
+      "accuracy": 4,
+      "timeliness": 6,
+      "business_value": 5,
+      "risk_management": 6,
+      "reasoning": "发票编号和到期日期字段缺失导致决策依据不充分，但按到期日付款的建议符合常规财务流程。",
+      "improvement_suggestion": "需补充发票关键信息字段（如invoice_no、due_date）以确保决策完整性和可追溯性"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "MFE-001",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-01T19:15:00.908Z",
+      "score": 6,
+      "accuracy": 5,
+      "timeliness": 7,
+      "business_value": 6,
+      "risk_management": 4,
+      "reasoning": "资产处置金额仅0.06单位被归类为Material Events（重大事项），分类阈值可能存在偏差，可能导致资源错配；但acknowledge+auto_execute的响应流程保证了处理时效。",
+      "improvement_suggestion": "建议设置材料性事件金额阈值门槛，对低于阈值的处置事件降级为常规监控，避免将极低价值事件纳入重大评审流程。"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内PCB供应商",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P2",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-01T19:44:29.837Z",
+      "score": 7,
+      "accuracy": 5,
+      "timeliness": 6,
+      "business_value": 7,
+      "risk_management": 6,
+      "reasoning": "决策缺少invoice_no和due_date导致无法验证付款计划的准确性，但推荐按到期日付款符合常规财务流程。",
+      "improvement_suggestion": "建议补充发票号和到期日期等关键字段以支持更精确的付款计划评估"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "MFE-001",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-01T19:44:34.919Z",
+      "score": 4,
+      "accuracy": 5,
+      "timeliness": 7,
+      "business_value": 3,
+      "risk_management": 4,
+      "reasoning": "金额0.06难以构成Material Events级别的重大事件，auto_execute对低价值事件的自动处理缺乏人工复核机制，存在过度自动化风险。",
+      "improvement_suggestion": "建议设置金额阈值门槛，低于一定标准的事件应进入人工审核流程而非自动执行"
+    },
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "warning",
+        "area": "ap",
+        "title": "AP 应付账款积压 $2,750",
+        "detail": "河内 PCB 供应商 SUP-HN-PCB 欠款 $2,750 USD，尚未达到30天逾期。该供应商为 PCB 物料采购方，需关注付款进度以避免供应链断供风险。",
+        "action": "与财务确认发票到期日，安排在本周内支付或提前付款获取优惠条件",
+        "amount": "2750.00 USD",
+        "urgency": "this_week"
+      },
+      "scored_at": "2026-07-01T19:44:48.670Z",
+      "score": 5,
+      "accuracy": 5,
+      "timeliness": 5,
+      "business_value": 5,
+      "risk_management": 5,
+      "reasoning": "解析失败，使用默认分",
+      "improvement_suggestion": "检查LLM输出格式"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内 PCB 供应商 (SUP-HN-PCB)",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P1",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-01T19:44:54.850Z",
+      "score": 5,
+      "accuracy": 4,
+      "timeliness": 5,
+      "business_value": 5,
+      "risk_management": 6,
+      "reasoning": "关键信息缺失（发票号/到期日）导致无法验证决策准确性，但P1优先级和到期支付建议基本符合常规AP流程。",
+      "improvement_suggestion": "需补充完整发票号和到期日期等核心字段以支持数据驱动的决策"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "MFE-001",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-01T19:44:59.866Z",
+      "score": 7,
+      "accuracy": 8,
+      "timeliness": 9,
+      "business_value": 6,
+      "risk_management": 5,
+      "reasoning": "决策基于明确的事件ID和金额数据，响应及时但自动执行缺乏人工复核环节",
+      "improvement_suggestion": "重大财务事件应增加二级审批机制，特别是涉及资产处置时需确认交易对方资质"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "MFE-001",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-01T19:56:53.031Z",
+      "score": 5,
+      "accuracy": 6,
+      "timeliness": 9,
+      "business_value": 3,
+      "risk_management": 4,
+      "reasoning": "作为标记为Material Events的重要事项，仅执行自动确认而跳过人工复核环节，难以满足合规审计及重大决策的管控要求。",
+      "improvement_suggestion": "建议将此类事件的action升级为强制人工审批流程后再执行，关闭auto_execute以规避合规风险。"
+    },
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "warning",
+        "area": "ap",
+        "title": "供应商发票 $2,750 待付款",
+        "detail": "河内 PCB 供应商 (SUP-HN-PCB) 有一张 USD 2,750.00 的未付发票，尚处于正常账期内（overdue_30 = 0），需安排付款以避免逾期。",
+        "action": "确认应付账款到期日并纳入本周付款计划；若临近账期截止则优先支付以确保供应链稳定。",
+        "amount": "$2,750.00 USD",
+        "urgency": "this_week"
+      },
+      "scored_at": "2026-07-01T19:57:00.449Z",
+      "score": 8,
+      "accuracy": 9,
+      "timeliness": 8,
+      "business_value": 7,
+      "risk_management": 7,
+      "reasoning": "决策数据引用准确，正确识别了供应商发票处于正常账期内的状态并给出预防性付款建议；但建议较为常规，未深入分析供应商集中度或历史逾期模式等深层风险。",
+      "improvement_suggestion": "建议补充该供应商的历史付款记录及账期变化趋势，以提供更具针对性的优先级排序依据。"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "AP-HN-PCB-202607",
+        "supplier_name": "河内 PCB 供应商 (SUP-HN-PCB)",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P1",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-01T19:57:05.549Z",
+      "score": 6,
+      "accuracy": 6,
+      "timeliness": 7,
+      "business_value": 6,
+      "risk_management": 5,
+      "reasoning": "决策缺少due_date导致无法验证付款时机准确性，且未考虑逾期/折扣等风险场景",
+      "improvement_suggestion": "需补充到期日期字段并建立数据缺失时的备用风险评估机制"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "MFE-01",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-01T19:57:26.898Z",
+      "score": 3,
+      "accuracy": 4,
+      "timeliness": 9,
+      "business_value": 2,
+      "risk_management": 2,
+      "reasoning": "事项金额0.06显著低于通常的重大性标准，分类合理性存疑；且处置类交易自动执行未经人工复核，存在合规与审计风险。",
+      "improvement_suggestion": "应优化重大事项的金额阈值判断逻辑，并对资产处置类事件强制要求人工审批后方可自动执行。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "USD-VND",
+        "current_rate": 0,
+        "recommendation": "汇率数据源为空，建议补充越南盾兑美元实时/预测汇率以支持本币结算决策。",
+        "rationale": "工厂位于越南，主要交易货币为 VND，当前无汇率记录影响本币现金流规划及供应商付款时点判断。"
+      },
+      "scored_at": "2026-07-01T19:57:41.099Z",
+      "score": 7,
+      "accuracy": 9,
+      "timeliness": 6,
+      "business_value": 8,
+      "risk_management": 7,
+      "reasoning": "AI准确识别了核心数据缺失（汇率为0）并关联到越南工厂的本币结算风险，诊断逻辑清晰且透明，但未因零数据提供替代方案或临时估算。",
+      "improvement_suggestion": "应接入实时FX API自动填充汇率字段，并在数据缺失时基于历史均值生成预测估值，避免仅输出数据收集建议而无法支持即时决策。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "USD-VND",
+        "current_rate": 0,
+        "recommendation": "汇率数据源为空，建议补充越南盾兑美元实时/预测汇率以支持本币结算决策。",
+        "rationale": "工厂位于越南，主要交易货币为 VND，当前无汇率记录影响本币现金流规划及供应商付款时点判断。"
+      },
+      "scored_at": "2026-07-01T19:59:18.619Z",
+      "score": 5,
+      "accuracy": 5,
+      "timeliness": 5,
+      "business_value": 5,
+      "risk_management": 5,
+      "reasoning": "解析失败，使用默认分",
+      "improvement_suggestion": "检查LLM输出格式"
+    },
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "critical",
+        "area": "ar",
+        "title": "应收账款系统空转 — 无客户发票记录",
+        "detail": "AR_AGING查询返回0条记录，工厂无客户应收款数据。若工厂处于生产经营状态，此情况表明销售开单流程未打通或订单已发货但未开票，存在现金流和收入确认风险。",
+        "action": "立即核对ERP销售模块与客户对账单，确认是否有已发货未开票的订单；如系统正常则需排查AR相关视图/存储过程是否执行失败",
+        "amount": "$0.00（应收款总额应为正数）",
+        "urgency": "immediate"
+      },
+      "scored_at": "2026-07-01T19:59:24.606Z",
+      "score": 9,
+      "accuracy": 10,
+      "timeliness": 8,
+      "business_value": 9,
+      "risk_management": 9,
+      "reasoning": "准确识别应收账款异常状态并关联业务风险，但时效性未明确具体触发阈值或时间窗口。",
+      "improvement_suggestion": "建议增加历史同期AR数据对比逻辑和自动升级机制"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内 PCB 供应商",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P1",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-01T19:59:32.247Z",
+      "score": 7,
+      "accuracy": 6,
+      "timeliness": 7,
+      "business_value": 7,
+      "risk_management": 8,
+      "reasoning": "关键字段（如due_date、invoice_no）缺失导致决策依据不完整，但按时支付有效避免了逾期风险。",
+      "improvement_suggestion": "需补全发票编号和到期日等关键字段以支持更精准的付款优先级判断"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "6",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-01T19:59:40.033Z",
+      "score": 6,
+      "accuracy": 7,
+      "timeliness": 8,
+      "business_value": 5,
+      "risk_management": 4,
+      "reasoning": "处置出售类事件涉及资产处置，auto_execute=true在缺乏人工审批的情况下自动执行存在合规风险。虽然金额较小(0.06)，但仅acknowledge不足以覆盖必要的风控审查流程。",
+      "improvement_suggestion": "对于DISPOSAL_SOLD类型的事件应设置最小审批阈值，即使金额较低也应纳入人工复核或二次确认机制后再auto_execute。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "USD/VND",
+        "current_rate": 0,
+        "recommendation": "初始化汇率数据，建议按当前市场中间价录入并设置月度更新",
+        "rationale": "越南工厂存在VND结算场景（本地供应商付款、增值税发票），无汇率数据将导致AP/AR核算无法进行"
+      },
+      "scored_at": "2026-07-01T19:59:56.171Z",
+      "score": 8,
+      "accuracy": 9,
+      "timeliness": 10,
+      "business_value": 8,
+      "risk_management": 7,
+      "reasoning": "决策准确识别了越南工厂VND核算的数据缺口，初始化流程符合财务基础要求。但建议'月度更新'对于波动较大的USD/VND对频率偏低，可能无法有效应对汇率变动导致的估值差异风险。",
+      "improvement_suggestion": "建议将更新频率从月度调整为周度或每日自动抓取市场中间价，以更准确地反映汇率波动并降低期末重估差异。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "USD-VND",
+        "current_rate": 0,
+        "recommendation": "汇率数据源为空，建议补充越南盾兑美元实时/预测汇率以支持本币结算决策。",
+        "rationale": "工厂位于越南，主要交易货币为 VND，当前无汇率记录影响本币现金流规划及供应商付款时点判断。"
+      },
+      "scored_at": "2026-07-02T01:12:59.891Z",
+      "score": 28,
+      "accuracy": 7,
+      "timeliness": 7,
+      "business_value": 6,
+      "risk_management": 7,
+      "reasoning": "决策准确识别了数据缺失问题，但未量化具体业务影响或提出替代方案。补充汇率建议合理但缺乏可执行细节",
+      "improvement_suggestion": "应增加数据采集路径说明及外汇风险敞口测算框架"
+    },
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "critical",
+        "area": "ar",
+        "title": "应收账款系统空转 — 无客户发票记录",
+        "detail": "AR_AGING查询返回0条记录，工厂无客户应收款数据。若工厂处于生产经营状态，此情况表明销售开单流程未打通或订单已发货但未开票，存在现金流和收入确认风险。",
+        "action": "立即核对ERP销售模块与客户对账单，确认是否有已发货未开票的订单；如系统正常则需排查AR相关视图/存储过程是否执行失败",
+        "amount": "$0.00（应收款总额应为正数）",
+        "urgency": "immediate"
+      },
+      "scored_at": "2026-07-02T01:13:12.154Z",
+      "score": 9,
+      "accuracy": 9,
+      "timeliness": 9,
+      "business_value": 8,
+      "risk_management": 9,
+      "reasoning": "决策准确识别了应收账款为零的严重异常，推断逻辑合理且行动建议覆盖了业务操作与技术排查两个维度，能有效引导人工介入。",
+      "improvement_suggestion": "建议增加与历史同期AR数据的环比对比或新工厂/项目排除规则，以避免因正常经营周期内无销售而产生的误报。"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内 PCB 供应商",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P1",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-02T01:13:19.639Z",
+      "score": 5,
+      "accuracy": 4,
+      "timeliness": 7,
+      "business_value": 6,
+      "risk_management": 5,
+      "reasoning": "发票号与到期日期缺失导致决策依据不完整，但按时支付方向合理。P1优先级未结合供应商关键性评估潜在供应中断风险。",
+      "improvement_suggestion": "补充发票编号和到期日期等关键字段，并增加对供应商依赖度的风险评估"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "6",
+        "event_type": "DISPOSAL_SOLD",
+        "amount": 0.06,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-02T01:13:24.182Z",
+      "score": 7,
+      "accuracy": 8,
+      "timeliness": 8,
+      "business_value": 5,
+      "risk_management": 6,
+      "reasoning": "决策准确识别小额处置事件并自动确认，但金额过小导致业务影响有限。自动执行acknowledge动作符合低风险事件的常规处理流程。",
+      "improvement_suggestion": "建议对处置类事件设置金额阈值分级审批机制，避免全自动执行可能遗漏的重要资产处置记录。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "USD/VND",
+        "current_rate": 0,
+        "recommendation": "初始化汇率数据，建议按当前市场中间价录入并设置月度更新",
+        "rationale": "越南工厂存在VND结算场景（本地供应商付款、增值税发票），无汇率数据将导致AP/AR核算无法进行"
+      },
+      "scored_at": "2026-07-02T01:13:44.124Z",
+      "score": 8,
+      "accuracy": 9,
+      "timeliness": 9,
+      "business_value": 10,
+      "risk_management": 7,
+      "reasoning": "决策准确识别了VND汇率数据缺失对越南工厂AP/AR核算的阻塞风险，建议按市场中间价初始化符合实操逻辑。但月度更新频率对于波动性货币可能引入一定的估值时滞。",
+      "improvement_suggestion": "建议根据交易量评估是否需要将更新频率提升至每周或每日，以减小汇率波动带来的财务影响。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "USD/VND",
+        "current_rate": 0,
+        "recommendation": "初始化汇率数据，建议按当前市场中间价录入并设置月度更新",
+        "rationale": "越南工厂存在VND结算场景（本地供应商付款、增值税发票），无汇率数据将导致AP/AR核算无法进行"
+      },
+      "scored_at": "2026-07-02T01:18:10.018Z",
+      "score": 9,
+      "accuracy": 9,
+      "timeliness": 8,
+      "business_value": 9,
+      "risk_management": 8,
+      "reasoning": "决策准确识别了VND结算场景下的数据缺失痛点，提出的初始化方案及月度更新频率符合财务核算基础要求。",
+      "improvement_suggestion": "建议补充明确是按交易日中间价还是月末中间价入账，以降低月内汇率波动对AP/AR核算精度的影响。"
+    },
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "critical",
+        "area": "compliance",
+        "title": "补偿事件存在重复索赔风险",
+        "detail": "COMPENSATION_REQUEST 事件 ID 1、3、4 针对同一物料 CAP-1005 (WO-SMT-2024-001)，累计损失 $7.50，但审批事件 ID 2 金额显示为 $0。实际未付款项仅 $2.50（以 ID 4 为准），需核实是否存在重复入账或系统异常",
+        "action": "核对 ID 1/3/4 三笔请求的发票状态，确认是否已全额支付；清理冗余记录并修复金额不一致问题",
+        "amount": "7.50 USD（潜在重复）",
+        "urgency": "immediate"
+      },
+      "scored_at": "2026-07-02T01:18:38.946Z",
+      "score": 5,
+      "accuracy": 5,
+      "timeliness": 5,
+      "business_value": 5,
+      "risk_management": 5,
+      "reasoning": "解析失败，使用默认分",
+      "improvement_suggestion": "检查LLM输出格式"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内 PCB 供应商 (SUP-HN-PCB)",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P1",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-02T01:18:59.663Z",
+      "score": 5,
+      "accuracy": 5,
+      "timeliness": 5,
+      "business_value": 5,
+      "risk_management": 5,
+      "reasoning": "解析失败，使用默认分",
+      "improvement_suggestion": "检查LLM输出格式"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "1",
+        "event_type": "COMPENSATION_REQUEST",
+        "amount": 2.5,
+        "action": "acknowledge",
+        "auto_execute": false
+      },
+      "scored_at": "2026-07-02T01:19:04.775Z",
+      "score": 7,
+      "accuracy": 5,
+      "timeliness": 7,
+      "business_value": 6,
+      "risk_management": 5,
+      "reasoning": "决策正确识别补偿请求并暂停自动执行，但缺乏数据验证细节；人工审批流程确保合规性但效率需优化。",
+      "improvement_suggestion": "建议对小额补偿设定自动批准阈值，同时强化请求数据的完整性校验机制。"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "VND/USD",
+        "current_rate": null,
+        "recommendation": "无法提供汇率建议，EXCHANGE_RATES 表为空。建议尽快录入当前 VND→USD 中间价（参考 2026-07-02 市场报价约 1 USD ≈ 43,500 VND）以支持后续外币结算分析",
+        "rationale": "工厂涉及河内 PCB 供应商 (SUP-HN-PCB)，交易币种为 USD，需维护实时汇率数据支撑 AP/AR 对冲决策"
+      },
+      "scored_at": "2026-07-02T01:19:23.582Z",
+      "score": 7,
+      "accuracy": 7,
+      "timeliness": 8,
+      "business_value": 6,
+      "risk_management": 7,
+      "reasoning": "准确识别数据缺失并提供参考汇率，但依赖假设的过市场报价存在时效性风险；及时推动数据维护以支持后续AP/AR对冲决策",
+      "improvement_suggestion": "建议接入实时外汇API自动更新EXCHANGE_RATES表，减少人工录入延迟"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "1",
+        "event_type": "COMPENSATION_REQUEST",
+        "amount": 2.5,
+        "action": "acknowledge",
+        "auto_execute": false
+      },
+      "scored_at": "2026-07-02T01:51:20.257Z",
+      "score": 7,
+      "accuracy": 8,
+      "timeliness": 7,
+      "business_value": 5,
+      "risk_management": 9,
+      "reasoning": "AI正确识别COMPENSATION_REQUEST事件类型并选择谨慎的acknowledge而非自动执行，风险管控得当；但仅确认知悉缺乏主动推动后续处理动作，业务价值产出有限。",
+      "improvement_suggestion": "建议在acknowledge后自动触发人工审核工单，缩短端到端补偿请求处理周期"
+    },
+    {
+      "decision_type": "FX Recommendations",
+      "decision": {
+        "currency_pair": "VND/USD",
+        "current_rate": null,
+        "recommendation": "无法提供汇率建议，EXCHANGE_RATES 表为空。建议尽快录入当前 VND→USD 中间价（参考 2026-07-02 市场报价约 1 USD ≈ 43,500 VND）以支持后续外币结算分析",
+        "rationale": "工厂涉及河内 PCB 供应商 (SUP-HN-PCB)，交易币种为 USD，需维护实时汇率数据支撑 AP/AR 对冲决策"
+      },
+      "scored_at": "2026-07-02T01:51:41.478Z",
+      "score": 8,
+      "accuracy": 7,
+      "timeliness": 8,
+      "business_value": 7,
+      "risk_management": 9,
+      "reasoning": "AI正确识别了数据缺失（EXCHANGE_RATES表为空）的风险，避免了基于无效数据的错误汇兑建议，有效控制了财务风险；但引用具体外部汇率数值缺乏实时验证依据，存在准确性隐患。",
+      "improvement_suggestion": "建议接入实时外汇API自动填充EXCHANGE_RATES表，消除数据空白后再生成决策，避免依赖静态参考值。"
+    },
+    {
+      "decision_type": "Alerts",
+      "decision": {
+        "severity": "warning",
+        "area": "ap",
+        "title": "河内PCB供应商账款即将到期",
+        "detail": "河内 PCB 供应商 (SUP-HN-PCB) 应付账款余额 $2,750.00，目前逾期天数显示为0（未超30天），需确认发票截止日期并安排付款以避免滞纳金或影响供应链关系。",
+        "action": "确认发票到期日，安排在到期日前完成支付，保持供应商良好合作关系。",
+        "amount": "$2,750.00",
+        "urgency": "this_week"
+      },
+      "scored_at": "2026-07-02T01:52:04.334Z",
+      "score": 5,
+      "accuracy": 5,
+      "timeliness": 5,
+      "business_value": 5,
+      "risk_management": 5,
+      "reasoning": "解析失败，使用默认分",
+      "improvement_suggestion": "检查LLM输出格式"
+    },
+    {
+      "decision_type": "AP Payment Plan",
+      "decision": {
+        "invoice_no": "",
+        "supplier_name": "河内 PCB 供应商",
+        "amount": 2750,
+        "due_date": "",
+        "priority": "P2",
+        "recommendation": "pay_on_due"
+      },
+      "scored_at": "2026-07-02T01:52:09.660Z",
+      "score": 7,
+      "accuracy": 5,
+      "timeliness": 7,
+      "business_value": 4,
+      "risk_management": 6,
+      "reasoning": "发票号和到期日期缺失导致决策依据不足，且未考虑早付折扣等潜在价值优化。",
+      "improvement_suggestion": "需补充发票编号与明确到期日信息以支撑精准付款时机判断"
+    },
+    {
+      "decision_type": "Material Events",
+      "decision": {
+        "event_id": "5",
+        "event_type": "DISPOSAL_GARBAGE",
+        "amount": 1,
+        "action": "acknowledge",
+        "auto_execute": true
+      },
+      "scored_at": "2026-07-02T01:52:17.074Z",
+      "score": 4,
+      "accuracy": 5,
+      "timeliness": 7,
+      "business_value": 5,
+      "risk_management": 3,
+      "reasoning": "自动执行低金额处置事件虽及时且数据准确，但未设置人工复核机制可能导致合规漏洞。",
+      "improvement_suggestion": "对DISPOSAL_GARBAGE类自动决策添加阈值控制或事后抽查流程以降低操作风险"
+    }
+  ],
+  "last_tuned": null
+}

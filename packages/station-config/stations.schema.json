@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ruijing.vn/schemas/stations.schema.json",
+  "title": "MES station and routing configuration",
+  "type": "object",
+  "required": ["schemaVersion", "configuration", "ngTracking", "lines", "ngPolicies"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "configuration": {
+      "type": "object",
+      "required": ["revision", "status", "source", "effectiveFrom"],
+      "properties": {
+        "revision": { "type": "string", "minLength": 1 },
+        "status": { "enum": ["DRAFT", "APPROVED", "PUBLISHED", "RETIRED"] },
+        "source": { "type": "string", "minLength": 1 },
+        "effectiveFrom": { "type": "string", "format": "date-time" }
+      },
+      "additionalProperties": true
+    },
+    "ngTracking": {
+      "type": "object",
+      "required": ["authority", "ackRequiredBeforePhysicalRelease", "events", "states"],
+      "properties": {
+        "authority": { "const": "MES" },
+        "ackRequiredBeforePhysicalRelease": { "const": true },
+        "events": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "states": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "lines": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/line" }
+    },
+    "ngPolicies": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/ngPolicy" }
+    }
+  },
+  "$defs": {
+    "localizedName": {
+      "type": "object",
+      "required": ["zh-CN", "en-US", "vi-VN"],
+      "properties": {
+        "zh-CN": { "type": "string" },
+        "en-US": { "type": "string" },
+        "vi-VN": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "station": {
+      "type": "object",
+      "required": ["sequence", "code", "name", "capability", "gate", "onPass", "onNg"],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "code": { "type": "string", "pattern": "^[A-Za-z0-9_-]+$" },
+        "name": { "$ref": "#/$defs/localizedName" },
+        "capability": { "type": "string" },
+        "gate": { "enum": ["MES_REQUIRED", "OBSERVE_ONLY"] },
+        "onPass": { "type": ["string", "null"] },
+        "onNg": { "type": "string" },
+        "rules": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+    "line": {
+      "type": "object",
+      "required": ["domain", "lineCode", "name", "routeRevision", "stations"],
+      "properties": {
+        "domain": { "enum": ["MANUAL_LINE", "AUTO_LINE"] },
+        "lineCode": { "type": "string" },
+        "name": { "$ref": "#/$defs/localizedName" },
+        "routeRevision": { "type": "string" },
+        "stations": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/station" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "ngPolicy": {
+      "type": "object",
+      "required": ["code", "appliesTo", "trigger", "action", "mesSupervision"],
+      "properties": {
+        "code": { "type": "string" },
+        "appliesTo": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "trigger": { "type": "string" },
+        "action": { "type": "object", "required": ["createConfirmedNg", "route"] },
+        "mesSupervision": {
+          "type": "object",
+          "required": ["required", "alarmOnDeviation", "immutableHistory"],
+          "properties": {
+            "required": { "const": true },
+            "alarmOnDeviation": { "const": true },
+            "immutableHistory": { "const": true }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

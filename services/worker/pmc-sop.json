@@ -1,0 +1,106 @@
+{
+  "$schema": "./mes-sop-schema.json",
+  "name": "PMC Patrol SOP v1.0",
+  "description": "Standard operating procedure for PMC AI patrol — queries WO/line state, evaluates scheduling decisions, runs MRP, checks kit status, escalates shortages, simulates capacity, generates digest, and self-evaluates.",
+  "version": "1.0.0",
+  "scripts": {
+    "query": "pmc-query.js",
+    "execute": "pmc-execute.js",
+    "evaluator": "pmc-evaluator.js",
+    "manager": "pmc-manager.js"
+  },
+  "steps": [
+    {
+      "id": "query_lines",
+      "type": "query",
+      "description": "Query all active SMT production lines and their current status",
+      "params": { "scope": "lines" },
+      "retry": 2,
+      "transitions": []
+    },
+    {
+      "id": "query_runs",
+      "type": "query",
+      "description": "Query currently active production runs per line",
+      "params": { "scope": "runs" },
+      "retry": 2,
+      "transitions": []
+    },
+    {
+      "id": "evaluate_schedule",
+      "type": "condition",
+      "description": "Evaluate WO scheduling based on priority and capacity",
+      "params": { "condition": "result_query_runs_needs_reorder eq true" }
+    },
+    {
+      "id": "wo_schedule",
+      "type": "execute",
+      "description": "Schedule or reschedule WOs based on evaluation",
+      "params": { "action": "wo-schedule", "scope": "pending" },
+      "retry": 1
+    },
+    {
+      "id": "mrp_run",
+      "type": "execute",
+      "description": "Run MRP explosion for active work orders",
+      "params": { "action": "mrp-run", "scope": "active" },
+      "retry": 2
+    },
+    {
+      "id": "kit_check",
+      "type": "execute",
+      "description": "Check kit completeness for next release WOs",
+      "params": { "action": "kit-check", "scope": "next_release" },
+      "retry": 1
+    },
+    {
+      "id": "shortage_escalate",
+      "type": "execute",
+      "description": "Identify and escalate material shortages",
+      "params": { "action": "shortage-escalate", "scope": "all" },
+      "retry": 1
+    },
+    {
+      "id": "delivery_alert",
+      "type": "execute",
+      "description": "Check delivery status and alert on delays",
+      "params": { "action": "delivery-alert", "scope": "incoming" },
+      "retry": 1
+    },
+    {
+      "id": "capacity_simulate",
+      "type": "execute",
+      "description": "Simulate line capacity and identify bottlenecks",
+      "params": { "action": "capacity-simulate", "scope": "all_lines" },
+      "retry": 1
+    },
+    {
+      "id": "evaluate_self",
+      "type": "eval",
+      "description": "Self-evaluate recent PMC decisions",
+      "params": { "command": "score-recent", "limit": 5 }
+    },
+    {
+      "id": "notify_digest",
+      "type": "notify",
+      "description": "Send PMC patrol digest notification",
+      "params": {
+        "message": "PMC Patrol complete. Lines: {{ result_query_lines_count }}, Active runs: {{ result_query_runs_count }}, Shortages: {{ result_shortage_escalate_count }}"
+      }
+    },
+    {
+      "id": "complete",
+      "type": "set-variable",
+      "description": "Mark patrol cycle complete",
+      "params": {
+        "key": "last_patrol_complete",
+        "value": "{{ var_timestamp }}"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "PMC AI Manager",
+    "created_at": "2026-06-28T00:00:00Z",
+    "tags": ["patrol", "pmc", "scheduling", "sop"]
+  }
+}

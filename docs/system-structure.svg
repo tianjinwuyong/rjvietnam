@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980">
+  <rect width="1600" height="980" fill="#f7f8fb"/>
+  <style>
+    .box { fill: #ffffff; stroke: #24324a; stroke-width: 2; rx: 10; ry: 10; }
+    .group { fill: #eaf0ff; stroke: #3254a8; stroke-width: 2; rx: 12; ry: 12; }
+    .title { font: 700 24px Arial, sans-serif; fill: #182235; }
+    .label { font: 600 18px Arial, sans-serif; fill: #182235; }
+    .small { font: 15px Arial, sans-serif; fill: #2b3445; }
+    .line { stroke: #50627d; stroke-width: 2; }
+  </style>
+
+  <rect class="group" x="520" y="20" width="560" height="80"/>
+  <text class="title" x="800" y="70" text-anchor="middle">SMT 工厂集成管理系统</text>
+
+  <line class="line" x1="800" y1="100" x2="800" y2="135"/>
+  <line class="line" x1="220" y1="135" x2="1380" y2="135"/>
+
+  <rect class="group" x="80" y="160" width="280" height="70"/>
+  <text class="label" x="220" y="203" text-anchor="middle">应用层</text>
+
+  <rect class="group" x="460" y="160" width="280" height="70"/>
+  <text class="label" x="600" y="203" text-anchor="middle">服务层</text>
+
+  <rect class="group" x="840" y="160" width="280" height="70"/>
+  <text class="label" x="980" y="203" text-anchor="middle">共享包</text>
+
+  <rect class="group" x="1220" y="160" width="280" height="70"/>
+  <text class="label" x="1360" y="203" text-anchor="middle">数据库</text>
+
+  <rect class="box" x="30" y="260" width="120" height="60"/>
+  <text class="small" x="90" y="296" text-anchor="middle">网页控制台</text>
+  <rect class="box" x="160" y="260" width="120" height="60"/>
+  <text class="small" x="220" y="296" text-anchor="middle">扫描终端</text>
+  <rect class="box" x="290" y="260" width="120" height="60"/>
+  <text class="small" x="350" y="296" text-anchor="middle">看板大屏</text>
+
+  <rect class="box" x="400" y="260" width="120" height="60"/>
+  <text class="small" x="460" y="296" text-anchor="middle">API 服务</text>
+  <rect class="box" x="530" y="260" width="120" height="60"/>
+  <text class="small" x="590" y="296" text-anchor="middle">后台任务</text>
+  <rect class="box" x="660" y="260" width="120" height="60"/>
+  <text class="small" x="720" y="296" text-anchor="middle">实时服务</text>
+
+  <rect class="box" x="790" y="260" width="120" height="60"/>
+  <text class="small" x="850" y="296" text-anchor="middle">类型定义</text>
+  <rect class="box" x="920" y="260" width="120" height="60"/>
+  <text class="small" x="980" y="296" text-anchor="middle">业务规则</text>
+  <rect class="box" x="1050" y="260" width="120" height="60"/>
+  <text class="small" x="1110" y="296" text-anchor="middle">校验器</text>
+  <rect class="box" x="1180" y="260" width="120" height="60"/>
+  <text class="small" x="1240" y="296" text-anchor="middle">UI 组件库</text>
+
+  <rect class="box" x="1210" y="260" width="120" height="60"/>
+  <text class="small" x="1270" y="296" text-anchor="middle">迁移脚本</text>
+  <rect class="box" x="1340" y="260" width="120" height="60"/>
+  <text class="small" x="1400" y="296" text-anchor="middle">种子数据</text>
+  <rect class="box" x="1470" y="260" width="100" height="60"/>
+  <text class="small" x="1520" y="296" text-anchor="middle">图表</text>
+
+  <rect class="group" x="80" y="390" width="1440" height="120"/>
+  <text class="label" x="800" y="430" text-anchor="middle">业务模块与流程</text>
+  <text class="small" x="800" y="465" text-anchor="middle">ERP → PMC → WMS → MES → Quality → Traceability → Reports → Admin</text>
+  <text class="small" x="800" y="492" text-anchor="middle">客户PO → 工单 → 收料 → IQC → 入库 → 备料 → 发料 → 飞达绑定 → 生产 → 检验 → 维修 → 追溯</text>
+
+  <rect class="group" x="80" y="560" width="1440" height="150"/>
+  <text class="label" x="800" y="600" text-anchor="middle">集成与运维</text>
+  <text class="small" x="800" y="635" text-anchor="middle">条码扫描器 | 标签打印机 | 感应式料架 | SPI | AOI | ICT | SMT 设备</text>
+  <text class="small" x="800" y="670" text-anchor="middle">部署 | 监控 | 权限 | 发布</text>
+</svg>

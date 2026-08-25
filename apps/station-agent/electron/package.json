@@ -1,0 +1,14 @@
+{
+  "name": "@smt-factory/station-agent-electron",
+  "version": "0.1.0",
+  "description": "MES Missioner Electron Desktop App",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "electron": "^33.4.0"
+  }
+}

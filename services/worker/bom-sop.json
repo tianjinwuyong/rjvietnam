@@ -1,0 +1,116 @@
+{
+  "$schema": "./mes-sop-schema.json",
+  "name": "BOM Patrol SOP v1.0",
+  "description": "Standard operating procedure for BOM AI patrol — queries BOM/ECO state, evaluates changes, executes BOM operations, generates digest, and self-evaluates.",
+  "version": "1.0.0",
+  "scripts": {
+    "query": "bom-query.js",
+    "execute": "bom-execute.js",
+    "evaluator": "bom-evaluator.js",
+    "manager": "bom-manager.js"
+  },
+  "steps": [
+    {
+      "id": "query_boms",
+      "type": "query",
+      "description": "Query all active BOMs and their release status",
+      "params": { "scope": "boms" },
+      "retry": 2,
+      "transitions": [
+        { "condition": "result_query_boms_needs_review eq true", "target": "evaluate_bom_changes" }
+      ]
+    },
+    {
+      "id": "query_eco",
+      "type": "query",
+      "description": "Query pending ECO requests",
+      "params": { "scope": "eco_pending" },
+      "retry": 1,
+      "transitions": [
+        { "condition": "result_query_eco_has_pending eq true", "target": "evaluate_eco" }
+      ]
+    },
+    {
+      "id": "evaluate_bom_changes",
+      "type": "condition",
+      "description": "Evaluate BOM completeness and identify changes needed",
+      "params": { "condition": "result_query_boms_needs_review eq true" }
+    },
+    {
+      "id": "bom_create_or_update",
+      "type": "execute",
+      "description": "Create or update BOM based on evaluation",
+      "params": { "action": "bom-update", "scope": "pending" },
+      "retry": 1
+    },
+    {
+      "id": "evaluate_eco",
+      "type": "condition",
+      "description": "Evaluate ECO justification and impact",
+      "params": { "condition": "result_query_eco_has_pending eq true" }
+    },
+    {
+      "id": "eco_create",
+      "type": "execute",
+      "description": "Create ECO for approved BOM changes",
+      "params": { "action": "eco-create", "scope": "pending" },
+      "retry": 1
+    },
+    {
+      "id": "eco_approve",
+      "type": "execute",
+      "description": "Auto-approve low-risk ECOs within threshold",
+      "params": { "action": "eco-approve", "scope": "pending" },
+      "retry": 1
+    },
+    {
+      "id": "cost_rollup",
+      "type": "execute",
+      "description": "Run cost rollup for updated BOMs",
+      "params": { "action": "cost-rollup", "scope": "updated" },
+      "retry": 2
+    },
+    {
+      "id": "shortage_check",
+      "type": "execute",
+      "description": "Check material shortages against active WOs",
+      "params": { "action": "shortage-check", "scope": "active_wo" },
+      "retry": 1
+    },
+    {
+      "id": "wo_decide",
+      "type": "execute",
+      "description": "Decide WO actions based on BOM/shortage analysis",
+      "params": { "action": "wo-decide", "scope": "affected" },
+      "retry": 1
+    },
+    {
+      "id": "evaluate_self",
+      "type": "eval",
+      "description": "Self-evaluate recent BOM decisions",
+      "params": { "command": "score-recent", "limit": 5 }
+    },
+    {
+      "id": "notify_digest",
+      "type": "notify",
+      "description": "Send BOM patrol digest notification",
+      "params": {
+        "message": "BOM Patrol complete. BOMs reviewed: {{ result_query_boms_count }}, ECOs pending: {{ result_query_eco_count }}"
+      }
+    },
+    {
+      "id": "complete",
+      "type": "set-variable",
+      "description": "Mark patrol cycle complete",
+      "params": {
+        "key": "last_patrol_complete",
+        "value": "{{ var_timestamp }}"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "BOM AI Manager",
+    "created_at": "2026-06-28T00:00:00Z",
+    "tags": ["patrol", "bom", "smt", "sop"]
+  }
+}

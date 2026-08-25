@@ -1,0 +1,4539 @@
+openapi: 3.1.0
+info:
+  title: Vietnam Ruijing SMT Factory API
+  version: 0.2.0
+  description: >
+    Unified API contract for shared auth/session access, i18n bootstrap, ERP,
+    PMC, WMS, MES, Quality, Traceability, Reports, Dashboard, and Admin.
+servers:
+  - url: /api
+tags:
+  - name: Auth
+  - name: Meta
+  - name: Dashboard
+  - name: ERP
+  - name: PMC
+  - name: WMS
+  - name: MES
+  - name: Quality
+  - name: Traceability
+  - name: Reports
+  - name: Admin
+  - name: HR
+  - name: Service
+  - name: Maintenance
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: session-token
+  parameters:
+    LocaleParam:
+      name: locale
+      in: query
+      schema:
+        type: string
+        enum: [zh-CN, en-US, vi-VN]
+    QParam:
+      name: q
+      in: query
+      schema:
+        type: string
+    PageParam:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSizeParam:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+    CursorParam:
+      name: cursor
+      in: query
+      schema:
+        type: string
+    SortParam:
+      name: sort
+      in: query
+      schema:
+        type: string
+    FromDateParam:
+      name: fromDate
+      in: query
+      schema:
+        type: string
+        format: date-time
+    ToDateParam:
+      name: toDate
+      in: query
+      schema:
+        type: string
+        format: date-time
+    IncludeParam:
+      name: include
+      in: query
+      schema:
+        type: string
+    FieldsParam:
+      name: fields
+      in: query
+      schema:
+        type: string
+    SessionIdParam:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+    TraceKeyParam:
+      name: traceKey
+      in: path
+      required: true
+      schema:
+        type: string
+    CodeParam:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+    LineCodeParam:
+      name: lineCode
+      in: path
+      required: true
+      schema:
+        type: string
+    StationCodeParam:
+      name: code
+      in: path
+      required: true
+      schema:
+        type: string
+    WorkOrderCodePathParam:
+      name: workOrderCode
+      in: path
+      required: true
+      schema:
+        type: string
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+    LocalePathParam:
+      name: locale
+      in: path
+      required: true
+      schema:
+        type: string
+        enum: [zh-CN, en-US, vi-VN]
+    ReportKeyParam:
+      name: reportKey
+      in: path
+      required: true
+      schema:
+        type: string
+    RoleKeyParam:
+      name: roleKey
+      in: path
+      required: true
+      schema:
+        type: string
+    UserIdParam:
+      name: userId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    EnvelopeMeta:
+      type: object
+      properties:
+        requestId:
+          type: string
+        serverTime:
+          type: string
+          format: date-time
+        locale:
+          type: string
+          enum: [zh-CN, en-US, vi-VN]
+        warnings:
+          type: array
+          items:
+            type: string
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            fieldErrors:
+              type: object
+              additionalProperties:
+                type: array
+                items:
+                  type: string
+        meta:
+          $ref: "#/components/schemas/EnvelopeMeta"
+    SuccessEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          additionalProperties: true
+        meta:
+          $ref: "#/components/schemas/EnvelopeMeta"
+    ListEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [items]
+          properties:
+            items:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+            page:
+              type: integer
+            pageSize:
+              type: integer
+            total:
+              type: integer
+            nextCursor:
+              oneOf:
+                - type: string
+                - type: "null"
+        meta:
+          $ref: "#/components/schemas/EnvelopeMeta"
+    MutationEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [item]
+          properties:
+            item:
+              type: object
+              additionalProperties: true
+            auditEventId:
+              type: string
+        meta:
+          $ref: "#/components/schemas/EnvelopeMeta"
+    CommandEnvelope:
+      type: object
+      required: [action, payload, context]
+      properties:
+        action:
+          type: string
+        payload:
+          type: object
+          additionalProperties: true
+        context:
+          type: object
+          required: [operator]
+          properties:
+            operator:
+              type: string
+            workstationId:
+              type: string
+            deviceLabel:
+              type: string
+            locale:
+              type: string
+              enum: [zh-CN, en-US, vi-VN]
+            comment:
+              type: string
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        locale:
+          type: string
+          enum: [zh-CN, en-US, vi-VN]
+        rememberMe:
+          type: boolean
+        deviceLabel:
+          type: string
+    BootstrapShape:
+      type: object
+      additionalProperties: true
+    DictionaryShape:
+      type: object
+      properties:
+        locale:
+          type: string
+          enum: [zh-CN, en-US, vi-VN]
+        dictionaryVersion:
+          type: string
+        entries:
+          type: object
+          additionalProperties:
+            type: string
+    ReportExportShape:
+      type: object
+      properties:
+        downloadUrl:
+          type: string
+          format: uri
+paths:
+  /3d/wms-control-state:
+    get:
+      tags: [WMS]
+      summary: Read the authenticated shared PDA and 3D WMS control state
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Current cells, tasks, commands, and floor areas }
+        "401": { description: Authentication required }
+        "403": { description: wms.view permission required }
+  /3d/wms-commands:
+    post:
+      tags: [WMS]
+      summary: Submit an authenticated 3D WMS command
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [commandId, action, reason]
+              properties:
+                commandId: { type: string }
+                action: { type: string }
+                taskNo: { type: string }
+                reason: { type: string }
+                scanValue: { type: string, description: Required server-verified pallet or count-location scan for TASK_COMPLETE }
+                targetScanValue: { type: string, description: Required server-verified target-location scan for MOVE completion }
+                scanEventId: { type: string, description: Required unique scan evidence identifier for TASK_COMPLETE }
+      responses:
+        "201": { description: Command completed }
+        "400": { description: Invalid command or missing scan evidence }
+        "401": { description: Authentication required }
+        "403": { description: Role or task ownership denied }
+        "409": { description: Task state, scan, or inventory conflict }
+  /station/database-management:
+    get:
+      tags: [Admin]
+      summary: Consolidated station SQLite and MES synchronization health
+      responses:
+        "200":
+          description: Station database inventory, activity, mismatches, and conflicts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, generatedAt, summary, items]
+                properties:
+                  ok: { type: boolean }
+                  generatedAt: { type: string, format: date-time }
+                  summary: { type: object }
+                  items:
+                    type: array
+                    items: { type: object }
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Authenticate a user and issue a session
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Session issued
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+        "400":
+          description: Invalid login request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /auth/session:
+    get:
+      tags: [Auth]
+      summary: Return the current authenticated session and user contract
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Current session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+        "401":
+          description: Session missing or invalid
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+  /auth/sessions:
+    get:
+      tags: [Auth]
+      summary: List active sessions for the current user or an admin viewer
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the active session and write an audit event
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /auth/sessions/{sessionId}:
+    delete:
+      tags: [Auth]
+      summary: Revoke a specific session
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/SessionIdParam"
+      responses:
+        "200":
+          description: Session revoked
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /meta/bootstrap:
+    get:
+      tags: [Meta]
+      summary: Return session, locale, permissions, visible modules, and UI dictionary versions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/LocaleParam"
+      responses:
+        "200":
+          description: Bootstrap payload
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /meta/i18n/{locale}:
+    get:
+      tags: [Meta]
+      summary: Return the full dictionary bundle for a locale
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/LocalePathParam"
+      responses:
+        "200":
+          description: Dictionary bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /meta/lookups:
+    get:
+      tags: [Meta]
+      summary: Return shared lookup sets such as status codes, locales, and module names
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/IncludeParam"
+      responses:
+        "200":
+          description: Lookup bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /dashboard/summary:
+    get:
+      tags: [Dashboard]
+      summary: Factory dashboard metrics and live SMT line status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/IncludeParam"
+      responses:
+        "200":
+          description: Dashboard state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /erp/master-data:
+    get:
+      tags: [ERP]
+      summary: List shared master records across customers, suppliers, products, materials, BOMs, and delivery plans
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: entity
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Master-data list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [ERP]
+      summary: Create or update a master-data record using an entity discriminator
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Master-data mutation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /erp/customer-pos:
+    get:
+      tags: [ERP]
+      summary: List customer purchase orders and delivery risk
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - name: customerCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: PO list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [ERP]
+      summary: Create or confirm a customer purchase order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: PO mutation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /erp/products:
+    get:
+      tags: [ERP]
+      summary: List product master data and active BOM revisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Product list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /erp/customers:
+    get:
+      tags: [ERP]
+      summary: List customer master records
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Customer list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /erp/suppliers:
+    get:
+      tags: [ERP]
+      summary: List supplier master records
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Supplier list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /erp/materials:
+    get:
+      tags: [ERP]
+      summary: List material master records
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Material list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /erp/boms:
+    get:
+      tags: [ERP]
+      summary: List BOM headers and revisions
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: BOM list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /erp/boms:
+    post:
+      tags: [ERP]
+      summary: Create BOM with material lines
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: BOM created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /erp/boms/{id}:
+    get:
+      tags: [ERP]
+      summary: Get a single BOM with all lines
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: BOM detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+    patch:
+      tags: [ERP]
+      summary: Update BOM status (draft / active / obsolete)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: BOM updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+    delete:
+      tags: [ERP]
+      summary: Delete a BOM and its lines
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: BOM deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /erp/boms/product/{code}:
+    get:
+      tags: [ERP]
+      summary: Get latest active BOM for a product code
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: BOM for product
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /erp/boms/import:
+    post:
+      tags: [ERP]
+      summary: Import BOM from parsed Excel data
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: BOM imported
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /erp/boms/{id}/history:
+    get:
+      tags: [ERP]
+      summary: Get BOM edit history
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: BOM history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [ERP]
+      summary: Record a BOM edit history entry
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: History entry recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/closed-loop/dashboard:
+    get:
+      tags: [PMC]
+      summary: Return plan packages with reviews, approvals, bound work orders, and release metrics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: PMC controlled-release dashboard
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /pmc/plans/{id}/reviews:
+    post:
+      tags: [PMC]
+      summary: Record or replace one auditable plan-gate review
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Review recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/plans/{id}/decision:
+    post:
+      tags: [PMC]
+      summary: Record the PMC Manager or Production Manager plan decision
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Approval decision recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/plans/{id}/bind-work-order:
+    post:
+      tags: [PMC]
+      summary: Bind an approved plan to its work order and record WMS kit readiness
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Work order bound
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/plans/{id}/release-to-mes:
+    post:
+      tags: [PMC]
+      summary: Release a fully reviewed, approved, bound, and kit-ready plan to MES
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Plan released to MES
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/work-orders:
+    get:
+      tags: [PMC]
+      summary: List work orders with material readiness and execution status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: poNumber
+          in: query
+          schema:
+            type: string
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Work order list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [PMC]
+      summary: Create a work order and allocate the next preserved 11 digit code
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Work order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/work-orders/{code}:
+    patch:
+      tags: [PMC]
+      summary: Change work-order lifecycle state such as release, hold, close, or cancel
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/CodeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Work order updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /pmc/schedules:
+    get:
+      tags: [PMC]
+      summary: Return production schedule by line, date range, or priority
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Schedule list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /wms/material-lots:
+    get:
+      tags: [WMS]
+      summary: List material lots with IQC status, reserve state, and location
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - name: lotNo
+          in: query
+          schema:
+            type: string
+        - name: locationCode
+          in: query
+          schema:
+            type: string
+        - name: iqcStatus
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Material lot list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /wms/storage-locations:
+    get:
+      tags: [WMS]
+      summary: List storage locations and hold locations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: areaCode
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Storage location list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /wms/stock:
+    get:
+      tags: [WMS]
+      summary: Return derived stock balances by material, location, and IQC status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - name: locationCode
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: iqcStatus
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Stock summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /wms/inventory-transactions:
+    get:
+      tags: [WMS]
+      summary: List the auditable inventory ledger
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+        - name: materialLotId
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: locationCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Inventory ledger
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /wms/transactions:
+    post:
+      tags: [WMS]
+      summary: Append a material movement command such as receive, put-away, reserve, pick, issue, return, scrap, or adjust
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Inventory transaction created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /wms/shelf/status:
+    get:
+      tags: [WMS]
+      summary: Smart shelf overall status — occupied cells, label counts, and connection state per rack
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Shelf status list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /wms/shelf/list:
+    get:
+      tags: [WMS]
+      summary: List all smart shelves with occupancy summary for the PDA dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Shelf list with summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /wms/shelf/{shelfCode}:
+    get:
+      tags: [WMS]
+      summary: Cell-level detail for a single rack
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: shelfCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rack detail with cells
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /wms/shelf/light-on:
+    post:
+      tags: [WMS]
+      summary: Turn shelf cell lights on for visual pick indication
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shelfCode: { type: string }
+                color: { type: integer }
+              required: [shelfCode, color]
+      responses:
+        "200":
+          description: Light command result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /wms/shelf/shelf-in:
+    post:
+      tags: [WMS]
+      summary: Record material lot put-away into a smart shelf cell
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                shelfCode: { type: string }
+                labelId: { type: string }
+              required: [shelfCode, labelId]
+      responses:
+        "200":
+          description: Shelf-in result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /wms/shelf/shelf-out:
+    post:
+      tags: [WMS]
+      summary: Record material pick-out from smart shelf cells
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                labelIdList: { type: array, items: { type: string } }
+                labelIdListJson: { type: string }
+                color: { type: integer }
+      responses:
+        "200":
+          description: Shelf-out result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /wms/shelf/remove-label:
+    post:
+      tags: [WMS]
+      summary: Remove a label registration from a smart shelf cell
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                labelId: { type: string }
+              required: [labelId]
+      responses:
+        "200":
+          description: Remove-label result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /mes/product-gate/evaluate:
+    post:
+      tags: [MES]
+      summary: Resolve a Product Identifier and return the authoritative station-entry decision
+      description: >
+        Station-Agent command interface. The idempotency key makes retries return the
+        original decision. A Product may be created only by a released Work Order's
+        configured first station. The caller must identify the operator, Agent, and host IP.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, stationCode, operatorId, agentId, hostIp, occurredAt, idempotencyKey]
+              properties:
+                identifier: { type: string }
+                identifierType: { type: string, enum: [PCBA_SN, SHELL_SN, OTHER] }
+                stationCode: { type: string }
+                workOrderCode: { type: string }
+                operatorId: { type: string }
+                agentId: { type: string }
+                hostIp: { type: string }
+                occurredAt: { type: string, format: date-time }
+                idempotencyKey: { type: string }
+      responses:
+        "200":
+          description: Product Gate allowed the station or replayed an existing decision
+        "400":
+          description: Invalid station fact
+        "409":
+          description: HOLD, REJECT, REPAIR_ROUTE, or COMPLETED decision
+        "500":
+          description: Product Gate failed without creating a station permission
+
+  /mes/spi/upload:
+    post:
+      tags: [MES]
+      summary: Receive LeiChen SPI/AOI standard configurator V2.7 inspection JSON
+      description: Equipment-facing endpoint on the factory LAN. Persists pcb_sn before returning code 200.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pcb_sn]
+              properties:
+                device_name: { type: string }
+                pcb_sn: { type: string }
+                pcb_test_time: { type: string }
+                pcb_project_name: { type: string }
+                pcb_robot_result: { type: string }
+                pcb_user_result: { type: string }
+                pcb_final_result: { type: string }
+                board_data:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      board_sn: { type: string }
+                      board_no: { type: string }
+                      board_robot_result: { type: string }
+                      board_user_result: { type: string }
+                      board_final_result: { type: string }
+      responses:
+        "200":
+          description: Configurator-compatible durable acknowledgement
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code: { type: string, const: "200" }
+                  message: { type: string }
+        "400":
+          description: Missing pcb_sn
+  /mes/runs:
+    get:
+      tags: [MES]
+      summary: List SMT line runs by line, work order, or status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Run list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [MES]
+      summary: Start or stop an SMT line run for a work order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Run updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /mes/events:
+    get:
+      tags: [MES]
+      summary: List production execution events such as feeder binding, station scan, output, or downtime
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: pcbSerial
+          in: query
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Event list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [MES]
+      summary: Append a production execution event
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Event created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Lines ───────────────────────────────────────────────────────
+  /mes/lines:
+    get:
+      tags: [MES]
+      summary: List production lines with current run and OEE snapshot
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Line list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /mes/lines/{lineCode}:
+    get:
+      tags: [MES]
+      summary: Get a single line plus its current run, OEE, and recent events
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/LineCodeParam"
+      responses:
+        "200":
+          description: Line detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+
+  # ── Stations ────────────────────────────────────────────────────
+  /mes/stations:
+    get:
+      tags: [MES]
+      summary: List stations filtered by line or station type
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: stationType
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Station list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /mes/stations/{code}:
+    get:
+      tags: [MES]
+      summary: Get a station with its 20 most recent events
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/StationCodeParam"
+      responses:
+        "200":
+          description: Station detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /mes/station-query:
+    get:
+      tags: [MES]
+      summary: Unified read-only query for NG, station history, station status, and WIP
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sn
+          in: query
+          schema: { type: string }
+        - name: station
+          in: query
+          schema: { type: string }
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: workOrder
+          in: query
+          schema: { type: string }
+        - name: boxQr
+          in: query
+          schema: { type: string }
+        - name: shipmentId
+          in: query
+          schema: { type: string }
+        - name: query
+          in: query
+          schema: { type: string }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+      responses:
+        "200":
+          description: Unified MES query result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /mes/stations/{code}/ip:
+    patch:
+      tags: [MES]
+      summary: Register the current station IP address
+      parameters:
+        - $ref: "#/components/parameters/StationCodeParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ipAddress]
+              properties:
+                ipAddress:
+                  type: string
+      responses:
+        "200":
+          description: Station IP registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+
+  # ── Process routes ──────────────────────────────────────────────
+  /mes/process-routes:
+    get:
+      tags: [MES]
+      summary: List active process routes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Process route list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /mes/process-routes/{id}:
+    get:
+      tags: [MES]
+      summary: Get a process route with its full ordered step list
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Process route detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /mes/process-routes/{id}/steps:
+    get:
+      tags: [MES]
+      summary: List the steps of a process route in order
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Process route steps
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+
+  # ── Runs (extended) ─────────────────────────────────────────────
+  /mes/runs/{id}:
+    get:
+      tags: [MES]
+      summary: Get a run with its current OEE, downtime minutes, and station progress
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Run detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /mes/runs/{id}/close:
+    post:
+      tags: [MES]
+      summary: Close a run and mark the work order as closed
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Run closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Feeder bindings ─────────────────────────────────────────────
+  /mes/feeder-bindings:
+    get:
+      tags: [MES]
+      summary: List feeder bindings filtered by work order, line, or machine
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: machineCode
+          in: query
+          schema:
+            type: string
+        - name: bound
+          in: query
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Feeder binding list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [MES]
+      summary: Bind a material lot to a feeder slot on a machine
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Feeder binding created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /mes/feeder-bindings/{id}:
+    patch:
+      tags: [MES]
+      summary: Update a feeder binding (e.g. release or unbind)
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Feeder binding updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+    delete:
+      tags: [MES]
+      summary: Remove a feeder binding
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Feeder binding removed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── PCB serials ─────────────────────────────────────────────────
+  /mes/pcb-serials:
+    get:
+      tags: [MES]
+      summary: List PCB serials filtered by work order, line, or status
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: PCB serial list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [MES]
+      summary: Register a new PCB serial against a work order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "201":
+          description: PCB serial registered
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /mes/pcb-serials/{serialNo}:
+    get:
+      tags: [MES]
+      summary: Get a PCB serial with its full station-event history
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serialNo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: PCB serial detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+
+  # ── Downtime ────────────────────────────────────────────────────
+  /mes/downtimes:
+    get:
+      tags: [MES]
+      summary: List downtime events filtered by line, status, or date range
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [open, closed, voided]
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Downtime list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [MES]
+      summary: Open a new downtime event for a line
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "201":
+          description: Downtime opened
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /mes/downtimes/{id}:
+    patch:
+      tags: [MES]
+      summary: Close an open downtime event with action taken and operator
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Downtime closed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Cross-cutting trace ─────────────────────────────────────────
+  /mes/trace/{serialNo}:
+    get:
+      tags: [MES]
+      summary: "Return the end-to-end trace for a PCB serial: events + material bindings"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: serialNo
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Trace bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+
+  /quality/records:
+    get:
+      tags: [Quality]
+      summary: List inspection, defect, and repair records across stations
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: station
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: pcbSerial
+          in: query
+          schema:
+            type: string
+        - name: result
+          in: query
+          schema:
+            type: string
+        - name: defectCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Quality record list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Quality]
+      summary: Create an inspection, defect, or repair record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Quality record created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /quality/records/{id}:
+    patch:
+      tags: [Quality]
+      summary: Update a quality record state such as close, void, or reopen
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Quality record updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /quality/defect-pareto:
+    get:
+      tags: [Quality]
+      summary: Summarize defect loss by station and defect code
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: station
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/LocaleParam"
+      responses:
+        "200":
+          description: Pareto summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /traceability/{traceKey}:
+    get:
+      tags: [Traceability]
+      summary: Return complete PO to shipment trace chain for PO, WO, PCB SN, reel, lot, or shipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/TraceKeyParam"
+      responses:
+        "200":
+          description: Trace bundle
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /traceability/events:
+    get:
+      tags: [Traceability]
+      summary: List trace events for audit and troubleshooting
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: traceKey
+          in: query
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Trace event list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Traceability]
+      summary: Append a trace event from a normal business transaction or external import
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Trace event created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /hr/departments:
+    get:
+      tags: [HR]
+      summary: List departments with manager
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Department list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /hr/employees:
+    get:
+      tags: [HR]
+      summary: List employees with department and position
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Employee list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /hr/employees/{id}:
+    get:
+      tags: [HR]
+      summary: Get a single employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Employee detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /hr/shifts:
+    get:
+      tags: [HR]
+      summary: List active shifts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Shift list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /hr/shift-schedules:
+    get:
+      tags: [HR]
+      summary: Get shift schedules by date, employee, or department
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+        - name: employeeId
+          in: query
+          schema:
+            type: string
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Shift schedule list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [HR]
+      summary: Assign an employee to a shift on a date
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Shift assignment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /hr/shift-schedules/{id}:
+    patch:
+      tags: [HR]
+      summary: Swap a shift assignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Shift swapped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+    delete:
+      tags: [HR]
+      summary: Delete a shift assignment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shift assignment deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /hr/attendance/clock-in:
+    post:
+      tags: [HR]
+      summary: Employee clock-in
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Clock-in recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /hr/attendance/clock-out:
+    post:
+      tags: [HR]
+      summary: Employee clock-out
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Clock-out recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /hr/attendance/daily:
+    get:
+      tags: [HR]
+      summary: Daily attendance list
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: departmentId
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Daily attendance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /hr/attendance/sync:
+    post:
+      tags: [HR]
+      summary: Batch sync punch records from attendance machine
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Records synced
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /hr/attendance/monthly/{employeeId}:
+    get:
+      tags: [HR]
+      summary: Monthly attendance for one employee
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: year
+          in: query
+          schema:
+            type: integer
+        - name: month
+          in: query
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Monthly attendance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /hr/attendance/shift-summary:
+    get:
+      tags: [HR]
+      summary: Daily attendance summary grouped by shift
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Shift summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /hr/leave-balances/{employeeId}:
+    get:
+      tags: [HR]
+      summary: Leave balances for current year
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Leave balances
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /service/agents:
+    get:
+      tags: [Service]
+      summary: List all available customer service agent IDs and names
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Agent list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /service/chat/{agentId}:
+    post:
+      tags: [Service]
+      summary: Chat with a specific customer service agent
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agentId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Agent reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/dashboard:
+    get:
+      tags: [Maintenance]
+      summary: Aggregated equipment and maintenance KPIs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Dashboard KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/equipment:
+    get:
+      tags: [Maintenance]
+      summary: List equipment assets with status filter
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Equipment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /maintenance/equipment/{id}:
+    get:
+      tags: [Maintenance]
+      summary: Single equipment detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Equipment detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/records:
+    get:
+      tags: [Maintenance]
+      summary: List maintenance orders with status and type filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: equipmentNo
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Maintenance record list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Maintenance]
+      summary: Create a new maintenance or work order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Maintenance record created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/records/{id}:
+    patch:
+      tags: [Maintenance]
+      summary: Update maintenance record status, result, cost
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Maintenance record updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Work Orders ────────────────────────────────────────────────────────────
+  /maintenance/work-orders:
+    get:
+      tags: [Maintenance]
+      summary: List work orders with status/priority/equipment filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: priority
+          in: query
+          schema:
+            type: string
+        - name: equipmentId
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Work order list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Maintenance]
+      summary: Create a new work order
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Work order created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/work-orders/stats/summary:
+    get:
+      tags: [Maintenance]
+      summary: Work order dashboard metrics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: WO dashboard metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/work-orders/stats/technician:
+    get:
+      tags: [Maintenance]
+      summary: Per-technician workload statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Technician workload stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/work-orders/{id}:
+    get:
+      tags: [Maintenance]
+      summary: Single work order detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Work order detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+    delete:
+      tags: [Maintenance]
+      summary: Cancel/void a work order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Work order cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/work-orders/{id}/status:
+    put:
+      tags: [Maintenance]
+      summary: Transition work order status with reason/notes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Status transitioned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/work-orders/{id}/assign:
+    put:
+      tags: [Maintenance]
+      summary: Assign technician to work order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Technician assigned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/work-orders/{id}/parts:
+    put:
+      tags: [Maintenance]
+      summary: Record parts used in work order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Parts recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Checklist Templates ─────────────────────────────────────────────────────
+  /maintenance/checklists/templates:
+    get:
+      tags: [Maintenance]
+      summary: List checklist templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: equipmentType
+          in: query
+          schema:
+            type: string
+        - name: frequency
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Checklist template list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Maintenance]
+      summary: Create template + items
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Template created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/checklists/templates/{id}:
+    get:
+      tags: [Maintenance]
+      summary: Single template with items
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Template detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+    put:
+      tags: [Maintenance]
+      summary: Update template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Template updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+    delete:
+      tags: [Maintenance]
+      summary: Deactivate template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Template deactivated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Checklist Records ───────────────────────────────────────────────────────
+  /maintenance/checklists/records:
+    get:
+      tags: [Maintenance]
+      summary: List checking records
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: equipmentId
+          in: query
+          schema:
+            type: string
+        - name: templateId
+          in: query
+          schema:
+            type: string
+        - name: checkDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: inspectorName
+          in: query
+          schema:
+            type: string
+        - name: shiftType
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Checking record list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Maintenance]
+      summary: Create checking record
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Checking record created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/checklists/records/{id}:
+    get:
+      tags: [Maintenance]
+      summary: Single record with details
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Checking record detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/checklists/records/{id}/items:
+    put:
+      tags: [Maintenance]
+      summary: Update item result
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Item result updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/checklists/records/{id}/complete:
+    put:
+      tags: [Maintenance]
+      summary: Complete record, auto-calc, create WOs
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Record completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /maintenance/checklists/records/{id}/verify:
+    put:
+      tags: [Maintenance]
+      summary: Supervisor verify
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Record verified
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  # ── Checklist Compliance & Schedule ─────────────────────────────────────────
+  /maintenance/checklists/compliance/daily:
+    get:
+      tags: [Maintenance]
+      summary: Today's compliance summary
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Daily compliance summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /maintenance/checklists/compliance/missed:
+    get:
+      tags: [Maintenance]
+      summary: Missed checklists
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Missed checklist list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /maintenance/checklists/compliance/by-equipment:
+    get:
+      tags: [Maintenance]
+      summary: Per-equipment compliance stats
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+      responses:
+        "200":
+          description: Per-equipment compliance
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /maintenance/checklists/schedule:
+    get:
+      tags: [Maintenance]
+      summary: View schedule for date/equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: date
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: equipmentId
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Schedule view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /maintenance/checklists/schedule/generate:
+    post:
+      tags: [Maintenance]
+      summary: Generate schedule from templates
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Schedule generated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+
+  /mes/stagnation:
+    get:
+      tags: [MES]
+      summary: List product stagnation logs with filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customer
+          in: query
+          schema:
+            type: string
+        - name: model
+          in: query
+          schema:
+            type: string
+        - name: fromStation
+          in: query
+          schema:
+            type: string
+        - name: toStation
+          in: query
+          schema:
+            type: string
+        - name: poNumber
+          in: query
+          schema:
+            type: string
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: overdueMonths
+          in: query
+          schema:
+            type: integer
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Stagnation log list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /mes/stagnation/check:
+    get:
+      tags: [MES]
+      summary: Re-calculate dwell time from station flow records and sync product stagnation logs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /mes/stagnation/thresholds:
+    get:
+      tags: [MES]
+      summary: Get stagnation thresholds per station
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Threshold list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [MES]
+      summary: Upsert a stagnation threshold entry
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Threshold upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /mes/stagnation/{id}/resolve:
+    patch:
+      tags: [MES]
+      summary: Mark a stagnation log as resolved
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Stagnation resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /reports:
+    get:
+      tags: [Reports]
+      summary: List report definitions available to the current role
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/LocaleParam"
+      responses:
+        "200":
+          description: Report catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /reports/{reportKey}:
+    get:
+      tags: [Reports]
+      summary: Run a named report with a shared filter model
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ReportKeyParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - name: supplierCode
+          in: query
+          schema:
+            type: string
+        - name: customerCode
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Report result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/work-order-progress:
+    get:
+      tags: [Reports]
+      summary: R1 — Work order progress: planned vs completed qty, status, material readiness
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Work order progress report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/inventory-ledger:
+    get:
+      tags: [Reports]
+      summary: R2 — Inventory ledger: current stock per material lot with location
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - name: locationCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Inventory ledger report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/material-movement:
+    get:
+      tags: [Reports]
+      summary: R3 — Material movement: full inventory transaction log
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - name: action
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Material movement report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/iqc-summary:
+    get:
+      tags: [Reports]
+      summary: R4 — IQC summary: lot counts and qty by status per material and supplier
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplierCode
+          in: query
+          schema:
+            type: string
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: IQC summary report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/oee-by-line:
+    get:
+      tags: [Reports]
+      summary: R5 — OEE by line: daily availability, performance, quality per line
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: lineCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: OEE by line report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/defect-analysis:
+    get:
+      tags: [Reports]
+      summary: R6 — Defect analysis: fail counts by defect code and station
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: station
+          in: query
+          schema:
+            type: string
+        - name: workOrderCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Defect analysis report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/material-balance:
+    get:
+      tags: [Reports]
+      summary: R7 — Material balance: received, issued, scrapped, and balance per material
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: materialCode
+          in: query
+          schema:
+            type: string
+        - name: supplierCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Material balance report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/delivery-risk:
+    get:
+      tags: [Reports]
+      summary: R8 — Delivery risk: open POs with balance qty and risk level
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: customerCode
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Delivery risk report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /reports/{reportKey}/export:
+    get:
+      tags: [Reports]
+      summary: Export a named report in a downloadable format
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/ReportKeyParam"
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - name: format
+          in: query
+          schema:
+            type: string
+            enum: [xlsx, csv, pdf]
+      responses:
+        "200":
+          description: Export location
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: List factory users, roles, status, and locale
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - name: roleKey
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/LocaleParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: User list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [Admin]
+      summary: Create a factory user
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: User created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /admin/users/{userId}:
+    patch:
+      tags: [Admin]
+      summary: Update user profile, role, locale, or status
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/UserIdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: User updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /admin/roles:
+    get:
+      tags: [Admin]
+      summary: List role and menu permission matrix
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Roles list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /admin/roles/{roleKey}:
+    patch:
+      tags: [Admin]
+      summary: Update a role permission set
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/RoleKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Role updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /admin/audit-logs:
+    get:
+      tags: [Admin]
+      summary: Search auditable user and system actions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actor
+          in: query
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Audit log list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /admin/settings:
+    get:
+      tags: [Admin]
+      summary: Read factory-wide settings such as shifts, calendars, and code rules
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Settings snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SuccessEnvelope"
+    patch:
+      tags: [Admin]
+      summary: Update factory-wide settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Settings updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /auth/audit-events:
+    get:
+      tags: [Auth]
+      summary: Search audit-friendly authentication events
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: eventType
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Authentication audit event list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /spare-parts:
+    get:
+      tags: [SpareParts]
+      summary: List all spare parts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: q
+          in: query
+          schema:
+            type: string
+        - name: equipmentModel
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: minStock
+          in: query
+          schema:
+            type: boolean
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+        - $ref: "#/components/parameters/SortParam"
+      responses:
+        "200":
+          description: Spare parts list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [SpareParts]
+      summary: Create a new spare part
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Spare part created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /spare-parts/low-stock:
+    get:
+      tags: [SpareParts]
+      summary: Parts below minimum stock
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Low stock parts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /spare-parts/wear-alerts:
+    get:
+      tags: [SpareParts]
+      summary: Active parts wear alerts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: acknowledged
+          in: query
+          schema:
+            type: boolean
+        - name: severity
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Wear alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /spare-parts/wear-schedule:
+    get:
+      tags: [SpareParts]
+      summary: Parts wear schedule
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: equipmentId
+          in: query
+          schema:
+            type: string
+        - name: wearStatus
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Wear schedule list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /spare-parts/consumption:
+    get:
+      tags: [SpareParts]
+      summary: Parts consumption history
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: partId
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          schema:
+            type: string
+        - name: to
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Consumption history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /spare-parts/stats/summary:
+    get:
+      tags: [SpareParts]
+      summary: KPI summary for spare parts dashboard
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Summary KPIs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /spare-parts/{id}:
+    get:
+      tags: [SpareParts]
+      summary: Single spare part detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Spare part detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+    put:
+      tags: [SpareParts]
+      summary: Update spare part
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Spare part updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /spare-parts/{id}/consume:
+    post:
+      tags: [SpareParts]
+      summary: Record parts consumption
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Consumption recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /spare-parts/{id}/replace:
+    put:
+      tags: [SpareParts]
+      summary: Record part replacement
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Replacement recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /spare-parts/{id}/acknowledge:
+    post:
+      tags: [SpareParts]
+      summary: Acknowledge a wear alert
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Alert acknowledged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /spare-parts/{id}/adjust-stock:
+    post:
+      tags: [SpareParts]
+      summary: Manual stock adjustment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Stock adjusted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /spare-parts/lifespan:
+    get:
+      tags: [SpareParts]
+      summary: All parts with real-time wear percentage and life remaining
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Lifespan list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /spare-parts/lifespan/summary:
+    get:
+      tags: [SpareParts]
+      summary: Fleet-wide lifespan summary statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Fleet summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /spare-parts/lifespan/overdue:
+    get:
+      tags: [SpareParts]
+      summary: Parts overdue for replacement
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Overdue parts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /spare-parts/lifespan/{id}:
+    get:
+      tags: [SpareParts]
+      summary: Single part lifespan detail with timeline
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Part lifespan detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /equipment-suppliers:
+    get:
+      tags: [EquipmentSuppliers]
+      summary: List all equipment suppliers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Equipment suppliers list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [EquipmentSuppliers]
+      summary: Create equipment supplier
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Supplier created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /equipment-supplier-comms:
+    get:
+      tags: [EquipmentSuppliers]
+      summary: List equipment supplier communications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplier_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: comm_type
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Communications list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [EquipmentSuppliers]
+      summary: Log equipment supplier communication
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Communication logged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /parts-suppliers:
+    get:
+      tags: [PartsSuppliers]
+      summary: List all parts suppliers
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Parts suppliers list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /parts-supplier-comms:
+    get:
+      tags: [PartsSuppliers]
+      summary: List parts supplier communications
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: supplier_id
+          in: query
+          schema:
+            type: string
+        - name: part_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Communications list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [PartsSuppliers]
+      summary: Log parts supplier communication
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Communication logged
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /parts-pricing:
+    get:
+      tags: [PartsPricing]
+      summary: Current prices for all parts
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Pricing list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [PartsPricing]
+      summary: Record a new price entry
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Price recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /parts-pricing/stale:
+    get:
+      tags: [PartsPricing]
+      summary: Parts with stale pricing (>90 days)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Stale pricing list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /parts-pricing/{partId}/history:
+    get:
+      tags: [PartsPricing]
+      summary: Price history for a part
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: partId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Price history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /supplier-quotes:
+    get:
+      tags: [PartsPricing]
+      summary: List supplier quotes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: part_id
+          in: query
+          schema:
+            type: string
+        - name: supplier_id
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+        - $ref: "#/components/parameters/PageParam"
+        - $ref: "#/components/parameters/PageSizeParam"
+      responses:
+        "200":
+          description: Quotes list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+    post:
+      tags: [PartsPricing]
+      summary: Record a supplier quote
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommandEnvelope"
+      responses:
+        "200":
+          description: Quote recorded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /equipment-archives:
+    get:
+      tags: [EquipmentArchives]
+      summary: List all equipment archives
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Archives list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /equipment-archives/stats/summary:
+    get:
+      tags: [EquipmentArchives]
+      summary: Fleet-wide equipment statistics
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Fleet statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /equipment-archives/{id}:
+    get:
+      tags: [EquipmentArchives]
+      summary: Single equipment archive
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Archive detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Envelope"
+  /equipment-archives/{id}/status-history:
+    get:
+      tags: [EquipmentArchives]
+      summary: Status change history for equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Status history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /equipment-archives/{id}/hours-log:
+    get:
+      tags: [EquipmentArchives]
+      summary: Running hours log for equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Hours log
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /equipment-archives/{id}/wear-history:
+    get:
+      tags: [EquipmentArchives]
+      summary: Wear history for equipment
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Wear history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ListEnvelope"
+  /pda/devices:
+    get: { tags: [PDA], summary: List PDA devices, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Register PDA device, responses: { "200": { description: OK } } }
+  /pda/devices/stats/summary:
+    get: { tags: [PDA], summary: PDA fleet statistics, responses: { "200": { description: OK } } }
+  /pda/devices/{id}:
+    get: { tags: [PDA], summary: PDA device detail, responses: { "200": { description: OK } } }
+    patch: { tags: [PDA], summary: Update PDA device, responses: { "200": { description: OK } } }
+    delete: { tags: [PDA], summary: Retire PDA device, responses: { "200": { description: OK } } }
+  /pda/devices/{id}/status:
+    patch: { tags: [PDA], summary: Change PDA device status, responses: { "200": { description: OK } } }
+  /pda/devices/bulk:
+    post: { tags: [PDA], summary: Bulk register PDA devices, responses: { "200": { description: OK } } }
+  /pda/assignments:
+    get: { tags: [PDA], summary: List PDA assignments, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Create PDA assignment, responses: { "200": { description: OK } } }
+  /pda/assignments/{id}:
+    get: { tags: [PDA], summary: PDA assignment detail, responses: { "200": { description: OK } } }
+  /pda/assignments/device/{deviceId}:
+    get: { tags: [PDA], summary: Device assignment history, responses: { "200": { description: OK } } }
+  /pda/assignments/current/{badge}:
+    get: { tags: [PDA], summary: Current badge assignments, responses: { "200": { description: OK } } }
+  /pda/repairs:
+    get: { tags: [PDA], summary: List PDA repairs, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Report PDA fault, responses: { "200": { description: OK } } }
+  /pda/repairs/stats/summary:
+    get: { tags: [PDA], summary: PDA repair statistics, responses: { "200": { description: OK } } }
+  /pda/repairs/{id}:
+    get: { tags: [PDA], summary: PDA repair detail, responses: { "200": { description: OK } } }
+    patch: { tags: [PDA], summary: Update PDA repair, responses: { "200": { description: OK } } }
+  /pda/repairs/{id}/verify:
+    post: { tags: [PDA], summary: Verify PDA repair, responses: { "200": { description: OK } } }
+  /pda/software:
+    get: { tags: [PDA], summary: List PDA software, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Record PDA software update, responses: { "200": { description: OK } } }
+  /pda/software/latest:
+    get: { tags: [PDA], summary: Latest PDA software, responses: { "200": { description: OK } } }
+  /pda/software/register-apk:
+    post: { tags: [PDA], summary: Register PDA APK, responses: { "200": { description: OK } } }
+  /pda/audit:
+    get: { tags: [PDA], summary: Query PDA audit log, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Append PDA audit event, responses: { "200": { description: OK } } }
+  /pda/audit/stats:
+    get: { tags: [PDA], summary: PDA audit statistics, responses: { "200": { description: OK } } }
+  /pda/audit/export:
+    get: { tags: [PDA], summary: Export PDA audit log, responses: { "200": { description: OK } } }
+  /pda/heartbeats:
+    get: { tags: [PDA], summary: PDA heartbeat status, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Submit PDA heartbeat, responses: { "200": { description: OK } } }
+  /pda/online:
+    get: { tags: [PDA], summary: Online PDA devices, responses: { "200": { description: OK } } }
+  /pda/managed-apps:
+    get: { tags: [PDA], summary: List managed PDA apps, responses: { "200": { description: OK } } }
+    post: { tags: [PDA], summary: Register managed PDA app, responses: { "200": { description: OK } } }
+  /pda/managed-apps/{id}:
+    get: { tags: [PDA], summary: Managed PDA app detail, responses: { "200": { description: OK } } }
+    patch: { tags: [PDA], summary: Update managed PDA app, responses: { "200": { description: OK } } }
+    delete: { tags: [PDA], summary: Remove managed PDA app, responses: { "200": { description: OK } } }
+  /pda/dashboard:
+    get: { tags: [PDA], summary: PDA management dashboard, responses: { "200": { description: OK } } }
+  /pda/dashboard/activity-timeline:
+    get: { tags: [PDA], summary: PDA activity timeline, responses: { "200": { description: OK } } }

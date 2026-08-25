@@ -1,0 +1,21 @@
+{
+  "arFollowup": [],
+  "apPayment": [],
+  "woCost": [],
+  "materialEvents": [
+    {
+      "event_id": "2",
+      "event_type": "COMPENSATION_APPROVED",
+      "amount": 0,
+      "action": "approve",
+      "auto_execute": false
+    },
+    {
+      "event_id": "1_3",
+      "event_type": "COMPENSATION_REQUEST",
+      "amount": 2.5,
+      "action": "escalate",
+      "auto_execute": false
+    }
+  ]
+}

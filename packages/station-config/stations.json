@@ -1,0 +1,190 @@
+{
+  "$schema": "./stations.schema.json",
+  "schemaVersion": "1.0",
+  "configuration": {
+    "revision": "MES-FLOW-2026.08.05-R1",
+    "status": "DRAFT",
+    "source": "dc/MES流程(1).xlsx",
+    "effectiveFrom": "2026-08-05T00:00:00+07:00",
+    "authority": "MES",
+    "changePolicy": {
+      "editPermission": "mes.route.configure",
+      "approvePermission": "mes.route.approve",
+      "publishPermission": "mes.route.publish",
+      "twoPersonApproval": true,
+      "auditRequired": true,
+      "rollbackRequired": true
+    },
+    "ngClosedLoopDefaults": {
+      "domainCode": "MANUAL_LINE",
+      "quantityThreshold": 10,
+      "timeThresholdMinutes": 30,
+      "triggerMode": "ANY",
+      "humanButtonEnabled": true,
+      "mesManaged": true,
+      "maxRetests": 2,
+      "pickupChannels": ["STATION", "TEAM_LEADER_PDA", "MES_KANBAN"],
+      "feedbackRequired": true,
+      "immutableHistory": true
+    }
+  },
+  "ngTracking": {
+    "authority": "MES",
+    "ackRequiredBeforePhysicalRelease": true,
+    "agentOfflineBehavior": "QUEUE_FACT_AND_BLOCK_PRIVILEGED_TRANSITION",
+    "productUpdates": ["activeNg", "dependentSequence", "currentLocation", "expectedStation", "qualityHold", "repairCase", "retestAuthorization", "terminalDisposition"],
+    "events": ["NG_CONFIRMED", "ROUTE_ASSIGNED", "TRANSFER_STARTED", "DESTINATION_RECEIVED", "REPAIR_STARTED", "REPAIR_COMPLETED", "RETURN_STARTED", "RETURN_RECEIVED", "RETEST_STARTED", "RETEST_PASSED", "RETEST_FAILED", "QUALITY_RELEASED", "SCRAPPED"],
+    "states": ["CONFIRMED", "AWAITING_TRANSFER", "IN_TRANSFER", "RECEIVED", "IN_REPAIR", "AWAITING_RETURN", "IN_RETURN", "AWAITING_RETEST", "RETESTING", "RELEASED", "SCRAPPED"],
+    "invariants": {
+      "confirmedNgIsImmutable": true,
+      "laterPassDoesNotDeleteNg": true,
+      "everyTransitionRequiresEventId": true,
+      "everyTransitionRequiresActorOrDevice": true,
+      "routeDeviationCreatesAlarm": true
+    }
+  },
+  "offlineContinuity": {
+    "authority": "MES_LAST_PUBLISHED_SNAPSHOT",
+    "activation": {
+      "onlyWhenMesUnavailable": true,
+      "healthCheckSeconds": 2,
+      "consecutiveFailuresRequired": 3,
+      "recoverySuccessesRequired": 2
+    },
+    "cell": {
+      "code": "manual_test_cell",
+      "primaryWatchdog": "manu_ict",
+      "standbyWatchdog": "manu_fct",
+      "executor": "manu_depanel",
+      "repairNode": "manu_rework",
+      "repairNodeIp": null,
+      "orderedStations": ["manu_ict", "manu_fct", "manu_depanel", "manu_rework"]
+    },
+    "handoff": {
+      "tokenTtlSeconds": 120,
+      "singleUse": true,
+      "signed": true,
+      "requiredKeys": ["eventId", "panelId", "slot", "sn", "sourceStation", "targetStation", "result", "routeRevision", "issuedAt", "expiresAt"],
+      "permitResults": ["PASS"],
+      "blockOnMissingSlot": true,
+      "blockOnIdentityMismatch": true,
+      "blockOnDuplicateToken": true
+    },
+    "limits": {
+      "maxOfflineMinutes": 30,
+      "blockNewProductRegistration": true,
+      "blockBindingChanges": true,
+      "blockRouteChanges": true,
+      "blockNewRetestAuthorization": true
+    },
+    "recovery": {
+      "freezePeerDecisionsImmediately": true,
+      "reconcileOutboxBeforeNormalRelease": true,
+      "mesDecisionWins": true,
+      "alarmOnConflict": true
+    },
+    "offlineRepair": {
+      "enabled": true,
+      "policySource": "LAST_MES_PUBLISHED_POLICY",
+      "triggeredByComponentConfiguration": true,
+      "automaticTriggers": ["TIME_THRESHOLD", "QUANTITY_THRESHOLD", "DESIGNATED_TIME", "END_OF_SHIFT", "SPECIAL_REQUEST"],
+      "allowed": [
+        "READ_LAST_PUBLISHED_REPAIR_ROUTE",
+        "READ_LAST_PUBLISHED_RETEST_LIMIT",
+        "CREATE_TEMP_REPAIR_ORDER_WITH_EVENT_ID",
+        "REPAIR_STATION_SCAN_RECEIPT",
+        "RECORD_REPAIR_PROCESS",
+        "RECORD_MATERIAL_USAGE",
+        "CREATE_TEMP_RETURN_HANDOFF_TO_ICT_OR_FCT",
+        "APPEND_TO_IMMUTABLE_LOCAL_OUTBOX"
+      ],
+      "forbidden": [
+        "MODIFY_REPAIR_ROUTE",
+        "INCREASE_RETEST_LIMIT",
+        "ADD_AUTHORIZED_PERSON",
+        "SCRAP_WITHOUT_MES",
+        "FINAL_QUALITY_RELEASE_WITHOUT_MES",
+        "DELETE_NG_HISTORY",
+        "OVERWRITE_NG_HISTORY"
+      ],
+      "temporaryOrder": {
+        "idPrefix": "OFFLINE-REPAIR",
+        "eventIdRequired": true,
+        "signed": true,
+        "idempotencyRequired": true,
+        "officialMesWorkOrderRequiredAfterRecovery": true
+      },
+      "returnRules": {
+        "ICT_ONLY_NG": ["manu_ict"],
+        "FCT_ONLY_NG": ["manu_fct"],
+        "ICT_FCT_NG": ["manu_ict", "manu_fct"]
+      },
+      "onMesRecovery": [
+        "STOP_OFFLINE_DECISIONS",
+        "FREEZE_TEMPORARY_TRANSITIONS",
+        "UPLOAD_OUTBOX_IDEMPOTENTLY_BY_EVENT_ID",
+        "CONVERT_TEMP_ORDER_TO_OFFICIAL_MES_ORDER",
+        "ALARM_ON_CONFLICT",
+        "MES_DECISION_WINS"
+      ]
+    }
+  },
+  "lines": [
+    {
+      "domain": "MANUAL_LINE",
+      "lineCode": "MANUAL-LINE",
+      "name": { "zh-CN": "手动线", "en-US": "Manual line", "vi-VN": "Dây chuyền thủ công" },
+      "routeRevision": "MANUAL-2026.08-R1",
+      "stations": [
+        { "sequence": 10, "code": "manu_pda", "name": { "zh-CN": "PDA 扫码上料", "en-US": "PDA material loading", "vi-VN": "PDA cấp liệu" }, "capability": "MATERIAL_LOADING", "gate": "MES_REQUIRED", "onPass": "manu_aio", "onNg": "MATERIAL_LOADING_EXCEPTION" },
+        { "sequence": 20, "code": "manu_aio", "name": { "zh-CN": "AOI", "en-US": "AOI", "vi-VN": "AOI" }, "capability": "AOI_INSPECTION", "gate": "MES_REQUIRED", "onPass": "manu_ict", "onNg": "AOI_RECORD_AND_CONTINUE", "rules": { "blockOnNg": false, "preserveInitialAndReview": true } },
+        { "sequence": 30, "code": "manu_ict", "name": { "zh-CN": "ICT", "en-US": "ICT", "vi-VN": "ICT" }, "capability": "ICT_TEST", "gate": "MES_REQUIRED", "onPass": "manu_fct", "onNg": "ICT_PANEL_NG" },
+        { "sequence": 40, "code": "manu_fct", "name": { "zh-CN": "FCT", "en-US": "FCT", "vi-VN": "FCT" }, "capability": "FCT_TEST", "gate": "MES_REQUIRED", "onPass": "manu_depanel", "onNg": "STANDARD_REPAIR" },
+        { "sequence": 50, "code": "manu_depanel", "name": { "zh-CN": "分板", "en-US": "Depanel", "vi-VN": "Tách bảng" }, "capability": "DEPANEL", "gate": "MES_REQUIRED", "onPass": "manu_shellbinding", "onNg": "DEPANEL_INTERCEPT", "rules": { "equipmentResultRequired": false, "removeNgImmediately": true } },
+        { "sequence": 60, "code": "manu_shellbinding", "name": { "zh-CN": "PCBA 外壳绑定", "en-US": "PCBA shell binding", "vi-VN": "Liên kết vỏ PCBA" }, "capability": "PRODUCT_BINDING", "gate": "MES_REQUIRED", "onPass": "manu_assem_ate", "onNg": "STANDARD_REPAIR" },
+        { "sequence": 70, "code": "manu_assem_ate", "name": { "zh-CN": "组装 ATE", "en-US": "Assembly ATE", "vi-VN": "ATE lắp ráp" }, "capability": "ASSEMBLY_TEST", "gate": "MES_REQUIRED", "onPass": "manu_supersonic", "onNg": "STANDARD_REPAIR" },
+        { "sequence": 80, "code": "manu_supersonic", "name": { "zh-CN": "超声波外观", "en-US": "Ultrasonic visual", "vi-VN": "Ngoại quan siêu âm" }, "capability": "ULTRASONIC_VISUAL", "gate": "MES_REQUIRED", "onPass": "manu_agingcab", "onNg": "ULTRASONIC_MARK_AND_CONTINUE" },
+        { "sequence": 90, "code": "manu_agingcab", "name": { "zh-CN": "老化", "en-US": "Aging", "vi-VN": "Lão hóa" }, "capability": "AGING_TEST", "gate": "MES_REQUIRED", "onPass": "manu_hivolt_ate", "onNg": "AGING_NG" },
+        { "sequence": 100, "code": "manu_hivolt_ate", "name": { "zh-CN": "高压 ATE", "en-US": "Hi-pot ATE", "vi-VN": "ATE cao áp" }, "capability": "HIPOT_TEST", "gate": "MES_REQUIRED", "onPass": "manu_package_ate", "onNg": "POST_AGING_REPAIR" },
+        { "sequence": 110, "code": "manu_package_ate", "name": { "zh-CN": "包装 ATE", "en-US": "Packaging ATE", "vi-VN": "ATE đóng gói" }, "capability": "FINAL_FUNCTION_TEST", "gate": "MES_REQUIRED", "onPass": "manu_case_binding", "onNg": "POST_AGING_REPAIR" },
+        { "sequence": 120, "code": "manu_case_binding", "name": { "zh-CN": "外箱绑码", "en-US": "Case binding", "vi-VN": "Liên kết thùng" }, "capability": "CASE_BINDING", "gate": "MES_REQUIRED", "onPass": "manu_pallet_binding", "onNg": "PACKAGING_EXCEPTION" },
+        { "sequence": 130, "code": "manu_pallet_binding", "name": { "zh-CN": "栈板绑定", "en-US": "Pallet binding", "vi-VN": "Liên kết pallet" }, "capability": "PALLET_BINDING", "gate": "MES_REQUIRED", "onPass": "manu_oqc_final", "onNg": "PACKAGING_EXCEPTION" },
+        { "sequence": 140, "code": "manu_oqc_final", "name": { "zh-CN": "最终检验", "en-US": "Final inspection", "vi-VN": "Kiểm tra cuối" }, "capability": "FINAL_INSPECTION", "gate": "MES_REQUIRED", "onPass": null, "onNg": "FINAL_INSPECTION_NG", "rules": { "completion": "QUALITY_RELEASE", "warehouseBlockedUntilRelease": true } }
+      ]
+    },
+    {
+      "domain": "AUTO_LINE",
+      "lineCode": "AUTO-LINE",
+      "name": { "zh-CN": "自动线", "en-US": "Automatic line", "vi-VN": "Dây chuyền tự động" },
+      "routeRevision": "AUTO-2026.08-R1",
+      "stations": [
+        { "sequence": 10, "code": "AUTO_PLUGIN", "name": { "zh-CN": "插件", "en-US": "Insertion", "vi-VN": "Cắm linh kiện" }, "capability": "INSERTION", "gate": "MES_REQUIRED", "onPass": "AUTO_AOI", "onNg": "STANDARD_REPAIR", "rules": { "pcbOpenLimitHours": 168, "bakeHoursWhenExpired": 2 } },
+        { "sequence": 20, "code": "AUTO_AOI", "name": { "zh-CN": "AOI", "en-US": "AOI", "vi-VN": "AOI" }, "capability": "AOI_INSPECTION", "gate": "MES_REQUIRED", "onPass": "AUTO_ICT", "onNg": "AOI_RECORD_AND_CONTINUE", "rules": { "blockOnNg": false, "preserveInitialAndReview": true } },
+        { "sequence": 30, "code": "AUTO_ICT", "name": { "zh-CN": "ICT", "en-US": "ICT", "vi-VN": "ICT" }, "capability": "ICT_TEST", "gate": "MES_REQUIRED", "onPass": "AUTO_FCT", "onNg": "ICT_PANEL_NG" },
+        { "sequence": 40, "code": "AUTO_FCT", "name": { "zh-CN": "FCT", "en-US": "FCT", "vi-VN": "FCT" }, "capability": "FCT_TEST", "gate": "MES_REQUIRED", "onPass": "AUTO_DEPANEL", "onNg": "STANDARD_REPAIR" },
+        { "sequence": 50, "code": "AUTO_DEPANEL", "name": { "zh-CN": "分板", "en-US": "Depanel", "vi-VN": "Tách bảng" }, "capability": "DEPANEL", "gate": "MES_REQUIRED", "onPass": "AUTO_BINDING", "onNg": "DEPANEL_INTERCEPT", "rules": { "equipmentResultRequired": false, "removeNgImmediately": true } },
+        { "sequence": 60, "code": "AUTO_BINDING", "name": { "zh-CN": "绑定", "en-US": "Binding", "vi-VN": "Liên kết" }, "capability": "PRODUCT_BINDING", "gate": "MES_REQUIRED", "onPass": "AUTO_ASSEMBLY_ATE", "onNg": "STANDARD_REPAIR" },
+        { "sequence": 70, "code": "AUTO_ASSEMBLY_ATE", "name": { "zh-CN": "组装 ATE", "en-US": "Assembly ATE", "vi-VN": "ATE lắp ráp" }, "capability": "ASSEMBLY_TEST", "gate": "MES_REQUIRED", "onPass": "AUTO_ULTRASONIC", "onNg": "STANDARD_REPAIR" },
+        { "sequence": 80, "code": "AUTO_ULTRASONIC", "name": { "zh-CN": "超声波", "en-US": "Ultrasonic", "vi-VN": "Siêu âm" }, "capability": "ULTRASONIC_VISUAL", "gate": "MES_REQUIRED", "onPass": "AUTO_AGING", "onNg": "ULTRASONIC_MARK_AND_CONTINUE" },
+        { "sequence": 90, "code": "AUTO_AGING", "name": { "zh-CN": "自动老化柜", "en-US": "Automatic aging cabinet", "vi-VN": "Tủ lão hóa tự động" }, "capability": "AUTOMATIC_AGING", "gate": "MES_REQUIRED", "onPass": "AUTO_HIPOT", "onNg": "AGING_NG", "rules": { "durationHours": 2 } },
+        { "sequence": 100, "code": "AUTO_HIPOT", "name": { "zh-CN": "高压 ATE", "en-US": "Hi-pot ATE", "vi-VN": "ATE cao áp" }, "capability": "HIPOT_TEST", "gate": "MES_REQUIRED", "onPass": "AUTO_PACKAGING_ATE", "onNg": "POST_AGING_REPAIR" },
+        { "sequence": 110, "code": "AUTO_PACKAGING_ATE", "name": { "zh-CN": "包装 ATE", "en-US": "Packaging ATE", "vi-VN": "ATE đóng gói" }, "capability": "FINAL_FUNCTION_TEST", "gate": "MES_REQUIRED", "onPass": "AUTO_OUTER_BOX_BINDING", "onNg": "POST_AGING_REPAIR" },
+        { "sequence": 120, "code": "AUTO_OUTER_BOX_BINDING", "name": { "zh-CN": "外箱绑码", "en-US": "Case binding", "vi-VN": "Liên kết thùng" }, "capability": "CASE_BINDING", "gate": "MES_REQUIRED", "onPass": "AUTO_PALLET_BINDING", "onNg": "PACKAGING_EXCEPTION", "rules": { "unitsPerCase": 48 } },
+        { "sequence": 130, "code": "AUTO_PALLET_BINDING", "name": { "zh-CN": "栈板绑定", "en-US": "Pallet binding", "vi-VN": "Liên kết pallet" }, "capability": "PALLET_BINDING", "gate": "MES_REQUIRED", "onPass": "AUTO_OQC_FINAL", "onNg": "PACKAGING_EXCEPTION" },
+        { "sequence": 140, "code": "AUTO_OQC_FINAL", "name": { "zh-CN": "最终检验", "en-US": "Final inspection", "vi-VN": "Kiểm tra cuối" }, "capability": "FINAL_INSPECTION", "gate": "MES_REQUIRED", "onPass": null, "onNg": "FINAL_INSPECTION_NG", "rules": { "completion": "QUALITY_RELEASE", "warehouseBlockedUntilRelease": true } }
+      ]
+    }
+  ],
+  "ngPolicies": [
+    { "code": "MATERIAL_LOADING_EXCEPTION", "appliesTo": ["manu_pda"], "trigger": "WRONG_MATERIAL_OR_BINDING", "action": { "createConfirmedNg": false, "route": "BLOCK_AND_CORRECT_MATERIAL", "blockCurrentStation": true }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "AOI_RECORD_AND_CONTINUE", "appliesTo": ["manu_aio", "AUTO_AOI"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "CONTINUE_MAIN", "blockCurrentStation": false, "retain": ["INITIAL_JUDGEMENT", "REVIEW_JUDGEMENT"] }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "ICT_PANEL_NG", "appliesTo": ["manu_ict", "AUTO_ICT"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "ALLOW_FCT_WITH_UPLOAD_SUPPRESSED", "repairDestination": "manu_rework", "returnStation": "manu_ict", "retestLimit": 2, "afterLimit": "AUTHORIZED_REPAIR_OR_SCRAP", "requireMesValidation": true }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "DEPANEL_INTERCEPT", "appliesTo": ["manu_depanel", "AUTO_DEPANEL"], "trigger": "UPSTREAM_NG", "action": { "createConfirmedNg": false, "route": "PHYSICAL_REMOVE_TO_REPAIR", "blockCurrentStation": true }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "STANDARD_REPAIR", "appliesTo": ["manu_fct", "manu_shellbinding", "manu_assem_ate", "AUTO_PLUGIN", "AUTO_FCT", "AUTO_BINDING", "AUTO_ASSEMBLY_ATE"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "REPAIR_THEN_RETURN_TO_ORIGIN", "retestLimit": 2, "afterLimit": "AUTHORIZED_REPAIR_OR_SCRAP" }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "ULTRASONIC_MARK_AND_CONTINUE", "appliesTo": ["manu_supersonic", "AUTO_ULTRASONIC"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "CONTINUE_MAIN", "blockCurrentStation": false, "specialExemption": true }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "AGING_NG", "appliesTo": ["manu_agingcab", "AUTO_AGING"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "ALARM_AND_REPAIR", "blockCurrentStation": true }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "POST_AGING_REPAIR", "appliesTo": ["manu_hivolt_ate", "manu_package_ate", "AUTO_HIPOT", "AUTO_PACKAGING_ATE"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "REPAIR_THEN_REAGING", "returnCapability": "PRODUCT_BINDING" }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "PACKAGING_EXCEPTION", "appliesTo": ["manu_case_binding", "manu_pallet_binding", "AUTO_OUTER_BOX_BINDING", "AUTO_PALLET_BINDING"], "trigger": "MISMATCH_OR_DAMAGE", "action": { "createConfirmedNg": true, "route": "HOLD_REPLACE_REBIND", "requireOriginalCaseMembership": true, "auditReprint": true }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } },
+    { "code": "FINAL_INSPECTION_NG", "appliesTo": ["manu_oqc_final", "AUTO_OQC_FINAL"], "trigger": "NG", "action": { "createConfirmedNg": true, "route": "QUALITY_HOLD_DISPOSITION_REPAIR_REINSPECT", "warehouseRelease": false, "terminalOptions": ["QUALITY_RELEASE", "SCRAP"] }, "mesSupervision": { "required": true, "alarmOnDeviation": true, "immutableHistory": true } }
+  ]
+}

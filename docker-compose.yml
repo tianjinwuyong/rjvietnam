@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: smt-factory-postgres
+    restart: unless-stopped
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: smt_factory
+      POSTGRES_USER: smt_factory
+      POSTGRES_PASSWORD: smt_factory
+    volumes:
+      - smt_factory_postgres_data:/var/lib/postgresql/data
+      - ./database/docker/init:/docker-entrypoint-initdb.d:ro
+      - ./database:/docker-entrypoint-initdb.d/database:ro
+
+volumes:
+  smt_factory_postgres_data:

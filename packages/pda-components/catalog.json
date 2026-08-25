@@ -1,0 +1,21 @@
+{
+  "reservoir": "pda-components",
+  "version": "0.1.0",
+  "modules": [
+    { "id": "scanner", "status": "implemented", "authority": "edge-capture" },
+    { "id": "product-gate", "status": "implemented", "authority": "mes" },
+    { "id": "auth", "status": "contract", "authority": "mes-identity" },
+    { "id": "alarm", "status": "contract", "authority": "mes" },
+    { "id": "language", "status": "contract", "authority": "versioned-config" },
+    { "id": "sync", "status": "contract", "authority": "mes-wms" },
+    { "id": "smt-material-loading", "status": "implemented", "authority": "mes" },
+    { "id": "material-usage", "status": "implemented", "authority": "manual-line-mes" },
+    { "id": "receiving", "status": "deferred", "authority": "wms" },
+    { "id": "placement", "status": "planned", "authority": "wms" },
+    { "id": "consumption", "status": "planned", "authority": "wms-mes" },
+    { "id": "cycle-count", "status": "planned", "authority": "wms" },
+    { "id": "iqc-evidence", "status": "planned", "authority": "qms" },
+    { "id": "printing", "status": "planned", "authority": "mes-wms" },
+    { "id": "diagnostics", "status": "planned", "authority": "edge" }
+  ]
+}

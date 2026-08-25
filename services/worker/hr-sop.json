@@ -1,0 +1,140 @@
+{
+  "version": "1.0.0",
+  "updatedBy": "hr_manager_ai",
+  "updatedAt": "2026-06-28T12:00:00Z",
+  "description": "HR AI Manager — Standard Patrol Cycle SOP",
+  "steps": [
+    {
+      "id": "step_query",
+      "name": "Query HR Database",
+      "nameZh": "查询HR数据库",
+      "type": "QUERY",
+      "script": "services/worker/hr-query.js",
+      "args": ["all"],
+      "outputVar": "hrData",
+      "timeoutSec": 30,
+      "onError": "ABORT",
+      "next": "step_delta",
+      "mermaid": { "icon": "1️⃣", "color": "#4CAF50" }
+    },
+    {
+      "id": "step_delta",
+      "name": "Delta Detection",
+      "nameZh": "变更检测",
+      "type": "SCRIPT",
+      "function": "detectChanges",
+      "args": ["hrData"],
+      "outputVar": "changes",
+      "next": "step_ornith",
+      "mermaid": { "icon": "2️⃣", "color": "#4CAF50" }
+    },
+    {
+      "id": "step_ornith",
+      "name": "AI Analysis (Ornith)",
+      "nameZh": "AI分析",
+      "type": "LLM",
+      "model": "ornith",
+      "promptTemplate": "hrPatrolPrompt",
+      "outputVar": "hrAnalysis",
+      "timeoutSec": 120,
+      "onError": "SKIP_TO step_audit",
+      "next": "step_branch",
+      "mermaid": { "icon": "3️⃣", "color": "#FFD700" }
+    },
+    {
+      "id": "step_branch",
+      "name": "Route to HR Handlers",
+      "nameZh": "执行分支",
+      "type": "BRANCH",
+      "branches": [
+        { "condition": "hrAnalysis.attendance_alerts?.length > 0", "next": "step_attendance" },
+        { "condition": "hrAnalysis.leave_decisions?.length > 0", "next": "step_leave" },
+        { "condition": "hrAnalysis.overtime_decisions?.length > 0", "next": "step_overtime" },
+        { "condition": "hrAnalysis.compliance_reminders?.length > 0", "next": "step_compliance" }
+      ],
+      "defaultNext": "step_escalation",
+      "mermaid": { "icon": "4️⃣", "color": "#FF9800" }
+    },
+    {
+      "id": "step_attendance",
+      "name": "Attendance Alert Execution",
+      "nameZh": "考勤告警处理",
+      "type": "EXECUTE",
+      "handler": "executeAttendanceAlerts",
+      "target": "hrAnalysis.attendance_alerts",
+      "next": "step_escalation",
+      "mermaid": { "icon": "⏰", "color": "#F44336" }
+    },
+    {
+      "id": "step_leave",
+      "name": "Leave Decision Execution",
+      "nameZh": "请假审批处理",
+      "type": "EXECUTE",
+      "handler": "executeLeaveDecisions",
+      "target": "hrAnalysis.leave_decisions",
+      "next": "step_escalation",
+      "mermaid": { "icon": "📝", "color": "#2196F3" }
+    },
+    {
+      "id": "step_overtime",
+      "name": "OT Decision Execution",
+      "nameZh": "加班审批处理",
+      "type": "EXECUTE",
+      "handler": "executeOvertimeDecisions",
+      "target": "hrAnalysis.overtime_decisions",
+      "next": "step_escalation",
+      "mermaid": { "icon": "⏳", "color": "#FF9800" }
+    },
+    {
+      "id": "step_compliance",
+      "name": "Compliance Reminder Execution",
+      "nameZh": "合规提醒处理",
+      "type": "EXECUTE",
+      "handler": "executeCompliance",
+      "target": "hrAnalysis.compliance_reminders",
+      "next": "step_escalation",
+      "mermaid": { "icon": "⚖️", "color": "#9C27B0" }
+    },
+    {
+      "id": "step_escalation",
+      "name": "Weekly Escalation Check",
+      "nameZh": "升级判断",
+      "type": "ESCALATION",
+      "next": "step_pending",
+      "mermaid": { "icon": "🚨", "color": "#FF5722" }
+    },
+    {
+      "id": "step_pending",
+      "name": "Save Pending Approvals",
+      "nameZh": "待审批队列",
+      "type": "PENDING",
+      "next": "step_line",
+      "mermaid": { "icon": "📋", "color": "#607D8B" }
+    },
+    {
+      "id": "step_line",
+      "name": "LINE Notification",
+      "nameZh": "LINE通知",
+      "type": "LINE",
+      "condition": "hasAlerts(hrAnalysis)",
+      "next": "step_save",
+      "mermaid": { "icon": "6️⃣", "color": "#4CAF50" }
+    },
+    {
+      "id": "step_save",
+      "name": "Save State",
+      "nameZh": "保存状态",
+      "type": "SAVE_STATE",
+      "next": "END",
+      "mermaid": { "icon": "💾", "color": "#4CAF50" }
+    }
+  ],
+  "startStep": "step_query",
+  "escalation": {
+    "step_query": { "timeoutSec": 30, "level": "ALERT", "message": "HR数据库查询超时" },
+    "step_ornith": { "timeoutSec": 120, "level": "WARN", "message": "Ornith分析超时，跳过执行" },
+    "step_attendance": { "timeoutSec": 30, "level": "INFO", "message": "考勤告警处理超时" },
+    "step_leave": { "timeoutSec": 30, "level": "INFO", "message": "请假审批处理超时" },
+    "step_overtime": { "timeoutSec": 30, "level": "INFO", "message": "加班审批处理超时" }
+  }
+}

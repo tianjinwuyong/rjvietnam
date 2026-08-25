@@ -1,0 +1,86 @@
+{
+  "$schema": "./mes-sop-schema.json",
+  "name": "RDA Patrol SOP v1.0",
+  "description": "Standard operating procedure for RDA AI patrol — archive snapshots, trend analysis, anomaly detection, retention enforcement, and self-evaluation.",
+  "version": "1.0.0",
+  "scripts": {
+    "query": "rda-query.js",
+    "execute": "rda-execute.js",
+    "evaluator": "rda-evaluator.js",
+    "analyze": "rda-analyze.js",
+    "manager": "rda-manager.js"
+  },
+  "steps": [
+    {
+      "id": "query_archive_status",
+      "type": "query",
+      "description": "Query current archive status across all domains",
+      "params": { "scope": "archive_status" },
+      "retry": 2,
+      "transitions": []
+    },
+    {
+      "id": "analyze_trends",
+      "type": "execute",
+      "description": "Analyze production data trends across domains",
+      "params": { "action": "data-analysis", "scope": "trends" },
+      "retry": 2
+    },
+    {
+      "id": "detect_anomalies",
+      "type": "execute",
+      "description": "Detect anomalies and threshold breaches",
+      "params": { "action": "anomaly-alert", "scope": "all_domains" },
+      "retry": 1
+    },
+    {
+      "id": "generate_insights",
+      "type": "execute",
+      "description": "Generate cross-domain insights and synthesis",
+      "params": { "action": "report-generation", "scope": "insights" },
+      "retry": 1
+    },
+    {
+      "id": "archive_snapshot",
+      "type": "execute",
+      "description": "Take incremental archive snapshot",
+      "params": { "action": "archive-snapshot", "scope": "incremental" },
+      "retry": 2
+    },
+    {
+      "id": "retention_check",
+      "type": "execute",
+      "description": "Check data retention compliance",
+      "params": { "action": "retention-warning", "scope": "all_tables" },
+      "retry": 1
+    },
+    {
+      "id": "evaluate_self",
+      "type": "eval",
+      "description": "Self-evaluate recent RDA decisions",
+      "params": { "command": "score-recent", "limit": 5 }
+    },
+    {
+      "id": "notify_digest",
+      "type": "notify",
+      "description": "Send RDA patrol digest notification",
+      "params": {
+        "message": "RDA Patrol complete. Archives: {{ result_query_archive_status_count }}, Anomalies: {{ result_detect_anomalies_count }}"
+      }
+    },
+    {
+      "id": "complete",
+      "type": "set-variable",
+      "description": "Mark patrol cycle complete",
+      "params": {
+        "key": "last_patrol_complete",
+        "value": "{{ var_timestamp }}"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "RDA AI Manager",
+    "created_at": "2026-06-28T00:00:00Z",
+    "tags": ["patrol", "rda", "archive", "sop"]
+  }
+}

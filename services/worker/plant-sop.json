@@ -1,0 +1,84 @@
+{
+  "$schema": "./mes-sop-schema.json",
+  "name": "Plant Patrol SOP v1.0",
+  "description": "Standard operating procedure for Plant AI Manager patrol — queries all 6 sub-managers (MES, WMS, BOM, PMC, HR, RDA), synthesizes KPIs, detects cross-domain issues, generates digests, and self-evaluates.",
+  "version": "1.0.0",
+  "scripts": {
+    "query": "plant-query.js",
+    "execute": "plant-execute.js",
+    "evaluator": "plant-evaluator.js",
+    "manager": "plant-manager.js"
+  },
+  "steps": [
+    {
+      "id": "query_all_managers",
+      "type": "query",
+      "description": "Query all 6 sub-managers (MES, WMS, BOM, PMC, HR, RDA) in parallel",
+      "params": { "scope": "all" },
+      "retry": 1,
+      "transitions": []
+    },
+    {
+      "id": "synthesize_kpis",
+      "type": "execute",
+      "description": "Synthesize consolidated KPIs from all sub-manager responses",
+      "params": { "action": "kpi-snapshot" },
+      "retry": 1
+    },
+    {
+      "id": "evaluate_plant_health",
+      "type": "condition",
+      "description": "Evaluate overall plant health and identify cross-domain issues",
+      "params": { "condition": "result_query_all_managers_has_issues eq true" }
+    },
+    {
+      "id": "generate_morning_brief",
+      "type": "execute",
+      "description": "Generate morning briefing digest for shift supervisors",
+      "params": { "action": "morning-brief" },
+      "retry": 1
+    },
+    {
+      "id": "generate_evening_report",
+      "type": "execute",
+      "description": "Generate end-of-day production report",
+      "params": { "action": "evening-report" },
+      "retry": 1
+    },
+    {
+      "id": "check_inter_manager_escalations",
+      "type": "execute",
+      "description": "Check for cross-manager escalations that need plant-level resolution",
+      "params": { "action": "inter-manager-sync", "scope": "escalations" },
+      "retry": 1
+    },
+    {
+      "id": "evaluate_self",
+      "type": "eval",
+      "description": "Self-evaluate recent Plant decisions",
+      "params": { "command": "score-recent", "limit": 5 }
+    },
+    {
+      "id": "notify_digest",
+      "type": "notify",
+      "description": "Send plant-wide patrol digest notification",
+      "params": {
+        "message": "Plant Patrol complete. Sub-managers queried: 6, Issues: {{ result_evaluate_plant_health_issue_count }}"
+      }
+    },
+    {
+      "id": "complete",
+      "type": "set-variable",
+      "description": "Mark patrol cycle complete",
+      "params": {
+        "key": "last_patrol_complete",
+        "value": "{{ var_timestamp }}"
+      }
+    }
+  ],
+  "metadata": {
+    "author": "Plant AI Manager",
+    "created_at": "2026-06-28T00:00:00Z",
+    "tags": ["patrol", "plant", "orchestrator", "sop"]
+  }
+}

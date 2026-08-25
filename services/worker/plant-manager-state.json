@@ -1,0 +1,47 @@
+{
+  "lastMorning": "2026-06-28T19:36:01.776Z",
+  "lastPatrol": "2026-06-29T03:05:27.681Z",
+  "cycleCount": 6,
+  "kpis": null,
+  "okrProgress": {},
+  "managerHealth": {
+    "mes-ai": {
+      "ok": false,
+      "receivedAt": "2026-06-28T19:36:46.892Z",
+      "data": null,
+      "error": "Agent response timeout: mes-ai plant_status_request (ttl=45s)"
+    },
+    "wms-ai": {
+      "ok": false,
+      "receivedAt": "2026-06-28T19:36:46.892Z",
+      "data": null,
+      "error": "Agent response timeout: wms-ai plant_status_request (ttl=45s)"
+    },
+    "bom-ai": {
+      "ok": false,
+      "receivedAt": "2026-06-28T19:36:46.892Z",
+      "data": null,
+      "error": "Agent response timeout: bom-ai plant_status_request (ttl=45s)"
+    },
+    "pmc-ai": {
+      "ok": false,
+      "receivedAt": "2026-06-28T19:36:46.892Z",
+      "data": null,
+      "error": "Agent response timeout: pmc-ai plant_status_request (ttl=45s)"
+    },
+    "hr-ai": {
+      "ok": false,
+      "receivedAt": "2026-06-28T19:36:46.892Z",
+      "data": null,
+      "error": "Agent response timeout: hr-ai plant_status_request (ttl=45s)"
+    },
+    "rda-ai": {
+      "ok": true,
+      "receivedAt": "2026-06-28T19:36:46.892Z",
+      "data": {
+        "scope": "morning"
+      },
+      "error": null
+    }
+  }
+}

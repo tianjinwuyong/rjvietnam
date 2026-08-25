@@ -1,0 +1,9 @@
+# mem0 — AI memory layer for SMT Factory AI agents
+# Uses local OSS Memory (Qdrant vector store + configurable LLM)
+mem0>=2.0.0
+
+# Vector store (local on-disk, no server needed)
+qdrant-client>=1.12.0
+
+# For embedding & inference — already running locally
+# Ollama at http://localhost:11434 (configured in memory_config.json)

@@ -1,0 +1,28 @@
+{
+  "iqc": [
+    {
+      "lot_no": "R-0603-4K7-1-C09N-LOT",
+      "action": "IQC_HOLD",
+      "reason": "该批次当前已处于hold状态，需完成复测后方可RELEASE或REJECT。供应商为合格供应商(SUP-TPE-RES)，建议安排优先复测，若检测不合格则转REJECT并启动供应商SCAR流程"
+    }
+  ],
+  "issue": [],
+  "pick": [],
+  "putaway": [],
+  "return": [],
+  "scrap": [],
+  "msd": [],
+  "expiry": [],
+  "quality_check": [
+    {
+      "lot_no": "R-0603-4K7-1-C09N-LOT",
+      "material_code": "R-0603-4K7-1",
+      "check_type": "expiring_soon",
+      "urgency": "critical",
+      "action": "QUALITY_REINSPECT",
+      "reason": "该批次处于hold状态已超2天未处理，贴片电阻对存储时间敏感，需立即安排复测确认品质状态并尽快释放以保障WO#31(8,000pcs)在L002线生产进度"
+    }
+  ],
+  "damage": [],
+  "ng_waste": []
+}

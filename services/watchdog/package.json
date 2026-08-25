@@ -1,0 +1,11 @@
+{
+  "name": "@smt-factory/watchdog",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ./watchdog.js",
+    "start": "node ./watchdog.js"
+  },
+  "description": "Keeps all SMT factory dev services running with auto-restart"
+}

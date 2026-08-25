@@ -1,0 +1,35 @@
+{
+  "name": "@smt-factory/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.122.0",
+    "@react-three/fiber": "^8.18.0",
+    "@types/qrcode": "^1.5.6",
+    "@types/three": "^0.185.1",
+    "@vitejs/plugin-react": "^5.2.0",
+    "bwip-js": "^4.6.0",
+    "echarts": "^6.1.0",
+    "flint-chart": "^0.4.1",
+    "i18next": "^26.3.6",
+    "lucide-react": "^0.468.0",
+    "qrcode": "^1.5.4",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-i18next": "^17.0.11",
+    "react-is": "^19.2.7",
+    "recharts": "^3.9.2",
+    "three": "^0.185.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0"
+  }
+}

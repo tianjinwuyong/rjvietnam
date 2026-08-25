@@ -1,0 +1,16 @@
+{
+  "leave": [
+    {
+      "request_no": "LR202606003",
+      "decision": "flag",
+      "reason": "Leave end date (June 22) is prior to current date (July 2). Start and End time are identical (17:00 UTC), indicating data entry error or invalid duration. Requires HR admin verification before payroll processing."
+    },
+    {
+      "request_no": "LR202606001",
+      "decision": "flag",
+      "reason": "Leave end date (June 25) is prior to current date (July 2). Pending leave exists for past dates which implies retroactive approval or system data lag. Needs back-dating verification."
+    }
+  ],
+  "overtime": [],
+  "attendance": []
+}

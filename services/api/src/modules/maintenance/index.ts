@@ -1,0 +1,197 @@
+import type { FactoryModule } from "../_shared/module";
+
+export const maintenanceModule: FactoryModule = {
+  key: "maintenance",
+  name: "Equipment maintenance and facilities management",
+  owns: ["equipment master", "maintenance orders", "inspection records", "calibration", "facilities monitoring"],
+  routes: [
+    {
+      method: "GET",
+      path: "/maintenance/dashboard",
+      summary: "Aggregated equipment and maintenance KPIs",
+      requiredPermissions: ["dashboard.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/equipment",
+      summary: "List equipment assets with status filter",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/equipment/:id",
+      summary: "Single equipment detail",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/records",
+      summary: "List maintenance orders with status/type filters",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "POST",
+      path: "/maintenance/records",
+      summary: "Create a new maintenance/work order",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PATCH",
+      path: "/maintenance/records/:id",
+      summary: "Update maintenance record status, result, cost",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/work-orders",
+      summary: "List work orders with status/priority/equipment filters",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/work-orders/stats/summary",
+      summary: "Work order dashboard metrics",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/work-orders/stats/technician",
+      summary: "Per-technician workload statistics",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/work-orders/:id",
+      summary: "Single work order detail",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "POST",
+      path: "/maintenance/work-orders",
+      summary: "Create a new work order",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/work-orders/:id/status",
+      summary: "Transition work order status with reason/notes",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/work-orders/:id/assign",
+      summary: "Assign technician to work order",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/work-orders/:id/parts",
+      summary: "Record parts used in work order",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "DELETE",
+      path: "/maintenance/work-orders/:id",
+      summary: "Cancel/void a work order",
+      requiredPermissions: ["maintenance.manage"],
+    },
+
+    // ── Checking Lists ─────────────────────────────────────────────────────
+    {
+      method: "GET",
+      path: "/maintenance/checklists/templates",
+      summary: "List checklist templates",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/templates/:id",
+      summary: "Single template with items",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "POST",
+      path: "/maintenance/checklists/templates",
+      summary: "Create template + items",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/checklists/templates/:id",
+      summary: "Update template",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "DELETE",
+      path: "/maintenance/checklists/templates/:id",
+      summary: "Deactivate template",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/records",
+      summary: "List checking records",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/records/:id",
+      summary: "Single record with details",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "POST",
+      path: "/maintenance/checklists/records",
+      summary: "Create checking record",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/checklists/records/:id/items",
+      summary: "Update item result",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/checklists/records/:id/complete",
+      summary: "Complete record, auto-calc, create WOs",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "PUT",
+      path: "/maintenance/checklists/records/:id/verify",
+      summary: "Supervisor verify",
+      requiredPermissions: ["maintenance.manage"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/compliance/daily",
+      summary: "Today's compliance summary",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/compliance/missed",
+      summary: "Missed checklists",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/compliance/by-equipment",
+      summary: "Per-equipment compliance stats",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "GET",
+      path: "/maintenance/checklists/schedule",
+      summary: "View schedule for date/equipment",
+      requiredPermissions: ["maintenance.view"],
+    },
+    {
+      method: "POST",
+      path: "/maintenance/checklists/schedule/generate",
+      summary: "Generate schedule from templates",
+      requiredPermissions: ["maintenance.manage"],
+    },
+  ],
+};

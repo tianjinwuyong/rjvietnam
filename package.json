@@ -1,0 +1,53 @@
+{
+  "name": "smt-factory-system",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node ./scripts/dev-all.mjs",
+    "dev:watchdog": "npm --workspace services/watchdog run dev",
+    "dev:web": "npm --workspace apps/web run dev",
+    "dev:scanner": "npm --prefix apps/pdas/scanner-terminal run dev",
+    "dev:display": "npm --workspace apps/display-board run dev",
+    "dev:agent": "npm --workspace apps/station-agent run dev",
+    "dev:api": "npm --workspace services/api run dev",
+    "dev:realtime": "npm --workspace services/realtime run dev",
+    "dev:worker": "npm --workspace services/worker run dev",
+    "build": "npm --workspace apps/web run build",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:hardware": "vitest run tests/smart-shelf-hardware.test.ts --config vitest.hardware.config.ts",
+    "typecheck": "tsc -p tsconfig.base.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
+    "typecheck:all": "npm run typecheck && npm run typecheck:tests",
+    "migrate": "node scripts/migrate.mjs",
+    "migrate:seed": "node scripts/migrate.mjs --seed"
+  },
+  "workspaces": [
+    "apps/*",
+    "services/*",
+    "packages/*"
+  ],
+  "dependencies": {
+    "canvas": "^3.2.3",
+    "mammoth": "^1.12.0",
+    "mysql2": "^3.11.0",
+    "pdf-parse": "^2.4.5",
+    "playwright": "^1.61.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "sqlite3": "^6.0.1",
+    "typescript": "^5.8.0",
+    "vitest": "^4.1.9",
+    "word-extractor": "^1.0.4",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "@types/pg": "^8.20.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "esbuild": "^0.28.1",
+    "pg": "^8.22.0",
+    "vite": "5.4.21"
+  }
+}

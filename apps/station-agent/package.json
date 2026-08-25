@@ -1,0 +1,36 @@
+{
+  "name": "@smt-factory/station-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5179",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "electron:dev": "electron . --dev",
+    "electron:build": "npm run build && electron .",
+    "electron": "electron ."
+  },
+  "dependencies": {
+    "dexie": "^4.0.11",
+    "mqtt": "^5.10.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.0"
+  },
+  "notes": {
+    "browser_incompatible": [
+      "pg (database) — requires backend API proxy",
+      "node-opcua (opc-ua) — requires backend OPC-UA proxy",
+      "modbus-serial (modbus) — requires backend Modbus proxy",
+      "serialport (serial) — requires Electron or Tauri for serial port access"
+    ]
+  }
+}
