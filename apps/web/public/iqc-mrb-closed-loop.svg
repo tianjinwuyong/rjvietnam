@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 520" role="img" aria-labelledby="title desc">
+  <title id="title">IQC / MRB material quality closed loop</title>
+  <desc id="desc">Receiving sources flow through receiving todo, system QR warehouse binding and IQC to finished goods or defect warehouse and MRB.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#526579"/></marker>
+    <marker id="redArrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#c65332"/></marker>
+    <style>.box{fill:#fff;stroke:#263746;stroke-width:2}.source{fill:#eef3f6;stroke:#657789;stroke-width:2}.warn{fill:#fff0e8;stroke:#c65332;stroke-width:2}.line{fill:none;stroke:#526579;stroke-width:2;marker-end:url(#arrow)}.redline{fill:none;stroke:#c65332;stroke-width:2.5;marker-end:url(#redArrow)}text{font-family:Arial,sans-serif;fill:#263746;text-anchor:middle}.name{font-size:18px;font-weight:600}.sub{font-size:13px;fill:#526579}.edge{font-size:13px;fill:#526579}</style>
+  </defs>
+  <rect width="1400" height="520" fill="#f5f7f9"/>
+  <text x="40" y="42" text-anchor="start" class="name">IQC / MRB material quality closed loop</text>
+  <text x="40" y="68" text-anchor="start" class="sub">QR = WMS/MES receiving document code, not a QR image and not Quarantine</text>
+  <path class="line" d="M180 130H270V230H350"/><path class="line" d="M180 220H350"/><path class="line" d="M180 310H270V250H350"/><path class="line" d="M180 400H270V270H350"/>
+  <path class="line" d="M490 250H570"/><path class="redline" d="M730 250H805"/><path class="line" d="M935 250H1010V170H1090"/><path class="line" d="M935 250H1010V350H1090"/>
+  <path class="line" d="M1220 350H1260V250H1330"/><path class="line" d="M1220 350H1330"/><path class="redline" d="M1260 390V460H420V290"/>
+  <rect class="source" x="40" y="102" width="140" height="56" rx="6"/><text class="name" x="110" y="127">PO receipt</text><text class="sub" x="110" y="147">PO_RECEIPT</text>
+  <rect class="source" x="40" y="192" width="140" height="56" rx="6"/><text class="name" x="110" y="217">Line return</text><text class="sub" x="110" y="237">LINE_RETURN</text>
+  <rect class="source" x="40" y="282" width="140" height="56" rx="6"/><text class="name" x="110" y="307">Rework return</text><text class="sub" x="110" y="327">REWORK_RETURN</text>
+  <rect class="source" x="40" y="372" width="140" height="56" rx="6"/><text class="name" x="110" y="397">Subcontract return</text><text class="sub" x="110" y="417">SUBCONTRACT</text>
+  <rect class="box" x="350" y="222" width="140" height="56" rx="6"/><text class="name" x="420" y="247">Receiving todo</text><text class="sub" x="420" y="267">Confirm receipt</text>
+  <rect class="warn" x="570" y="222" width="160" height="56" rx="6"/><text class="name" x="650" y="247">QR warehouse bind</text><text class="sub" x="650" y="267">Document + location</text>
+  <polygon class="box" points="870,185 935,250 870,315 805,250"/><text class="name" x="870" y="246">IQC</text><text class="sub" x="870" y="266">Inspection</text>
+  <rect class="box" x="1090" y="142" width="130" height="56" rx="6"/><text class="name" x="1155" y="167">Finished goods</text><text class="sub" x="1155" y="187">PASS / release QR</text>
+  <rect class="box" x="1090" y="322" width="130" height="56" rx="6"/><text class="name" x="1155" y="347">Defect warehouse</text><text class="sub" x="1155" y="367">FAIL / remove QR</text>
+  <polygon class="box" points="1260,285 1330,350 1260,415 1190,350"/><text class="name" x="1260" y="346">MRB</text><text class="sub" x="1260" y="366">Material review</text>
+  <rect class="box" x="1330" y="222" width="60" height="56" rx="6"/><text class="name" x="1360" y="247">Scrap</text><text class="sub" x="1360" y="267">No QR</text>
+  <rect class="box" x="1330" y="322" width="60" height="56" rx="6"/><text class="name" x="1360" y="347">Return</text><text class="sub" x="1360" y="367">No QR</text>
+  <rect class="warn" x="1200" y="460" width="140" height="48" rx="6"/><text class="name" x="1270" y="481">Rework complete</text><text class="sub" x="1270" y="499">New QR + reinspection</text>
+  <text class="edge" x="970" y="225">PASS</text><text class="edge" x="970" y="305">FAIL</text>
+</svg>

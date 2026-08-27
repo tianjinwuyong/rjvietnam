@@ -64,6 +64,18 @@ interface PdaReceiveState {
 
 const STEPS = ["scan", "camera", "confirm", "msd", "done"] as const;
 
+type PdaReceivingStatus = {
+  phase: "SCANNED" | "RECEIVING" | "COMPLETED" | "FAILED";
+  lotNo?: string; materialCode?: string; qty?: number; locationCode?: string;
+  floorAreaCode?: string; iqcResult?: string; operator?: string; at: string;
+};
+
+function publishReceivingStatus(status: Omit<PdaReceivingStatus, "at">) {
+  const payload: PdaReceivingStatus = { ...status, at: new Date().toISOString() };
+  try { window.localStorage.setItem("wms:pda-receiving-status", JSON.stringify(payload)); } catch { /* private mode */ }
+  window.dispatchEvent(new CustomEvent<PdaReceivingStatus>("wms:pda-receiving-status", { detail: payload }));
+}
+
 function StepIndicator({ current, locale }: { current: string; locale: Locale }) {
   const stepLabels: Record<string, Record<Locale, string>> = {
     scan:    { "zh-CN": "扫描", "vi-VN": "Quét", "en-US": "Scan" },
@@ -203,6 +215,7 @@ export function WmsPdaReceiving({ locale }: { locale: Locale }) {
         locationCode: lot.locationCode || "",
         step: "confirm",
       }));
+      publishReceivingStatus({ phase: "SCANNED", lotNo: preReceipt.lotNo, materialCode: preReceipt.materialCode, qty: Number(preReceipt.qty || 0), operator: state.acceptedBy || state.operator });
       setFeedback({ ok: true, msg: `预收料已注册：${preReceipt.preReceiptQr} → ${preReceipt.materialCode}` });
     } catch (err) {
       setFeedback({ ok: false, msg: `扫码查询失败：${err instanceof Error ? err.message : String(err)}` });
@@ -259,12 +272,15 @@ export function WmsPdaReceiving({ locale }: { locale: Locale }) {
     if (!state.lotNo || !state.materialCode || !state.supplierCode || !state.qty ||
         !state.materialQr || !state.palletSn || (!hasRack&&!hasFloor) ||
         !state.acceptedBy || !state.iqcInspector || !state.nextInspectionDate) {
+      publishReceivingStatus({ phase: "FAILED", lotNo: state.lotNo, materialCode: state.materialCode, qty: state.qty, locationCode: state.locationCode, floorAreaCode: state.floorAreaCode, iqcResult: state.iqcResult, operator: state.acceptedBy || state.operator });
       setFeedback({ ok: false, msg: "请填写所有必填验收字段" });
       setBusy(false);
       return;
     }
+    publishReceivingStatus({ phase: "RECEIVING", lotNo: state.lotNo, materialCode: state.materialCode, qty: state.qty, locationCode: state.locationCode, floorAreaCode: state.floorAreaCode, iqcResult: state.iqcResult, operator: state.acceptedBy });
     let materialLotId = state.materialLotId;
     if (!materialLotId) {
+      publishReceivingStatus({ phase: "FAILED", lotNo: state.lotNo, materialCode: state.materialCode, qty: state.qty, locationCode: state.locationCode, floorAreaCode: state.floorAreaCode, iqcResult: state.iqcResult, operator: state.acceptedBy || state.operator });
       const lots = await wmsApi.getMaterialLots({ lotNo: state.lotNo, limit: 1 });
       materialLotId = Number(lots.items?.[0]?.id || 0) || undefined;
     }
@@ -325,10 +341,12 @@ export function WmsPdaReceiving({ locale }: { locale: Locale }) {
         await wmsApi.receiveSupplierPreReceipt(state.preReceiptQr, state.acceptedBy);
       }
       setFeedback({ ok: true, msg: `${state.lotNo} → ${t("status.received", locale)}` });
+      publishReceivingStatus({ phase: "COMPLETED", lotNo: state.lotNo, materialCode: state.materialCode, qty: state.qty, locationCode: state.locationCode, floorAreaCode: state.floorAreaCode, iqcResult: state.iqcResult, operator: state.acceptedBy });
       setState(s => ({ ...s, step: "done" }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       setFeedback({ ok: false, msg: `${state.lotNo}: ${msg}` });
+      publishReceivingStatus({ phase: "FAILED", lotNo: state.lotNo, materialCode: state.materialCode, qty: state.qty, locationCode: state.locationCode, floorAreaCode: state.floorAreaCode, iqcResult: state.iqcResult, operator: state.acceptedBy });
     } finally {
       setBusy(false);
     }

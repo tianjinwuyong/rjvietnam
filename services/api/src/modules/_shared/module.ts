@@ -20,7 +20,8 @@ export type FactoryModuleKey =
   | "parts-suppliers"
   | "parts-pricing"
   | "equipment-archives"
-  | "pda";
+  | "pda"
+  | "sales";
 
 export type ModuleRoute = {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";

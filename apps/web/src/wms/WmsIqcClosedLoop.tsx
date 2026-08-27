@@ -3,16 +3,16 @@ import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { apiClient } from "../api/client";
 
 type DashboardData = {
-  summary: {
+  summary?: {
     open_lots: number;
     blocked_lots: number;
     overdue_lots: number;
     waiting_closure: number;
     avg_decision_minutes: number;
   };
-  lots: Array<any>;
-  dispositions: Array<any>;
-  capas: Array<any>;
+  lots?: Array<any>;
+  dispositions?: Array<any>;
+  capas?: Array<any>;
 };
 
 const words = {
@@ -67,7 +67,22 @@ export function WmsIqcClosedLoop({ locale }: { locale: Locale }) {
 
   const load = useCallback(async () => {
     try {
-      setData(await apiClient.get<DashboardData>("/quality/iqc-loop/dashboard"));
+      const response = await apiClient.get<DashboardData>("/quality/iqc-loop/dashboard");
+      // The endpoint may temporarily return an empty/partial payload while the
+      // quality service is starting. Normalize it here so one missing section
+      // cannot crash the whole WMS application.
+      setData({
+        summary: response?.summary ?? {
+          open_lots: 0,
+          blocked_lots: 0,
+          overdue_lots: 0,
+          waiting_closure: 0,
+          avg_decision_minutes: 0,
+        },
+        lots: Array.isArray(response?.lots) ? response.lots : [],
+        dispositions: Array.isArray(response?.dispositions) ? response.dispositions : [],
+        capas: Array.isArray(response?.capas) ? response.capas : [],
+      });
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -81,11 +96,11 @@ export function WmsIqcClosedLoop({ locale }: { locale: Locale }) {
   }, [load]);
 
   const metrics = [
-    [w.open, data?.summary.open_lots ?? 0],
-    [w.blocked, data?.summary.blocked_lots ?? 0],
-    [w.overdue, data?.summary.overdue_lots ?? 0],
-    [w.closing, data?.summary.waiting_closure ?? 0],
-    [w.avg, data?.summary.avg_decision_minutes ?? 0],
+    [w.open, data?.summary?.open_lots ?? 0],
+    [w.blocked, data?.summary?.blocked_lots ?? 0],
+    [w.overdue, data?.summary?.overdue_lots ?? 0],
+    [w.closing, data?.summary?.waiting_closure ?? 0],
+    [w.avg, data?.summary?.avg_decision_minutes ?? 0],
   ];
 
   return (
@@ -109,7 +124,7 @@ export function WmsIqcClosedLoop({ locale }: { locale: Locale }) {
         <h3>{w.lots}</h3>
         <div className="table-shell"><table>
           <thead><tr><th>Lot</th><th>Supplier</th><th>Material</th><th>Qty</th><th>Risk/Mode</th><th>Sample</th><th>Status</th><th>Due</th></tr></thead>
-          <tbody>{data?.lots.length ? data.lots.map((row) => (
+          <tbody>{data?.lots?.length ? data.lots.map((row) => (
             <tr key={row.id}><td>{row.inspection_lot_no}</td><td>{row.supplier_code}</td><td>{row.material_code}</td><td>{row.received_qty} {row.uom}</td><td>{row.risk_level}/{row.inspection_mode}</td><td>{row.sample_size}</td><td>{row.status}</td><td>{new Date(row.due_at).toLocaleString()}</td></tr>
           )) : <tr><td colSpan={8}>{w.empty}</td></tr>}</tbody>
         </table></div>
@@ -119,7 +134,7 @@ export function WmsIqcClosedLoop({ locale }: { locale: Locale }) {
         <h3>{w.handover}</h3>
         <div className="table-shell"><table>
           <thead><tr><th>Document</th><th>Type</th><th>Qty</th><th>Destination</th><th>Status</th></tr></thead>
-          <tbody>{data?.dispositions.length ? data.dispositions.map((row) => (
+          <tbody>{data?.dispositions?.length ? data.dispositions.map((row) => (
             <tr key={row.id}><td>{row.document_no}</td><td>{row.disposition_type}</td><td>{row.qty}</td><td>{row.destination || "-"}</td><td>{row.status}</td></tr>
           )) : <tr><td colSpan={5}>{w.empty}</td></tr>}</tbody>
         </table></div>
@@ -129,7 +144,7 @@ export function WmsIqcClosedLoop({ locale }: { locale: Locale }) {
         <h3>{w.capa}</h3>
         <div className="table-shell"><table>
           <thead><tr><th>CAPA</th><th>Supplier</th><th>Severity</th><th>Status</th><th>Containment due</th><th>Response due</th></tr></thead>
-          <tbody>{data?.capas.length ? data.capas.map((row) => (
+          <tbody>{data?.capas?.length ? data.capas.map((row) => (
             <tr key={row.id}><td>{row.capa_no}</td><td>{row.supplier_code}</td><td>{row.severity}</td><td>{row.status}</td><td>{new Date(row.containment_due_at).toLocaleString()}</td><td>{new Date(row.full_response_due_at).toLocaleString()}</td></tr>
           )) : <tr><td colSpan={6}>{w.empty}</td></tr>}</tbody>
         </table></div>

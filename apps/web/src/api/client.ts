@@ -85,11 +85,18 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
 
   if (!res.ok) {
-    const body = await res.json().catch(() => ({ error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } }));
+    const contentType = res.headers.get("content-type") || "";
+    const body = contentType.includes("application/json")
+      ? await res.json().catch(() => ({ error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } }))
+      : { error: { code: "HTTP_NON_JSON", message: `接口 ${path} 返回了非 JSON 内容（HTTP ${res.status}）` } };
     const err: ApiError = body.error ?? { code: "HTTP_ERROR", message: `HTTP ${res.status}` };
     throw new ApiClientError(err.code, err.message, err.details);
   }
 
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) {
+    throw new ApiClientError("HTTP_NON_JSON", `接口 ${path} 返回了网页 HTML，而不是 JSON。请检查 API 路径或服务是否已注册。`);
+  }
   const json: Envelope<T> = await res.json();
   return json.data as T;
 }

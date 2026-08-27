@@ -309,6 +309,42 @@ td span {
   50% { opacity: 0.6; transform: scale(1.3); }
 }
 
+/* OA approval slice */
+.oa-tabs { display: flex; gap: 8px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.oa-tabs button { display: inline-flex; align-items: center; gap: 8px; padding: 11px 14px; color: var(--muted); background: transparent; border-bottom: 2px solid transparent; cursor: pointer; }
+.oa-tabs button:hover, .oa-tabs button.active { color: var(--info); border-bottom-color: var(--info); }
+.oa-tab-count { min-width: 20px; padding: 2px 6px; border-radius: 99px; color: var(--danger); background: var(--danger-bg); font-size: 11px; font-weight: 700; }
+.oa-filter { min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--ink); }
+.oa-request-list, .oa-audit-list { display: grid; gap: 8px; }
+.oa-request-row { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; align-items: center; gap: 12px; width: 100%; padding: 13px; text-align: left; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer; }
+.oa-request-row:hover, .oa-request-row.selected { border-color: #93b6d2; background: #f5f9fc; }
+.oa-request-icon { display: grid; place-items: center; width: 34px; height: 34px; color: var(--info); background: var(--info-bg); border-radius: 8px; }
+.oa-request-main, .oa-request-meta, .oa-detail-head, .oa-action-panel, .oa-audit-row { display: flex; gap: 8px; }
+.oa-request-main, .oa-request-meta { flex-direction: column; min-width: 0; }
+.oa-request-main span, .oa-request-meta > span:last-child, .oa-detail-head p, .oa-action-panel span, .oa-audit-row span { color: var(--muted); font-size: 12px; }
+.oa-request-meta { align-items: flex-end; white-space: nowrap; }
+.oa-detail-head { justify-content: space-between; align-items: flex-start; padding: 4px 0 18px; border-bottom: 1px solid var(--line); }
+.oa-detail-head h2 { margin: 4px 0 5px; font-size: 21px; }
+.oa-detail-head p { margin: 0; max-width: 720px; line-height: 1.5; }
+.oa-kicker { color: var(--info); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; }
+.oa-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 18px 0; }
+.oa-detail-field { display: grid; gap: 5px; padding: 12px; background: var(--surface-2); border-radius: 7px; }
+.oa-detail-field span { color: var(--muted); font-size: 11px; }
+.oa-detail-field strong { line-height: 1.4; }
+.oa-action-panel { align-items: flex-end; justify-content: space-between; padding: 15px; border: 1px solid #cbdde8; border-radius: 8px; background: #f5f9fc; }
+.oa-action-panel > div:first-child { display: grid; gap: 4px; }
+.oa-action-panel textarea { min-height: 70px; width: min(340px, 100%); padding: 9px; resize: vertical; border: 1px solid var(--line); border-radius: 7px; background: #fff; }
+.oa-approve { color: #fff; background: var(--ok); }
+.oa-reject { color: #fff; background: var(--danger); }
+.oa-approve:disabled, .oa-reject:disabled { opacity: .6; cursor: wait; }
+.oa-decision-complete { display: flex; align-items: center; gap: 8px; padding: 12px; color: var(--ok); background: var(--ok-bg); border-radius: 7px; }
+.oa-error { margin: 0; color: var(--danger); font-size: 12px; }
+.oa-audit-row { align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.oa-audit-dot { width: 9px; height: 9px; flex: 0 0 auto; margin-top: 5px; border-radius: 50%; background: var(--info); }
+.oa-audit-dot.ok { background: var(--ok); } .oa-audit-dot.warning { background: var(--warn); } .oa-audit-dot.danger { background: var(--danger); }
+.oa-audit-row > div { display: grid; gap: 4px; }.oa-audit-row p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+@media (max-width: 760px) { .workspace { padding: 14px 12px 24px; } .topbar { align-items: flex-start; flex-direction: column; } .page-tools { justify-content: flex-start; } .oa-request-row { grid-template-columns: 32px minmax(0, 1fr); } .oa-request-meta { grid-column: 2; align-items: flex-start; flex-direction: row; justify-content: space-between; } .oa-detail-grid { grid-template-columns: 1fr; } .oa-action-panel { align-items: stretch; flex-direction: column; } .oa-action-panel textarea { width: 100%; } }
+
 .heartbeat-label {
   text-transform: uppercase;
   letter-spacing: 0.5px;

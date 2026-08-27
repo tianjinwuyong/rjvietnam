@@ -1,62 +1,81 @@
 package com.ruijing.smtloading;
 
-import android.app.Activity;
 import android.Manifest;
-import android.content.pm.PackageManager;
+import android.app.Activity;
 import android.content.Intent;
-import android.provider.MediaStore;
-import android.webkit.JavascriptInterface;
+import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
 import android.os.Bundle;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import android.webkit.WebChromeClient;
-import android.webkit.PermissionRequest;
+import android.provider.MediaStore;
+import android.util.Base64;
+import android.view.View;
+import android.widget.*;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import com.google.mlkit.vision.common.InputImage;
+import com.google.mlkit.vision.text.TextRecognition;
+import com.google.mlkit.vision.text.TextRecognizer;
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions;
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.ArrayList;
 
+/** Native PDA receiving screen with camera certificate evidence capture. */
 public class MainActivity extends Activity {
-    private WebView page;
-    public class CameraBridge {
-        @JavascriptInterface
-        public void openCamera() {
-            startScanner();
-        }
-        @JavascriptInterface
-        public void startScanner() {
-            MainActivity.this.startScanner();
-        }
+    private final String api = "http://192.168.6.155:8080";
+    private EditText materialCode, materialName, supplier, lot, pallet, location, specification, manufactureDate, expiryDate, quantity, totalBatchQty, ulCode, invoiceNo, remarks, msdLevel, msdHours;
+    private LinearLayout boxes, certificatePreviews;
+    private Spinner iqc;
+    private TextView status;
+    private String authToken = "";
+    private EditText loginUser, loginPassword;
+    private String scanTarget;
+    private final ArrayList<String> boxQrs = new ArrayList<>();
+    private final ArrayList<Bitmap> certificates = new ArrayList<>();
+    private static final int SCAN_REQUEST = 2001;
+    private static final int PHOTO_REQUEST = 2002;
+
+    @Override public void onCreate(Bundle state) {
+        super.onCreate(state);
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) requestPermissions(new String[]{Manifest.permission.CAMERA}, 1001);
+        buildLoginPage();
     }
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.CAMERA}, 1001);
-        }
-        WebView webView = new WebView(this);
-        page = webView;
-        webView.addJavascriptInterface(new CameraBridge(), "AndroidCamera");
-        webView.setWebViewClient(new WebViewClient());
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override public void onPermissionRequest(final PermissionRequest request) {
-                runOnUiThread(() -> request.grant(request.getResources()));
-            }
-        });
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setAllowFileAccess(true);
-        settings.setAllowFileAccessFromFileURLs(true);
-        settings.setAllowUniversalAccessFromFileURLs(true);
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        webView.clearCache(true);
-        webView.loadUrl("file:///android_asset/index.html?build=wo-selection-2");
-        setContentView(webView);
+    private void buildLoginPage() { LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(36,60,36,36); root.setBackgroundColor(Color.rgb(8,19,29)); TextView title=new TextView(this); title.setText("UNIFIED PDA\nMATERIAL RECEIVER LOGIN"); title.setTextColor(Color.rgb(24,198,217)); title.setTextSize(28); root.addView(title); TextView role=new TextView(this); role.setText("Role / 角色: MATERIAL RECEIVER / 收料员"); role.setTextColor(Color.WHITE); role.setTextSize(20); role.setPadding(0,20,0,20); root.addView(role); loginUser=input("Username / 用户名"); loginPassword=input("Password / 密码"); loginPassword.setInputType(0x00000081); root.addView(loginUser); root.addView(loginPassword); Button login=new Button(this); login.setText("LOGIN / 登录"); login.setTextSize(20); login.setOnClickListener(v -> doLogin()); root.addView(login); status=new TextView(this); status.setTextColor(Color.YELLOW); status.setTextSize(18); root.addView(status); setContentView(root); }
+    private void doLogin() { String user=loginUser.getText().toString().trim(), pass=loginPassword.getText().toString(); if(user.isEmpty()||pass.isEmpty()){status.setText("Username and password are required");return;} status.setText("Signing in..."); new Thread(() -> { try { JSONObject response=request("/api/auth/login",new JSONObject().put("username",user).put("password",pass),null); JSONObject data=response.optJSONObject("data"); String token=data==null?"":data.optString("token"); if(token.isEmpty()) throw new Exception("Login failed"); authToken=token; runOnUiThread(this::buildReceivingPage); } catch(Exception e){ runOnUiThread(() -> status.setText("Login failed: "+e.getMessage())); } }).start(); }
+    private EditText input(String hint) { EditText e = new EditText(this); e.setHint(hint); e.setTextColor(Color.WHITE); e.setHintTextColor(Color.GRAY); e.setSingleLine(true); e.setTextSize(24); e.setMinHeight(104); e.setPadding(18, 8, 18, 8); return e; }
+    private Button scanButton(String label, String target) { Button b = new Button(this); b.setText("Camera " + label); b.setOnClickListener(v -> { scanTarget = target; startActivityForResult(new Intent(this, ScannerActivity.class), SCAN_REQUEST); }); return b; }
+    private void row(LinearLayout root, String label, EditText field, String target) { TextView title = new TextView(this); title.setText(label); title.setTextColor(Color.WHITE); title.setTextSize(20); title.setPadding(0, 12, 0, 4); root.addView(title); LinearLayout line = new LinearLayout(this); line.setPadding(0, 4, 0, 12); line.addView(field, new LinearLayout.LayoutParams(0, 112, 1)); Button scan=scanButton("SCAN", target); scan.setTextSize(18); line.addView(scan, new LinearLayout.LayoutParams(220, 112)); Button clear=new Button(this); clear.setText("CLEAR\n清除"); clear.setTextSize(16); clear.setOnClickListener(v -> field.setText("")); line.addView(clear, new LinearLayout.LayoutParams(150, 112)); root.addView(line); }
+    private void buildReceivingPage() {
+        ScrollView scroll = new ScrollView(this); LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(28, 28, 28, 40); root.setBackgroundColor(Color.rgb(8, 19, 29)); scroll.addView(root); setContentView(scroll);
+        TextView labelStep = new TextView(this); labelStep.setText("1. TAKE MATERIAL LABEL PHOTO / 先拍摄物料标签"); labelStep.setTextColor(Color.WHITE); labelStep.setTextSize(22); labelStep.setPadding(0, 24, 0, 8); root.addView(labelStep);
+        TextView labelHint = new TextView(this); labelHint.setText("拍照后自动 OCR 回填下方字段；所有字段仍可手工修改。"); labelHint.setTextColor(Color.LTGRAY); labelHint.setTextSize(16); root.addView(labelHint);
+        Button takeLabelPhoto = new Button(this); takeLabelPhoto.setText("TAKE LABEL PHOTO / 拍摄标签"); takeLabelPhoto.setTextSize(22); takeLabelPhoto.setMinHeight(120); takeLabelPhoto.setOnClickListener(v -> captureCertificate()); root.addView(takeLabelPhoto);
+        TextView title = new TextView(this); title.setText("MATERIAL RECEIVING"); title.setTextColor(Color.rgb(24,198,217)); title.setTextSize(28); root.addView(title);
+        materialCode=input("Material code * Required"); materialName=input("Material name * Required"); supplier=input("Supplier * Required"); lot=input("Lot / Batch * Required"); pallet=input("Pallet QR * Required"); location=input("Location QR * Required"); quantity=input("Quantity * Required"); row(root,"Material code * 必填 / Required",materialCode,"materialCode"); row(root,"Material name * 必填 / Required",materialName,"materialName"); row(root,"Supplier * 必填 / Required",supplier,"supplier"); row(root,"Lot / Batch * 必填 / Required",lot,"lot"); row(root,"Pallet QR * 必填 / Required",pallet,"pallet"); row(root,"Location QR * 必填 / Required",location,"location"); row(root,"Quantity * 必填 / Required",quantity,"quantity");
+        specification=input("Specification (Optional)"); manufactureDate=input("Manufacture date (Optional)"); expiryDate=input("Expiry date (Optional)"); totalBatchQty=input("Total batch quantity (Optional)"); ulCode=input("UL code (Optional)"); invoiceNo=input("Invoice number (Optional)"); remarks=input("Remarks (Optional)"); row(root,"Specification · 选填 / Optional",specification,"specification"); row(root,"Manufacture date · 选填 / Optional",manufactureDate,"manufactureDate"); row(root,"Expiry date · 选填 / Optional",expiryDate,"expiryDate"); row(root,"Total batch quantity · 选填 / Optional",totalBatchQty,"totalBatchQty"); row(root,"UL code · 选填 / Optional",ulCode,"ulCode"); row(root,"Invoice number · 选填 / Optional",invoiceNo,"invoice"); row(root,"Remarks · 选填 / Optional",remarks,"remarks");
+        iqc = new Spinner(this); iqc.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, new String[]{"PENDING", "PASS", "FAIL"})); root.addView(iqc, new LinearLayout.LayoutParams(-1,72));
+        TextView boxTitle = new TextView(this); boxTitle.setText("Box QRs on Pallet"); boxTitle.setTextColor(Color.WHITE); boxTitle.setTextSize(19); root.addView(boxTitle); boxes = new LinearLayout(this); boxes.setOrientation(LinearLayout.VERTICAL); root.addView(boxes); root.addView(scanButton("SCAN BOX", "box"));
+        TextView certificateTitle = new TextView(this); certificateTitle.setText("Supplier quality certificate photos"); certificateTitle.setTextColor(Color.WHITE); certificateTitle.setTextSize(19); certificateTitle.setPadding(0,24,0,8); root.addView(certificateTitle);
+        certificatePreviews = new LinearLayout(this); certificatePreviews.setOrientation(LinearLayout.HORIZONTAL); root.addView(certificatePreviews); LinearLayout photoActions = new LinearLayout(this); Button capture = new Button(this); capture.setText("Camera photo"); capture.setOnClickListener(v -> captureCertificate()); Button ai = new Button(this); ai.setText("WMS Ollama AI"); ai.setOnClickListener(v -> { if (!certificates.isEmpty()) runWmsAi(certificates.get(certificates.size()-1)); else status.setText("Take a label photo first"); }); Button retake = new Button(this); retake.setText("Retake"); retake.setOnClickListener(v -> { if (!certificates.isEmpty()) { certificates.remove(certificates.size()-1); renderCertificates(); } captureCertificate(); }); Button cancelPhotos = new Button(this); cancelPhotos.setText("Cancel photos"); cancelPhotos.setOnClickListener(v -> { certificates.clear(); renderCertificates(); }); photoActions.addView(capture); photoActions.addView(ai); photoActions.addView(retake); photoActions.addView(cancelPhotos); root.addView(photoActions);
+        status = new TextView(this); status.setTextColor(Color.YELLOW); root.addView(status); Button submit = new Button(this); submit.setText("RECEIVE AND UPLOAD"); submit.setOnClickListener(v -> submitReceiving()); root.addView(submit); Button cancel = new Button(this); cancel.setText("CANCEL RECEIVING"); cancel.setOnClickListener(v -> cancelReceiving()); root.addView(cancel); Button quit = new Button(this); quit.setText("退出应用 / QUIT APP"); quit.setTextColor(Color.WHITE); quit.setBackgroundColor(Color.rgb(90, 30, 30)); quit.setOnClickListener(v -> finishAndRemoveTask()); root.addView(quit);
     }
-    public void startScanner() { startActivityForResult(new Intent(this, ScannerActivity.class), 2001); }
-    @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == 2001 && resultCode == RESULT_OK && data != null && page != null) {
-            String value = data.getStringExtra("scan");
-            page.evaluateJavascript("window.receiveNativeScan(" + org.json.JSONObject.quote(value == null ? "" : value) + ")", null);
-        }
-    }
+    private void captureCertificate() { Intent intent = new Intent(this, LabelCameraActivity.class); startActivityForResult(intent, PHOTO_REQUEST); }
+    private void runWmsAi(Bitmap image) { status.setText("Sending image to WMS Ollama AI..."); new Thread(() -> { try { ByteArrayOutputStream out=new ByteArrayOutputStream(); image.compress(Bitmap.CompressFormat.JPEG,82,out); JSONObject response=request("/api/wms/receiving/label-ai",new JSONObject().put("image","data:image/jpeg;base64,"+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP)),authToken); JSONObject d=response.optJSONObject("data"); if(d==null) throw new Exception("No parsed data"); runOnUiThread(() -> { setIfPresent(materialCode,d,"materialCode"); setIfPresent(materialName,d,"materialName"); setIfPresent(supplier,d,"supplier"); setIfPresent(lot,d,"lot"); setIfPresent(specification,d,"specification"); setIfPresent(manufactureDate,d,"manufactureDate"); setIfPresent(expiryDate,d,"expiryDate"); setIfPresent(quantity,d,"quantity"); setIfPresent(ulCode,d,"ulCode"); setIfPresent(invoiceNo,d,"invoice"); setIfPresent(remarks,d,"qualityMark"); status.setText("WMS AI parsed fields — confirm/edit before receiving"); }); } catch(Exception e) { runOnUiThread(() -> status.setText("WMS AI could not read label: "+e.getMessage()+". Use scanner or keyboard.")); } }).start(); }
+    private void applyWmsQrFields(JSONObject data) { setIfPresent(pallet, data, "palletQr"); setIfPresent(location, data, "locationCode"); String box=data.optString("boxSn", "").trim(); if(box.isEmpty()) box=data.optString("boxNumber", "").trim(); if(!box.isEmpty()) addBox(box); }
+    private void setIfPresent(EditText field, JSONObject data, String key) { if(field!=null && !data.isNull(key) && !data.optString(key,"").trim().isEmpty()) field.setText(data.optString(key)); if("qualityMark".equals(key)) applyWmsQrFields(data); }
+    private void runLabelOcr(Bitmap image) { status.setText("Local OCR scanning label..."); TextRecognizer recognizer=TextRecognition.getClient(new ChineseTextRecognizerOptions.Builder().build()); recognizer.process(InputImage.fromBitmap(image,0)).addOnSuccessListener(result -> { String text=result.getText(); String lotMatch=first(text,"(?i)(?:lot|batch|l[oó]t|批次)\\s*[:#-]?\\s*([A-Z0-9-]{4,})"); if(lotMatch!=null) lot.setText(lotMatch); status.setText("Local OCR complete — use WMS Ollama AI for full field parsing"); }).addOnFailureListener(e -> status.setText("Local OCR failed: "+e.getMessage())).addOnCompleteListener(task -> recognizer.close()); }
+    private String first(String text,String pattern) { java.util.regex.Matcher m=java.util.regex.Pattern.compile(pattern).matcher(text); return m.find()?m.group(1):null; }
+    private void renderCertificates() { certificatePreviews.removeAllViews(); for (int i=0;i<certificates.size();i++) { final int index=i; ImageView image=new ImageView(this); image.setImageBitmap(certificates.get(i)); image.setAdjustViewBounds(true); image.setLayoutParams(new LinearLayout.LayoutParams(180,140)); image.setOnClickListener(v -> { certificates.remove(index); renderCertificates(); }); certificatePreviews.addView(image); } }
+    private void cancelReceiving() { supplier.setText(""); lot.setText(""); pallet.setText(""); location.setText(""); boxQrs.clear(); boxes.removeAllViews(); iqc.setSelection(0); certificates.clear(); renderCertificates(); status.setText("Receiving cancelled"); }
+    private void addBox(String qr) { if (qr == null || qr.trim().isEmpty() || boxQrs.contains(qr.trim())) return; boxQrs.add(qr.trim()); TextView row = new TextView(this); row.setText("- " + qr.trim()); row.setTextColor(Color.WHITE); boxes.addView(row); }
+    @Override protected void onActivityResult(int request, int result, Intent data) { super.onActivityResult(request,result,data); if (result != RESULT_OK || data == null) return; if (request == PHOTO_REQUEST) { Bitmap image=null; String path=data.getStringExtra("imagePath"); if(path!=null) image=BitmapFactory.decodeFile(path); if(image==null && data.getExtras()!=null) image=(Bitmap)data.getExtras().get("data"); if(image!=null){certificates.add(image);renderCertificates();runLabelOcr(image);runWmsAi(image);} return; } if (request == SCAN_REQUEST) applyScan(data.getStringExtra("scan")); }
+    private void applyScan(String raw) { if(raw==null)raw=""; try { JSONObject o=new JSONObject(raw); String value=o.optString("value",o.optString("qr",raw)); if("supplier".equals(scanTarget))supplier.setText(o.optString("supplier",value)); else if("lot".equals(scanTarget))lot.setText(o.optString("lotNo",value)); else if("pallet".equals(scanTarget))pallet.setText(o.optString("palletQr",value)); else if("location".equals(scanTarget))location.setText(o.optString("locationQr",value)); else addBox(o.optString("boxQr",value)); } catch(Exception ignored){ if("supplier".equals(scanTarget))supplier.setText(raw); else if("lot".equals(scanTarget))lot.setText(raw); else if("pallet".equals(scanTarget))pallet.setText(raw); else if("location".equals(scanTarget))location.setText(raw); else addBox(raw); } }
+    private JSONArray certificatePayload(String lotNo, String supplierName) { JSONArray result=new JSONArray(); for(int i=0;i<certificates.size();i++){ByteArrayOutputStream out=new ByteArrayOutputStream();certificates.get(i).compress(Bitmap.CompressFormat.JPEG,85,out); try{JSONObject doc=new JSONObject();doc.put("documentType","QUALITY_CERTIFICATE");doc.put("fileName","pda-quality-certificate-"+(i+1)+".jpg");doc.put("documentUrl","data:image/jpeg;base64,"+Base64.encodeToString(out.toByteArray(),Base64.NO_WRAP));doc.put("capturedBy","native-pda");doc.put("metadata",new JSONObject().put("source","PDA_CAMERA").put("lotNo",lotNo).put("supplier",supplierName).put("category","QUALITY_CERTIFICATE"));result.put(doc);}catch(Exception ignored){}} return result; }
+    private void submitReceiving() { if(supplier.getText().toString().trim().isEmpty()||lot.getText().toString().trim().isEmpty()||pallet.getText().toString().trim().isEmpty()||location.getText().toString().trim().isEmpty()||boxQrs.isEmpty()){status.setText("Fill supplier, lot, pallet, location and at least one box");return;} if(iqc.getSelectedItemPosition()==2){status.setText("IQC FAIL cannot be received as available stock");return;} final String s=supplier.getText().toString().trim(),l=lot.getText().toString().trim(),p=pallet.getText().toString().trim(),loc=location.getText().toString().trim(); final JSONArray docs=certificatePayload(l,s); status.setText("Submitting..."); new Thread(()->{try{String token=login();for(String box:boxQrs)post(token,s,l,p,loc,box,docs);runOnUiThread(()->{status.setText("Received "+boxQrs.size()+" box(es), certificates linked");boxQrs.clear();boxes.removeAllViews();certificates.clear();renderCertificates();});}catch(Exception e){runOnUiThread(()->status.setText("Submit failed: "+e.getMessage()));}}).start(); }
+    private String login() throws Exception { if(authToken.isEmpty()) throw new Exception("not logged in"); return authToken; }
+    private void post(String token,String s,String l,String p,String loc,String box,JSONArray docs)throws Exception{JSONObject body=new JSONObject().put("supplier",s).put("lotNo",l).put("palletQr",p).put("locationQr",loc).put("boxQr",box).put("iqcResult",iqc.getSelectedItemPosition()==1?"PASS":"PENDING").put("receivingDocuments",docs);request("/api/wms/receiving/pallet-box-bindings",body,token);}
+    private JSONObject request(String path,JSONObject body,String token)throws Exception{HttpURLConnection c=(HttpURLConnection)new URL(api+path).openConnection();c.setRequestMethod("POST");c.setDoOutput(true);c.setRequestProperty("Content-Type","application/json");if(token!=null)c.setRequestProperty("Authorization","Bearer "+token);try(OutputStream out=c.getOutputStream()){out.write(body.toString().getBytes("UTF-8"));}int code=c.getResponseCode();InputStream input=code>=400?c.getErrorStream():c.getInputStream();String text=new BufferedReader(new InputStreamReader(input)).lines().reduce("",(a,b)->a+b);if(code>=400)throw new Exception(text);return new JSONObject(text);}
 }

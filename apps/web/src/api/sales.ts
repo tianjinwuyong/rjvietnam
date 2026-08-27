@@ -1,4 +1,4 @@
-import { apiClient, type ListEnvelope, type Envelope } from "./client";
+import { apiClient, type ListEnvelope } from "./client";
 
 function buildParams(params: Record<string, string | number | boolean | undefined>): string {
   const searchParams = new URLSearchParams();
@@ -7,6 +7,26 @@ function buildParams(params: Record<string, string | number | boolean | undefine
   }
   const s = searchParams.toString();
   return s ? "?" + s : "";
+}
+
+// The API returns snake_case DB columns; convert keys to camelCase so the
+// frontend types (SalesOrder, SalesOrderLine, SalesOrderStatusHistory, …) line up.
+function snakeToCamel(s: string): string {
+  return s.replace(/_([a-z0-9])/g, (_, c) => c.toUpperCase());
+}
+
+function camelize<T = unknown>(input: unknown): T {
+  if (Array.isArray(input)) {
+    return input.map((v) => camelize(v)) as unknown as T;
+  }
+  if (input !== null && typeof input === "object" && !(input instanceof Date)) {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(input)) {
+      out[snakeToCamel(k)] = camelize(v);
+    }
+    return out as T;
+  }
+  return input as T;
 }
 
 // Types
@@ -50,7 +70,7 @@ export interface SalesOrder {
   quoteId: number | null;
   currency: string;
   totalAmount: number;
-  status: "open" | "partially_fulfilled" | "fulfilled" | "closed" | "cancelled";
+  status: "open" | "confirmed" | "released" | "in_production" | "ready_to_ship" | "shipped" | "delivered" | "invoiced" | "paid" | "partially_fulfilled" | "fulfilled" | "closed" | "cancelled";
   createdBy: number;
   createdAt: string;
   updatedAt: string;
@@ -79,12 +99,31 @@ export interface QuoteToWorkOrderLink {
 }
 
 export interface SalesDashboardSummary {
-  openOrders: number;
-  openOrderValue: number;
+  openSOs: number;
+  openSOValue: number;
   pendingQuotes: number;
-  fulfilledThisMonth: number;
-  revenueThisMonth: number;
+  fulfilledSOs: number;
+  monthlyRevenue: number;
 }
+
+export interface SalesOrderStatusHistory {
+  id: number;
+  fromStatus: string;
+  toStatus: string;
+  actor: string | null;
+  note: string | null;
+  createdAt: string;
+}
+
+export type SalesOrderAction =
+  | "confirm"
+  | "release"
+  | "ship"
+  | "deliver"
+  | "invoice"
+  | "pay"
+  | "cancel"
+  | "close";
 
 // API
 
@@ -98,12 +137,12 @@ export const salesApi = {
   }) =>
     apiClient.get<ListEnvelope<SalesOrder>>(
       "/api/sales/orders" + buildParams(params as Record<string, string | number | boolean | undefined>)
-    ),
+    ).then((r) => camelize<ListEnvelope<SalesOrder>>(r)),
 
   getOrder: (id: number) =>
-    apiClient.get<Envelope<SalesOrder & { lines: SalesOrderLine[]; woLinks: QuoteToWorkOrderLink[] }>>(
+    apiClient.get<SalesOrder & { lines: SalesOrderLine[]; woLinks: QuoteToWorkOrderLink[] }>(
       `/api/sales/orders/${id}`
-    ),
+    ).then((r) => camelize<SalesOrder & { lines: SalesOrderLine[]; woLinks: QuoteToWorkOrderLink[] }>(r)),
 
   createOrder: (body: {
     customerId: number;
@@ -137,5 +176,39 @@ export const salesApi = {
     apiClient.put<{ salesOrderId: number; soNo: string }>(`/api/sales/quotes/${quoteId}/convert-to-so`),
 
   getDashboardSummary: () =>
-    apiClient.get<SalesDashboardSummary>("/api/sales/dashboard-summary"),
+    apiClient.get<SalesDashboardSummary>("/api/sales/dashboard-summary").then((r) => camelize<SalesDashboardSummary>(r)),
+
+  // ── Closed-loop transitions ──────────────────────────────────────
+  // apiClient strips the outer `data` wrapper, so these resolve to the inner payload.
+
+  confirm: (id: number) =>
+    apiClient.post<{ confirmed: boolean; workOrders: Array<{ id: number; code: string }> }>(
+      `/api/sales/orders/${id}/confirm`, {}
+    ),
+
+  release: (id: number) =>
+    apiClient.post<{ released: boolean }>(`/api/sales/orders/${id}/release`, {}),
+
+  ship: (id: number) =>
+    apiClient.post<{ shipped: boolean }>(`/api/sales/orders/${id}/ship`, {}),
+
+  deliver: (id: number) =>
+    apiClient.post<{ delivered: boolean }>(`/api/sales/orders/${id}/deliver`, {}),
+
+  invoice: (id: number) =>
+    apiClient.post<{ invoiced: boolean; invoice: { id: number; invoiceNo: string } }>(
+      `/api/sales/orders/${id}/invoice`, {}
+    ),
+
+  pay: (id: number) =>
+    apiClient.post<{ paid: boolean }>(`/api/sales/orders/${id}/pay`, {}),
+
+  cancel: (id: number, reason: string) =>
+    apiClient.post<{ cancelled: boolean }>(`/api/sales/orders/${id}/cancel`, { reason }),
+
+  close: (id: number) =>
+    apiClient.post<{ closed: boolean }>(`/api/sales/orders/${id}/close`, {}),
+
+  getHistory: (id: number) =>
+    apiClient.get<{ history: SalesOrderStatusHistory[] }>(`/api/sales/orders/${id}/history`).then((r) => camelize<{ history: SalesOrderStatusHistory[] }>(r)),
 };

@@ -20,7 +20,10 @@ import { QmsAiInspection } from "./QmsAiInspection";
 
 export function QmsApp({ locale = "zh-CN" }: { locale?: string }) {
   const { t } = useTranslation();
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState(() => {
+    const requested = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("qmsTab");
+    return requested || "dashboard";
+  });
 
   const tabs = [
     { key: "dashboard",   label: t("qms.dashboard")            || "仪表盘",   Component: QmsDashboard },
@@ -49,7 +52,13 @@ export function QmsApp({ locale = "zh-CN" }: { locale?: string }) {
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f172a" }}>
       <div style={{ display: "flex", gap: 4, padding: "8px 16px", background: "#1e293b", borderBottom: "1px solid #334155", overflowX: "auto", flexShrink: 0 }}>
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setTab(t.key)}
+          <button key={t.key} onClick={() => {
+            setTab(t.key);
+            const url = new URL(window.location.href);
+            url.searchParams.set("view", "qms");
+            url.searchParams.set("qmsTab", t.key);
+            window.history.replaceState({}, "", url);
+          }}
             style={{
               padding: "6px 14px", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13,
               background: tab === t.key ? "#2563eb" : "transparent",

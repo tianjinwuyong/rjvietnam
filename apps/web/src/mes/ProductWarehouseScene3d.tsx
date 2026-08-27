@@ -40,10 +40,40 @@ type FinishedGoodItem = {
   location_code: string;
   carton_code: string | null;
   pallet_code: string | null;
+  lot_no?: string;
+  iqc_status?: string;
+  received_qty?: number;
+  available_qty?: number;
+  reserved_qty?: number;
+  supplier_code?: string;
+  expiry_date?: string | null;
 };
 
 type FgInventoryResponse = { items: FinishedGoodItem[]; total: number };
 type Wms3dSnapshot={metrics:Record<string,number>;finishedGoods:Array<{id:number;sn:string;status:string;productCode:string;workOrderCode:string;locationCode:string;cartonCode?:string;palletCode?:string}>};
+type RawMaterialLot = { id?: number|string; labelId?: string; rollQr?: string; lotNo: string; materialCode: string; iqcStatus?: string; locationCode?: string|null; receivedDate?: string; createdAt?: string; boxQr?: string; palletQr?: string; workOrderCode?: string };
+
+function rawMaterialToSceneItem(item: RawMaterialLot, index = 0): FinishedGoodItem {
+  const raw = item as RawMaterialLot & { receivedQty?: number; availableQty?: number; reservedQty?: number; supplierCode?: string; expiryDate?: string };
+  return {
+    id: Number(item.id ?? index),
+    serial_no: item.labelId || item.rollQr || item.lotNo,
+    inventory_status: item.iqcStatus === "released" ? "AVAILABLE" : item.iqcStatus === "rejected" ? "SCRAPPED" : "HOLD",
+    received_at: item.receivedDate || item.createdAt || new Date().toISOString(),
+    product_code: item.materialCode,
+    work_order_code: item.workOrderCode || "",
+    location_code: item.locationCode || "",
+    carton_code: item.boxQr || item.labelId || item.lotNo,
+    pallet_code: item.palletQr || null,
+    lot_no: item.lotNo,
+    iqc_status: item.iqcStatus,
+    received_qty: raw.receivedQty,
+    available_qty: raw.availableQty,
+    reserved_qty: raw.reservedQty,
+    supplier_code: raw.supplierCode,
+    expiry_date: raw.expiryDate,
+  };
+}
 
 function parseLocation(code: string) {
   const parts = code.split("-");
@@ -202,16 +232,26 @@ export function ProductWarehouseScene3d() {
     else { setSelectedItem(null); setLineage(null); setLinkedMaterials([]); setDetailStatus(""); }
   }, [loadWmsDetail]);
   const locate=useCallback(async(term=search)=>{
-    const snap=await apiClient.get<Wms3dSnapshot>(`/api/3d/wms-snapshot${term.trim()?`?q=${encodeURIComponent(term.trim())}`:""}`);
+    const [snap, raw] = await Promise.all([
+      apiClient.get<Wms3dSnapshot>(`/api/3d/wms-snapshot${term.trim()?`?q=${encodeURIComponent(term.trim())}`:""}`),
+      apiClient.get<{ items?: RawMaterialLot[]; data?: RawMaterialLot[] }>(`/wms/material-lots?limit=500${term.trim()?`&q=${encodeURIComponent(term.trim())}`:""}`).catch(() => ({ items: [] })),
+    ]);
     setSearchResults(snap.finishedGoods??[]);setMetrics(snap.metrics??{});
-    const hit=snap.finishedGoods?.find(x=>x.locationCode);
-    if(hit){const group=groups.find(g=>g.locationCode===hit.locationCode);if(group)setSelected(group);}
+    const termKey=term.trim().toLowerCase();
+    const rawHit=(raw.items??raw.data??[]).find(x=>x.locationCode && [x.labelId,x.rollQr,x.lotNo,x.materialCode,x.boxQr,x.palletQr].some(value => String(value || "").toLowerCase() === termKey));
+    const rawSceneItem=rawHit ? rawMaterialToSceneItem(rawHit) : null;
+    const hit=snap.finishedGoods?.find(x=>[x.sn,x.productCode,x.workOrderCode,x.locationCode,x.cartonCode,x.palletCode].some(value => String(value || "").toLowerCase() === termKey)) ?? (rawSceneItem ? { locationCode: rawSceneItem.location_code } : null);
+    if(hit){const group=groups.find(g=>g.locationCode===hit.locationCode);if(group){setSelected(group);if(rawSceneItem)void loadWmsDetail(rawSceneItem);}}
   },[search,groups]);
 
   const loadInventory = useCallback(async () => {
     try {
-      const data = await apiClient.get<FgInventoryResponse>("/wms/finished-goods-inventory?limit=500");
-      const items = data.items ?? [];
+      const [data, rawData] = await Promise.all([
+        apiClient.get<FgInventoryResponse>("/wms/finished-goods-inventory?limit=500"),
+        apiClient.get<{ items?: RawMaterialLot[]; data?: RawMaterialLot[] }>("/wms/material-lots?limit=500").catch(() => ({ items: [] })),
+      ]);
+      const rawItems = (rawData.items ?? rawData.data ?? []).filter(item => item.locationCode).map(rawMaterialToSceneItem);
+      const items = [...(data.items ?? []), ...rawItems];
       const map = new Map<string, FinishedGoodItem[]>();
       for (const item of items) {
         const key = item.location_code ?? `UNK-${items.indexOf(item)}`;
@@ -286,6 +326,13 @@ export function ProductWarehouseScene3d() {
               </span>
             </div>
             <WmsDetail label="SN" value={selectedItem?.serial_no} />
+            <WmsDetail label="物料批次" value={selectedItem?.lot_no} />
+            <WmsDetail label="IQC状态" value={selectedItem?.iqc_status} />
+            <WmsDetail label="收料数量" value={selectedItem?.received_qty} />
+            <WmsDetail label="可用数量" value={selectedItem?.available_qty} />
+            <WmsDetail label="已绑定数量" value={selectedItem?.reserved_qty} />
+            <WmsDetail label="供应商编码" value={selectedItem?.supplier_code} />
+            <WmsDetail label="有效期" value={selectedItem?.expiry_date ? new Date(selectedItem.expiry_date).toLocaleDateString() : null} />
             <WmsDetail label="产品" value={selectedItem?.product_code} />
             <WmsDetail label="工单" value={selectedItem?.work_order_code} />
             <WmsDetail label="工单绑定" value={lineage?.workOrder?.workOrderCode ?? lineage?.workOrderCode ?? selectedItem?.work_order_code} />

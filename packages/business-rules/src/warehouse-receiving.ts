@@ -50,5 +50,5 @@ export function receivingActions(draft: InboundReceivingDraft): InventoryAction[
   const validation = validateInboundReceiving(draft);
   if (!validation.ok) return [];
   const state = receivingState(draft.qcDecision);
-  return state.canPutAway ? ["RECEIVE", "IQC_RELEASE", "PUT_AWAY"] : ["RECEIVE", state.inventoryAction];
+  return state.canPutAway ? ["RECEIVE", "IQC_RELEASE", "PUT_AWAY"] : state.inventoryAction === "RECEIVE" ? ["RECEIVE"] : ["RECEIVE", state.inventoryAction];
 }

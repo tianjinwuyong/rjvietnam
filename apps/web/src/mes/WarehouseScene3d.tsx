@@ -45,6 +45,7 @@ type ControlState = {
   stateVersion: string; generatedAt: string; actor: { username: string; roleKey: string };
   cells: Cell[]; tasks: Task[]; commands: Command[]; floorAreas: FloorArea[]; floorPlacements:FloorPlacement[];
 };
+type PdaReceivingStatus = { phase: "DRAFT" | "SCANNED" | "RECEIVING" | "COMPLETED" | "FAILED"; lotNo?: string; materialCode?: string; materialName?: string; palletQr?: string; boxQr?: string; expectedQty?: string; receivedQty?: string; qty?: number; locationCode?: string; floorAreaCode?: string; iqcResult?: string; operator?: string; changedField?: string; at: string };
 type Action = "ANDON" | "ANDON_CLEAR" | "LIGHT_ON" | "LIGHT_OFF" | "RESERVE" | "RELEASE" | "MOVE" | "COUNT";
 type FocusPoint = [number, number, number];
 
@@ -360,6 +361,8 @@ export function WarehouseScene3d() {
   const [twin, setTwin] = useState<TwinSummary | null>(null);
   const [heatmap, setHeatmap] = useState(false);
   const [twinTab, setTwinTab] = useState<"kpi" | "alerts">("kpi");
+  const [pdaReceiving, setPdaReceiving] = useState<PdaReceivingStatus | null>(null);
+
 
   const loadTwin = useCallback(async () => {
     try {
@@ -400,6 +403,20 @@ export function WarehouseScene3d() {
     const timer = window.setInterval(() => void load(), 2_000);
     return () => window.clearInterval(timer);
   }, [load]);
+  const refreshWms = useCallback(() => { versionRef.current = ""; void load(); void loadTwin(); }, [load, loadTwin]);
+  useEffect(() => {
+    const apply = (value: unknown) => {
+      try { const next = typeof value === "string" ? JSON.parse(value) : value; if (next?.at) { setPdaReceiving(next); setFocus([RAW_CENTER[0], 1.1, RAW_CENTER[1]]); refreshWms(); } } catch { /* stale local status */ }
+    };
+    try { apply(window.localStorage.getItem("wms:pda-receiving-status")); } catch { /* private mode */ }
+    const onStatus = (event: Event) => apply((event as CustomEvent<PdaReceivingStatus>).detail);
+    const onStorage = (event: StorageEvent) => { if (event.key === "wms:pda-receiving-status") apply(event.newValue); };
+    const stream = new EventSource("/api/pda/events?node=wms_receiving_3d&replay=1&types=WMS_RECEIVING_PDA_ACTIVITY");
+    stream.onmessage = (event) => { try { const item = JSON.parse(event.data); const payload = item.payload || item; if (payload.at) apply({ ...payload, at: new Date(Number(payload.at) || payload.at).toISOString() }); } catch { /* refresh loop remains active */ } };
+    window.addEventListener("wms:pda-receiving-status", onStatus);
+    window.addEventListener("storage", onStorage);
+    return () => { window.removeEventListener("wms:pda-receiving-status", onStatus); window.removeEventListener("storage", onStorage); stream.close(); };
+  }, [refreshWms]);
 
   const cells = useMemo(() => new Map((state?.cells ?? []).map(cell => [`${cell.shelfCode}:${cell.cellNumber}`, cell])), [state]);
   const selectedCell = selected ? cells.get(`${selected.shelfCode}:${selected.cellNumber}`) : undefined;
@@ -471,6 +488,14 @@ export function WarehouseScene3d() {
       <button type="button" onClick={() => { setSelected(null); setSelectedArea(null); setFocus(null); setOverviewNonce(n=>n+1); }} style={{ padding: "7px 11px", borderRadius: 7, border: "1px solid #475569", background: "#0f2742", color: "white", fontWeight: 700 }}>总览</button>
       <div style={{ marginLeft: "auto", textAlign: "right", fontSize: 11 }}><div style={{ color: connected ? "#86efac" : "#fca5a5" }}>● {connected ? "实时同步" : "连接中断"}</div><div>{state?.actor.username ?? "—"} · {role}</div></div>
     </header>}
+
+    {!uiCollapsed && pdaReceiving && <section data-testid="pda-receiving-live" style={{ position: "absolute", left: 320, top: 132, width: 280, borderRadius: 10, padding: 11, background: "rgba(7,17,31,.94)", color: "white", boxShadow: "0 8px 22px rgba(0,0,0,.22)", borderLeft: `4px solid ${pdaReceiving.phase === "FAILED" ? "#ef4444" : pdaReceiving.phase === "COMPLETED" ? "#22c55e" : "#f59e0b"}` }}>
+      <div style={{ fontSize: 10, color: "#93c5fd", letterSpacing: ".08em", fontWeight: 800 }}>PDA RECEIVING · LIVE</div>
+      <strong style={{ display: "block", marginTop: 4 }}>{pdaReceiving.phase} · {pdaReceiving.lotNo || "—"}</strong>
+      <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{pdaReceiving.materialCode || "—"} · {pdaReceiving.qty ?? 0} pcs</div>
+      <div style={{ fontSize: 11, color: "#7dd3fc", marginTop: 4 }}>WMS location: {pdaReceiving.locationCode || pdaReceiving.floorAreaCode || "pending assignment"}</div>
+      <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>IQC {pdaReceiving.iqcResult || "pending"} · {new Date(pdaReceiving.at).toLocaleTimeString()}</div>
+    </section>}
 
     {!uiCollapsed && <section data-testid="twin-dashboard" style={{ position: "absolute", left: 16, bottom: 18, width: 344, borderRadius: 12, background: "rgba(7,17,31,.95)", color: "white", boxShadow: "0 10px 30px rgba(0,0,0,.3)", overflow: "hidden" }}>
       <div style={{ display: "flex", background: "#0f2742" }}>

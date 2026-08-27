@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="iqc-loop-title iqc-loop-desc">
+  <title id="iqc-loop-title">IQC and MRB material closed loop</title>
+  <desc id="iqc-loop-desc">Four receiving sources enter the receiving todo, receive a system QR document and warehouse binding, then go through IQC to finished goods or defective warehouse and MRB disposition.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#4f5d75"/></marker>
+    <marker id="arrow-accent" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#c65332"/></marker>
+    <style>
+      .bg{fill:#f5f5f5}.box{fill:#fff;stroke:#2d3142;stroke-width:2}.source{fill:#eef1f5;stroke:#7a8399;stroke-width:2}.focus{fill:#fff0e9;stroke:#c65332;stroke-width:2.5}.decision{fill:#fff;stroke:#2d3142;stroke-width:2}.line{fill:none;stroke:#4f5d75;stroke-width:2;marker-end:url(#arrow)}.accent-line{fill:none;stroke:#c65332;stroke-width:2.5;marker-end:url(#arrow-accent)}.label{font:600 18px Arial,sans-serif;fill:#2d3142;text-anchor:middle}.small{font:14px Arial,sans-serif;fill:#4f5d75;text-anchor:middle}.edge{font:14px Arial,sans-serif;fill:#4f5d75;text-anchor:middle}.edge-accent{font:600 14px Arial,sans-serif;fill:#c65332;text-anchor:middle}.title{font:600 30px Arial,sans-serif;fill:#2d3142}.subtitle{font:16px Arial,sans-serif;fill:#4f5d75}.legend{font:14px Arial,sans-serif;fill:#4f5d75}
+    </style>
+  </defs>
+  <rect class="bg" width="1600" height="900"/>
+  <text class="title" x="64" y="60">IQC / MRB 物料质量闭环</text>
+  <text class="subtitle" x="64" y="90">QR = WMS/MES 系统收货单据编码：绑定批次到仓库仓位，不是二维码，也不是 Quarantine</text>
+
+  <!-- connectors first -->
+  <path class="line" d="M180 180H260V300H340"/><path class="line" d="M180 300H340"/><path class="line" d="M180 420H260V340H340"/><path class="line" d="M180 540H260V380H340"/>
+  <path class="line" d="M460 340H560"/><path class="accent-line" d="M700 340H820"/>
+  <path class="line" d="M940 340H1040V240H1140"/><path class="line" d="M940 340H1040V460H1140"/>
+  <path class="line" d="M1260 460H1360V360H1460"/><path class="line" d="M1260 460H1360V500H1460"/><path class="line" d="M1260 460H1360V640H1460"/>
+  <path class="accent-line" d="M1520 360V760H400V400"/>
+
+  <!-- source nodes -->
+  <rect class="source" x="40" y="140" width="140" height="80" rx="6"/><text class="label" x="110" y="174">订单采购到货</text><text class="small" x="110" y="198">PO_RECEIPT</text>
+  <rect class="source" x="40" y="260" width="140" height="80" rx="6"/><text class="label" x="110" y="294">产线退料</text><text class="small" x="110" y="318">LINE_RETURN</text>
+  <rect class="source" x="40" y="380" width="140" height="80" rx="6"/><text class="label" x="110" y="414">返工修复完工</text><text class="small" x="110" y="438">REWORK_RETURN</text>
+  <rect class="source" x="40" y="500" width="140" height="80" rx="6"/><text class="label" x="110" y="534">外协完工回厂</text><text class="small" x="110" y="558">SUBCONTRACT_RETURN</text>
+
+  <rect class="box" x="340" y="300" width="120" height="80" rx="6"/><text class="label" x="400" y="334">收货仓库</text><text class="small" x="400" y="358">待办确认</text>
+  <rect class="focus" x="560" y="300" width="140" height="80" rx="6"/><text class="label" x="630" y="330">QR绑定仓库</text><text class="small" x="630" y="354">系统单据 + 仓位</text>
+  <polygon class="decision" points="880,280 940,340 880,400 820,340"/><text class="label" x="880" y="336">IQC</text><text class="small" x="880" y="360">检验</text>
+  <rect class="box" x="1140" y="200" width="120" height="80" rx="6"/><text class="label" x="1200" y="232">成品仓库</text><text class="small" x="1200" y="256">解除 QR / 放行</text>
+  <rect class="box" x="1140" y="420" width="120" height="80" rx="6"/><text class="label" x="1200" y="452">不良品仓库</text><text class="small" x="1200" y="476">离开 QR 仓</text>
+  <polygon class="decision" points="1520,400 1580,460 1520,520 1460,460"/><text class="label" x="1520" y="456">MRB</text><text class="small" x="1520" y="480">物料评审</text>
+  <rect class="box" x="1460" y="320" width="120" height="80" rx="6"/><text class="label" x="1520" y="352">报废</text><text class="small" x="1520" y="376">不生成 QR</text>
+  <rect class="box" x="1460" y="460" width="120" height="80" rx="6"/><text class="label" x="1520" y="492">退货供应商</text><text class="small" x="1520" y="516">不生成 QR</text>
+  <rect class="focus" x="1460" y="600" width="120" height="80" rx="6"/><text class="label" x="1520" y="632">返工修复</text><text class="small" x="1520" y="656">完成后重新收货</text>
+  <rect class="box" x="340" y="760" width="120" height="80" rx="6"/><text class="label" x="400" y="792">IQC复检</text><text class="small" x="400" y="816">PASS → 成品仓</text>
+
+  <rect x="64" y="680" width="720" height="1" fill="#c8ccd4"/><text class="legend" x="64" y="716">规则：QR 单据只在收货/入库检验前生成；IQC 不合格直接转不良品仓；仅返工回仓再次生成 QR 并复检。</text>
+  <text class="edge" x="780" y="326">生成并绑定</text><text class="edge-accent" x="1000" y="326">PASS</text><text class="edge" x="1000" y="446">FAIL</text>
+</svg>

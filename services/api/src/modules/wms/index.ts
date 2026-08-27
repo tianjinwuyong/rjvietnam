@@ -6,6 +6,12 @@ export const wmsModule: FactoryModule = {
   owns: ["receiving", "IQC status", "inventory transactions", "storage", "picking", "line issue", "returns"],
   routes: [
     {
+      method: "POST",
+      path: "/wms/receiving/label-ai",
+      summary: "Parse a receiving-label image with local Ollama vision and return editable fields",
+      requiredPermissions: ["wms.execute"],
+    },
+    {
       method: "GET",
       path: "/wms/material-lots",
       summary: "List material lots with IQC status, reserve state, and location",

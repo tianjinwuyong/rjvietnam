@@ -1,6 +1,6 @@
 param(
   [string]$Repo = (Get-Location).Path,
-  [string]$Target = "fef5c26"
+  [string]$Target = "fef5c26c547490c578d5416cfb3fb70a53c4968e"
 )
 
 $ErrorActionPreference = "Stop"

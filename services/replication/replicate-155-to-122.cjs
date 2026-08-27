@@ -247,6 +247,12 @@ async function fetchBatch(spec, afterCursor) {
     const filter = spec.statusFilter ? ` AND ${spec.statusFilter}` : '';
     sql = `SELECT ${select} FROM ${spec.name} WHERE ${spec.cursorCol} > $1${filter} ORDER BY ${spec.cursorCol} LIMIT $2`;
     params = [afterCursor, BATCH];
+    // For text-based cursor columns (UUID/varchar), ensure empty string is
+    // handled: NULL compare in Postgres always succeeds, so start at '0' for
+    // text-type cursors as a safe lower bound.
+    if (typeof afterCursor === 'string' && afterCursor === '' && spec.cursorCol !== 'event_id') {
+      params[0] = '0';
+    }
   }
   const r = await src.query(sql, params);
   return r.rows;

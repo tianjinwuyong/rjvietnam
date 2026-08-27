@@ -18,6 +18,7 @@ import { partsSuppliersModule } from "./modules/parts-suppliers";
 import { partsPricingModule } from "./modules/parts-pricing";
 import { equipmentArchivesModule } from "./modules/equipment-archives";
 import { pdaModule } from "./modules/pda";
+import { salesModule } from "./modules/sales";
 
 export const apiModules = [
   authModule,
@@ -40,6 +41,7 @@ export const apiModules = [
   partsPricingModule,
   equipmentArchivesModule,
   pdaModule,
+  salesModule,
 ];
 
 export function listApiRoutes() {

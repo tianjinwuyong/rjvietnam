@@ -4,4 +4,5 @@ export * from "./profile";
 export * from "./plugins/scanner";
 export * from "./plugins/productGate";
 export * from "./plugins/smtMaterialLoading";
+export * from "./pdaMaterialLoading";
 export * from "./plugins/materialUsage";

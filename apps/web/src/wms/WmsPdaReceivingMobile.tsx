@@ -170,7 +170,9 @@ export function WmsPdaReceivingMobile({ locale }: { locale: Locale }) {
   const handleSubmit = async () => {
     setBusy(true);
     setFeedback(null);
-    const qcDecision = msdAllOk ? "PASS" as const : "HOLD" as const;
+    // MSD package checks do not replace supplier IQC. Newly received material
+    // remains uninspected/pending until the IQC workflow releases the lot.
+    const qcDecision = "PENDING" as const;
     const receivingDraft = {
       scanValue: form.lotNo,
       materialCode: form.materialCode,

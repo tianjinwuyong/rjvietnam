@@ -149,6 +149,8 @@ export function QmsPdaIqc() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [pendingInspections, setPendingInspections] = useState<Record<string, unknown>[]>([]);
+  const [pendingIqcLots, setPendingIqcLots] = useState<IqcLot[]>([]);
+  const [iqcWaitingNotice, setIqcWaitingNotice] = useState<Record<string, unknown> | null>(null);
   const cameraRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
@@ -162,6 +164,34 @@ export function QmsPdaIqc() {
   useEffect(() => {
     startAutoSync(30000);
     return () => {};
+  }, []);
+
+  const loadIqcQueue = useCallback(async () => {
+    const token = sessionStorage.getItem("auth_token") || localStorage.getItem("token") || "";
+    const response = await fetch("/wms/receiving-queue?status=iqc&limit=200", { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!response.ok) throw new Error("无法读取 IQC 待检队列");
+    const body = await response.json() as { items?: IqcLot[] } | IqcLot[];
+    const items = Array.isArray(body) ? body : body.items || [];
+    setPendingIqcLots(items);
+    return items;
+  }, []);
+
+  useEffect(() => {
+    void loadIqcQueue().catch(() => setPendingIqcLots([]));
+  }, [loadIqcQueue]);
+
+  // Receiving publishes a live QMS/PDA prompt as soon as a lot enters IQC_PENDING.
+  useEffect(() => {
+    const stream = new EventSource("/api/pda/events?node=qms_pda_iqc&replay=1&types=WMS_IQC_MATERIAL_WAITING");
+    stream.onmessage = (event) => {
+      try {
+        const item = JSON.parse(event.data) as { payload?: Record<string, unknown> };
+        const payload = item.payload || item;
+        setIqcWaitingNotice(payload);
+        setView("scan");
+      } catch { /* keep manual scan available */ }
+    };
+    return () => stream.close();
   }, []);
 
   // Update queue count periodically
@@ -312,6 +342,15 @@ export function QmsPdaIqc() {
       setSubmitted(true);
       setQueueCount(getQueueCount());
     }
+    const nextQueue = await loadIqcQueue().catch(() => [] as IqcLot[]);
+    const nextLot = nextQueue.find(item => item.lot_no !== lot.lot_no);
+    if (nextLot) {
+      setLotInput(nextLot.lot_no);
+      await lookupLot(nextLot.lot_no);
+    } else {
+      setView("scan");
+      setLot(null);
+    }
     setSubmitting(false);
   };
 
@@ -365,8 +404,26 @@ export function QmsPdaIqc() {
       <div style={{ background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
         <StatusBar online={online} queueCount={queueCount} syncing={syncing} t={t} />
         <div style={{ padding: 24 }}>
+          {iqcWaitingNotice && <div role="alert" style={{ background: "#7f1d1d", border: "1px solid #f87171", borderRadius: 10, padding: 14, marginBottom: 18, color: "#fff" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
+              <div><strong>QMS / PDA IQC 待检提示</strong><div style={{ marginTop: 6, fontSize: 13 }}>物料批次 <b>{String(iqcWaitingNotice.lotNo || "-")}</b> 已收料完成，请进行 IQC 检测。</div><div style={{ marginTop: 4, fontSize: 12, color: "#fecaca" }}>来源：{String(iqcWaitingNotice.sourceType || "PO_RECEIPT")} · 数量：{String(iqcWaitingNotice.quantity || 0)} · 状态：IQC_PENDING</div></div>
+              <button onClick={() => setIqcWaitingNotice(null)} style={{ background: "transparent", border: "1px solid #fecaca", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>关闭</button>
+            </div>
+          </div>}
           <h2 style={{ color: "#e2e8f0", fontSize: 22, marginTop: 8, marginBottom: 4 }}>{t("qms.pda.scanTitle")}</h2>
           <p style={{ color: "#64748b", fontSize: 13, marginBottom: 24 }}>{t("qms.pda.scanHint")}</p>
+
+          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 10, padding: 14, marginBottom: 18 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <strong style={{ color: "#fbbf24" }}>IQC 待检队列</strong>
+              <button onClick={() => void loadIqcQueue()} style={{ background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 5, padding: "5px 9px", cursor: "pointer" }}>刷新</button>
+            </div>
+            {pendingIqcLots.length === 0 ? <div style={{ color: "#94a3b8", fontSize: 13 }}>当前没有待检物料</div> : <div style={{ display: "grid", gap: 8 }}>
+              {pendingIqcLots.map(item => <button key={item.id} onClick={() => { setLotInput(item.lot_no); void lookupLot(item.lot_no); }} style={{ textAlign: "left", background: item.lot_no === lotInput ? "#1d4ed8" : "#0f172a", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 7, padding: "9px 10px", cursor: "pointer" }}>
+                <div style={{ fontWeight: 700 }}>{item.lot_no} · {item.material_code}</div><div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 3 }}>数量 {item.received_qty} · 收料时间 {item.received_at ? new Date(item.received_at).toLocaleString() : "-"} · IQC_PENDING</div>
+              </button>)}
+            </div>}
+          </div>
 
           <div style={{ background: "#1e293b", border: "2px dashed #334155", borderRadius: 12, padding: "40px 24px", textAlign: "center", marginBottom: 20 }}>
             <ScanBarcode size={64} color="#38bdf8" style={{ margin: "0 auto 16px" }} />

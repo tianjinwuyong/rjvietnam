@@ -124,6 +124,15 @@ export interface MaterialTrace {
   quality?: { iqcStatus?: string; inspections: unknown[]; pdaInspections: unknown[]; specialApprovals: unknown[]; documents: unknown[] };
 }
 
+export interface FifoLotRecommendation {
+  id: number;
+  lotNo: string;
+  availableQty: number;
+  receivedAt?: string | null;
+  effectiveExpiryAt?: string | null;
+  locationCode?: string | null;
+}
+
 export interface WmsLoadingStats {
   totalWos: number;
   completedWos: number;
@@ -324,6 +333,12 @@ export const wmsApi: any = {
   postTransaction(action: string, payload: { materialLotId?: number | string; lotNo?: string; qty?: number; operator?: number | string; workOrderCode?: string; fromLocation?: string; toLocation?: string; reason?: string }) {
     return apiClient.post<MutateEnvelope<{ id: number; action: string }>>("/wms/transactions", { action, payload: { ...payload, action } });
   },
+  getLotRecommendations(workOrderCode: string, materialCode: string) {
+    return apiClient.get<{ policy: string; items: FifoLotRecommendation[] }>(`/wms/work-orders/${encodeURIComponent(workOrderCode)}/lot-recommendations/${encodeURIComponent(materialCode)}`);
+  },
+  reserveMaterial(payload: { lotNo: string; workOrderCode: string; qty: number; operator?: string }) {
+    return apiClient.post<MutateEnvelope<{ id: number; lotNo: string; workOrderCode: string; qty: number }>>("/wms/reservations", { payload });
+  },
   /** Resolve a scanned physical roll QR/SN before MES/PDA loading. */
   resolveMaterialRoll(qr: string) {
     return apiClient.get(`/wms/material-rolls/resolve?qr=${encodeURIComponent(qr)}`);
@@ -494,6 +509,9 @@ export const wmsApi: any = {
     operator?: string;
   }): Promise<{ success: boolean; data?: LifecycleOpening }> {
     return apiClient.post<{ success: boolean; data?: LifecycleOpening }>("/api/lifecycle/openings", body);
+  },
+  sealLifecycleOpening(openingId: number | string, operator?: string) {
+    return apiClient.post<{ data: { id: number; material_lot_id: number; opened_at: string; closed_at: string; closed_by: string } }>(`/api/lifecycle/openings/${openingId}/seal`, { operator });
   },
 
   /** GET /api/lifecycle/reinspection — Sheet3 data */

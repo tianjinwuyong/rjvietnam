@@ -10,6 +10,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".LabelCameraActivity" android:screenOrientation="portrait" android:exported="false" />
         <activity android:name=".ScannerActivity" android:screenOrientation="portrait" android:exported="false" />
     </application>
 </manifest>

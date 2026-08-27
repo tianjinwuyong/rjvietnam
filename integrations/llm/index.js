@@ -25,6 +25,31 @@ async function ollamaChat(model, messages, opts = {}) {
   }
 }
 
+/**
+ * Parse a receiving label with a local Ollama vision model.  The caller must
+ * still confirm the returned fields before posting a WMS receipt.
+ */
+export async function askReceivingLabelVision(imageDataUrl, opts = {}) {
+  const model = opts.model ?? process.env.OLLAMA_VISION_MODEL ?? "minicpm-v4.5:8b";
+  const image = String(imageDataUrl || "").replace(/^data:image\/[^;]+;base64,/, "");
+  if (!image) throw new Error("label image is required");
+  const context = opts.context ? `\nAdditional scanner/OCR context (may be wrong; compare it to the image):\n${String(opts.context).slice(0, 6000)}` : "";
+  const prompt = `You are a warehouse receiving label parser. Read the attached label carefully.
+Return ONLY valid JSON, no markdown, using exactly these keys:
+materialCode, vietnamMaterialCode, ruijingMaterialCode, materialName, specification, supplier, purchaseOrder, lot, manufactureDate, expiryDate, quantity, expectedQuantity, quantityPerBox, boxCount, boxNumber, boxSn, unit, palletQr, locationCode, msdLevel, floorLifeHours, invoice, ulCode, qualityMark, confidence, warnings.
+Labels may be Chinese, Vietnamese, or English and may be supplier labels, customer labels, packing labels, barcode labels, or QR labels. Map equivalent labels such as 物料代码/料号/PART NO to materialCode, 越南代码 to vietnamMaterialCode, 瑞晶代码 to ruijingMaterialCode, 批次/LOT NO to lot, 本批数量/总数量 to quantity or expectedQuantity, 本箱数量 to quantityPerBox, 箱数 to boxCount, 箱号/箱SN to boxSn, 供应商/VENDOR to supplier, 生产日期/PACKING DATE to manufactureDate, 有效期 to expiryDate, and MS/MSD to msdLevel. Read text near barcodes and QR codes; do not confuse a barcode value with the material code.
+Use null when a value is not readable. Dates must be YYYY-MM-DD when confidently recognized. quantity must be a number or null. confidence is 0..1. warnings is an array of short strings. Never invent values; mark uncertain readings in warnings.`;
+  const finalPrompt = prompt + context;
+  const response = await ollamaChat(model, [{
+    role: "user",
+    content: [
+      { type: "text", text: finalPrompt },
+      { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } },
+    ],
+  }], { temperature: 0, max_tokens: 1200 });
+  return { model, raw: response.content || "", imageBase64: image };
+}
+
 export async function askChat(prompt, opts = {}) {
   const locale = opts?.locale ?? "zh-CN";
   const model = opts?.model ?? DEFAULT_MODEL;
