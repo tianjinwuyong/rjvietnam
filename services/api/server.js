@@ -11650,6 +11650,19 @@ const iqcDefectLoopReady=(async()=>{
     lot_no VARCHAR(80) NOT NULL, rework_qr_document_no VARCHAR(120) NOT NULL, status VARCHAR(24) NOT NULL DEFAULT 'OPEN',
     result VARCHAR(8), remark TEXT, inspector VARCHAR(120), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), completed_at TIMESTAMPTZ,
     CONSTRAINT wms_iqc_reinspection_result_ck CHECK(result IS NULL OR result IN('PASS','FAIL')))`);
+  await query(`CREATE TABLE IF NOT EXISTS wms_iqc_scrap_finance_approvals(
+    id BIGSERIAL PRIMARY KEY, approval_no VARCHAR(80) UNIQUE NOT NULL,
+    defect_case_id BIGINT UNIQUE NOT NULL REFERENCES wms_iqc_defect_cases(id) ON DELETE RESTRICT,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING_FINANCE_APPROVAL',
+    scrap_qty NUMERIC(18,3) NOT NULL DEFAULT 0, unit_cost NUMERIC(18,4) NOT NULL DEFAULT 0,
+    scrap_amount NUMERIC(18,4) NOT NULL DEFAULT 0, currency VARCHAR(8) NOT NULL DEFAULT 'USD',
+    reason TEXT, submitted_by VARCHAR(120) NOT NULL, submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    finance_approver VARCHAR(120), decision_note TEXT, decided_at TIMESTAMPTZ,
+    executed_by VARCHAR(120), executed_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE TABLE IF NOT EXISTS wms_iqc_scrap_finance_audit(
+    id BIGSERIAL PRIMARY KEY, approval_id BIGINT NOT NULL REFERENCES wms_iqc_scrap_finance_approvals(id),
+    action VARCHAR(40) NOT NULL, from_status VARCHAR(32), to_status VARCHAR(32), actor VARCHAR(120) NOT NULL,
+    detail JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
 })();
 
 function notifyIqcWaiting(row, sourceType) {
@@ -11691,7 +11704,27 @@ app.post("/wms/receiving/qr-bindings/:id/iqc-result", requirePermission("quality
 app.get("/quality/iqc-defect-cases", requirePermission("quality.view"), async(_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT c.*,COALESCE(SUM(r.removed_qty),0) removed_qty,GREATEST(c.defective_qty-COALESCE(SUM(r.removed_qty),0),0) remaining_on_pallet FROM wms_iqc_defect_cases c LEFT JOIN wms_iqc_pallet_removals r ON r.defect_case_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope("DEFECT_LIST_FAILED",e.message));}});
 app.post("/quality/iqc-defect-cases/:id/pallet-removal", requirePermission("wms.execute"), async(req,res)=>{const client=await pgPool.connect();try{await iqcDefectLoopReady;await client.query('BEGIN');const c=(await client.query("SELECT * FROM wms_iqc_defect_cases WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!c||c.status!=='PALLET_REMOVAL_PENDING')throw new Error('defect case is not awaiting pallet removal');await client.query("INSERT INTO wms_iqc_pallet_removals(defect_case_id,pallet_code,removed_qty,removed_by) VALUES($1,$2,$3,$4)",[req.params.id,req.body?.palletCode||c.source_pallet_code,req.body?.removedQty||c.defective_qty,String(req.body?.operator||req.user?.username||'operator')]);const total=(await client.query("SELECT COALESCE(SUM(removed_qty),0) n FROM wms_iqc_pallet_removals WHERE defect_case_id=$1",[req.params.id])).rows[0].n;if(Number(total)<Number(c.defective_qty))throw new Error(`pallet removal incomplete: ${total}/${c.defective_qty}`);const u=(await client.query("UPDATE wms_iqc_defect_cases SET status='IN_MRB',pallet_removed_at=NOW() WHERE id=$1 RETURNING *",[req.params.id])).rows[0];await client.query("INSERT INTO wms_iqc_mrb_tasks(defect_case_id,task_no) VALUES($1,$2) ON CONFLICT(defect_case_id) DO NOTHING",[req.params.id,`MRB-${c.case_no}`]);await client.query('COMMIT');res.json(mutateEnvelope(u));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("PALLET_REMOVAL_FAILED",e.message));}finally{client.release();}});
 app.get("/quality/iqc-mrb-tasks", requirePermission("quality.view"), async(_req,res)=>{try{await iqcDefectLoopReady;const r=await query("SELECT t.*,c.case_no,c.lot_no,c.defective_qty,c.pallet_removed_at FROM wms_iqc_mrb_tasks t JOIN wms_iqc_defect_cases c ON c.id=t.defect_case_id WHERE t.status IN('OPEN','OVERDUE','IN_PROGRESS') ORDER BY t.due_at");res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope("MRB_LIST_FAILED",e.message));}});
-app.post("/quality/iqc-defect-cases/:id/mrb", requirePermission("quality.execute"), async(req,res)=>{const d=String(req.body?.decision||'').toUpperCase(),s=d==='REWORK'?'REWORKING':d==='SCRAP'?'SCRAPPED':d==='VENDOR_RETURN'?'VENDOR_RETURN':'';if(!s)return res.status(400).json(errorEnvelope("MRB_DECISION_REQUIRED","decision must be REWORK, SCRAP, or VENDOR_RETURN"));try{const r=await query("UPDATE wms_iqc_defect_cases SET status=$1,mrb_decision=$2,mrb_remark=$3,mrb_at=NOW() WHERE id=$4 AND status='IN_MRB' RETURNING *",[s,d,req.body?.remark||null,req.params.id]);if(!r.rows[0])return res.status(409).json(errorEnvelope("MRB_INVALID_STATE","case is not ready for MRB"));await query("UPDATE wms_iqc_mrb_tasks SET status='COMPLETED',completed_at=NOW() WHERE defect_case_id=$1",[req.params.id]);res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope("MRB_FAILED",e.message));}});
+app.post("/quality/iqc-defect-cases/:id/mrb", requirePermission("quality.execute"), async(req,res,next)=>{
+  const d=String(req.body?.decision||'').toUpperCase();
+  if(d!=="SCRAP") return next();
+  const client=await pgPool.connect();
+  try{
+    await iqcDefectLoopReady; await client.query('BEGIN');
+    const c=(await client.query("SELECT * FROM wms_iqc_defect_cases WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
+    if(!c||c.status!=='IN_MRB') throw new Error('case is not ready for MRB');
+    const qty=Number(c.defective_qty||0), unitCost=Number(req.body?.unitCost||0), amount=Number(req.body?.scrapAmount ?? qty*unitCost);
+    const updated=(await client.query("UPDATE wms_iqc_defect_cases SET status='PENDING_FINANCE_APPROVAL',mrb_decision='SCRAP',mrb_remark=$1,mrb_at=NOW() WHERE id=$2 RETURNING *",[req.body?.remark||'等待财务审批',req.params.id])).rows[0];
+    const approval=(await client.query(`INSERT INTO wms_iqc_scrap_finance_approvals(approval_no,defect_case_id,scrap_qty,unit_cost,scrap_amount,currency,reason,submitted_by)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[`FSA-${c.case_no}`,c.id,qty,unitCost,amount,String(req.body?.currency||'USD'),req.body?.remark||'IQC不良品报废',String(req.body?.operator||req.user?.username||'operator')])).rows[0];
+    await client.query("UPDATE wms_iqc_mrb_tasks SET status='COMPLETED',completed_at=NOW() WHERE defect_case_id=$1",[req.params.id]);
+    await client.query("INSERT INTO wms_iqc_scrap_finance_audit(approval_id,action,from_status,to_status,actor,detail) VALUES($1,'SUBMITTED','IN_MRB','PENDING_FINANCE_APPROVAL',$2,$3)",[approval.id,approval.submitted_by,JSON.stringify({caseNo:c.case_no,amount,currency:approval.currency})]);
+    await client.query('COMMIT'); res.status(201).json(mutateEnvelope({case:updated,approval}));
+  }catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("SCRAP_FINANCE_SUBMIT_FAILED",e.message));}finally{client.release();}
+});
+app.get("/quality/iqc-scrap-finance-approvals", requirePermission("finance.view"), async(_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT a.*,c.case_no,c.lot_no,c.defective_qty,c.defect_code,c.source_pallet_code FROM wms_iqc_scrap_finance_approvals a JOIN wms_iqc_defect_cases c ON c.id=a.defect_case_id ORDER BY a.created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope("SCRAP_FINANCE_LIST_FAILED",e.message));}});
+app.post("/quality/iqc-scrap-finance-approvals/:id/decision", requirePermission("finance.manage"), async(req,res)=>{const decision=String(req.body?.decision||'').toUpperCase();if(!['APPROVED','REJECTED'].includes(decision))return res.status(400).json(errorEnvelope("FINANCE_DECISION_REQUIRED","decision must be APPROVED or REJECTED"));const client=await pgPool.connect();try{await client.query('BEGIN');const a=(await client.query("SELECT * FROM wms_iqc_scrap_finance_approvals WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!a||a.status!=='PENDING_FINANCE_APPROVAL')throw new Error('approval is not pending finance decision');const next=decision==='APPROVED'?'FINANCE_APPROVED':'FINANCE_REJECTED';const u=(await client.query("UPDATE wms_iqc_scrap_finance_approvals SET status=$1,finance_approver=$2,decision_note=$3,decided_at=NOW(),updated_at=NOW() WHERE id=$4 RETURNING *",[next,String(req.body?.approver||req.user?.username||'finance'),req.body?.note||null,req.params.id])).rows[0];await client.query("UPDATE wms_iqc_defect_cases SET status=$1 WHERE id=$2",[decision==='APPROVED'?'FINANCE_APPROVED':'IN_MRB',a.defect_case_id]);await client.query("INSERT INTO wms_iqc_scrap_finance_audit(approval_id,action,from_status,to_status,actor,detail) VALUES($1,$2,$3,$4,$5,$6)",[a.id,`FINANCE_${decision}`,'PENDING_FINANCE_APPROVAL',next,u.finance_approver,JSON.stringify({note:u.decision_note||null})]);await client.query('COMMIT');res.json(mutateEnvelope(u));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("SCRAP_FINANCE_DECISION_FAILED",e.message));}finally{client.release();}});
+app.post("/quality/iqc-scrap-finance-approvals/:id/execute", requirePermission("wms.execute"), async(req,res)=>{const client=await pgPool.connect();try{await client.query('BEGIN');const a=(await client.query("SELECT * FROM wms_iqc_scrap_finance_approvals WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!a||a.status!=='FINANCE_APPROVED')throw new Error('scrap is not finance approved');const c=(await client.query("SELECT * FROM wms_iqc_defect_cases WHERE id=$1 FOR UPDATE",[a.defect_case_id])).rows[0];const u=(await client.query("UPDATE wms_iqc_scrap_finance_approvals SET status='SCRAP_EXECUTED',executed_by=$1,executed_at=NOW(),updated_at=NOW() WHERE id=$2 RETURNING *",[String(req.body?.operator||req.user?.username||'warehouse'),a.id])).rows[0];await client.query("UPDATE wms_iqc_defect_cases SET status='SCRAPPED',closed_at=NOW() WHERE id=$1",[a.defect_case_id]);if(c?.material_lot_id)await client.query("UPDATE material_lots SET iqc_status='scrapped',updated_at=NOW() WHERE id=$1",[c.material_lot_id]);await client.query(`INSERT INTO inventory_transactions(tx_no,action,material_lot_id,qty,operator_id,tx_status,reference_type,reference_no) VALUES($1,'IQC_SCRAP',$2,$3,$4,'posted','IQC_SCRAP_FINANCE',$5)`,[`IQC_SCRAP_${Date.now()}`,c?.material_lot_id||null,Number(a.scrap_qty||0),null,a.approval_no]);await client.query("INSERT INTO wms_iqc_scrap_finance_audit(approval_id,action,from_status,to_status,actor,detail) VALUES($1,'SCRAP_EXECUTED','FINANCE_APPROVED','SCRAP_EXECUTED',$2,$3)",[a.id,u.executed_by,JSON.stringify({caseNo:c?.case_no||null})]);await client.query('COMMIT');res.json(mutateEnvelope(u));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("SCRAP_EXECUTION_FAILED",e.message));}finally{client.release();}});
+app.post("/quality/iqc-defect-cases/:id/mrb", requirePermission("quality.execute"), async(req,res)=>{const d=String(req.body?.decision||'').toUpperCase(),s=d==='REWORK'?'REWORKING':d==='VENDOR_RETURN'?'VENDOR_RETURN':'';if(!s)return res.status(400).json(errorEnvelope("MRB_DECISION_REQUIRED","decision must be REWORK or VENDOR_RETURN"));try{const r=await query("UPDATE wms_iqc_defect_cases SET status=$1,mrb_decision=$2,mrb_remark=$3,mrb_at=NOW() WHERE id=$4 AND status='IN_MRB' RETURNING *",[s,d,req.body?.remark||null,req.params.id]);if(!r.rows[0])return res.status(409).json(errorEnvelope("MRB_INVALID_STATE","case is not ready for MRB"));await query("UPDATE wms_iqc_mrb_tasks SET status='COMPLETED',completed_at=NOW() WHERE defect_case_id=$1",[req.params.id]);res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope("MRB_FAILED",e.message));}});
 app.post("/quality/iqc-defect-cases/:id/rework-complete", requirePermission("quality.execute"), async(req,res)=>{try{const r=await query("UPDATE wms_iqc_defect_cases SET status='REINSPECTION',mrb_remark=COALESCE(mrb_remark,'')||$1 WHERE id=$2 AND status='REWORKING' RETURNING *",[` | rework by ${String(req.body?.operator||req.user?.username||'operator')}`,req.params.id]);if(!r.rows[0])return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE","case is not in REWORKING state"));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope("REWORK_FAILED",e.message));}});
 app.get("/quality/iqc-reinspections", requirePermission("quality.view"), async(_req,res)=>{try{await iqcDefectLoopReady;const r=await query("SELECT * FROM wms_iqc_reinspections ORDER BY created_at DESC LIMIT 500");res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope("REINSPECTION_LIST_FAILED",e.message));}});
 app.post("/quality/iqc-reinspections", requirePermission("quality.execute"), async(req,res)=>{try{const caseId=Number(req.body?.caseId),qr=String(req.body?.qrDocumentNo||'').trim();if(!caseId||!qr)return res.status(400).json(errorEnvelope("REINSPECTION_REQUIRED","caseId and qrDocumentNo are required"));const c=(await query("SELECT * FROM wms_iqc_defect_cases WHERE id=$1 AND status='REINSPECTION'",[caseId])).rows[0];if(!c)return res.status(409).json(errorEnvelope("REINSPECTION_INVALID_STATE","case is not waiting for reinspection"));const no=`REIQC-${c.case_no}`;const r=await query("INSERT INTO wms_iqc_reinspections(reinspection_no,defect_case_id,lot_no,rework_qr_document_no,inspector) VALUES($1,$2,$3,$4,$5) ON CONFLICT(reinspection_no) DO UPDATE SET rework_qr_document_no=EXCLUDED.rework_qr_document_no RETURNING *",[no,caseId,c.lot_no,qr,String(req.body?.operator||req.user?.username||'operator')]);res.status(201).json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope("REINSPECTION_CREATE_FAILED",e.message));}});
@@ -12186,7 +12219,7 @@ api.get("/sales/orders/:id", authenticateJWT, requirePermission("sales.view"), a
     const so = result.rows[0];
     const linesResult = await query(
       `SELECT sol.*, p.code AS product_code, p.name_zh AS product_name_zh,
-              (SELECT json_agg(json_build_object('work_order_code', wo.code, 'customer_po_no', cpo.po_no))
+              (SELECT json_agg(json_build_object('work_order_code', wo.code, 'customer_po_no', cpo.po_number))
                FROM quote_to_workorder_link qwl LEFT JOIN work_orders wo ON wo.id = qwl.work_order_id LEFT JOIN customer_pos cpo ON cpo.id = qwl.customer_po_id
                WHERE qwl.sales_order_line_id = sol.id) AS wo_links
        FROM sales_order_lines sol LEFT JOIN products p ON p.id = sol.product_id
@@ -31127,6 +31160,65 @@ app.get("/admin/roles", async (_req, res) => {
   }
 });
 
+app.get("/wms/inventory-control/positions", requirePermission("wms.view"), async (req, res) => {
+  try {
+    const q = String(req.query.q ?? "").trim();
+    const limit = Math.min(1000, Math.max(1, Number(req.query.limit ?? 500)));
+    const rows = await query(
+      \`SELECT * FROM wms_inventory_position_balances
+       WHERE ($1 = '' OR material_code ILIKE '%' || $1 || '%' OR lot_no ILIKE '%' || $1 || '%'
+              OR COALESCE(location_code,'') ILIKE '%' || $1 || '%')
+       ORDER BY iqc_sla_overdue DESC, location_code NULLS LAST, material_code, lot_no
+       LIMIT $2\`,
+      [q, limit],
+    );
+    res.json(listEnvelope(rows.rows));
+  } catch (err) {
+    console.error("GET /wms/inventory-control/positions:", err.message);
+    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
+  }
+});
+
+app.get("/wms/inventory-control/summary", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const [summary, totals, sla] = await Promise.all([
+      query("SELECT * FROM wms_inventory_position_summary ORDER BY location_code NULLS LAST, material_code"),
+      query(\`SELECT COUNT(*)::int AS lot_count, COALESCE(SUM(quantity),0)::numeric AS quantity,
+              COALESCE(SUM(available_quantity),0)::numeric AS available_quantity,
+              COUNT(*) FILTER (WHERE iqc_sla_overdue)::int AS overdue_lot_count
+              FROM wms_inventory_position_balances\`),
+      query("SELECT * FROM wms_process_sla_rules WHERE active=true ORDER BY process_key"),
+    ]);
+    res.json(envelope({ summary: summary.rows, totals: totals.rows[0], sla: sla.rows }));
+  } catch (err) {
+    console.error("GET /wms/inventory-control/summary:", err.message);
+    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
+  }
+});
+
+app.patch("/wms/inventory-control/sla/:processKey", requirePermission("wms.execute"), async (req, res) => {
+  try {
+    const processKey = String(req.params.processKey ?? "").trim().toUpperCase();
+    const slaMinutes = Number(req.body?.slaMinutes);
+    const warningPercent = Number(req.body?.warningPercent ?? 80);
+    if (!processKey || !Number.isInteger(slaMinutes) || slaMinutes <= 0 || !Number.isInteger(warningPercent) || warningPercent < 1 || warningPercent > 99) {
+      return res.status(400).json(errorEnvelope("VALIDATION", "valid processKey, positive integer slaMinutes and warningPercent 1-99 required"));
+    }
+    const updated = await query(
+      \`INSERT INTO wms_process_sla_rules(process_key, sla_minutes, warning_percent, updated_by, updated_at)
+       VALUES($1,$2,$3,$4,NOW())
+       ON CONFLICT(process_key) DO UPDATE SET sla_minutes=EXCLUDED.sla_minutes,
+         warning_percent=EXCLUDED.warning_percent, updated_by=EXCLUDED.updated_by, updated_at=NOW()
+       RETURNING *\`,
+      [processKey, slaMinutes, warningPercent, req.user?.username ?? "system"],
+    );
+    res.json(mutateEnvelope(updated.rows[0]));
+  } catch (err) {
+    console.error("PATCH /wms/inventory-control/sla/:processKey:", err.message);
+    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
+  }
+});
+
 // Complete QR/lot trace: current balance plus every immutable movement and WO use.
 app.get("/wms/material-trace", requirePermission("wms.view"), async (req, res) => {
   try {
@@ -31137,13 +31229,14 @@ app.get("/wms/material-trace", requirePermission("wms.view"), async (req, res) =
       SELECT ml.id, ml.lot_no AS "lotNo", ml.label_id AS "materialQr",
              ml.received_qty::numeric AS "remainingQty", ml.reserved_qty::numeric AS "lineSideQty",
              (ml.received_qty-ml.reserved_qty)::numeric AS "warehouseQty",
+             ml.received_at AS "receivedAt",
              m.code AS "materialCode", m.name_zh AS "materialName", ml.iqc_status AS "iqcStatus", sl.code AS "locationCode",
              qr.pallet_qr AS "palletQr"
       FROM material_lots ml
       JOIN materials m ON m.id=ml.material_id
       LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
       LEFT JOIN wms_receiving_qr_registrations qr ON qr.material_lot_id=ml.id
-      WHERE ml.lot_no=$1 OR ml.label_id=$1 OR qr.material_qr=$1 OR qr.pallet_qr=$1
+      WHERE ml.lot_no=$1 OR ml.label_id=$1 OR m.code=$1 OR m.id::text=$1 OR qr.material_qr=$1 OR qr.pallet_qr=$1
       ORDER BY ml.id DESC LIMIT 1`, [qr]);
     const lot = lotR.rows[0];
     if (!lot) return res.status(404).json(errorEnvelope("NOT_FOUND", `No material or pallet found for '${qr}'`));

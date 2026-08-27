@@ -16,6 +16,8 @@ const LazyManualLineDashboard = lazy(() => import("./mes/ManualLineDashboard").t
 const LazySmtLineDashboard = lazy(() => import("./mes/SmtStationAgents3d").then(m => ({ default: m.SmtStationAgents3d })));
 const LazyWarehouseScene3d = lazy(() => import("./mes/WarehouseScene3d").then(m => ({ default: m.WarehouseScene3d })));
 const LazyProductWarehouseScene3d = lazy(() => import("./mes/ProductWarehouseScene3d").then(m => ({ default: m.ProductWarehouseScene3d })));
+const LazyWms3dFlow = lazy(() => import("./wms/Wms3dFlow").then(m => ({ default: m.Wms3dFlow })));
+const LazyWmsInventoryControlCenter = lazy(() => import("./wms/WmsInventoryControlCenter").then(m => ({ default: m.WmsInventoryControlCenter })));
 const LazyAoiStationMonitor = lazy(() => import("./mes/AoiStationMonitor").then(m => ({ default: m.AoiStationMonitor })));
 const LazyAssemblyAteStationMonitor = lazy(() => import("./mes/AssemblyAteStationMonitor").then(m => ({ default: m.AssemblyAteStationMonitor })));
 const LazyHighVoltAteStationMonitor = lazy(() => import("./mes/HighVoltAteStationMonitor").then(m => ({ default: m.HighVoltAteStationMonitor })));
@@ -87,7 +89,7 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
 import { QmsDashboard, QmsOqcBatches, QmsNgCases, QmsEightD } from "./qms";
@@ -1781,6 +1783,7 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "iqcPassMaintenance": return <WmsIqcFlowPages page="iqcPassMaintenance" locale={locale} />;
       case "defectArchive": return <WmsIqcFlowPages page="defectArchive" locale={locale} />;
       case "mrbApproval": return <WmsIqcFlowPages page="mrbApproval" locale={locale} />;
+      case "scrapFinanceApproval": return <WmsIqcFlowPages page="scrapFinanceApproval" locale={locale} />;
       case "reworkComplete": return <WmsIqcFlowPages page="reworkComplete" locale={locale} />;
       case "iqcReinspection": return <WmsIqcFlowPages page="iqcReinspection" locale={locale} />;
       case "iqcInspect": return <WmsIqcInspection locale={locale} />;
@@ -1798,6 +1801,9 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "fifoMonitor": return <WmsFifoMonitor locale={locale} />;
       case "transactions": return <WmsTransactions locale={locale} />;
       case "traceability": return <WmsTraceability locale={locale} />;
+      case "materialTrace": return <WmsMaterialTraceRoute locale={locale} />;
+      case "wms3dFlow": return <Suspense fallback={<div className="surface-panel"><div className="placeholder-view">Loading 3D WMS flow...</div></div>}><LazyWms3dFlow locale={locale} /></Suspense>;
+      case "inventoryControl": return <Suspense fallback={<div className="surface-panel"><div className="placeholder-view">Loading inventory control...</div></div>}><LazyWmsInventoryControlCenter locale={locale} /></Suspense>;
       case "msd": return <WmsMsd locale={locale} />;
       case "solderPaste": return <WmsSolderPaste locale={locale} />;
       case "auxiliary": return <WmsAuxiliary locale={locale} />;

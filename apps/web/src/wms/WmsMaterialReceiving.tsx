@@ -42,13 +42,16 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   });
   const [lot, setLot] = useState("");
   const [palletQr, setPalletQr] = useState("");
+  const [palletType, setPalletType] = useState<"" | "SINGLE_PRODUCT" | "MIXED_PRODUCT">("");
+  const [palletSize, setPalletSize] = useState("");
+  const [palletMaterial, setPalletMaterial] = useState("");
   const [motherQr, setMotherQr] = useState("");
   const [motherQrImage, setMotherQrImage] = useState("");
   const [locationQr, setLocationQr] = useState("");
   const [locationCapacity, setLocationCapacity] = useState<{ capacity: number; occupied: number; name?: string } | null>(null);
   const [boxQr, setBoxQr] = useState("");
   const [boxQrs, setBoxQrs] = useState<string[]>([]);
-  const [bindings, setBindings] = useState<Array<{ palletQr: string; boxQr: string }>>([]);
+  const [bindings, setBindings] = useState<Array<{ palletQr: string; boxQr: string; materialCode: string; quantity: number }>>([]);
   const [supplierIqc, setSupplierIqc] = useState<"PENDING" | "PASS" | "FAIL">("PENDING");
   const [pdaStatus, setPdaStatus] = useState<string>("");
   const [oaRequest, setOaRequest] = useState<OaRequest | null>(null);
@@ -152,6 +155,9 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
         boxCount: caseCount,
         partialBox,
         palletQr: palletQr.trim(),
+        palletType,
+        palletSize: palletSize.trim(),
+        palletMaterial: palletMaterial.trim(),
         boxQr: boxQr.trim(),
         locationCode: locationQr.trim(),
         storageLocation: locationQr.trim(),
@@ -170,7 +176,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       }).catch(() => { /* PDA may be offline; next change retries */ });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [materialCode, ruijingMaterialCode, materialName, specification, purchaseOrder, manufactureDate, expiryDate, supplierBarcode, supplier, receiptDate, lot, unit, expectedQty, receivedQty, boxQty, caseCount, palletQr, boxQr, locationQr, msdLevel, msdFloorLifeHours, supplierIqc]);
+  }, [materialCode, ruijingMaterialCode, materialName, specification, purchaseOrder, manufactureDate, expiryDate, supplierBarcode, supplier, receiptDate, lot, unit, expectedQty, receivedQty, boxQty, caseCount, palletQr, palletType, palletSize, palletMaterial, boxQr, locationQr, msdLevel, msdFloorLifeHours, supplierIqc]);
   const importMaterialCodeMapping = async (file: File | undefined) => {
     if (!file) return;
     const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
@@ -344,6 +350,9 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       if (payload.receiptDate) setReceiptDate(String(payload.receiptDate));
       if (payload.lotNo) setLot(String(payload.lotNo));
       if (payload.palletQr !== undefined) setPalletQr(String(payload.palletQr || ""));
+      if (payload.palletType !== undefined) setPalletType(payload.palletType === "MIXED_PRODUCT" ? "MIXED_PRODUCT" : payload.palletType === "SINGLE_PRODUCT" ? "SINGLE_PRODUCT" : "");
+      if (payload.palletSize !== undefined) setPalletSize(String(payload.palletSize || ""));
+      if (payload.palletMaterial !== undefined) setPalletMaterial(String(payload.palletMaterial || ""));
       if (payload.boxQr !== undefined) setBoxQr(String(payload.boxQr || ""));
       if (payload.unit) setUnit(String(payload.unit));
       if (payload.expectedQty !== undefined) setExpectedQty(String(payload.expectedQty));
@@ -405,10 +414,29 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     };
     return () => { window.removeEventListener("wms:pda-receiving-status", onStatus); stream.close(); aiStream.close(); captureStream.close(); };
   }, []);
-  const addBox = async () => { const value = boxQr.trim(); if (!value || !lot.trim() || !locationQr.trim() || boxQrs.includes(value)) return; const effectivePalletQr = palletQr.trim() || `MOTHER-PALLET-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`; if (!palletQr.trim()) { setPalletQr(effectivePalletQr); setMotherQr(effectivePalletQr); setMotherQrImage(await QRCode.toDataURL(effectivePalletQr, { width: 180, margin: 1, errorCorrectionLevel: "M" })); } const token = sessionStorage.getItem("auth_token"); const response = await fetch("/api/wms/receiving/pallet-box-bindings", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ palletQr: effectivePalletQr, boxQr: value, lotNo: lot.trim(), supplier: supplier.trim(), locationQr: locationQr.trim(), msdLevel: msdLevel || null, msdFloorLifeHours: msdFloorLifeHours ? Number(msdFloorLifeHours) : null, palletQrType: motherQr || !palletQr.trim() ? "GENERATED_MOTHER" : "SUPPLIER_PALLET", receivingDocuments: receivingDocuments() }) }); if (!response.ok) return; setBoxQrs(xs => [...xs, value]); setBindings(xs => [...xs, { palletQr: effectivePalletQr, boxQr: value }]); setBoxQr(""); };
+  const addBox = async () => {
+    const value = boxQr.trim();
+    if (!palletType) { setPdaStatus(tx("请先选择托板类型", "Select pallet type before binding", "Vui lòng chọn loại pallet trước")); return; }
+    if (!value || !materialCode.trim() || !lot.trim() || !locationQr.trim() || boxQrs.includes(value)) return;
+    if (palletType === "SINGLE_PRODUCT" && bindings.some(binding => binding.materialCode && binding.materialCode.toUpperCase() !== materialCode.trim().toUpperCase())) {
+      setPdaStatus(tx("单一产品托板不能绑定其他物料编码", "A single-product pallet cannot bind another material code", "Pallet đơn sản phẩm không thể liên kết mã vật liệu khác"));
+      return;
+    }
+    const effectivePalletQr = palletQr.trim() || `MOTHER-PALLET-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+    if (!palletQr.trim()) { setPalletQr(effectivePalletQr); setMotherQr(effectivePalletQr); setMotherQrImage(await QRCode.toDataURL(effectivePalletQr, { width: 180, margin: 1, errorCorrectionLevel: "M" })); }
+    const token = sessionStorage.getItem("auth_token");
+    const response = await fetch("/api/wms/receiving/pallet-box-bindings", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ palletQr: effectivePalletQr, palletType, palletSize: palletSize.trim(), palletMaterial: palletMaterial.trim(), materialCode: materialCode.trim(), quantity: Number(boxQty || receivedQty || 0), boxQr: value, lotNo: lot.trim(), supplier: supplier.trim(), locationQr: locationQr.trim(), msdLevel: msdLevel || null, msdFloorLifeHours: msdFloorLifeHours ? Number(msdFloorLifeHours) : null, palletQrType: motherQr || !palletQr.trim() ? "GENERATED_MOTHER" : "SUPPLIER_PALLET", receivingDocuments: receivingDocuments() }) });
+    if (!response.ok) return;
+    setBoxQrs(xs => [...xs, value]);
+    setBindings(xs => [...xs, { palletQr: effectivePalletQr, boxQr: value, materialCode: materialCode.trim(), quantity: Number(boxQty || receivedQty || 0) }]);
+    setBoxQr("");
+  };
   const resolveLocation = async () => { if (!locationQr.trim()) return; const token = sessionStorage.getItem("auth_token"); const response = await fetch(`/api/wms/floor-storage-areas/resolve?qr=${encodeURIComponent(locationQr.trim())}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }); if (!response.ok) { setLocationCapacity(null); return; } const result = await response.json(); const data = result.data || result; setLocationCapacity({ capacity: Number(data.capacity || 0), occupied: Number(data.occupied || 0), name: data.areaName || data.areaCode }); };
   const submitMaterialReceivingOa = async () => {
-    if (!materialCode.trim() || !lot.trim() || !receivedQty.trim()) return;
+    if (!materialCode.trim() || !lot.trim() || !receivedQty.trim() || !palletType) {
+      setPdaStatus(tx("收料前必须选择托板类型", "Pallet type is required before receiving", "Phải chọn loại pallet trước khi nhận"));
+      return;
+    }
     setOaBusy(true);
     try {
       const request = await oaRepository.submit({
@@ -424,6 +452,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
           { label: "Received quantity", value: `${receivedQty.trim()} ${unit}` },
           { label: "Box count", value: caseCount.trim() || "-" },
           { label: "MSD level", value: msdLevel.trim() || "-" },
+          { label: "Pallet type", value: palletType || "-" },
+          { label: "Pallet size / material", value: `${palletSize.trim() || "-"} / ${palletMaterial.trim() || "-"}` },
           { label: "Pallet / location", value: `${palletQr.trim() || "AUTO"} / ${locationQr.trim() || "-"}` },
         ],
       });
@@ -537,12 +567,20 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
         {locationCapacity && <div style={{ marginTop: 8, fontSize: 12, color: locationCapacity.occupied >= locationCapacity.capacity ? "#dc2626" : "#15803d" }}>{locationCapacity.name || locationQr}: {tx("容量", "Capacity", "Sức chứa")} {locationCapacity.occupied}/{locationCapacity.capacity} · {tx("剩余", "Available", "Còn lại")} {Math.max(0, locationCapacity.capacity - locationCapacity.occupied)}</div>}
         {(expectedQty || receivedQty || caseCount || boxQty) && <div style={{ marginTop: 8, padding: 10, background: "var(--nav)", borderRadius: 6 }}>{tx("数量核对", "Quantity reconciliation", "Đối chiếu số lượng")}: {tx("预计", "Expected", "Dự kiến")} {expectedQty || 0} {unit} · {tx("已收", "Received", "Đã nhận")} {receivedQty || 0} {unit} · {tx("差异", "Difference", "Chênh lệch")} {Number(expectedQty || 0) - Number(receivedQty || 0)} {unit}{partialBox ? ` · ${tx("尾数箱", "PARTIAL BOX", "THÙNG LẺ")}` : ""}</div>}
         {pdaStatus && <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 5, background: "rgba(37,99,235,0.1)", color: "#1d4ed8", fontSize: 12 }}>{tx("已接收统一PDA信息", "Unified PDA information received", "Đã nhận thông tin từ PDA hợp nhất")}: {pdaStatus}</div>}
+        <div style={{ marginTop: 12, padding: 12, border: "1px solid #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
+          <strong>{tx("托板信息（收料时填写）", "Pallet information (complete during receiving)", "Thông tin pallet (điền khi nhận)")}</strong>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginTop: 8 }}>
+            <label>{tx("托板类型（必选）", "Pallet type (required)", "Loại pallet (bắt buộc)")}<select className="form-input" value={palletType} onChange={e => setPalletType(e.target.value as "" | "SINGLE_PRODUCT" | "MIXED_PRODUCT")}><option value="">{tx("请选择", "Select", "Chọn")}</option><option value="SINGLE_PRODUCT">{tx("单一产品托板", "Single-product pallet", "Pallet đơn sản phẩm")}</option><option value="MIXED_PRODUCT">{tx("混装产品托板", "Mixed-product pallet", "Pallet hỗn hợp")}</option></select></label>
+            <label>{tx("托板尺寸", "Pallet size", "Kích thước pallet")}<input className="form-input" value={palletSize} onChange={e => setPalletSize(e.target.value)} placeholder="L×W×H mm" /></label>
+            <label>{tx("托板材质", "Pallet material", "Vật liệu pallet")}<input className="form-input" value={palletMaterial} onChange={e => setPalletMaterial(e.target.value)} placeholder={tx("例如：木托/塑料托", "e.g. wood / plastic", "vd: gỗ / nhựa")} /></label>
+          </div>
+        </div>
         <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "end" }}>
           <label style={{ flex: 1 }}>{tx("料箱QR", "Material box QR", "QR thùng vật liệu")}<input className="form-input" value={boxQr} onChange={e => setBoxQr(e.target.value)} onKeyDown={e => e.key === "Enter" && addBox()} placeholder={tx("扫描托盘上的每个料箱QR", "Scan each box QR on the pallet", "Quét từng QR thùng trên pallet")} /></label>
           <button className="btn-primary" type="button" onClick={addBox}>{tx("绑定料箱", "Bind box", "Liên kết thùng")}</button>
         </div>
         {boxQrs.length > 0 && <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>{boxQrs.map(qr => <span className="badge badge-success" key={qr}>{palletQr} ↔ {qr}</span>)}</div>}
-        {bindings.length > 0 && <div style={{ marginTop: 12, padding: 10, background: "var(--nav)", borderRadius: 6, fontSize: 12 }}><strong>{tx("双向追溯", "Bidirectional Trace", "Truy xuất hai chiều")}</strong>{bindings.map(binding => <div key={binding.boxQr} style={{ marginTop: 5 }}>{binding.palletQr} → {binding.boxQr} <span style={{ color: "var(--muted)" }}> | {binding.boxQr} → {binding.palletQr}</span></div>)}</div>}
+        {bindings.length > 0 && <div style={{ marginTop: 12, padding: 10, background: "var(--nav)", borderRadius: 6, fontSize: 12 }}><strong>{tx("托板绑定明细", "Pallet binding details", "Chi tiết liên kết pallet")}</strong>{bindings.map(binding => <div key={binding.boxQr} style={{ marginTop: 5 }}>{binding.palletQr} → {binding.boxQr} · {binding.materialCode} · {binding.quantity} {unit} <span style={{ color: "var(--muted)" }}> | {binding.boxQr} → {binding.palletQr}</span></div>)}</div>}
         <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 700 }}>{tx("供应商IQC标记", "Supplier IQC mark", "Đánh dấu IQC nhà cung cấp")}:</span>{(["PENDING", "PASS", "FAIL"] as const).map(v => <button key={v} type="button" className={supplierIqc === v ? "btn-primary" : "btn-ghost"} onClick={() => setSupplierIqc(v)}>{v === "PENDING" ? tx("未检验/隔离", "Not inspected / hold", "Chưa kiểm / giữ lại") : v}</button>)}</div>
       </section>
       <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>

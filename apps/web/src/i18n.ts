@@ -1109,6 +1109,7 @@ const dictionary = {
   "wms.subnav.iqcPassMaintenance": { "zh-CN": "IQC合格结果维护", "vi-VN": "Duy trì kết quả đạt IQC", "en-US": "IQC Pass Maintenance" },
   "wms.subnav.defectArchive": { "zh-CN": "IQC不良品档案", "vi-VN": "Hồ sơ lỗi IQC", "en-US": "IQC Defect Archive" },
   "wms.subnav.mrbApproval": { "zh-CN": "MRB物料评审/OA审批", "vi-VN": "Duyệt MRB/OA", "en-US": "MRB / OA Approval" },
+  "wms.subnav.scrapFinanceApproval": { "zh-CN": "报废财务审批", "vi-VN": "Duyệt tài chính phế liệu", "en-US": "Scrap Finance Approval" },
   "wms.subnav.reworkComplete": { "zh-CN": "返工修复完成回仓", "vi-VN": "Hoàn tất sửa và trả kho", "en-US": "Rework Complete" },
   "wms.subnav.iqcReinspection": { "zh-CN": "IQC复检档案", "vi-VN": "Hồ sơ tái kiểm IQC", "en-US": "IQC Reinspection Archive" },
   "wms.subnav.putaway": { "zh-CN": "上架", "vi-VN": "Nhập kho", "en-US": "Put Away" },
@@ -2019,6 +2020,9 @@ const dictionary = {
 
 
   "wms.subnav.traceability": { "zh-CN": "追溯", "vi-VN": "Truy xuất", "en-US": "Traceability" },
+  "wms.subnav.materialTrace": { "zh-CN": "物料流程追踪", "vi-VN": "Truy xuất quy trình vật liệu", "en-US": "Material Process Trace" },
+  "wms.subnav.wms3dFlow": { "zh-CN": "3D WMS流程模拟", "vi-VN": "Mô phỏng quy trình WMS 3D", "en-US": "3D WMS Flow Simulation" },
+  "wms.subnav.inventoryControl": { "zh-CN": "库存控制中心", "vi-VN": "Trung tâm kiểm soát tồn kho", "en-US": "Inventory Control Center" },
   "wms.subnav.collaboration": { "zh-CN": "协同看板", "vi-VN": "Phối hợp", "en-US": "Collaboration" },
   "wms.subnav.closure": { "zh-CN": "闭环控制中心", "vi-VN": "Trung tâm vòng kín", "en-US": "Closed-loop Control" },
   "wms.group.receiving": { "zh-CN": "物料接收管理", "vi-VN": "Quản lý tiếp nhận vật liệu", "en-US": "Material Receiving Management" },
