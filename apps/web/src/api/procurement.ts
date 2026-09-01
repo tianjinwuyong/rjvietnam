@@ -87,6 +87,8 @@ export interface PurchaseOrderHeader {
   createdAt: string;
 }
 
+export interface PoAdjustmentRequest { id:number; request_no:string; supplier_id:number; supplier_code:string; supplier_name:string; po_no:string; adjustment_type:string; line_no:number|null; current_value:string|null; proposed_value:string; reason:string; status:string; requested_at:string; review_note:string|null }
+
 export interface SupplierScorecard {
   id: number;
   supplierId: number;
@@ -274,6 +276,8 @@ export const procurementApi = {
   acknowledgePo: (id: number) => apiClient.put<{ acknowledged: boolean }>(`/api/procurement/pos/${id}/acknowledge`),
   getPoClosure: (id: number) => apiClient.get<PoClosure>(`/api/procurement/pos/${id}/closure`),
   closePo: (id: number) => apiClient.put<{ closed: boolean }>(`/api/procurement/pos/${id}/close`),
+  listPoAdjustments: () => apiClient.get<ListEnvelope<PoAdjustmentRequest>>("/procurement/po-adjustments"),
+  decidePoAdjustment: (x: PoAdjustmentRequest, status: "APPROVED" | "REJECTED", reviewNote: string) => apiClient.put(`/procurement/suppliers/${x.supplier_id}/po-adjustments/${encodeURIComponent(x.request_no)}/decision`, { status, reviewNote }),
 
   getSupplierScorecards: () =>
     apiClient.get<ListEnvelope<SupplierScorecard>>("/api/procurement/supplier-scorecards"),

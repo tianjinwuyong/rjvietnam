@@ -19,6 +19,7 @@ def db():
       CREATE TABLE IF NOT EXISTS purchase_orders(po_no TEXT PRIMARY KEY, supplier_code TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'OPEN', requested_delivery_date TEXT, expected_delivery_date TEXT, acknowledged_at INTEGER, response_note TEXT, payload TEXT NOT NULL, source_updated_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS sync_outbox(id INTEGER PRIMARY KEY, event_id TEXT UNIQUE NOT NULL, supplier_code TEXT NOT NULL, event_type TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER);
       CREATE TABLE IF NOT EXISTS delivery_tracking(id INTEGER PRIMARY KEY,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,accuracy_m REAL,recorded_at INTEGER NOT NULL,reported_by INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS po_adjustment_requests(id INTEGER PRIMARY KEY,request_no TEXT UNIQUE NOT NULL,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,adjustment_type TEXT NOT NULL,line_no INTEGER,current_value TEXT,proposed_value TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',requested_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
     """); return conn
 
 def ensure_schema():
@@ -70,6 +71,8 @@ class SupplierSync(BaseModel): supplier_name:str; registration_status:str="REGIS
 class PurchaseOrderSync(BaseModel): status:str="OPEN"; requested_delivery_date:str|None=None; buyer_id:str|None=None; buyer_name:str|None=None; buyer_email:str|None=None; buyer_phone:str|None=None; supplier_contact_name:str|None=None; supplier_contact_email:str|None=None; lines:list[dict]=[]; currency:str="USD"; total_amount:float|None=None
 class PurchaseOrderResponse(BaseModel): decision:str; expected_delivery_date:str; response_note:str|None=None; expected_boxes:int=0; expected_pallets:int=0; supplier_contact_name:str|None=None; supplier_contact_email:str|None=None; delivery_status:str="PLANNED"; carrier_name:str|None=None; driver_name:str|None=None; driver_phone:str|None=None; vehicle_no:str|None=None; tracking_no:str|None=None
 class TrackingPoint(BaseModel): latitude:float=Field(ge=-90,le=90); longitude:float=Field(ge=-180,le=180); accuracy_m:float|None=None; recorded_at:int|None=None
+class PoAdjustmentCreate(BaseModel): adjustment_type:str; line_no:int|None=None; current_value:str|None=None; proposed_value:str=Field(min_length=1,max_length=2000); reason:str=Field(min_length=3,max_length=2000)
+class PoAdjustmentDecision(BaseModel): status:str; review_note:str|None=None; reviewed_by:str|None=None
 class ReceivingStatusSync(BaseModel): status:str; expected_boxes:int=0; scanned_boxes:int=0; expected_quantity:float=0; received_quantity:float=0; accepted_quantity:float=0; hold_quantity:float=0; rejected_quantity:float=0; discrepancy_code:str|None=None; discrepancy_note:str|None=None; rejection_reason:str|None=None; affected_box_qrs:list[str]=[]; evidence_images:list[str]=[]; inspection_reference:str|None=None; inspector_name:str|None=None; iqc_status:str|None=None; received_at:str|None=None; inspected_at:str|None=None
 
 @app.get("/health")
@@ -216,6 +219,23 @@ def report_order_tracking(po_no:str,body:TrackingPoint,request:Request):
       c.execute("INSERT INTO delivery_tracking(po_no,supplier_code,latitude,longitude,accuracy_m,recorded_at,reported_by) VALUES(?,?,?,?,?,?,?)",(po_no,user["supplier_code"],body.latitude,body.longitude,body.accuracy_m,recorded_at,user["id"]));outbox(c,user["supplier_code"],"DELIVERY_LOCATION_UPDATED","PURCHASE_ORDER",po_no,payload);c.commit()
     return payload
 
+@app.get("/orders/{po_no}/adjustments")
+def list_order_adjustments(po_no:str,request:Request):
+    user=require_user(request)
+    with db() as c:
+      rows=c.execute("SELECT request_no,adjustment_type,line_no,current_value,proposed_value,reason,status,created_at,updated_at FROM po_adjustment_requests WHERE po_no=? AND supplier_code=? ORDER BY created_at DESC",(po_no,user["supplier_code"])).fetchall()
+    return [dict(r) for r in rows]
+
+@app.post("/orders/{po_no}/adjustments",status_code=201)
+def create_order_adjustment(po_no:str,body:PoAdjustmentCreate,request:Request):
+    user=require_write_user(request);kind=body.adjustment_type.upper()
+    if kind not in {"DELIVERY_DATE","QUANTITY","PRICE","MATERIAL_SPEC","SHIPPING_PLAN","OTHER"}: raise HTTPException(400,"Invalid adjustment type")
+    with db() as c:
+      if not c.execute("SELECT 1 FROM purchase_orders WHERE po_no=? AND supplier_code=?",(po_no,user["supplier_code"])).fetchone(): raise HTTPException(404,"Purchase order not found")
+      now=int(time.time());request_no=f"POA-{time.strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}";payload={"request_no":request_no,"po_no":po_no,"adjustment_type":kind,"line_no":body.line_no,"current_value":body.current_value,"proposed_value":body.proposed_value,"reason":body.reason,"status":"PENDING"}
+      c.execute("INSERT INTO po_adjustment_requests(request_no,po_no,supplier_code,adjustment_type,line_no,current_value,proposed_value,reason,status,requested_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(request_no,po_no,user["supplier_code"],kind,body.line_no,body.current_value,body.proposed_value,body.reason,"PENDING",user["id"],now,now));outbox(c,user["supplier_code"],"PO_ADJUSTMENT_REQUESTED","PURCHASE_ORDER",po_no,payload);audit_event(c,user["id"],"PO_ADJUSTMENT_REQUESTED",request,json.dumps(payload));c.commit()
+    return payload
+
 @app.post("/shipments",status_code=201)
 def create_shipment(body:ShipmentCreate,request:Request):
     user=require_write_user(request);payload=body.model_dump();now=int(time.time())
@@ -235,6 +255,17 @@ def sync_events(request:Request,after:int=0,limit:int=100):
 def sync_ack(event_id:str,request:Request):
     if not secrets.compare_digest(request.headers.get("x-sync-key",""),os.environ.get("WMS_SYNC_KEY","disabled")): raise HTTPException(401,"Invalid sync key")
     with db() as c:c.execute("UPDATE sync_outbox SET acknowledged_at=? WHERE event_id=?",(int(time.time()),event_id));c.commit()
+
+@app.put("/sync/po-adjustments/{request_no}")
+def sync_po_adjustment_decision(request_no:str,body:PoAdjustmentDecision,request:Request):
+    if not secrets.compare_digest(request.headers.get("x-sync-key",""),os.environ.get("WMS_SYNC_KEY","disabled")): raise HTTPException(401,"Invalid sync key")
+    status=body.status.upper()
+    if status not in {"APPROVED","REJECTED"}: raise HTTPException(400,"status must be APPROVED or REJECTED")
+    with db() as c:
+      row=c.execute("SELECT * FROM po_adjustment_requests WHERE request_no=?",(request_no,)).fetchone()
+      if not row: raise HTTPException(404,"PO adjustment request not found")
+      now=int(time.time());c.execute("UPDATE po_adjustment_requests SET status=?,updated_at=? WHERE request_no=?",(status,now,request_no));audit_event(c,None,"PO_ADJUSTMENT_DECIDED",request,json.dumps({"request_no":request_no,"status":status,"review_note":body.review_note,"reviewed_by":body.reviewed_by},ensure_ascii=False));c.commit()
+    return {"request_no":request_no,"status":status,"review_note":body.review_note,"reviewed_by":body.reviewed_by,"updated_at":now}
 
 @app.put("/sync/suppliers/{supplier_code}")
 def sync_supplier(supplier_code:str,body:SupplierSync,request:Request):

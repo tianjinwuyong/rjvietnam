@@ -652,7 +652,11 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
     [notes, setNotes] = useState<Record<string, string>>({}),
     [plans, setPlans] = useState<Record<string, any>>({}),
     [tracking, setTracking] = useState<any[]>([]),
+    [adjustments, setAdjustments] = useState<any[]>([]),
+    [adjustment, setAdjustment] = useState<any>({ adjustment_type: "DELIVERY_DATE", line_no: "", current_value: "", proposed_value: "", reason: "" }),
     [selected, setSelected] = useState<string>(""),
+    [orderSearch, setOrderSearch] = useState(""),
+    [orderFilter, setOrderFilter] = useState("ALL"),
     [message, setMessage] = useState("");
   const refresh = () =>
     fetch("/supplier-api/orders", { credentials: "include" })
@@ -678,13 +682,17 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
     void refresh();
   }, []);
   useEffect(() => {
-    if (selected)
+    if (selected) {
       void fetch(
         `/supplier-api/orders/${encodeURIComponent(selected)}/tracking`,
         { credentials: "include" },
       )
         .then((r) => (r.ok ? r.json() : []))
         .then(setTracking);
+      void fetch(`/supplier-api/orders/${encodeURIComponent(selected)}/adjustments`, { credentials: "include" })
+        .then((r) => (r.ok ? r.json() : []))
+        .then(setAdjustments);
+    }
   }, [selected]);
   const plan = (po: string) =>
     plans[po] || orders.find((x) => x.po_no === po) || {};
@@ -747,7 +755,29 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
           { enableHighAccuracy: true, timeout: 15000 },
         )
       : setMessage("当前设备不支持定位");
+  const submitAdjustment = async () => {
+    if (!selected || !adjustment.proposed_value.trim() || !adjustment.reason.trim()) {
+      setMessage("请填写建议调整值和调整原因");
+      return;
+    }
+    const r = await fetch(`/supplier-api/orders/${encodeURIComponent(selected)}/adjustments`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
+      body: JSON.stringify({ ...adjustment, line_no: adjustment.line_no ? Number(adjustment.line_no) : null }),
+    });
+    if (r.ok) {
+      const row = await r.json();
+      setAdjustments((rows) => [row, ...rows]);
+      setAdjustment({ adjustment_type: "DELIVERY_DATE", line_no: "", current_value: "", proposed_value: "", reason: "" });
+      setMessage("PO调整申请已提交，等待瑞晶 WMS 审批");
+    } else setMessage("PO调整申请提交失败");
+  };
   const current = orders.find((x) => x.po_no === selected);
+  const visibleOrders = orders.filter((o) => {
+    const status = String(o.status || "OPEN").toUpperCase();
+    const matchesStatus = orderFilter === "ALL" || status === orderFilter || (orderFilter === "NEW_PURCHASE" && ["OPEN", "SENT", "PENDING"].includes(status)) || (orderFilter === "ACTIVE" && !["CLOSED", "CANCELLED", "RECEIVED"].includes(status));
+    const needle = orderSearch.trim().toLowerCase();
+    return matchesStatus && (!needle || `${o.po_no} ${o.payload?.buyer_name || ""} ${(o.payload?.lines || []).map((l: any) => `${l.material_code} ${l.description}`).join(" ")}`.toLowerCase().includes(needle));
+  });
   const cp = current ? plan(current.po_no) : {};
   const location = tracking[0];
   return (
@@ -764,15 +794,11 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
       {message && <div className="portal-notice">{message}</div>}
       <section className="portal-card">
         <div className="card-title">
-          <h2>待完成PO</h2>
-          <span>
-            {
-              orders.filter((x) => !["CLOSED", "CANCELLED"].includes(x.status))
-                .length
-            }{" "}
-            项
-          </span>
+          <div><h2>全部采购订单</h2><p>显示 WMS 分配给本供应商的全部历史与执行中 PO。</p></div>
+          <span>{visibleOrders.length} / {orders.length} 项</span>
         </div>
+        <div className="po-register-summary"><button onClick={() => setOrderFilter("NEW_PURCHASE")}><b>{orders.filter(x => ["OPEN", "SENT", "PENDING"].includes(String(x.status).toUpperCase())).length}</b><span>新采购 · 待供应商确认</span></button><button onClick={() => setOrderFilter("ACTIVE")}><b>{orders.filter(x => !["CLOSED", "CANCELLED", "RECEIVED"].includes(String(x.status).toUpperCase())).length}</b><span>执行中</span></button><button onClick={() => setOrderFilter("IN_TRANSIT")}><b>{orders.filter(x => String(x.status).toUpperCase() === "IN_TRANSIT").length}</b><span>运输中</span></button><button onClick={() => setOrderFilter("RECEIVED")}><b>{orders.filter(x => ["RECEIVED", "CLOSED"].includes(String(x.status).toUpperCase())).length}</b><span>已完成</span></button><button onClick={() => setOrderFilter("ALL")}><b>{orders.length}</b><span>全部历史PO</span></button></div>
+        <div className="po-register-tools"><input value={orderSearch} onChange={e => setOrderSearch(e.target.value)} placeholder="搜索 PO号、负责人、物料代码或描述"/><select value={orderFilter} onChange={e => setOrderFilter(e.target.value)}><option value="ALL">全部状态</option><option value="NEW_PURCHASE">新采购 / 待确认</option><option value="ACTIVE">全部执行中</option><option value="OPEN">待确认</option><option value="SENT">已发布</option><option value="ACCEPTED">已确认</option><option value="CHANGE_REQUESTED">变更申请</option><option value="IN_TRANSIT">运输中</option><option value="RECEIVED">已收货</option><option value="CLOSED">已关闭</option><option value="CANCELLED">已取消</option></select></div>
         {orders.length ? (
           <div className="portal-table">
             <table>
@@ -788,7 +814,7 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => (
+                {visibleOrders.map((o) => (
                   <tr key={o.po_no}>
                     <td>
                       <button
@@ -947,8 +973,27 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
           reportLocation={reportLocation}
         />
       )}
+      {current && <PoAdjustmentPanel data={adjustment} setData={setAdjustment} items={adjustments} submit={submitAdjustment} />}
     </div>
   );
+}
+
+function PoAdjustmentPanel({ data, setData, items, submit }: { data: any; setData: (x: any) => void; items: any[]; submit: () => void }) {
+  const labels: Record<string, string> = { DELIVERY_DATE: "交付日期", QUANTITY: "采购数量", PRICE: "采购价格", MATERIAL_SPEC: "物料规格", SHIPPING_PLAN: "运输计划", OTHER: "其他" };
+  return <section className="portal-card">
+    <div className="card-title"><div><h2>PO 调整申请</h2><p>正式 PO 不会被供应商直接覆盖；提交后由瑞晶 WMS/采购审批，过程全程留痕。</p></div><span>{items.filter(x => x.status === "PENDING").length} 项待审批</span></div>
+    <div className="portal-grid-2">
+      <div className="portal-form">
+        <label>调整类型<select value={data.adjustment_type} onChange={e => setData({ ...data, adjustment_type: e.target.value })}>{Object.entries(labels).map(([v,l]) => <option key={v} value={v}>{l}</option>)}</select></label>
+        <label>PO 行号（可选）<input type="number" min="1" value={data.line_no} onChange={e => setData({ ...data, line_no: e.target.value })}/></label>
+        <label>当前值<input value={data.current_value} onChange={e => setData({ ...data, current_value: e.target.value })} placeholder="例如 2026-09-05 / 1000 PCS"/></label>
+        <label>建议调整值<input value={data.proposed_value} onChange={e => setData({ ...data, proposed_value: e.target.value })} placeholder="必填"/></label>
+        <label>调整原因<textarea value={data.reason} onChange={e => setData({ ...data, reason: e.target.value })} placeholder="说明原因、影响和补救计划"/></label>
+        <button className="portal-primary" onClick={() => void submit()}>提交调整申请</button>
+      </div>
+      <div className="portal-table"><table><thead><tr><th>申请号</th><th>调整项目</th><th>变更内容</th><th>原因</th><th>状态</th></tr></thead><tbody>{items.map(x => <tr key={x.request_no}><td><b>{x.request_no}</b><br/><small>{new Date(Number(x.created_at) * 1000).toLocaleString()}</small></td><td>{labels[x.adjustment_type] || x.adjustment_type}{x.line_no ? ` · 行 ${x.line_no}` : ""}</td><td>{x.current_value || "—"} → <b>{x.proposed_value}</b></td><td>{x.reason}</td><td>{badge(x.status)}</td></tr>)}</tbody></table>{!items.length && <div className="portal-empty"><span>暂无调整申请</span></div>}</div>
+    </div>
+  </section>;
 }
 
 function DeliveryPlan({
