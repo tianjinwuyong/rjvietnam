@@ -20,6 +20,7 @@ def db():
       CREATE TABLE IF NOT EXISTS sync_outbox(id INTEGER PRIMARY KEY, event_id TEXT UNIQUE NOT NULL, supplier_code TEXT NOT NULL, event_type TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, payload TEXT NOT NULL, created_at INTEGER NOT NULL, acknowledged_at INTEGER);
       CREATE TABLE IF NOT EXISTS delivery_tracking(id INTEGER PRIMARY KEY,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,accuracy_m REAL,recorded_at INTEGER NOT NULL,reported_by INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS po_adjustment_requests(id INTEGER PRIMARY KEY,request_no TEXT UNIQUE NOT NULL,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,adjustment_type TEXT NOT NULL,line_no INTEGER,current_value TEXT,proposed_value TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',requested_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS supplier_label_manifests(id INTEGER PRIMARY KEY,manifest_key TEXT UNIQUE NOT NULL,supplier_code TEXT NOT NULL,po_no TEXT,material_code TEXT NOT NULL,lot_no TEXT NOT NULL,total_quantity REAL NOT NULL,unit TEXT NOT NULL,outer_box_count INTEGER NOT NULL,sub_box_count INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'PRE_RECEIVING_UNCONFIRMED',payload TEXT NOT NULL,created_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
     """); return conn
 
 def ensure_schema():
@@ -32,6 +33,8 @@ def ensure_schema():
       po_cols={r[1] for r in c.execute("PRAGMA table_info(purchase_orders)")}
       for name,definition in (("expected_boxes","INTEGER NOT NULL DEFAULT 0"),("expected_pallets","INTEGER NOT NULL DEFAULT 0"),("supplier_contact_name","TEXT"),("supplier_contact_email","TEXT"),("delivery_status","TEXT NOT NULL DEFAULT 'NOT_PLANNED'"),("carrier_name","TEXT"),("driver_name","TEXT"),("driver_phone","TEXT"),("vehicle_no","TEXT"),("tracking_no","TEXT")):
         if name not in po_cols: c.execute(f"ALTER TABLE purchase_orders ADD COLUMN {name} {definition}")
+      manifest_cols={r[1] for r in c.execute("PRAGMA table_info(supplier_label_manifests)")}
+      if "status" not in manifest_cols: c.execute("ALTER TABLE supplier_label_manifests ADD COLUMN status TEXT NOT NULL DEFAULT 'PRE_RECEIVING_UNCONFIRMED'")
       c.execute("INSERT OR IGNORE INTO portal_suppliers(supplier_code,supplier_name,registration_status,portal_enabled,label_enabled,qualification_status,updated_at) SELECT DISTINCT supplier_code,supplier_name,'REGISTERED',1,1,'QUALIFIED',? FROM users",(int(time.time()),))
       c.commit()
 ensure_schema()
@@ -73,6 +76,7 @@ class PurchaseOrderResponse(BaseModel): decision:str; expected_delivery_date:str
 class TrackingPoint(BaseModel): latitude:float=Field(ge=-90,le=90); longitude:float=Field(ge=-180,le=180); accuracy_m:float|None=None; recorded_at:int|None=None
 class PoAdjustmentCreate(BaseModel): adjustment_type:str; line_no:int|None=None; current_value:str|None=None; proposed_value:str=Field(min_length=1,max_length=2000); reason:str=Field(min_length=3,max_length=2000)
 class PoAdjustmentDecision(BaseModel): status:str; review_note:str|None=None; reviewed_by:str|None=None
+class LabelManifestCreate(BaseModel): manifest_key:str=Field(min_length=6,max_length=500); po_no:str|None=None; material_code:str; lot_no:str; total_quantity:float=Field(gt=0); unit:str="PCS"; outer_box_count:int=Field(ge=1); sub_box_count:int=Field(ge=0); labels:list[dict]
 class ReceivingStatusSync(BaseModel): status:str; expected_boxes:int=0; scanned_boxes:int=0; expected_quantity:float=0; received_quantity:float=0; accepted_quantity:float=0; hold_quantity:float=0; rejected_quantity:float=0; discrepancy_code:str|None=None; discrepancy_note:str|None=None; rejection_reason:str|None=None; affected_box_qrs:list[str]=[]; evidence_images:list[str]=[]; inspection_reference:str|None=None; inspector_name:str|None=None; iqc_status:str|None=None; received_at:str|None=None; inspected_at:str|None=None
 
 @app.get("/health")
@@ -235,6 +239,18 @@ def create_order_adjustment(po_no:str,body:PoAdjustmentCreate,request:Request):
       now=int(time.time());request_no=f"POA-{time.strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}";payload={"request_no":request_no,"po_no":po_no,"adjustment_type":kind,"line_no":body.line_no,"current_value":body.current_value,"proposed_value":body.proposed_value,"reason":body.reason,"status":"PENDING"}
       c.execute("INSERT INTO po_adjustment_requests(request_no,po_no,supplier_code,adjustment_type,line_no,current_value,proposed_value,reason,status,requested_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(request_no,po_no,user["supplier_code"],kind,body.line_no,body.current_value,body.proposed_value,body.reason,"PENDING",user["id"],now,now));outbox(c,user["supplier_code"],"PO_ADJUSTMENT_REQUESTED","PURCHASE_ORDER",po_no,payload);audit_event(c,user["id"],"PO_ADJUSTMENT_REQUESTED",request,json.dumps(payload));c.commit()
     return payload
+
+@app.post("/label-manifests")
+def register_label_manifest(body:LabelManifestCreate,request:Request):
+    user=require_write_user(request);now=int(time.time());payload=body.model_dump();payload.update({"supplier_code":user["supplier_code"],"status":"PRE_RECEIVING_UNCONFIRMED","registered_at":now})
+    if len(body.labels)!=body.outer_box_count+body.sub_box_count: raise HTTPException(400,"Label count does not match outer/sub-box totals")
+    if abs(sum(float(x.get("qty",0)) for x in body.labels if x.get("level")=="OUTER")-body.total_quantity)>0.0001: raise HTTPException(400,"Outer-box quantity does not equal total quantity")
+    with db() as c:
+      row=c.execute("SELECT id FROM supplier_label_manifests WHERE manifest_key=? AND supplier_code=?",(body.manifest_key,user["supplier_code"])).fetchone()
+      if row:c.execute("UPDATE supplier_label_manifests SET po_no=?,material_code=?,lot_no=?,total_quantity=?,unit=?,outer_box_count=?,sub_box_count=?,payload=?,updated_at=? WHERE id=?",(body.po_no,body.material_code,body.lot_no,body.total_quantity,body.unit,body.outer_box_count,body.sub_box_count,json.dumps(payload,ensure_ascii=False),now,row["id"]));manifest_id=row["id"]
+      else:manifest_id=c.execute("INSERT INTO supplier_label_manifests(manifest_key,supplier_code,po_no,material_code,lot_no,total_quantity,unit,outer_box_count,sub_box_count,status,payload,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(body.manifest_key,user["supplier_code"],body.po_no,body.material_code,body.lot_no,body.total_quantity,body.unit,body.outer_box_count,body.sub_box_count,"PRE_RECEIVING_UNCONFIRMED",json.dumps(payload,ensure_ascii=False),user["id"],now,now)).lastrowid
+      outbox(c,user["supplier_code"],"LABEL_MANIFEST_REGISTERED","LABEL_MANIFEST",manifest_id,payload);audit_event(c,user["id"],"LABEL_MANIFEST_REGISTERED",request,json.dumps({"manifest_id":manifest_id,"labels":len(body.labels)}));c.commit()
+    return {"id":manifest_id,"manifest_key":body.manifest_key,"registered":True,"status":"PRE_RECEIVING_UNCONFIRMED","outer_box_count":body.outer_box_count,"sub_box_count":body.sub_box_count,"label_count":len(body.labels)}
 
 @app.post("/shipments",status_code=201)
 def create_shipment(body:ShipmentCreate,request:Request):
