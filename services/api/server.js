@@ -19057,7 +19057,25 @@ const receivingPalletRemovalReady = (async()=>{await query(`CREATE TABLE IF NOT 
   ADD COLUMN IF NOT EXISTS pda_latitude NUMERIC(10,7),
   ADD COLUMN IF NOT EXISTS pda_longitude NUMERIC(10,7),
   ADD COLUMN IF NOT EXISTS pda_accuracy NUMERIC(10,2),
-  ADD COLUMN IF NOT EXISTS gps_captured_at TIMESTAMPTZ`);})();
+  ADD COLUMN IF NOT EXISTS gps_captured_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS package_level VARCHAR(20) NOT NULL DEFAULT 'OUTER',
+  ADD COLUMN IF NOT EXISTS parent_box_qr TEXT,
+  ADD COLUMN IF NOT EXISTS declared_qty NUMERIC(18,4)`);
+await query(`CREATE TABLE IF NOT EXISTS wms_receiving_package_scans(
+  id BIGSERIAL PRIMARY KEY, qr_value TEXT NOT NULL UNIQUE, supplier_code VARCHAR(120), material_code VARCHAR(160) NOT NULL,
+  production_date DATE, quantity NUMERIC(18,4) NOT NULL, lot_no VARCHAR(160) NOT NULL, serial_no VARCHAR(120) NOT NULL,
+  package_level VARCHAR(20) NOT NULL CHECK(package_level IN('OUTER','SUB_BOX')), parent_serial_no VARCHAR(120), parent_qr_value TEXT,
+  pallet_qr TEXT, location_qr TEXT, scanned_by VARCHAR(120), scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);})();
+
+app.post("/wms/receiving/package-scan",requirePermission("wms.execute"),async(req,res)=>{try{
+  await receivingPalletRemovalReady;const qr=String(req.body?.qrValue||"").trim(),parts=qr.split("*");if(parts.length<6)return res.status(400).json(errorEnvelope("SUPPLIER_BOX_QR_INVALID","Supplier box QR must contain supplier, material, date, quantity, lot and serial"));
+  const [supplierCode,materialCode,productionDate,rawQty,lotNo,serialNo,marker,parentSerial]=parts,quantity=Number(rawQty),level=marker==="SUB_BOX"?"SUB_BOX":"OUTER";if(!supplierCode||!materialCode||!lotNo||!serialNo||!(quantity>0))return res.status(400).json(errorEnvelope("SUPPLIER_BOX_QR_INVALID","Supplier box QR fields or quantity are invalid"));if(level==="SUB_BOX"&&!parentSerial)return res.status(400).json(errorEnvelope("SUB_BOX_PARENT_REQUIRED","Sub-box QR must identify its outer box"));
+  const parentQr=level==="SUB_BOX"?[supplierCode,materialCode,productionDate,"",lotNo,parentSerial].join("*"):null;
+  const row=(await query(`INSERT INTO wms_receiving_package_scans(qr_value,supplier_code,material_code,production_date,quantity,lot_no,serial_no,package_level,parent_serial_no,parent_qr_value,pallet_qr,location_qr,scanned_by) VALUES($1,$2,$3,NULLIF($4,'')::date,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(qr_value) DO UPDATE SET pallet_qr=coalesce(excluded.pallet_qr,wms_receiving_package_scans.pallet_qr),location_qr=coalesce(excluded.location_qr,wms_receiving_package_scans.location_qr) RETURNING *`,[qr,supplierCode,materialCode,productionDate,quantity,lotNo,serialNo,level,parentSerial||null,parentQr,req.body?.palletQr||null,req.body?.locationQr||null,req.user?.username||"MATERIAL_RECEIVER"])).rows[0];
+  const family=(await query(`SELECT qr_value AS "qrValue",serial_no AS "serialNo",package_level AS "packageLevel",parent_serial_no AS "parentSerialNo",quantity FROM wms_receiving_package_scans WHERE supplier_code=$1 AND material_code=$2 AND lot_no=$3 AND (serial_no=$4 OR parent_serial_no=$4) ORDER BY CASE package_level WHEN 'OUTER' THEN 0 ELSE 1 END,serial_no`,[supplierCode,materialCode,lotNo,level==="OUTER"?serialNo:parentSerial])).rows;
+  const children=family.filter(x=>x.packageLevel==="SUB_BOX"),outer=family.find(x=>x.packageLevel==="OUTER"),effectiveQty=children.length?children.reduce((n,x)=>n+Number(x.quantity),0):Number(outer?.quantity||quantity);
+  res.status(201).json({success:true,data:{...row,qrValue:qr,serialNo,quantity,packageLevel:level,parentSerialNo:parentSerial||null,effectiveQty,countingSource:children.length?"SUB_BOX_SUM":"OUTER_BOX",family}});
+}catch(e){res.status(500).json(errorEnvelope("PACKAGE_SCAN_FAILED",e.message));}});
 
 async function detachRejectedLotFromPallet(client, lotNo, req, sourceType) {
   await receivingPalletRemovalReady;
@@ -19081,7 +19099,7 @@ app.post("/wms/receiving/pallet-box-bindings", requirePermission("wms.execute"),
     if (!locationQr) return res.status(400).json(errorEnvelope("LOCATION_QR_REQUIRED", "locationQr is required"));
     const latitude=Number(req.body?.gps?.latitude),longitude=Number(req.body?.gps?.longitude),accuracy=Number(req.body?.gps?.accuracy),capturedAt=req.body?.gps?.capturedAt||null;
     if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy))return res.status(400).json(errorEnvelope("PDA_GPS_REQUIRED","PDA GPS latitude, longitude and accuracy are required"));
-    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",pda_latitude AS "pdaLatitude",pda_longitude AS "pdaLongitude",pda_accuracy AS "pdaAccuracy",gps_captured_at AS "gpsCapturedAt"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, locationQr, req.user?.username || "MATERIAL_RECEIVER",latitude,longitude,accuracy,capturedAt]);
+    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at,package_level,parent_box_qr,declared_qty) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'OUTER'),$12,$13) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",package_level AS "packageLevel",parent_box_qr AS "parentBoxQr",declared_qty AS "declaredQty"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, locationQr, req.user?.username || "MATERIAL_RECEIVER",latitude,longitude,accuracy,capturedAt,req.body?.packageLevel||"OUTER",req.body?.parentBoxQr||null,req.body?.declaredQty||null]);
     res.status(201).json({ success: true, data: r.rows[0] });
   } catch (err) { res.status(err.code === "23505" ? 409 : 500).json(errorEnvelope(err.code === "23505" ? "BOX_ALREADY_BOUND" : "PALLET_BOX_BIND_FAILED", err.code === "23505" ? "Box QR is already bound to a pallet" : err.message)); }
 });
