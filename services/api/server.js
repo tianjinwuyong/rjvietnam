@@ -23993,8 +23993,9 @@ const supplierManagementReady = (async()=>{
   await query(`CREATE TABLE IF NOT EXISTS supplier_label_manifest_items(
     id bigserial PRIMARY KEY, manifest_id bigint NOT NULL REFERENCES supplier_label_manifests(id) ON DELETE CASCADE,
     qr_value text NOT NULL UNIQUE, serial_no varchar(120) NOT NULL, quantity numeric(18,4) NOT NULL,
-    package_level varchar(20) NOT NULL, parent_serial_no varchar(120), receiving_status varchar(30) NOT NULL DEFAULT 'EXPECTED',
+    package_level varchar(20) NOT NULL, parent_serial_no varchar(120), pallet_qr text, receiving_status varchar(30) NOT NULL DEFAULT 'EXPECTED',
     scanned_at timestamptz, UNIQUE(manifest_id,serial_no))`);
+  await query(`ALTER TABLE supplier_label_manifest_items ADD COLUMN IF NOT EXISTS pallet_qr text`);
   await query(`ALTER TABLE purchase_order_headers
     ADD COLUMN IF NOT EXISTS supplier_response_status varchar(30),
     ADD COLUMN IF NOT EXISTS supplier_expected_delivery date,
@@ -24103,7 +24104,7 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
       }else if(event.event_type==="LABEL_MANIFEST_REGISTERED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
         const manifest=(await query(`INSERT INTO supplier_label_manifests(manifest_key,supplier_id,po_no,material_code,lot_no,total_quantity,unit,outer_box_count,sub_box_count,status,registered_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'PRE_RECEIVING_UNCONFIRMED',to_timestamp($10)) ON CONFLICT(manifest_key) DO UPDATE SET total_quantity=excluded.total_quantity,outer_box_count=excluded.outer_box_count,sub_box_count=excluded.sub_box_count,status='PRE_RECEIVING_UNCONFIRMED',updated_at=now() RETURNING id`,[p.manifest_key,supplier.id,p.po_no||null,p.material_code,p.lot_no,p.total_quantity,p.unit||'PCS',p.outer_box_count,p.sub_box_count||0,p.registered_at])).rows[0];
-        for(const label of p.labels||[])await query(`INSERT INTO supplier_label_manifest_items(manifest_id,qr_value,serial_no,quantity,package_level,parent_serial_no) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(qr_value) DO UPDATE SET quantity=excluded.quantity,package_level=excluded.package_level,parent_serial_no=excluded.parent_serial_no`,[manifest.id,label.qr,label.serial,label.qty,label.level,label.parent_serial||null]);
+        for(const label of p.labels||[])await query(`INSERT INTO supplier_label_manifest_items(manifest_id,qr_value,serial_no,quantity,package_level,parent_serial_no,pallet_qr) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(qr_value) DO UPDATE SET quantity=excluded.quantity,package_level=excluded.package_level,parent_serial_no=excluded.parent_serial_no,pallet_qr=excluded.pallet_qr`,[manifest.id,label.qr,label.serial,label.qty,label.level,label.parent_serial||null,label.pallet_qr||null]);
       }
     }catch(inner){importStatus="ERROR";errorMessage=inner.message;}
     await query(`INSERT INTO supplier_portal_sync_events(event_id,remote_sequence,supplier_code,event_type,entity_type,entity_id,payload,import_status,error_message,remote_created_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,to_timestamp($10))`,[event.event_id,event.id,event.supplier_code,event.event_type,event.entity_type,event.entity_id,JSON.stringify(event.payload),importStatus,errorMessage,event.created_at]);

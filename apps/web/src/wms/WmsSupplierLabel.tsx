@@ -18,6 +18,9 @@ type Form = {
   perBox: string;
   packagingMode: string;
   subBoxQty: string;
+  palletBinding: string;
+  outerBoxesPerPallet: string;
+  palletPrefix: string;
   prefix: string;
   start: string;
 };
@@ -29,6 +32,7 @@ type LabelItem = {
   parentSerial?: string;
   boxIndex: number;
   subIndex?: number;
+  palletQr?: string;
 };
 const empty: Form = {
   customer: "深圳市瑞晶实业有限公司",
@@ -45,6 +49,9 @@ const empty: Form = {
   perBox: "",
   packagingMode: "OUTER_ONLY",
   subBoxQty: "",
+  palletBinding: "HIDDEN_AUTO",
+  outerBoxesPerPallet: "20",
+  palletPrefix: "PLT",
   prefix: "R",
   start: "1",
 };
@@ -95,6 +102,7 @@ export function WmsSupplierLabel({
     const total = +form.total,
       per = +form.perBox,
       subQty = +form.subBoxQty,
+      perPallet = Math.max(1, Number(form.outerBoxesPerPallet) || 20),
       start = Math.max(1, parseInt(form.start) || 1);
     if (total <= 0 || per <= 0) return [];
     const count = Math.ceil(total / per),
@@ -102,12 +110,15 @@ export function WmsSupplierLabel({
       result: LabelItem[] = [];
     for (let i = 0; i < count; i++) {
       const qty = Math.min(per, total - i * per),
-        serial = `${form.prefix || "R"}${String(start + i).padStart(width, "0")}`;
+        serial = `${form.prefix || "R"}${String(start + i).padStart(width, "0")}`,
+        palletNo = Math.floor(i / perPallet) + 1,
+        palletQr = form.palletBinding === "NONE" ? undefined : `WMS-PALLET:${form.supplierCode}:${form.po || form.lot}:${form.palletPrefix || "PLT"}${String(palletNo).padStart(3, "0")}`;
       result.push({
         serial,
         qty,
         level: "OUTER",
         boxIndex: i + 1,
+        palletQr,
         value: [
           form.supplierCode,
           form.materialCode,
@@ -130,6 +141,7 @@ export function WmsSupplierLabel({
             parentSerial: serial,
             boxIndex: i + 1,
             subIndex: j + 1,
+            palletQr,
             value: [
               form.supplierCode,
               form.materialCode,
@@ -148,6 +160,7 @@ export function WmsSupplierLabel({
   }, [form]);
   const outerBoxes = boxes.filter((x) => x.level === "OUTER"),
     subBoxes = boxes.filter((x) => x.level === "SUB_BOX");
+  const pallets = [...new Set(outerBoxes.map((x) => x.palletQr).filter(Boolean))] as string[];
   const missing = [
     [form.supplierCode, "供应商代码"],
     [form.materialCode, "物料代码"],
@@ -197,13 +210,13 @@ export function WmsSupplierLabel({
     setForm((f) => ({ ...f, [key]: value }));
   const registerManifest = async () => {
     if (!supplierIdentity) return true;
-    const manifestKey = [form.supplierCode, form.po, form.materialCode, form.lot, form.date, form.total, form.perBox, form.packagingMode, form.subBoxQty, form.prefix, form.start].join("|");
+    const manifestKey = [form.supplierCode, form.po, form.materialCode, form.lot, form.date, form.total, form.perBox, form.packagingMode, form.subBoxQty, form.palletBinding, form.outerBoxesPerPallet, form.palletPrefix, form.prefix, form.start].join("|");
     const response = await fetch("/supplier-api/label-manifests", {
       method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
-      body: JSON.stringify({ manifest_key: manifestKey, po_no: form.po || null, material_code: form.materialCode, lot_no: form.lot, total_quantity: Number(form.total), unit: form.unit, outer_box_count: outerBoxes.length, sub_box_count: subBoxes.length, labels: boxes.map((x) => ({ qr: x.value, serial: x.serial, qty: x.qty, level: x.level, parent_serial: x.parentSerial || null })) }),
+      body: JSON.stringify({ manifest_key: manifestKey, po_no: form.po || null, material_code: form.materialCode, lot_no: form.lot, total_quantity: Number(form.total), unit: form.unit, outer_box_count: outerBoxes.length, sub_box_count: subBoxes.length, pallets, labels: boxes.map((x) => ({ qr: x.value, serial: x.serial, qty: x.qty, level: x.level, parent_serial: x.parentSerial || null, pallet_qr: x.palletQr || null })) }),
     });
     if (!response.ok) { setMessage("标签清单未能保存为预收货，已阻止正式打印"); return false; }
-    setMessage(`已保存为预收货/未确认：外箱 ${outerBoxes.length}，子箱 ${subBoxes.length}，总数量 ${form.total} ${form.unit}`);
+    setMessage(`已保存为预收货/未确认：托板 ${pallets.length}，外箱 ${outerBoxes.length}，子箱 ${subBoxes.length}，总数量 ${form.total} ${form.unit}`);
     return true;
   };
   const print = async (items: typeof boxes) => {
@@ -232,6 +245,12 @@ export function WmsSupplierLabel({
     );
     win.document.close();
     setMessage(`已打开 ${items.length} 张独立标签`);
+  };
+  const printPallets = async () => {
+    if (!(await registerManifest()) || !pallets.length) return;
+    const win = window.open("", "_blank", "width=900,height=760"); if (!win) return;
+    const rows = await Promise.all(pallets.map(async (value) => ({ value, img: await QRCode.toDataURL(value, { width: 420, margin: 1, errorCorrectionLevel: "M" }), boxes: outerBoxes.filter((x) => x.palletQr === value) })));
+    win.document.write(`<html><head><style>@page{size:100mm 70mm;margin:0}body{margin:0;font-family:Arial,"Microsoft YaHei"}.p{width:100mm;height:70mm;padding:5mm;display:grid;grid-template-columns:1fr 36mm;page-break-after:always}.p img{width:34mm}.p code{word-break:break-all;font-size:8pt}.bar{position:fixed;right:8px;top:8px}@media print{.bar{display:none}}</style></head><body><button class="bar" onclick="window.print()">打印托板标签</button>${rows.map((x, i) => `<section class="p"><div><h2>供应商预收货托板 ${i + 1}/${rows.length}</h2><p><b>PO：</b>${html(form.po)}</p><p><b>物料/批次：</b>${html(form.materialCode)} / ${html(form.lot)}</p><p><b>绑定外箱：</b>${x.boxes.map((b) => html(b.serial)).join("、")}</p><p><b>托板数量：</b>${x.boxes.reduce((n,b)=>n+b.qty,0)} ${html(form.unit)}</p><code>${html(x.value)}</code></div><img src="${x.img}"></section>`).join("")}</body></html>`);win.document.close();
   };
   const fields: Array<[keyof Form, string, string, string?]> = [
     ["customer", "客户名称", "深圳市瑞晶实业有限公司"],
@@ -291,6 +310,7 @@ export function WmsSupplierLabel({
               只打印子箱 {subBoxes.length} 张
             </button>
           )}
+          {pallets.length > 0 && <button className="btn-ghost" onClick={() => void printPallets()}>打印托板 QR {pallets.length} 张</button>}
           <button
             className="btn-ghost"
             onClick={() => {
@@ -496,6 +516,17 @@ export function WmsSupplierLabel({
               />
             </label>
           )}
+          <label>
+            托板绑定
+            <select className="form-input" value={form.palletBinding} onChange={(e) => set("palletBinding", e.target.value)}>
+              <option value="HIDDEN_AUTO">自动生成隐藏托板 QR</option>
+              <option value="NONE">本批不使用托板</option>
+            </select>
+          </label>
+          {form.palletBinding !== "NONE" && <>
+            <label>每托板外箱数 *<input className="form-input" type="number" min="1" value={form.outerBoxesPerPallet} onChange={(e) => set("outerBoxesPerPallet", e.target.value)} /></label>
+            <label>托板流水号前缀<input className="form-input" value={form.palletPrefix} onChange={(e) => set("palletPrefix", e.target.value)} /></label>
+          </>}
           {fields.map(([k, l, p, t]) => (
             <label key={k}>
               {l}
@@ -528,6 +559,7 @@ export function WmsSupplierLabel({
             {outerBoxes[1]?.serial || "R002"}-S01 重新递增。
           </div>
         )}
+        {pallets.length > 0 && <div style={{ marginTop: 12, padding: 10, background: "#eff6ff", borderRadius: 8, color: "#1e40af" }}><b>自动托板绑定：</b>{pallets.length} 个托板；{pallets.map((x) => <code key={x} style={{ display: "block", marginTop: 4 }}>{x} → {outerBoxes.filter((b) => b.palletQr === x).map((b) => b.serial).join("、")}</code>)}</div>}
         {message && (
           <p style={{ fontWeight: 700, color: "#166534" }}>{message}</p>
         )}
@@ -558,6 +590,7 @@ export function WmsSupplierLabel({
                   打印子箱
                 </button>
               )}
+              {pallets.length > 0 && <button className="btn-ghost" onClick={() => void printPallets()}>打印托板 QR</button>}
               <button className="btn-primary" onClick={openPrintPage}>
                 <Printer size={14} />
                 查看全部打印版
