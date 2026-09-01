@@ -5,6 +5,7 @@ import { pmcApi } from "../api";
 import { AiPatrolChat } from "../ai/AiPatrolChat";
 import { pmcPatrol } from "../ai/patrol";
 import type { WorkOrder, CustomerPo } from "../api";
+import { apiClient, type ListEnvelope } from "../api/client";
 
 function computeRisk(dueDate: string): "low" | "medium" | "high" {
   const due = new Date(dueDate);
@@ -27,12 +28,14 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [customerPos, setCustomerPos] = useState<(CustomerPo & { productCode?: string })[]>([]);
   const [loading, setLoading] = useState(true);
+  const [supplySignals,setSupplySignals]=useState<any[]>([]);
 
   useEffect(() => {
     Promise.all([
       pmcApi.getWorkOrders({ limit: 200 }),
       pmcApi.getCustomerPos(),
-    ]).then(([woRes, poRes]) => {
+      apiClient.get<ListEnvelope<any>>("/pmc/supplier-supply-signals").catch(()=>({items:[]} as ListEnvelope<any>)),
+    ]).then(([woRes, poRes,signalRes]) => {
       const wos = woRes.items;
       const pos = poRes.items;
 
@@ -44,6 +47,7 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
 
       setWorkOrders(wos);
       setCustomerPos(posWithProduct);
+      setSupplySignals(signalRes.items||[]);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -167,6 +171,11 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
           </div>
         </section>
       </div>
+
+      <section className="surface-panel">
+        <div className="section-header"><div><h2>供应商交付进度对生产计划的影响</h2><p>供应商完成数量只形成排产风险信号；PMC 确认后才调整正式计划。</p></div><span className={`badge badge-${supplySignals.some(x=>x.risk_level==="HIGH")?"danger":"info"}`}>{supplySignals.filter(x=>x.review_status==="PENDING_PMC_REVIEW").length} 项待评审</span></div>
+        <div className="table-shell"><table><thead><tr><th>采购 PO</th><th>供应商</th><th>完成进度</th><th>供应缺口</th><th>距离交期</th><th>风险</th><th>PMC 状态</th></tr></thead><tbody>{supplySignals.map(x=><tr key={x.po_no}><td><b>{x.po_no}</b></td><td>{x.supplier_name||x.supplier_code}</td><td><b>{Number(x.completed_quantity).toLocaleString()} / {Number(x.ordered_quantity).toLocaleString()}</b><div className="progress" title={`${x.completion_percent}%`}><span style={{width:`${Math.min(100,Number(x.completion_percent))}%`}}/></div></td><td>{Number(x.remaining_quantity).toLocaleString()}</td><td>{x.days_remaining==null?"未设置":x.days_remaining<0?`逾期 ${Math.abs(x.days_remaining)} 天`:`剩余 ${x.days_remaining} 天`}</td><td><span className={`badge badge-${x.risk_level==="HIGH"?"danger":x.risk_level==="MEDIUM"?"warning":"ok"}`}>{x.risk_level}</span></td><td>{x.review_status}</td></tr>)}{!supplySignals.length&&<tr><td colSpan={7} style={{textAlign:"center",padding:24,color:"var(--muted)"}}>暂无供应商进度风险信号</td></tr>}</tbody></table></div>
+      </section>
 
       <section className="surface-panel">
         <div className="section-header">

@@ -23996,6 +23996,11 @@ const supplierManagementReady = (async()=>{
     package_level varchar(20) NOT NULL, parent_serial_no varchar(120), pallet_qr text, receiving_status varchar(30) NOT NULL DEFAULT 'EXPECTED',
     scanned_at timestamptz, UNIQUE(manifest_id,serial_no))`);
   await query(`ALTER TABLE supplier_label_manifest_items ADD COLUMN IF NOT EXISTS pallet_qr text`);
+  await query(`CREATE TABLE IF NOT EXISTS pmc_supplier_supply_signals(
+    po_no varchar(120) PRIMARY KEY, supplier_id bigint REFERENCES suppliers(id), ordered_quantity numeric(18,4) NOT NULL,
+    completed_quantity numeric(18,4) NOT NULL, remaining_quantity numeric(18,4) NOT NULL, completion_percent numeric(8,2) NOT NULL,
+    promised_date date, days_remaining integer, risk_level varchar(20) NOT NULL, supplier_note text,
+    review_status varchar(30) NOT NULL DEFAULT 'PENDING_PMC_REVIEW', updated_at timestamptz NOT NULL DEFAULT now())`);
   await query(`ALTER TABLE purchase_order_headers
     ADD COLUMN IF NOT EXISTS supplier_response_status varchar(30),
     ADD COLUMN IF NOT EXISTS supplier_expected_delivery date,
@@ -24010,6 +24015,9 @@ const supplierManagementReady = (async()=>{
     ADD COLUMN IF NOT EXISTS driver_phone varchar(80),
     ADD COLUMN IF NOT EXISTS vehicle_no varchar(80),
     ADD COLUMN IF NOT EXISTS tracking_no varchar(120),
+    ADD COLUMN IF NOT EXISTS supplier_completed_quantity numeric(18,4) NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS supplier_progress_note text,
+    ADD COLUMN IF NOT EXISTS supplier_progress_updated_at timestamptz,
     ADD COLUMN IF NOT EXISTS wms_contact_name varchar(160),
     ADD COLUMN IF NOT EXISTS wms_contact_email varchar(240),
     ADD COLUMN IF NOT EXISTS wms_contact_phone varchar(80),
@@ -24095,6 +24103,8 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
         const p=event.payload;const updated=await query(`UPDATE purchase_order_headers SET supplier_response_status=$2,supplier_expected_delivery=$3,supplier_response_note=$4,supplier_expected_boxes=$5,supplier_expected_pallets=$6,supplier_execution_contact=$7,supplier_execution_email=$8,supplier_delivery_status=$9,carrier_name=$10,driver_name=$11,driver_phone=$12,vehicle_no=$13,tracking_no=$14,acknowledged_at=now(),status=CASE WHEN $2='ACCEPTED' THEN 'acknowledged' ELSE status END,updated_at=now() WHERE po_no=$1 RETURNING supplier_id`,[p.po_no,String(p.decision||"").toUpperCase(),p.expected_delivery_date||null,p.response_note||null,Number(p.expected_boxes||0),Number(p.expected_pallets||0),p.supplier_contact_name||null,p.supplier_contact_email||null,String(p.delivery_status||'PLANNED').toUpperCase(),p.carrier_name||null,p.driver_name||null,p.driver_phone||null,p.vehicle_no||null,p.tracking_no||null]);
         if(!updated.rowCount)throw new Error(`purchase order ${p.po_no} not found`);
         await supplierEvent(req,updated.rows[0].supplier_id,"PURCHASE_ORDER_SUPPLIER_RESPONDED",p);
+      }else if(event.event_type==="PO_PROGRESS_UPDATED"){
+        const p=event.payload,updated=await query(`UPDATE purchase_order_headers SET supplier_completed_quantity=$2,supplier_progress_note=$3,supplier_progress_updated_at=to_timestamp($4),updated_at=now() WHERE po_no=$1 RETURNING supplier_id,promised_date`,[p.po_no,p.completed_quantity,p.note||null,p.updated_at]);if(!updated.rowCount)throw new Error(`purchase order ${p.po_no} not found`);const po=updated.rows[0],days=po.promised_date?Math.ceil((new Date(po.promised_date).getTime()-Date.now())/86400000):null,risk=Number(p.completion_percent)>=100?'LOW':days!==null&&days<=3?'HIGH':days!==null&&days<=7?'MEDIUM':'LOW';await query(`INSERT INTO pmc_supplier_supply_signals(po_no,supplier_id,ordered_quantity,completed_quantity,remaining_quantity,completion_percent,promised_date,days_remaining,risk_level,supplier_note) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) ON CONFLICT(po_no) DO UPDATE SET ordered_quantity=excluded.ordered_quantity,completed_quantity=excluded.completed_quantity,remaining_quantity=excluded.remaining_quantity,completion_percent=excluded.completion_percent,promised_date=excluded.promised_date,days_remaining=excluded.days_remaining,risk_level=excluded.risk_level,supplier_note=excluded.supplier_note,review_status='PENDING_PMC_REVIEW',updated_at=now()`,[p.po_no,po.supplier_id,p.ordered_quantity,p.completed_quantity,Math.max(0,Number(p.ordered_quantity)-Number(p.completed_quantity)),p.completion_percent,po.promised_date,days,risk,p.note||null]);await supplierEvent(req,po.supplier_id,"PURCHASE_ORDER_PROGRESS_UPDATED",p);
       }else if(event.event_type==="DELIVERY_LOCATION_UPDATED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
         await query(`INSERT INTO supplier_delivery_tracking(supplier_id,po_no,latitude,longitude,accuracy_m,recorded_at) VALUES($1,$2,$3,$4,$5,to_timestamp($6))`,[supplier.id,p.po_no,p.latitude,p.longitude,p.accuracy_m||null,p.recorded_at]);
@@ -24112,6 +24122,8 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
   }
   await query(`INSERT INTO supplier_portal_sync_state(stream_name,last_sequence,last_success_at,last_error) VALUES('supplier-portal',$1,now(),NULL) ON CONFLICT(stream_name) DO UPDATE SET last_sequence=excluded.last_sequence,last_success_at=now(),last_error=NULL,updated_at=now()`,[last]);res.json(mutateEnvelope({received:events.length,imported,lastSequence:last}));
 }catch(e){await query(`INSERT INTO supplier_portal_sync_state(stream_name,last_error) VALUES('supplier-portal',$1) ON CONFLICT(stream_name) DO UPDATE SET last_error=$1,updated_at=now()`,[e.message]).catch(()=>{});res.status(502).json(errorEnvelope("PORTAL_EVENT_SYNC_FAILED",e.message));}});
+
+app.get("/pmc/supplier-supply-signals",requirePermission("pmc.view"),async(req,res)=>{try{await supplierManagementReady;const rows=await query(`SELECT p.*,s.code AS supplier_code,s.name_zh AS supplier_name FROM pmc_supplier_supply_signals p LEFT JOIN suppliers s ON s.id=p.supplier_id ORDER BY CASE p.risk_level WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,p.promised_date NULLS LAST`);res.json(listEnvelope(rows.rows));}catch(e){res.status(500).json(errorEnvelope("PMC_SUPPLY_SIGNALS_FAILED",e.message));}});
 
 app.put("/wms/supplier-portal/shipments/:shipmentId/receiving-feedback",requirePermission("wms.execute"),async(req,res)=>{try{
   await supplierManagementReady;const shipment=(await query(`SELECT sh.*,s.code supplier_code FROM supplier_shipments sh JOIN suppliers s ON s.id=sh.supplier_id WHERE sh.id=$1`,[req.params.shipmentId])).rows[0];if(!shipment)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier shipment not found"));

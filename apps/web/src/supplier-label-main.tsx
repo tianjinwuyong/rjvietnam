@@ -246,6 +246,19 @@ function Dashboard({
   setPage: (p: Page) => void;
 }) {
   const submitted = shipments.filter((s) => s.status !== "DRAFT").length;
+  const [orders, setOrders] = useState<any[]>([]);
+  const [manifests, setManifests] = useState<any[]>([]);
+  useEffect(() => { void Promise.all([fetch("/supplier-api/orders", { credentials: "include" }).then(r => r.ok ? r.json() : []), fetch("/supplier-api/label-manifests", { credentials: "include" }).then(r => r.ok ? r.json() : [])]).then(([o,m]) => { setOrders(o); setManifests(m); }); }, []);
+  const poTotals = (o:any) => { const total=(o.payload?.lines||[]).reduce((n:number,l:any)=>n+Number(l.qty_ordered||0),0),finished=Number(o.supplier_completed_quantity||0);return {total,finished,percent:total>0?Math.min(100,Math.round(finished/total*100)):0}; };
+  const deliveryCountdown=(date:string)=>{if(!date)return {text:"交期未设置",tone:"muted"};const target=new Date(`${date}T23:59:59`),days=Math.ceil((target.getTime()-Date.now())/86400000);return days<0?{text:`已逾期 ${Math.abs(days)} 天`,tone:"danger"}:days===0?{text:"今天到期",tone:"danger"}:days<=3?{text:`剩余 ${days} 天`,tone:"warning"}:{text:`剩余 ${days} 天`,tone:"ok"};};
+  const columns = [
+    { id:"new", title:"新 PO", tone:"blue", items:orders.filter(o=>["OPEN","SENT","PENDING"].includes(String(o.status).toUpperCase())).map(o=>({key:`po-${o.po_no}`,title:o.po_no,meta:`${o.payload?.lines?.length||0} 个物料行 · 交期 ${o.requested_delivery_date||"待定"}`,status:o.status,progress:poTotals(o).percent,progressText:`${poTotals(o).finished}/${poTotals(o).total} · ${poTotals(o).percent}% 已完成`,due:deliveryCountdown(o.requested_delivery_date),page:"orders" as Page})) },
+    { id:"prepare", title:"备料 / 标签", tone:"purple", items:orders.filter(o=>["ACCEPTED","ACKNOWLEDGED"].includes(String(o.status).toUpperCase())&&!manifests.some(m=>m.po_no===o.po_no)).map(o=>({key:`prep-${o.po_no}`,title:o.po_no,meta:"待生成箱码与托板绑定",status:"TO_PREPARE",due:deliveryCountdown(o.requested_delivery_date),page:"labels" as Page})) },
+    { id:"pre", title:"预收货未确认", tone:"amber", items:manifests.filter(m=>String(m.status).startsWith("PRE_RECEIVING")).map(m=>{const o=orders.find(x=>x.po_no===m.po_no),totals=poTotals(o||{});return {key:`manifest-${m.id}`,title:m.po_no||m.material_code,meta:`${m.material_code} · ${m.total_quantity} ${m.unit}`,detail:`托板 ${m.payload?.pallets?.length||0} · 外箱 ${m.outer_box_count} · 子箱 ${m.sub_box_count}`,status:m.status,progress:totals.percent,progressText:`${totals.finished}/${totals.total} · ${totals.percent}% 已完成`,due:deliveryCountdown(o?.requested_delivery_date),page:"labels" as Page}}) },
+    { id:"ship", title:"已发运", tone:"cyan", items:shipments.filter(s=>["SUBMITTED","IN_TRANSIT","SHIPPED"].includes(String(s.status).toUpperCase())&&!s.receiving).map(s=>({key:`ship-${s.id}`,title:s.asn,meta:`${s.po} · ETA ${s.eta}`,status:s.status,page:"shipments" as Page})) },
+    { id:"iqc", title:"WMS 收货 / IQC", tone:"orange", items:shipments.filter(s=>!!s.receiving&&!["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status||s.receiving?.status).toUpperCase())).map(s=>({key:`iqc-${s.id}`,title:s.asn,meta:`已扫 ${s.receiving?.scanned_boxes||0}/${s.receiving?.expected_boxes||0} 箱`,detail:`接受 ${s.receiving?.accepted_quantity||0} · 暂扣 ${s.receiving?.hold_quantity||0} · 拒收 ${s.receiving?.rejected_quantity||0}`,status:s.receiving?.iqc_status||s.receiving?.status,page:"shipments" as Page})) },
+    { id:"done", title:"完成", tone:"green", items:[...orders.filter(o=>["RECEIVED","CLOSED"].includes(String(o.status).toUpperCase())).map(o=>({key:`done-po-${o.po_no}`,title:o.po_no,meta:"PO 已完成",status:o.status,progress:poTotals(o).percent,progressText:`${poTotals(o).finished}/${poTotals(o).total} · ${poTotals(o).percent}% 已完成`,page:"orders" as Page})),...shipments.filter(s=>["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status||s.status).toUpperCase())).map(s=>({key:`done-${s.id}`,title:s.asn,meta:`${s.po} · 已完成收货`,status:s.receiving?.iqc_status||s.status,page:"shipments" as Page}))] },
+  ];
   return (
     <div className="portal-page">
       <div className="portal-heading">
@@ -276,6 +289,10 @@ function Dashboard({
           </article>
         ))}
       </div>
+      <section className="portal-card portal-kanban-wrap">
+        <div className="card-title"><div><h2>供应商执行 Kanban</h2><p>从新 PO 到 WMS 收货、IQC 放行的实时协作状态。</p></div><span>{columns.reduce((n,c)=>n+c.items.length,0)} 个任务</span></div>
+        <div className="portal-kanban">{columns.map(col=><div className={`kanban-column ${col.tone}`} key={col.id}><header><b>{col.title}</b><span>{col.items.length}</span></header><div className="kanban-cards">{col.items.map(item=><button className="kanban-card" key={item.key} onClick={()=>setPage(item.page)}><strong>{item.title}</strong><span>{item.meta}</span>{item.detail&&<small>{item.detail}</small>}{item.due&&<span className={`kanban-due ${item.due.tone}`}>{item.due.text}</span>}{typeof item.progress==="number"&&<div className="kanban-progress"><i style={{width:`${item.progress}%`}}/><b>{item.progressText||`${item.progress}% 已完成`}</b></div>}<em>{item.status}</em></button>)}{!col.items.length&&<div className="kanban-empty">暂无任务</div>}</div></div>)}</div>
+      </section>
       <div className="portal-grid-2">
         <section className="portal-card">
           <div className="card-title">
@@ -726,6 +743,10 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
     setMessage(r.ok ? "PO与运输计划已发送到WMS" : "PO回复失败");
     if (r.ok) void refresh();
   };
+  const updateProgress = async (po:string) => {
+    const p=plan(po),r=await fetch(`/supplier-api/orders/${encodeURIComponent(po)}/progress`,{method:"POST",headers:{"Content-Type":"application/json"},credentials:"include",body:JSON.stringify({completed_quantity:Number(p.supplier_completed_quantity||0),note:p.progress_note||""})});
+    setMessage(r.ok?"PO完成数量已更新并同步给瑞晶采购/WMS":"PO完成数量更新失败");if(r.ok)void refresh();
+  };
   const reportLocation = () =>
     navigator.geolocation
       ? navigator.geolocation.getCurrentPosition(
@@ -899,6 +920,9 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
                   }
                 />
               </label>
+              <label>供应商已完成数量<input type="number" min="0" value={cp.supplier_completed_quantity||0} onChange={e=>setPlan(current.po_no,{supplier_completed_quantity:e.target.value})}/><small>例如：1050 / PO总量5000 = 21%完成</small></label>
+              <label>完成进度说明<textarea value={cp.progress_note||""} onChange={e=>setPlan(current.po_no,{progress_note:e.target.value})} placeholder="生产、备料或包装进展"/></label>
+              <button className="portal-primary" onClick={()=>void updateProgress(current.po_no)}>更新 PO 完成度</button>
               <label>
                 交期回复/变更原因
                 <textarea
