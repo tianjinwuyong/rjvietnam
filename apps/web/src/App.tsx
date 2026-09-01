@@ -89,9 +89,12 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
+import { WmsSupplierLabel } from "./wms/WmsSupplierLabel";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
+import { WmsIqcInspectionLevels } from "./wms/WmsIqcInspectionLevels";
+import { IqcVirtualEmployeeDock } from "./wms/IqcVirtualEmployeeDock";
 import { QmsDashboard, QmsOqcBatches, QmsNgCases, QmsEightD } from "./qms";
 import type { PmcTabKey } from "./pmc";
 import { pmcTabKeys, pmcTabTranslationKeys, PmcDashboard, PmcWorkOrderList, PmcWorkOrderDetail, PmcCreateWorkOrder,
@@ -1775,6 +1778,7 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "iqc": return <WmsIqc locale={locale} />;
       case "iqcClosedLoop": return <WmsIqcClosedLoop locale={locale} />;
       case "iqcDefectLoop": return <WmsIqcDefectLoop locale={locale} />;
+      case "iqcInspectionLevels": return <WmsIqcInspectionLevels locale={locale} />;
       case "poReceipt": return <WmsIqcFlowPages page="poReceipt" locale={locale} />;
       case "lineReturn": return <WmsIqcFlowPages page="lineReturn" locale={locale} />;
       case "subcontractReturn": return <WmsIqcFlowPages page="subcontractReturn" locale={locale} />;
@@ -1790,6 +1794,7 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "iqcReport": return <WmsIqcReport locale={locale} />;
       case "iqcStandards": return <WmsIqcStandards locale={locale} />;
       case "supplierKpi": return <WmsSupplierKpi locale={locale} />;
+      case "supplierManagement": return <WmsSupplierManagement locale={locale} />;
       case "qualityTrend": return <WmsQualityTrend locale={locale} />;
       case "putaway": return <WmsPutAway locale={locale} />;
       case "inventory": return <WmsInventory locale={locale} />;
@@ -1842,6 +1847,7 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "replenishments": return <WmsReplenishments locale={locale} />;
       case "syncHealth": return <WmsSyncHealth locale={locale} />;
       case "incoming": return <WmsIncoming locale={locale} />;
+      case "supplierLabel": return <WmsSupplierLabel locale={locale} />;
       case "materialReceiving": return <WmsMaterialReceiving locale={locale} />;
       case "materialLoading": return <WmsMaterialLoading locale={locale} />;
       case "smtClosedLoop": return <WmsSmtClosedLoop locale={locale} />;
@@ -1920,6 +1926,7 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       )}
 
       {!isMenuPage && renderActiveView()}
+      {activeTab !== "iqc" && <IqcVirtualEmployeeDock locale={locale} />}
     </div>
   );
 }

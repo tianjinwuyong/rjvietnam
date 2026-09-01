@@ -37,6 +37,7 @@ export default defineConfig({
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         manualLineVideo3d: fileURLToPath(new URL('./manual-line-video-3d.html', import.meta.url)),
         autoLineVideo3d: fileURLToPath(new URL('./auto-line-video-3d.html', import.meta.url)),
+        supplierLabel: fileURLToPath(new URL('./supplier-label.html', import.meta.url)),
       },
     },
   },
@@ -48,6 +49,11 @@ export default defineConfig({
       'Cache-Control': 'no-store',
     },
     proxy: {
+      '/supplier-api': {
+        target: 'http://127.0.0.1:8098',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/supplier-api/, ''),
+      },
       '/api/pda': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
@@ -66,6 +72,11 @@ export default defineConfig({
     port: 5178,
     host: '0.0.0.0',
     proxy: {
+      '/supplier-api': {
+        target: 'http://127.0.0.1:8098',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/supplier-api/, ''),
+      },
       '/api/pda': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,

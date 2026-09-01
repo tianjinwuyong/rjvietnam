@@ -5,6 +5,7 @@ process.chdir(path.dirname(fileURLToPath(import.meta.url)));
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import dotenv from "dotenv";
 import express from "express";
@@ -58,6 +59,9 @@ import manuLineRouter from "./src/routes/manu-line.js";
 import { canonicalLineCode, canonicalStationCode } from "./src/shared/station-identity.js";
 import { evaluateVisualInspection, DEFAULT_POLICY as VISUAL_INSPECTION_POLICY } from "./src/visual-inspection.js";
 import { evaluateProductGate } from "./src/product-gate.js";
+import { IQC_VIRTUAL_EMPLOYEE, askIqcLlm, runIqcVirtualEmployee } from "./src/iqc/virtual-employee.js";
+import { IQC_VIRTUAL_HARNESS } from "./src/iqc/virtual-employee-harness.js";
+import { getIqcMemoryContext, rememberIqcMemory, searchIqcMemory } from "./src/iqc/virtual-employee-memory.js";
 import { validateStationConfiguration } from "../../packages/station-config/validate-stations.mjs";
 import {
   askChat,
@@ -73,6 +77,7 @@ import http from "node:http";
 if(process.env.DEBUG_STARTUP==="1")console.log("startup: imports loaded");
 const api = express.Router();
 const db = { query };
+const execFileAsync = promisify(require("node:child_process").execFile);
 
 // Normalize legacy HR handlers that return a payload instead of writing to res.
 for (const method of ["get", "post", "put", "patch", "delete"]) {
@@ -897,6 +902,23 @@ app.use(['/api/mes/managers/status', '/api/mes/overall-balance'], (req, res, nex
 });
 // `api` is initialized above before the early equipment integration routes.
 const stationHeartbeatSnapshot = new Map();
+// WMS-owned PDA pools. Receiving and IQC devices are separate pools so a
+// receiving PDA can hand a QR-bound lot to the IQC queue without competing
+// for an inspection device.
+const wmsPdaDeviceRegistry = new Map();
+const wmsPdaInstallationRegistry = new Map();
+for (const [pool, prefix, role] of [
+  ['RECEIVING', 'PDA-RECV-', 'MATERIAL_RECEIVING'],
+  ['IQC', 'PDA-IQC-', 'IQC'],
+]) {
+  for (let i = 1; i <= 5; i += 1) {
+    const deviceId = `${prefix}${String(i).padStart(2, '0')}`;
+    wmsPdaDeviceRegistry.set(deviceId, {
+      deviceId, pool, role, status: 'OFFLINE', operatorName: '',
+      currentLot: '', lastSeenAt: null,
+    });
+  }
+}
 // Keep recent production events so a 3D client cannot lose SN/NG data while
 // it is reloading or temporarily disconnected. Heartbeats use their snapshot.
 const recentStationEvents = [];
@@ -3084,6 +3106,17 @@ app.get("/api/wms/receiving/live-state", (req, res) => {
   res.json({ ok: true, data: wmsReceivingLiveDraft });
 });
 
+// WMS-managed native PDA pools. Receiving devices hand QR-bound lots to the IQC queue.
+function wmsPdaPoolResponse(req, res) {
+  const pool = String(req.query.pool || '').trim().toUpperCase();
+  const items = [...wmsPdaDeviceRegistry.values()]
+    .filter(item => !pool || item.pool === pool)
+    .map(item => ({ ...item, online: item.lastSeenAt != null && Date.now() - item.lastSeenAt < 15000 }));
+  res.json({ items, total: items.length });
+}
+app.get("/wms/pda-devices", requirePermission("wms.view"), wmsPdaPoolResponse);
+app.get("/api/wms/pda-devices", requirePermission("wms.view"), wmsPdaPoolResponse);
+
 // Fire an event — any agent calls this
 function stationDomain(stationCode) {
   const code = String(stationCode || '').trim().toLowerCase().replace(/^mod_/, '');
@@ -3381,15 +3414,77 @@ app.get('/api/mes/ng-trace-history', async (req, res) => {
 app.post("/api/pda/events", async (req, res) => {
   const { from, to, type, payload, priority, stationCode } = req.body ?? {};
   if (!type) return res.status(400).json(errorEnvelope("VALIDATION", "event type required"));
+  const eventType = String(type).trim().toUpperCase();
+  const requestedDeviceId = String(payload?.deviceId || payload?.pdaId || from || '').trim().toUpperCase();
+  if (eventType === 'WMS_RECEIVING_REGISTER') {
+    const installationKey = String(payload?.installationKey || requestedDeviceId || '').trim();
+    if (!installationKey) return res.status(400).json(errorEnvelope('VALIDATION', 'installationKey required'));
+    let assigned = wmsPdaInstallationRegistry.get(installationKey);
+    if (!assigned) {
+      const free = [...wmsPdaDeviceRegistry.values()].find(item => item.pool === 'RECEIVING' && item.status === 'OFFLINE');
+      if (!free) return res.status(409).json(errorEnvelope('PDA_POOL_FULL', 'All five receiving PDA devices are currently assigned'));
+      assigned = free.deviceId;
+      wmsPdaInstallationRegistry.set(installationKey, assigned);
+    }
+    const device = wmsPdaDeviceRegistry.get(assigned);
+    if (device) { device.status = 'READY'; device.operatorName = String(payload?.operatorName || payload?.operator || '').trim(); device.lastSeenAt = Date.now(); device.installationKey = installationKey; }
+    return res.json({ ok: true, registered: true, deviceId: assigned, pool: 'RECEIVING', role: 'MATERIAL_RECEIVING', at: Date.now() });
+  }
+  const deviceId = requestedDeviceId;
+  const registeredPda = wmsPdaDeviceRegistry.get(deviceId);
+  if (registeredPda && (String(type).toUpperCase().startsWith('WMS_RECEIVING_') || String(type).toUpperCase() === 'IQC_ITEM_RESULT')) {
+    registeredPda.status = String(payload?.status || (String(type).toUpperCase() === 'IQC_ITEM_RESULT' ? 'INSPECTING' : 'READY')).toUpperCase();
+    registeredPda.operatorName = String(payload?.operatorName || payload?.operator || registeredPda.operatorName || '').trim();
+    registeredPda.currentLot = String(payload?.lotNo || payload?.lot_no || registeredPda.currentLot || '').trim();
+    registeredPda.lastSeenAt = Date.now();
+  }
   if (["WMS_RECEIVING_LABEL_CAPTURED", "WMS_RECEIVING_AI_RESULT", "WMS_RECEIVING_PDA_ACTIVITY"].includes(String(type).toUpperCase())) {
-    wmsReceivingLiveDraft = { payload: payload ?? {}, at: Date.now(), from: from || "unified_pda", type };
-    neuralBroadcast({ ...req.body, type, payload: payload ?? {} });
+    const incoming = payload ?? {};
+    const hasImage = Boolean(incoming.imageDataUrl || incoming.image);
+    // PDA heartbeats must not replace the latest label photo/OCR result.
+    // Merge non-image activity into the current draft and retain the image.
+    const previous = wmsReceivingLiveDraft?.payload ?? {};
+    const merged = hasImage ? incoming : { ...previous, ...incoming };
+    wmsReceivingLiveDraft = { payload: merged, at: Date.now(), from: from || "unified_pda", type };
+    neuralBroadcast({ ...req.body, type, payload: merged });
     return res.json({ ok: true, liveState: true, at: wmsReceivingLiveDraft.at });
   }
   if (String(type).toUpperCase() === "WMS_RECEIVING_WMS_DRAFT") {
     wmsReceivingLiveDraft = { payload: payload ?? {}, at: Date.now(), from: from || "wms_receiving" };
     neuralBroadcast({ ...req.body, type: "WMS_RECEIVING_WMS_DRAFT", payload: payload ?? {} });
     return res.json({ ok: true, liveState: true, at: wmsReceivingLiveDraft.at });
+  }
+  // PDA 3D map survey is a WMS master-data update, not a production event.
+  // Persist the selected map point so every PDA and the WMS map share one coordinate source.
+  if (String(type).toUpperCase() === "WMS_LOCATION_SURVEY") {
+    const survey = payload ?? {};
+    const xCoord = Number(survey.xCoord);
+    const yCoord = Number(survey.yCoord);
+    const locationQr = String(survey.locationQr || '').trim().toUpperCase();
+    const areaQr = String(survey.areaQr || '').trim().toUpperCase();
+    if (!locationQr || !Number.isFinite(xCoord) || !Number.isFinite(yCoord))
+      return res.status(400).json(errorEnvelope('VALIDATION', 'locationQr, xCoord and yCoord are required'));
+    const code = locationQr.replace(/^WMS-LOC:/, '').replace(/[^A-Z0-9_-]/g, '').slice(0, 80) || `MAP-${Date.now()}`;
+    try {
+      let row = (await query(`UPDATE storage_locations
+        SET qr_code=COALESCE(NULLIF($1,''),qr_code), x_coord=$2, y_coord=$3,
+            coordinate_system='WAREHOUSE_MAP_3D', updated_at=NOW()
+        WHERE UPPER(code)=UPPER($4) OR UPPER(COALESCE(qr_code,''))=UPPER($1)
+        RETURNING id,code,qr_code AS "qrCode",x_coord AS "xCoord",y_coord AS "yCoord"`,
+        [locationQr, xCoord, yCoord, code])).rows[0];
+      if (!row) {
+        row = (await query(`INSERT INTO storage_locations
+          (code,qr_code,area,name_zh,status,warehouse_id,zone_id,location_type,x_coord,y_coord,coordinate_system)
+          VALUES ($1,$2,COALESCE(NULLIF($3,''),'现场测绘区'),$4,'active',1,1,'STANDARD',$5,$6,'WAREHOUSE_MAP_3D')
+          RETURNING id,code,qr_code AS "qrCode",x_coord AS "xCoord",y_coord AS "yCoord"`,
+          [code, locationQr, areaQr.replace(/^WMS-AREA:/, ''), `现场库位 ${code}`, xCoord, yCoord])).rows[0];
+      }
+      neuralBroadcast({ ...req.body, type: 'WMS_LOCATION_SURVEY', payload: { ...survey, ...row } });
+      return res.json({ ok: true, location: row, syncedAt: new Date().toISOString() });
+    } catch (locationError) {
+      console.error('[WMS LOCATION SURVEY]', locationError.message);
+      return res.status(503).json(errorEnvelope('WMS_LOCATION_SURVEY_FAILED', locationError.message));
+    }
   }
   // Heartbeats are liveness signals, not production events.  Handle them
   // before SN-history/projection logic so a station can never be marked dead
@@ -11613,6 +11708,12 @@ const receivingQrRegistrationReady=(async()=>{await query(`CREATE TABLE IF NOT E
   pre_receipt_qr VARCHAR(200),work_order_code VARCHAR(160),location_code VARCHAR(120),
   registered_by VARCHAR(120) NOT NULL,registered_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`);await query(`ALTER TABLE wms_receiving_qr_registrations
+  ADD COLUMN IF NOT EXISTS msd_level VARCHAR(40),
+  ADD COLUMN IF NOT EXISTS qr_payload JSONB`);await query(`CREATE TABLE IF NOT EXISTS wms_receiving_pallet_handovers(
+  id BIGSERIAL PRIMARY KEY,pallet_qr VARCHAR(200) NOT NULL UNIQUE,location_qr VARCHAR(200) NOT NULL,
+  material_count INTEGER NOT NULL,box_count INTEGER NOT NULL,status VARCHAR(32) NOT NULL DEFAULT 'IQC_PENDING',
+  confirmed_by VARCHAR(120) NOT NULL,confirmed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),payload JSONB NOT NULL DEFAULT '{}'::jsonb
 )`);await query(`CREATE TABLE IF NOT EXISTS wms_material_position_history(
   id BIGSERIAL PRIMARY KEY,material_lot_id BIGINT NOT NULL REFERENCES material_lots(id),
   material_qr VARCHAR(200),pallet_qr VARCHAR(200),position_type VARCHAR(20) NOT NULL,
@@ -11663,7 +11764,77 @@ const iqcDefectLoopReady=(async()=>{
     id BIGSERIAL PRIMARY KEY, approval_id BIGINT NOT NULL REFERENCES wms_iqc_scrap_finance_approvals(id),
     action VARCHAR(40) NOT NULL, from_status VARCHAR(32), to_status VARCHAR(32), actor VARCHAR(120) NOT NULL,
     detail JSONB NOT NULL DEFAULT '{}'::jsonb, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_inspection_states(
+    id BIGSERIAL PRIMARY KEY, supplier_code VARCHAR(120) NOT NULL, material_code VARCHAR(120) NOT NULL,
+    level VARCHAR(16) NOT NULL DEFAULT 'NORMAL' CHECK(level IN('NORMAL','TIGHTENED','REDUCED','EXEMPT','SUSPENDED')),
+    counters JSONB NOT NULL DEFAULT '{"normalWindowBatches":0,"normalWindowRejects":0,"tightenedAccepts":0,"tightenedRejects":0,"reducedAccepts":0}'::jsonb,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(supplier_code,material_code))`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_inspection_level_events(
+    id BIGSERIAL PRIMARY KEY, supplier_code VARCHAR(120) NOT NULL, material_code VARCHAR(120) NOT NULL,
+    lot_no VARCHAR(120) NOT NULL, result VARCHAR(8) NOT NULL CHECK(result IN('PASS','FAIL')),
+    level_before VARCHAR(16) NOT NULL, level_after VARCHAR(16) NOT NULL, transition VARCHAR(64),
+    inspection_date DATE, source_file VARCHAR(240), abnormal_type VARCHAR(120), operator VARCHAR(120) NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_guidance_rows(
+    id BIGSERIAL PRIMARY KEY, source_file VARCHAR(240) NOT NULL, sheet_name VARCHAR(240) NOT NULL,
+    row_data JSONB NOT NULL, imported_by VARCHAR(120) NOT NULL, imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_guidance_documents(
+    id BIGSERIAL PRIMARY KEY, guidance_key VARCHAR(120) NOT NULL, file_name VARCHAR(240) NOT NULL,
+    version_no VARCHAR(40) NOT NULL, status VARCHAR(24) NOT NULL DEFAULT 'DRAFT' CHECK(status IN('DRAFT','ACTIVE','ARCHIVED')),
+    workbook JSONB NOT NULL, imported_by VARCHAR(120) NOT NULL, imported_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    activated_by VARCHAR(120), activated_at TIMESTAMPTZ, UNIQUE(guidance_key,version_no))`);
+  await query(`ALTER TABLE qms_iqc_guidance_documents DROP CONSTRAINT IF EXISTS qms_iqc_guidance_documents_status_check`);
+  await query(`ALTER TABLE qms_iqc_guidance_documents ADD CONSTRAINT qms_iqc_guidance_documents_status_check CHECK(status IN('DRAFT','ACTIVE','IDLE','ARCHIVED','DELETED'))`);
+  await query(`ALTER TABLE qms_iqc_guidance_documents ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(120), ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_inspection_manual_events(
+    id BIGSERIAL PRIMARY KEY, supplier_code VARCHAR(120) NOT NULL, material_code VARCHAR(120) NOT NULL,
+    action VARCHAR(40) NOT NULL, level_before VARCHAR(16) NOT NULL, level_after VARCHAR(16) NOT NULL,
+    reason TEXT, operator VARCHAR(120) NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_level_events_subject ON qms_iqc_inspection_level_events(material_code,supplier_code,created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_manual_events_subject ON qms_iqc_inspection_manual_events(material_code,supplier_code,created_at DESC)`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_virtual_memory(
+    id BIGSERIAL PRIMARY KEY, memory_type VARCHAR(40) NOT NULL,
+    supplier_code VARCHAR(160), material_code VARCHAR(160), lot_no VARCHAR(160),
+    content JSONB NOT NULL DEFAULT '{}'::jsonb, source_type VARCHAR(80), source_id VARCHAR(160),
+    confidence NUMERIC(5,4) NOT NULL DEFAULT 1, approval_status VARCHAR(24) NOT NULL DEFAULT 'RECORDED',
+    created_by VARCHAR(120) NOT NULL, approved_by VARCHAR(120), approved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_virtual_memory_lookup ON qms_iqc_virtual_memory(material_code,supplier_code,memory_type,created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_memory_lot ON qms_iqc_virtual_memory(lot_no,created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_memory_source ON qms_iqc_virtual_memory(source_type,source_id,created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_memory_approval ON qms_iqc_virtual_memory(approval_status,memory_type,created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_memory_guidance ON qms_iqc_virtual_memory(material_code,supplier_code,memory_type) WHERE memory_type IN ('AUTHORITATIVE_GUIDANCE','APPROVED_KNOWLEDGE')`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_memory_content_search ON qms_iqc_virtual_memory USING GIN (content)`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_virtual_tasks(
+    id BIGSERIAL PRIMARY KEY, task_key VARCHAR(240) UNIQUE NOT NULL, task_type VARCHAR(48) NOT NULL,
+    title VARCHAR(240) NOT NULL, lot_no VARCHAR(160), material_code VARCHAR(160), supplier_code VARCHAR(160),
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb, status VARCHAR(24) NOT NULL DEFAULT 'OPEN',
+    requires_human BOOLEAN NOT NULL DEFAULT FALSE, priority VARCHAR(16) NOT NULL DEFAULT 'NORMAL',
+    scheduled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), started_at TIMESTAMPTZ, completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_virtual_tasks_queue ON qms_iqc_virtual_tasks(status,priority,scheduled_at)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_virtual_tasks_subject ON qms_iqc_virtual_tasks(material_code,supplier_code,lot_no,status,scheduled_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_virtual_tasks_human ON qms_iqc_virtual_tasks(requires_human,status,priority,scheduled_at)`);
+  await query(`ALTER TABLE qms_iqc_virtual_tasks ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(120), ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(120), ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS instructions TEXT, ADD COLUMN IF NOT EXISTS completion_summary TEXT`);
 })();
+
+function advanceInspectionLevelServer(level, counters, result) {
+  const next = { normalWindowBatches: 0, normalWindowRejects: 0, normalConsecutiveAccepts: 0, tightenedAccepts: 0, tightenedRejects: 0, reducedAccepts: 0, ...(counters || {}) };
+  if (level === 'NORMAL') {
+    next.normalWindowBatches += 1; if (result === 'FAIL') { next.normalWindowRejects += 1; next.normalConsecutiveAccepts = 0; } else next.normalConsecutiveAccepts += 1;
+    if (next.normalWindowRejects >= 2) return { level: 'TIGHTENED', counters: { normalWindowBatches: 0, normalWindowRejects: 0, normalConsecutiveAccepts: 0, tightenedAccepts: 0, tightenedRejects: 0, reducedAccepts: 0 }, transition: 'NORMAL_TO_TIGHTENED' };
+    if (next.normalConsecutiveAccepts >= 10) return { level: 'REDUCED', counters: { normalWindowBatches: 0, normalWindowRejects: 0, normalConsecutiveAccepts: 0, tightenedAccepts: 0, tightenedRejects: 0, reducedAccepts: 0 }, transition: 'NORMAL_TO_REDUCED' };
+    if (next.normalWindowBatches >= 5) { next.normalWindowBatches = 0; next.normalWindowRejects = 0; }
+  } else if (level === 'TIGHTENED') {
+    if (result === 'PASS') next.tightenedAccepts += 1; else { next.tightenedAccepts = 0; next.tightenedRejects += 1; }
+    if (next.tightenedRejects >= 5) return { level: 'SUSPENDED', counters: { normalWindowBatches: 0, normalWindowRejects: 0, tightenedAccepts: 0, tightenedRejects: 0, reducedAccepts: 0 }, transition: 'TIGHTENED_TO_SUSPENDED' };
+    if (next.tightenedAccepts >= 5) return { level: 'NORMAL', counters: { normalWindowBatches: 0, normalWindowRejects: 0, tightenedAccepts: 0, tightenedRejects: 0, reducedAccepts: 0 }, transition: 'TIGHTENED_TO_NORMAL' };
+  } else if (level === 'REDUCED') {
+    if (result === 'FAIL') return { level: 'NORMAL', counters: { normalWindowBatches: 0, normalWindowRejects: 0, tightenedAccepts: 0, tightenedRejects: 0, reducedAccepts: 0 }, transition: 'REDUCED_TO_NORMAL_REJECT' };
+    next.reducedAccepts += 1;
+  }
+  return { level, counters: next, transition: null };
+}
 
 function notifyIqcWaiting(row, sourceType) {
   neuralBroadcast({
@@ -11687,17 +11858,207 @@ function notifyIqcWaiting(row, sourceType) {
   });
 }
 
+// IQC routes are mounted on the main management API root; authenticate them
+// before the permission gate so the virtual employee can use the same JWT
+// session as the WMS page.
+app.use('/qms/iqc', authenticateJWT);
+app.get('/qms/iqc/inspection-levels', requirePermission('quality.view'), async (req, res) => {
+  try { await iqcDefectLoopReady; const p=String(req.query.supplierCode||'').trim(), m=String(req.query.materialCode||'').trim(); const r=await query(`SELECT * FROM qms_iqc_inspection_states WHERE ($1='' OR supplier_code=$1) AND ($2='' OR material_code=$2) ORDER BY updated_at DESC LIMIT 500`,[p,m]); res.json(listEnvelope(r.rows)); }
+  catch(e){ res.status(500).json(errorEnvelope('IQC_LEVEL_LIST_FAILED',e.message)); }
+});
+app.get('/qms/iqc/virtual-employee', requirePermission('quality.view'), async (_req, res) => { res.json(envelope({ ...IQC_VIRTUAL_EMPLOYEE, harness: IQC_VIRTUAL_HARNESS })); });
+async function getActiveIqcGuidance(guidanceKey = 'SMT_IQC') {
+  await iqcDefectLoopReady;
+  const r = await query(`SELECT id,file_name,version_no,workbook FROM qms_iqc_guidance_documents WHERE guidance_key=$1 AND status='ACTIVE' ORDER BY activated_at DESC LIMIT 1`, [guidanceKey]);
+  if (!r.rows[0]) throw new Error('No ACTIVE IQC Excel guidance is configured');
+  const workbook = r.rows[0].workbook || {};
+  const sheets = Array.isArray(workbook.sheets) ? workbook.sheets : [];
+  const allRows = sheets.flatMap(sheet => Array.isArray(sheet.rows) ? sheet.rows : []);
+  const text = allRows.flatMap(row => Array.isArray(row) ? row.map(cell => String(cell ?? '').trim()).filter(Boolean) : []);
+  const samplingRows = [...(workbook.samplingRows || []), ...allRows.filter(row => Array.isArray(row) && row.some(cell => /\d+\s*[~～至-]\s*\d+/.test(String(cell ?? ''))))];
+  const inspectionItems = [...new Set([...(workbook.inspectionItems || []), ...text.filter(value => /包装|标签|外观|尺寸|规格|焊端|抽样|电气|电阻|电容|MSD|ESD|packing|label|visual|dimension|electrical|solder/i.test(value))])].slice(0, 100);
+  const levelRules = text.filter(value => /8\.2\.[1-5]|正常检查|加严检查|放宽检查|免检|暂停检查/.test(value));
+  return { ...workbook, sheets, samplingRows, inspectionItems, levelRules, fileName: `${r.rows[0].file_name} (${r.rows[0].version_no})`, guidanceDocumentId: r.rows[0].id, guidanceVersion: r.rows[0].version_no, learnedAt: new Date().toISOString() };
+}
+async function getIqcMaterialHistory(materialCode, supplierCode = '') {
+  const r = await query(`SELECT supplier_code,material_code,lot_no,result,level_before,level_after,transition,inspection_date,source_file,abnormal_type,operator,created_at
+    FROM qms_iqc_inspection_level_events WHERE material_code=$1 AND ($2='' OR supplier_code=$2) ORDER BY created_at DESC LIMIT 100`, [String(materialCode || '').trim(), String(supplierCode || '').trim()]);
+  return r.rows;
+}
+app.post('/qms/iqc/virtual-employee/learn-guidance', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const row = await rememberIqcMemory(query, { memoryType: 'AUTHORITATIVE_GUIDANCE', materialCode: req.body?.materialCode, sourceType: 'ACTIVE_IQC_EXCEL', sourceId: String(guidance.guidanceDocumentId), content: { fileName: guidance.fileName, version: guidance.guidanceVersion, sheets: guidance.sheets.map(sheet => sheet.name), samplingRows: guidance.samplingRows, inspectionItems: guidance.inspectionItems, levelRules: guidance.levelRules }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ guidance, memory: row })); } catch (e) { res.status(409).json(errorEnvelope('IQC_GUIDANCE_LEARN_FAILED', e.message)); } });
+app.post('/qms/iqc/virtual-employee/plan', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const history = await getIqcMaterialHistory(req.body?.materialCode, req.body?.supplierCode); const plan = await runIqcVirtualEmployee({ ...(req.body || {}), guidance, history }); res.json(mutateEnvelope({ ...plan, historyCount: history.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { res.status(409).json(errorEnvelope('IQC_VIRTUAL_PLAN_FAILED', e.message)); } });
+app.post('/qms/iqc/virtual-employee/advice', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const memoryContext = await getIqcMemoryContext(query, req.body || {}); const advice = await askIqcLlm({ ...(req.body || {}), guidance, memoryContext }); await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', materialCode: req.body?.materialCode, lotNo: req.body?.lotNo, sourceType: 'VIRTUAL_EMPLOYEE_ADVICE', content: { question: req.body?.question || '', pageContext: String(req.body?.pageContext || '').slice(0, 2000), response: advice.output }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ ...advice, memoryCount: memoryContext.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { if (String(e.message || '').includes('No ACTIVE IQC')) return res.status(409).json(errorEnvelope('IQC_GUIDANCE_REQUIRED', e.message)); res.json(mutateEnvelope({ model: process.env.IQC_LLM_MODEL || 'qwen3.8:latest', output: { summary: 'IQC-VIRTUAL-01 已读取当前 IQC 指导文件，但本地 LLM 暂时不可用。请先录入真实检验结果；系统不会编造结果或自动放行。', requiredTests: [], missingEvidence: ['本地 LLM 响应或真实检验结果'], recommendation: 'WAIT_FOR_REAL_EVIDENCE', nextAction: '请录入 PDA/仪器/人工授权的真实检验结果后继续。', actionArguments: {}, humanApprovalRequired: true, blockedReason: String(e.message || 'LLM unavailable') }, degraded: true })); } });
+const IQC_POWERSHELL_COMMANDS = Object.freeze({
+  check_agent_runtime: "Get-Date; Get-Process -Name node,ollama -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,CPU",
+  inspect_active_guidance: "Write-Output 'Use /qms/iqc/guidance-documents for ACTIVE Excel guidance; no filesystem mutation is permitted.'",
+  inspect_iqc_page: "Write-Output 'IQC page inspection is read-only; use the authenticated WMS API for data.'",
+});
+app.post('/qms/iqc/virtual-employee/powershell', requirePermission('quality.execute'), async (req, res) => {
+  const commandId = String(req.body?.commandId || '').trim();
+  if (!Object.prototype.hasOwnProperty.call(IQC_POWERSHELL_COMMANDS, commandId)) return res.status(400).json(errorEnvelope('IQC_POWERSHELL_COMMAND_DENIED', 'only approved IQC read-only command IDs are allowed'));
+  try {
+    const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', IQC_POWERSHELL_COMMANDS[commandId]], { windowsHide: true, timeout: 10000, maxBuffer: 200000 });
+    res.json(mutateEnvelope({ agent: 'IQC-VIRTUAL-01', commandId, stdout: result.stdout, stderr: result.stderr, readOnly: true }));
+  } catch (e) { res.status(409).json(errorEnvelope('IQC_POWERSHELL_FAILED', e.message)); }
+});
+app.get('/qms/iqc/virtual-employee/memory', requirePermission('quality.view'), async (req, res) => { try { await iqcDefectLoopReady; const rows = await searchIqcMemory(query, req.query || {}); res.json(listEnvelope(rows)); } catch (e) { res.status(500).json(errorEnvelope('IQC_MEMORY_LIST_FAILED', e.message)); } });
+app.post('/qms/iqc/virtual-employee/memory', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const row = await rememberIqcMemory(query, { ...(req.body || {}), createdBy: req.user?.username || req.body?.createdBy || 'quality' }); res.status(201).json(mutateEnvelope(row)); } catch (e) { res.status(400).json(errorEnvelope('IQC_MEMORY_WRITE_FAILED', e.message)); } });
+app.post('/qms/iqc/virtual-employee/memory/:id/approve', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const r = await query(`UPDATE qms_iqc_virtual_memory SET memory_type='APPROVED_KNOWLEDGE',approval_status='APPROVED',approved_by=$1,approved_at=NOW() WHERE id=$2 AND memory_type='LEARNING_CANDIDATE' AND approval_status='CANDIDATE' RETURNING *`, [req.user?.username || req.body?.operator || 'quality', req.params.id]); if (!r.rows[0]) return res.status(409).json(errorEnvelope('IQC_MEMORY_APPROVAL_INVALID', 'only a learning candidate can be approved')); res.json(mutateEnvelope(r.rows[0])); } catch (e) { res.status(409).json(errorEnvelope('IQC_MEMORY_APPROVAL_FAILED', e.message)); } });
+let iqcVirtualCronBusy = false;
+async function runIqcVirtualCron() {
+  if (iqcVirtualCronBusy) return { skipped: true, reason: 'already_running' };
+  iqcVirtualCronBusy = true;
+  try {
+    await iqcDefectLoopReady;
+    const guidance = await getActiveIqcGuidance();
+    const pending = await query(`SELECT q.material_lot_id,ml.lot_no,m.code AS material_code,s.code AS supplier_code,
+      COALESCE(q.quantity,ml.received_qty) AS quantity,q.source_type,q.warehouse_code,q.location_code,
+      EXTRACT(EPOCH FROM (NOW()-q.updated_at))/60 AS waiting_minutes
+      FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN suppliers s ON s.id=ml.supplier_id WHERE q.status='IQC_PENDING' ORDER BY q.updated_at ASC LIMIT 100`);
+    let planned = 0;
+    const taskTypes = [];
+    for (const row of pending.rows) {
+      const overdue = Number(row.waiting_minutes || 0) >= 120;
+      const history = await getIqcMaterialHistory(row.material_code, row.supplier_code);
+      const plan = await runIqcVirtualEmployee({ lotNo: row.lot_no, materialCode: row.material_code, batchSize: row.quantity, guidance, history });
+      const taskType = overdue ? 'OVERDUE_IQC_REVIEW' : 'GENERATE_IQC_PLAN';
+      const taskTitle = overdue ? `IQC超时待办：${row.lot_no}` : `生成IQC检验计划：${row.lot_no}`;
+      await query(`INSERT INTO qms_iqc_virtual_tasks(task_key,task_type,title,lot_no,material_code,supplier_code,payload,status,requires_human,priority)
+        VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,'OPEN',$8,$9) ON CONFLICT(task_key) DO UPDATE SET payload=EXCLUDED.payload,priority=EXCLUDED.priority`,
+        [`${taskType}:${row.material_lot_id}:${new Date().toISOString().slice(0,10)}`, taskType, taskTitle, row.lot_no, row.material_code, row.supplier_code,
+          JSON.stringify({ sourceType: row.source_type, warehouse: row.warehouse_code, location: row.location_code, quantity: row.quantity, waitingMinutes: row.waiting_minutes, historyCount: history.length, guidance: guidance.fileName, plan }), overdue, overdue ? 'HIGH' : 'NORMAL']);
+      await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', materialCode: row.material_code, lotNo: row.lot_no, sourceType: 'IQC_AGENT_CRON', sourceId: String(row.material_lot_id), content: { stage: 'scheduled_plan', plan, guidance: guidance.fileName }, createdBy: 'iqc-virtual-01' });
+      planned += 1; taskTypes.push(taskType);
+    }
+    const manual = await query(`SELECT supplier_code,material_code,level,counters FROM qms_iqc_inspection_states WHERE (level='SUSPENDED' OR (level='REDUCED' AND COALESCE((counters->>'reducedAccepts')::int,0)>=10)) ORDER BY updated_at DESC LIMIT 100`);
+    for (const row of manual.rows) {
+      const taskType = row.level === 'SUSPENDED' ? 'SUPPLIER_IMPROVEMENT_CONFIRMATION' : 'EXEMPTION_APPROVAL_REVIEW';
+      await query(`INSERT INTO qms_iqc_virtual_tasks(task_key,task_type,title,material_code,supplier_code,payload,requires_human,priority)
+        VALUES($1,$2,$3,$4,$5,$6::jsonb,TRUE,'HIGH') ON CONFLICT(task_key) DO UPDATE SET payload=EXCLUDED.payload,status=CASE WHEN qms_iqc_virtual_tasks.status='DONE' THEN 'DONE' ELSE 'OPEN' END`,
+        [`${taskType}:${row.supplier_code}:${row.material_code}`, taskType, taskType === 'SUPPLIER_IMPROVEMENT_CONFIRMATION' ? '等待供应商质量改进确认' : '等待主管免检审批', row.material_code, row.supplier_code, JSON.stringify({ level: row.level, counters: row.counters, requiredAction: taskType === 'SUPPLIER_IMPROVEMENT_CONFIRMATION' ? '人工确认质量改进完成后转加严' : '主管确认连续10批合格且无投诉后转免检' })]);
+      taskTypes.push(taskType);
+    }
+    await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', sourceType: 'IQC_AGENT_CRON', content: { runAt: new Date().toISOString(), pendingCount: pending.rowCount, planned }, createdBy: 'iqc-virtual-01' });
+    return { pendingCount: pending.rowCount, planned, taskTypes, manualGateTasks: manual.rowCount, guidance: guidance.fileName };
+  } finally { iqcVirtualCronBusy = false; }
+}
+app.post('/qms/iqc/virtual-employee/run-now', requirePermission('quality.execute'), async (_req, res) => { try { res.json(mutateEnvelope(await runIqcVirtualCron())); } catch (e) { res.status(409).json(errorEnvelope('IQC_AGENT_CRON_FAILED', e.message)); } });
+app.get('/qms/iqc/virtual-employee/tasks', requirePermission('quality.view'), async (req, res) => { try { await iqcDefectLoopReady; const status = String(req.query.status || 'OPEN'); const r = await query(`SELECT * FROM qms_iqc_virtual_tasks WHERE ($1='' OR status=$1) ORDER BY CASE priority WHEN 'HIGH' THEN 0 ELSE 1 END,scheduled_at LIMIT 200`, [status]); res.json(listEnvelope(r.rows)); } catch (e) { res.status(500).json(errorEnvelope('IQC_AGENT_TASK_LIST_FAILED', e.message)); } });
+app.post('/qms/iqc/virtual-employee/tasks/assign', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const p = req.body || {}; const title = String(p.title || '').trim(); if (!title) return res.status(400).json(errorEnvelope('IQC_AGENT_TASK_REQUIRED', 'title is required')); const key = String(p.taskKey || `MANUAL:${Date.now()}:${Math.random().toString(36).slice(2,8)}`); const r = await query(`INSERT INTO qms_iqc_virtual_tasks(task_key,task_type,title,lot_no,material_code,supplier_code,payload,status,requires_human,priority,assigned_to,assigned_by,due_at,instructions) VALUES($1,'MANUAL_ASSIGNMENT',$2,$3,$4,$5,$6::jsonb,'ASSIGNED',FALSE,$7,$8,$9,$10,$11) RETURNING *`, [key,title,p.lotNo||null,p.materialCode||null,p.supplierCode||null,JSON.stringify(p.payload||{}),String(p.priority||'NORMAL').toUpperCase(),String(p.assignedTo||'IQC-VIRTUAL-01'),req.user?.username||p.assignedBy||'quality',p.dueAt||null,String(p.instructions||'')]); res.status(201).json(mutateEnvelope(r.rows[0])); } catch (e) { res.status(400).json(errorEnvelope('IQC_AGENT_TASK_ASSIGN_FAILED', e.message)); } });
+app.post('/qms/iqc/virtual-employee/tasks/:id/complete', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const r = await query(`UPDATE qms_iqc_virtual_tasks SET status='DONE',completed_at=NOW(),completion_summary=$1 WHERE id=$2 AND status IN('ASSIGNED','OPEN','IN_PROGRESS') RETURNING *`, [String(req.body?.completionSummary||''), req.params.id]); if (!r.rows[0]) return res.status(409).json(errorEnvelope('IQC_AGENT_TASK_COMPLETE_INVALID', 'task is not open')); res.json(mutateEnvelope(r.rows[0])); } catch (e) { res.status(409).json(errorEnvelope('IQC_AGENT_TASK_COMPLETE_FAILED', e.message)); } });
+const iqcVirtualCronInterval = Math.max(60000, Number(process.env.IQC_AGENT_INTERVAL_MS || 900000));
+setInterval(() => { void runIqcVirtualCron().catch(error => console.error('[IQC-VIRTUAL-CRON]', error.message)); }, iqcVirtualCronInterval);
+app.get('/qms/iqc/guidance-documents', requirePermission('quality.view'), async (_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT id,guidance_key,file_name,version_no,status,workbook,imported_by,imported_at,activated_by,activated_at,deleted_by,deleted_at FROM qms_iqc_guidance_documents WHERE guidance_key='SMT_IQC' AND status<>'DELETED' ORDER BY CASE WHEN status='ACTIVE' THEN 0 ELSE 1 END, imported_at DESC`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('IQC_GUIDANCE_LIST_FAILED',e.message));}});
+app.post('/qms/iqc/guidance-documents', requirePermission('quality.execute'), async (req,res)=>{
+  const p=req.body||{}, fileName=String(p.fileName||'').trim(), key=String(p.guidanceKey||'SMT_IQC').trim(), operator=String(p.operator||req.user?.username||'operator'), versionNo=String(p.versionNo||`V-${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}-${Date.now().toString().slice(-5)}`).trim().slice(0,40);
+  if(!fileName||!p.workbook) return res.status(400).json(errorEnvelope('IQC_GUIDANCE_REQUIRED','fileName and workbook are required'));
+  try {
+    await iqcDefectLoopReady;
+    await query(`UPDATE qms_iqc_guidance_documents SET status='IDLE',activated_by=$2,activated_at=NOW() WHERE guidance_key=$1 AND status='ACTIVE'`,[key,operator]);
+    const r=await query(`
+      INSERT INTO qms_iqc_guidance_documents
+        (guidance_key,file_name,version_no,status,workbook,imported_by,activated_by,activated_at,deleted_by,deleted_at)
+      VALUES ($1,$2,$3,'ACTIVE',$4::jsonb,$5,$5,NOW(),NULL,NULL)
+      ON CONFLICT (guidance_key,version_no) DO UPDATE SET
+        file_name=EXCLUDED.file_name,
+        status='ACTIVE',
+        workbook=EXCLUDED.workbook,
+        imported_by=EXCLUDED.imported_by,
+        imported_at=NOW(),
+        activated_by=EXCLUDED.activated_by,
+        activated_at=NOW(),
+        deleted_by=NULL,
+        deleted_at=NULL
+      RETURNING id,guidance_key,file_name,version_no,status,workbook,imported_by,imported_at,activated_by,activated_at
+    `,[key,fileName,versionNo,JSON.stringify(p.workbook),operator]);
+    return res.status(201).json(mutateEnvelope(r.rows[0]));
+  } catch(e) { return res.status(409).json(errorEnvelope('IQC_GUIDANCE_IMPORT_FAILED',e.message)); }
+});
+app.post('/qms/iqc/guidance-documents/:id/activate', requirePermission('quality.execute'), async (req,res)=>{const id=Number(req.params.id),operator=String(req.body?.operator||req.user?.username||'quality');if(!Number.isInteger(id))return res.status(400).json(errorEnvelope('IQC_GUIDANCE_ID_REQUIRED','valid guidance document id required'));const client=await pgPool.connect();try{await iqcDefectLoopReady;await client.query('BEGIN');const d=(await client.query(`SELECT * FROM qms_iqc_guidance_documents WHERE id=$1 FOR UPDATE`,[id])).rows[0];if(!d||d.status==='DELETED')throw new Error('guidance document is unavailable');await client.query(`UPDATE qms_iqc_guidance_documents SET status='IDLE' WHERE guidance_key=$1 AND status='ACTIVE'`,[d.guidance_key]);const r=(await client.query(`UPDATE qms_iqc_guidance_documents SET status='ACTIVE',activated_by=$1,activated_at=NOW(),deleted_by=NULL,deleted_at=NULL WHERE id=$2 RETURNING id,guidance_key,file_name,version_no,status,activated_by,activated_at`,[operator,id])).rows[0];await client.query('COMMIT');res.json(mutateEnvelope(r));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope('IQC_GUIDANCE_ACTIVATE_FAILED',e.message));}finally{client.release();}});
+app.post('/qms/iqc/guidance-documents/:id/idle', requirePermission('quality.execute'), async (req,res)=>{const id=Number(req.params.id),operator=String(req.body?.operator||req.user?.username||'quality');try{await iqcDefectLoopReady;const r=await query(`UPDATE qms_iqc_guidance_documents SET status='IDLE',activated_by=$1,activated_at=NOW() WHERE id=$2 AND status='ACTIVE' RETURNING id,guidance_key,file_name,version_no,status`,[operator,id]);if(!r.rows[0])return res.status(409).json(errorEnvelope('IQC_GUIDANCE_IDLE_INVALID','only the active guidance can be set idle'));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope('IQC_GUIDANCE_IDLE_FAILED',e.message));}});
+app.delete('/qms/iqc/guidance-documents/:id', requirePermission('quality.execute'), async (req,res)=>{const id=Number(req.params.id),operator=String(req.body?.operator||req.user?.username||'quality');try{await iqcDefectLoopReady;const r=await query(`UPDATE qms_iqc_guidance_documents SET status='DELETED',deleted_by=$1,deleted_at=NOW() WHERE id=$2 AND status<>'ACTIVE' AND status<>'DELETED' RETURNING id,guidance_key,file_name,version_no,status,deleted_by,deleted_at`,[operator,id]);if(!r.rows[0])return res.status(409).json(errorEnvelope('IQC_GUIDANCE_DELETE_INVALID','active guidance cannot be deleted; set it idle or activate another version first'));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope('IQC_GUIDANCE_DELETE_FAILED',e.message));}});
+app.get('/qms/iqc/inspection-level-events', requirePermission('quality.view'), async (_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT * FROM qms_iqc_inspection_level_events ORDER BY created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('IQC_LEVEL_EVENT_LIST_FAILED',e.message));}});
+app.get('/qms/iqc/inspection-manual-events', requirePermission('quality.view'), async (_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT * FROM qms_iqc_inspection_manual_events ORDER BY created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('IQC_MANUAL_EVENT_LIST_FAILED',e.message));}});
+app.post('/qms/iqc/inspection-levels/:action', requirePermission('quality.execute'), async (req,res)=>{
+  const action=String(req.params.action||''), p=req.body||{}, s=String(p.supplierCode||'').trim(), m=String(p.materialCode||'').trim(), operator=String(p.operator||req.user?.username||'quality');
+  if(!s||!m||!['approve-exempt','abnormal-return','supplier-improvement'].includes(action)) return res.status(400).json(errorEnvelope('IQC_LEVEL_MANUAL_REQUIRED','supplierCode, materialCode and valid manual action are required'));
+  const client=await pgPool.connect();
+  try {
+    await iqcDefectLoopReady; await client.query('BEGIN');
+    const before=(await client.query(`SELECT * FROM qms_iqc_inspection_states WHERE supplier_code=$1 AND material_code=$2 FOR UPDATE`,[s,m])).rows[0];
+    if(!before) throw new Error('inspection state does not exist');
+    if(action==='approve-exempt' && !String(p.reason||'').trim()) throw new Error('主管批准免检必须填写无生产投诉、无售后不良的确认依据');
+    if(action==='approve-exempt' && (before.level!=='REDUCED' || Number(before.counters?.reducedAccepts||0)<10)) throw new Error('放宽检验必须连续10批合格后才可申请主管批准免检');
+    const eligible=action==='approve-exempt'?before.level==='REDUCED':action==='abnormal-return'?['REDUCED','EXEMPT'].includes(before.level):before.level==='SUSPENDED';
+    if(!eligible) throw new Error('state is not eligible for this manual action');
+    const next=action==='approve-exempt'?'EXEMPT':action==='abnormal-return'?'NORMAL':'TIGHTENED';
+    const counters={normalWindowBatches:0,normalWindowRejects:0,normalConsecutiveAccepts:0,tightenedAccepts:0,tightenedRejects:0,reducedAccepts:0};
+    const updated=(await client.query(`UPDATE qms_iqc_inspection_states SET level=$1,counters=$2::jsonb,updated_at=NOW() WHERE id=$3 RETURNING *`,[next,JSON.stringify(counters),before.id])).rows[0];
+    await client.query(`INSERT INTO qms_iqc_inspection_manual_events(supplier_code,material_code,action,level_before,level_after,reason,operator) VALUES($1,$2,$3,$4,$5,$6,$7)`,[s,m,action,before.level,next,p.reason||null,operator]);
+    await client.query('COMMIT'); res.json(mutateEnvelope(updated));
+  } catch(e) { await client.query('ROLLBACK'); res.status(409).json(errorEnvelope('IQC_LEVEL_MANUAL_FAILED',e.message)); }
+  finally { client.release(); }
+});
+app.post('/qms/iqc/inspection-levels/record', requirePermission('quality.execute'), async (req,res) => {
+  const p=req.body||{}, supplier=String(p.supplierCode||'').trim(), material=String(p.materialCode||'').trim(), lot=String(p.lotNo||'').trim(), result=String(p.result||'').toUpperCase();
+  if(!supplier||!material||!lot||!['PASS','FAIL'].includes(result)) return res.status(400).json(errorEnvelope('IQC_LEVEL_RESULT_REQUIRED','supplierCode, materialCode, lotNo and PASS/FAIL result are required'));
+  const client=await pgPool.connect();
+  try { await iqcDefectLoopReady; await client.query('BEGIN'); await client.query(`INSERT INTO qms_iqc_inspection_states(supplier_code,material_code) VALUES($1,$2) ON CONFLICT(supplier_code,material_code) DO NOTHING`,[supplier,material]); const before=(await client.query(`SELECT * FROM qms_iqc_inspection_states WHERE supplier_code=$1 AND material_code=$2 FOR UPDATE`,[supplier,material])).rows[0]; const next=advanceInspectionLevelServer(before.level,before.counters,result); const updated=(await client.query(`UPDATE qms_iqc_inspection_states SET level=$1,counters=$2::jsonb,updated_at=NOW() WHERE id=$3 RETURNING *`,[next.level,JSON.stringify(next.counters),before.id])).rows[0]; await client.query(`INSERT INTO qms_iqc_inspection_level_events(supplier_code,material_code,lot_no,result,level_before,level_after,transition,inspection_date,source_file,abnormal_type,operator) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[supplier,material,lot,result,before.level,next.level,next.transition,p.inspectionDate||null,p.sourceFile||null,p.abnormalType||null,String(p.operator||'iqc')]); await client.query('COMMIT'); res.status(201).json(mutateEnvelope({state:updated,levelBefore:before.level,transition:next.transition,nextProcedure:next.level})); }
+  catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope('IQC_LEVEL_RECORD_FAILED',e.message));} finally{client.release();}
+});
+
 app.get("/wms/receiving/qr-bindings", requirePermission("wms.view"), async (_req,res)=>{
-  try{ await iqcDefectLoopReady; const r=await query(`SELECT material_lot_id AS id,COALESCE(document_no,material_qr) AS document_no,material_lot_id,material_qr,pallet_qr,
-    COALESCE(source_type,'PO_RECEIPT') AS source_type,COALESCE(warehouse_code,'') AS warehouse_code,location_code,
-    COALESCE(status,CASE WHEN ml.iqc_status='released' THEN 'RELEASED' WHEN ml.iqc_status IN('pending','hold') THEN 'IQC_PENDING' ELSE 'CREATED' END) AS status,
-    COALESCE(quantity,ml.received_qty) AS quantity,ml.lot_no FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id ORDER BY q.updated_at DESC LIMIT 500`); res.json(listEnvelope(r.rows));}
+   try{ await iqcDefectLoopReady; const r=await query(`SELECT material_lot_id AS id,COALESCE(document_no,material_qr) AS document_no,material_lot_id,material_qr,pallet_qr,
+     COALESCE(source_type,'PO_RECEIPT') AS source_type,COALESCE(warehouse_code,'') AS warehouse_code,location_code,
+     COALESCE(status,CASE WHEN ml.iqc_status='released' THEN 'RELEASED' WHEN ml.iqc_status IN('pending','hold') THEN 'IQC_PENDING' ELSE 'CREATED' END) AS status,
+     COALESCE(quantity,ml.received_qty) AS quantity,ml.lot_no,m.code AS material_code,m.name_zh AS material_name,m.uom,ml.received_at,q.msd_level,q.qr_payload,
+     EXTRACT(EPOCH FROM (NOW()-COALESCE(q.registered_at,ml.received_at)))/60 AS waiting_minutes
+     FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id JOIN materials m ON m.id=ml.material_id
+     ORDER BY q.updated_at DESC LIMIT 500`); res.json(listEnvelope(r.rows));}
   catch(e){res.status(500).json(errorEnvelope("QR_BINDING_LIST_FAILED",e.message));}
+});
+const normalizeMslLevel=value=>{const raw=String(value||'').trim().toUpperCase().replace(/\s+/g,'');if(!raw)return '';return `MSL${raw.replace(/^MSL[-_:]?/,'')}`;};
+async function resolveReceivingMsl(lotNo,submittedMaterialCode=''){
+  await Promise.all([iqcDefectLoopReady,materialRollLabelLedgerReady,materialMsdBindingReady]);
+  const lot=(await query(`SELECT ml.id,ml.lot_no,m.code AS material_code,m.msd_level AS material_msd_level
+    FROM material_lots ml JOIN materials m ON m.id=ml.material_id
+    WHERE ml.lot_no=$1 ORDER BY ml.id DESC LIMIT 1`,[lotNo])).rows[0];
+  if(!lot){const error=new Error('material lot not found');error.code='MATERIAL_LOT_NOT_FOUND';throw error;}
+  const submitted=String(submittedMaterialCode||'').trim().toUpperCase();
+  if(submitted&&submitted!==String(lot.material_code).trim().toUpperCase()){
+    const alias=(await query(`SELECT 1 FROM wms_material_label_master
+      WHERE (UPPER(vietnam_material_code)=UPPER($1) OR UPPER(ruijing_material_code)=UPPER($1))
+        AND (UPPER(vietnam_material_code)=UPPER($2) OR UPPER(ruijing_material_code)=UPPER($2)) LIMIT 1`,[submitted,lot.material_code])).rows[0];
+    if(!alias){const error=new Error(`PDA Ruijing SN ${submittedMaterialCode} does not map to lot ${lotNo} (${lot.material_code})`);error.code='MATERIAL_CODE_MISMATCH';throw error;}
+  }
+  const masterRows=(await query(`SELECT vietnam_material_code,ruijing_material_code,msd_level FROM wms_material_label_master
+    WHERE UPPER(vietnam_material_code) IN (UPPER($1),UPPER($2))
+       OR UPPER(ruijing_material_code) IN (UPPER($1),UPPER($2))`,[lot.material_code,submitted||lot.material_code])).rows
+    .filter(row=>{
+      const codes=[row.vietnam_material_code,row.ruijing_material_code].map(value=>String(value||'').trim().toUpperCase());
+      return codes.includes(String(lot.material_code).trim().toUpperCase())&&(!submitted||codes.includes(submitted));
+    });
+  const binding=(await query(`SELECT msd_level FROM wms_material_msd_bindings WHERE UPPER(material_code)=UPPER($1)`,[lot.material_code])).rows[0];
+  const levels=[lot.material_msd_level,binding?.msd_level,...masterRows.map(row=>row.msd_level)].map(normalizeMslLevel).filter(Boolean);
+  const unique=[...new Set(levels)];
+  if(!unique.length){const error=new Error(`Material ${lot.material_code} has no MSL mapping in WMS`);error.code='MSL_MAPPING_REQUIRED';throw error;}
+  if(unique.length>1){const error=new Error(`Material ${lot.material_code} has conflicting MSL mappings: ${unique.join(', ')}`);error.code='MSL_MAPPING_CONFLICT';error.details={levels:unique};throw error;}
+  const identities=[...new Map(masterRows.map(row=>[`${String(row.vietnam_material_code).toUpperCase()}|${String(row.ruijing_material_code).toUpperCase()}`,row])).values()];
+  if(identities.length>1){const error=new Error(`Scanned SN matches multiple Ruijing/Vietnam material pairs`);error.code='MATERIAL_SN_CONFLICT';throw error;}
+  const identity=identities[0];
+  return {materialLotId:lot.id,lotNo:lot.lot_no,materialCode:lot.material_code,vietnamSn:identity?.vietnam_material_code||lot.material_code,ruijingSn:identity?.ruijing_material_code||lot.material_code,msdLevel:unique[0],source:'WMS_MATERIAL_MASTER'};
+}
+app.post("/wms/receiving/msl-resolution", requirePermission("wms.execute"), async(req,res)=>{
+  const lotNo=String(req.body?.lotNo||'').trim();
+  if(!lotNo)return res.status(400).json(errorEnvelope('LOT_NO_REQUIRED','lotNo is required'));
+  try{res.json(mutateEnvelope(await resolveReceivingMsl(lotNo,req.body?.ruijingSn||req.body?.materialCode)));}
+  catch(e){res.status(e.code==='MATERIAL_LOT_NOT_FOUND'?404:409).json(errorEnvelope(e.code||'MSL_RESOLUTION_FAILED',e.message,e.details));}
 });
 app.post("/wms/receiving/qr-bindings", requirePermission("wms.execute"), async (req,res)=>{
   const p=req.body||{},lotNo=String(p.lotNo||'').trim(),sourceType=String(p.sourceType||'').trim().toUpperCase(),warehouse=String(p.warehouse||'').trim(),location=String(p.location||'').trim(),qty=Number(p.quantity||p.qty);
   if(!lotNo||!warehouse||!location||!Number.isFinite(qty)||qty<=0||!['PO_RECEIPT','LINE_RETURN','REWORK_RETURN','SUBCONTRACT_RETURN'].includes(sourceType)) return res.status(400).json(errorEnvelope("QR_BINDING_REQUIRED","lotNo, quantity, sourceType, warehouse and location are required"));
-  try{await iqcDefectLoopReady;const lot=(await query("SELECT id FROM material_lots WHERE lot_no=$1 ORDER BY id DESC LIMIT 1",[lotNo])).rows[0];if(!lot)return res.status(404).json(errorEnvelope("MATERIAL_LOT_NOT_FOUND","material lot not found"));const no=`QR-${Date.now()}-${Math.random().toString(36).slice(2,8).toUpperCase()}`;const r=await query(`INSERT INTO wms_receiving_qr_registrations(material_lot_id,material_qr,pallet_qr,location_code,registered_by,document_no,source_type,warehouse_code,status,quantity) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'IQC_PENDING',$9) ON CONFLICT(material_lot_id) DO UPDATE SET material_qr=EXCLUDED.material_qr,pallet_qr=EXCLUDED.pallet_qr,location_code=EXCLUDED.location_code,registered_by=EXCLUDED.registered_by,document_no=EXCLUDED.document_no,source_type=EXCLUDED.source_type,warehouse_code=EXCLUDED.warehouse_code,status='IQC_PENDING',quantity=EXCLUDED.quantity,updated_at=NOW() RETURNING *`,[lot.id,no,String(p.sourcePalletCode||`PALLET-${lotNo}`),location,String(p.operator||req.user?.username||'operator'),no,sourceType,warehouse,qty]);await query("UPDATE material_lots SET iqc_status='pending',updated_at=NOW() WHERE id=$1",[lot.id]);notifyIqcWaiting(r.rows[0],sourceType);res.status(201).json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope("QR_BINDING_FAILED",e.message));}
+  try{const resolved=await resolveReceivingMsl(lotNo,p.materialCode);const documentNo=`RCV-${Date.now()}-${Math.random().toString(36).slice(2,8).toUpperCase()}`;const qrPayload={schema:'ruijing.wms-receiving.v1',materialCode:resolved.materialCode,lotNo:resolved.lotNo,quantity:qty,msdLevel:resolved.msdLevel,documentNo,sourceType,warehouseCode:warehouse,locationCode:location,issuedBy:'WMS',issuedAt:new Date().toISOString()};const materialQr=`WMS-MAT|${resolved.materialCode}|${resolved.lotNo}|${qty}|${resolved.msdLevel}|${documentNo}`;if(materialQr.length>200||materialQr.includes('\n'))return res.status(422).json(errorEnvelope('QR_VALUE_TOO_LONG','material code or lot number is too long for the receiving QR'));const r=await query(`INSERT INTO wms_receiving_qr_registrations(material_lot_id,material_qr,pallet_qr,location_code,registered_by,document_no,source_type,warehouse_code,status,quantity,msd_level,qr_payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'IQC_PENDING',$9,$10,$11::jsonb) ON CONFLICT(material_lot_id) DO UPDATE SET material_qr=EXCLUDED.material_qr,pallet_qr=EXCLUDED.pallet_qr,location_code=EXCLUDED.location_code,registered_by=EXCLUDED.registered_by,document_no=EXCLUDED.document_no,source_type=EXCLUDED.source_type,warehouse_code=EXCLUDED.warehouse_code,status='IQC_PENDING',quantity=EXCLUDED.quantity,msd_level=EXCLUDED.msd_level,qr_payload=EXCLUDED.qr_payload,updated_at=NOW() RETURNING *`,[resolved.materialLotId,materialQr,String(p.sourcePalletCode||`PALLET-${lotNo}`),location,String(p.operator||req.user?.username||'operator'),documentNo,sourceType,warehouse,qty,resolved.msdLevel,JSON.stringify(qrPayload)]);await query("UPDATE material_lots SET iqc_status='pending',label_id=$2,updated_at=NOW() WHERE id=$1",[resolved.materialLotId,materialQr]);notifyIqcWaiting(r.rows[0],sourceType);res.status(201).json(mutateEnvelope({...r.rows[0],materialCode:resolved.materialCode,lotNo:resolved.lotNo,msdLevel:resolved.msdLevel,materialQr,qrPayload}));}catch(e){res.status(e.code==='MATERIAL_LOT_NOT_FOUND'?404:409).json(errorEnvelope(e.code||"QR_BINDING_FAILED",e.message,e.details));}
 });
 app.post("/wms/receiving/qr-bindings/:id/confirm", requirePermission("wms.execute"), async (req,res)=>{try{await iqcDefectLoopReady;const r=await query("UPDATE wms_receiving_qr_registrations SET status='IQC_PENDING',updated_at=NOW() WHERE material_lot_id=$1 AND status='CREATED' RETURNING *",[req.params.id]);if(!r.rows[0])return res.status(409).json(errorEnvelope("QR_INVALID_STATE","QR document is not in CREATED state"));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(500).json(errorEnvelope("QR_CONFIRM_FAILED",e.message));}});
 app.post("/wms/receiving/qr-bindings/:id/iqc-result", requirePermission("quality.execute"), async(req,res)=>{const result=String(req.body?.result||'').toUpperCase();if(!['PASS','FAIL'].includes(result))return res.status(400).json(errorEnvelope("IQC_RESULT_REQUIRED","result must be PASS or FAIL"));const client=await pgPool.connect();try{await iqcDefectLoopReady;await client.query('BEGIN');const qr=(await client.query("SELECT * FROM wms_receiving_qr_registrations WHERE material_lot_id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!qr||qr.status!=='IQC_PENDING')throw new Error('QR document is not waiting for IQC');const next=result==='PASS'?'RELEASED':'DEFECTIVE';const u=(await client.query("UPDATE wms_receiving_qr_registrations SET status=$1,updated_at=NOW() WHERE material_lot_id=$2 RETURNING *",[next,req.params.id])).rows[0];const lotStatus=result==='PASS'?'released':'rejected';await client.query("UPDATE material_lots SET iqc_status=$1,updated_at=NOW() WHERE id=$2",[lotStatus,req.params.id]);await client.query(`INSERT INTO inventory_transactions(tx_no,action,material_lot_id,qty,operator_id,tx_status,reference_type,reference_no) VALUES($1,$2,$3,$4,$5,'posted','IQC_RECEIVING',$6)`,[`IQC_RECEIVING_${Date.now()}`,result==='PASS'?'IQC_RELEASE':'IQC_REJECT',req.params.id,Number(qr.quantity||0),null,qr.document_no]);if(result==='FAIL'){await client.query(`INSERT INTO wms_iqc_defect_cases(case_no,material_lot_id,lot_no,source_pallet_code,defective_qty,defect_code,defect_description,source_qr_document_no,created_by) SELECT $1,id,lot_no,COALESCE($2,pallet_qr),COALESCE(quantity,received_qty),'IQC_NG','IQC initial inspection failed',document_no,$3 FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id WHERE q.material_lot_id=$4 ON CONFLICT(case_no) DO NOTHING`,[`NG-${qr.document_no}`,qr.pallet_qr,String(req.body?.inspector||req.user?.username||'iqc'),req.params.id]);}await client.query('COMMIT');res.json(mutateEnvelope({binding:u,destination:result==='PASS'?'FINISHED-GOODS':'DEFECTIVE'}));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("IQC_RESULT_FAILED",e.message));}finally{client.release();}});
@@ -14095,7 +14456,7 @@ function errorEnvelope(code, message) {
 }
 
 app.post("/api/wms/incoming", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const {
       lot_no, material_code, material_name, supplier_code, supplier_name,
@@ -14122,7 +14483,7 @@ app.post("/api/wms/incoming", requirePermission("wms.write"), async (req, res) =
 });
 
 app.get("/api/wms/incoming", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { limit=50, offset=0, lot_no, material_code, supplier_code, iqc_status, packaging_status,
             date_from, date_to } = req.query;
@@ -14148,7 +14509,7 @@ app.get("/api/wms/incoming", requirePermission("wms.read"), async (req, res) => 
 });
 
 app.get("/api/wms/incoming/:id", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const [rows] = await client.query("SELECT * FROM wms_incoming_records WHERE id=?", [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: "NOT_FOUND" });
@@ -14159,7 +14520,7 @@ app.get("/api/wms/incoming/:id", requirePermission("wms.read"), async (req, res)
 });
 
 app.put("/api/wms/incoming/:id", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const fields = [];
     const vals = [];
@@ -14185,7 +14546,7 @@ app.put("/api/wms/incoming/:id", requirePermission("wms.write"), async (req, res
 // ── WMS IQC 来料检验 ─────────────────────────────────────────────────────────
 
 app.get("/api/wms/iqc/rules", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const [rows] = await client.query("SELECT * FROM iqc_aql_rules WHERE active=1 ORDER BY material_category, supplier_grade");
     res.json(rows);
@@ -14194,7 +14555,7 @@ app.get("/api/wms/iqc/rules", requirePermission("wms.read"), async (req, res) =>
 });
 
 app.get("/api/wms/iqc/sampling-plans", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { aql_level } = req.query;
     let sql = "SELECT * FROM iqc_sampling_plans";
@@ -14208,7 +14569,7 @@ app.get("/api/wms/iqc/sampling-plans", requirePermission("wms.read"), async (req
 });
 
 app.post("/api/wms/iqc/inspections", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { incoming_record_id, lot_no, material_code, supplier_code, batch_size, inspector_id, inspection_types } = req.body;
     if (!incoming_record_id || !lot_no || !batch_size) {
@@ -14247,7 +14608,7 @@ app.post("/api/wms/iqc/inspections", requirePermission("wms.write"), async (req,
 });
 
 app.get("/api/wms/iqc/inspections", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { limit=50, offset=0, result, date_from, date_to, supplier_code } = req.query;
     let where = [];
@@ -14269,7 +14630,7 @@ app.get("/api/wms/iqc/inspections", requirePermission("wms.read"), async (req, r
 });
 
 app.get("/api/wms/iqc/inspections/:id", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const [rows] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: "NOT_FOUND" });
@@ -14283,7 +14644,7 @@ app.get("/api/wms/iqc/inspections/:id", requirePermission("wms.read"), async (re
 });
 
 app.post("/api/wms/iqc/inspections/:id/defects", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { defect_type, defect_location, defect_count, severity, photo_url } = req.body;
     if (!defect_type || !defect_count) {
@@ -14302,7 +14663,7 @@ app.post("/api/wms/iqc/inspections/:id/defects", requirePermission("wms.write"),
 });
 
 app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     // 查送检记录
     const [insp] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
@@ -14338,7 +14699,7 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
 
 // 特采审批
 app.post("/api/wms/iqc/special-approvals", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { inspection_id, applicant_id, reason } = req.body;
     if (!inspection_id || !applicant_id) return res.status(400).json({ error: "MISSING_FIELDS" });
@@ -14355,7 +14716,7 @@ app.post("/api/wms/iqc/special-approvals", requirePermission("wms.write"), async
 });
 
 app.patch("/api/wms/iqc/special-approvals/:id", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { status, approver_iqc_id, approver_engineering_id, notes } = req.body;
     const [rows] = await client.query("SELECT * FROM iqc_special_approvals WHERE id=?", [req.params.id]);
@@ -14388,7 +14749,7 @@ app.patch("/api/wms/iqc/special-approvals/:id", requirePermission("wms.write"), 
 });
 
 app.get("/api/wms/iqc/special-approvals", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { status } = req.query;
     let sql = `SELECT sa.*, i.lot_no, i.material_code, i.supplier_code
@@ -18631,6 +18992,25 @@ api.post("/wms/receiving/label-ai", async (req, res) => {
     neuralBroadcast({ from: "pda_receiving", to: "*", type: "WMS_RECEIVING_LABEL_CAPTURED", stationCode: "wms_receiving", priority: "info", payload: { imageDataUrl: image, source: "NATIVE_PDA_LABEL_CAMERA", status: "OCR_PROCESSING" } });
     const result = await askReceivingLabelVision(image, { context: scannerContext });
     const parsed = parseReceivingAiJson(result.raw);
+    // Complete the bidirectional Vietnam/Ruijing material mapping on the
+    // server so the WMS form does not depend on the browser having imported
+    // the Excel workbook in the current session.
+    const detectedCodes = [parsed.vietnamMaterialCode, parsed.materialCode, parsed.ruijingMaterialCode]
+      .map(value => String(value || "").trim()).filter(Boolean);
+    if (detectedCodes.length) {
+      const mapped = (await query(`SELECT vietnam_material_code AS "vietnamMaterialCode",ruijing_material_code AS "ruijingMaterialCode",specification,supplier_name AS "supplierName",msd_level AS "msdLevel"
+        FROM wms_material_label_master
+        WHERE UPPER(vietnam_material_code)=ANY($1::text[]) OR UPPER(ruijing_material_code)=ANY($1::text[])
+        ORDER BY updated_at DESC LIMIT 1`, [detectedCodes.map(value => value.toUpperCase())])).rows[0];
+      if (mapped) {
+        parsed.materialCode = mapped.vietnamMaterialCode || parsed.materialCode;
+        parsed.vietnamMaterialCode = mapped.vietnamMaterialCode || parsed.vietnamMaterialCode;
+        parsed.ruijingMaterialCode = mapped.ruijingMaterialCode || parsed.ruijingMaterialCode;
+        if (!parsed.specification && mapped.specification) parsed.specification = mapped.specification;
+        if (!parsed.supplier && mapped.supplierName) parsed.supplier = mapped.supplierName;
+        if (!parsed.msdLevel && mapped.msdLevel) parsed.msdLevel = mapped.msdLevel;
+      }
+    }
     const warnings = [...parsed.warnings];
     const qrValue = String(req.body?.qrValue || "").trim();
     if (qrValue && parsed.materialCode && !qrValue.includes(String(parsed.materialCode))) warnings.push("QR value and printed material code do not match; verify manually");
@@ -18638,18 +19018,32 @@ api.post("/wms/receiving/label-ai", async (req, res) => {
     const row = (await query(`INSERT INTO wms_receiving_label_ai_scans(image_data,parsed_data,model,confidence,warnings,scanned_by)
       VALUES($1,$2::jsonb,$3,$4,$5::jsonb,$6)
       RETURNING id,model,confidence,warnings,created_at AS "createdAt"`, [image, JSON.stringify(parsed), result.model, parsed.confidence, JSON.stringify(parsed.warnings), req.user?.username || "pda-receiver"])).rows[0];
-    const payload = { scanId: row.id, ...parsed, aiModel: row.model, imageStored: true, imageDataUrl: image, requiresConfirmation: true };
+    const payload = { scanId: row.id, ...parsed, aiModel: row.model, imageStored: true, imageDataUrl: image, requiresConfirmation: false };
     // Broadcast the PDA camera result to both the PDA and any open WMS
     // Material Receiving page so the operator sees the same live record.
     neuralBroadcast({ from: "wms", to: "*", type: "WMS_RECEIVING_AI_RESULT", stationCode: "wms_receiving", priority: "info", payload });
     res.json({ success: true, data: payload });
   } catch (err) {
     console.error("POST /wms/receiving/label-ai:", err.message);
-    res.status(503).json(errorEnvelope("RECEIVING_LABEL_AI_UNAVAILABLE", `WMS label AI unavailable: ${err.message}`));
+    // Image receipt is independent from the optional local vision service.
+    // Keep the photo and return a confirmable record when Ollama/model is
+    // offline, so the PDA upload does not look like a failed receiving step.
+    const image = String(req.body?.image || req.body?.imageDataUrl || "").trim();
+    const fallback = { imageStored: Boolean(image), imageDataUrl: image, aiModel: "VISION_UNAVAILABLE", confidence: 0, requiresConfirmation: false, warnings: [`OCR暂不可用：${err.message}`] };
+    try {
+      const row = (await query(`INSERT INTO wms_receiving_label_ai_scans(image_data,parsed_data,model,confidence,warnings,scanned_by)
+        VALUES($1,'{}'::jsonb,'VISION_UNAVAILABLE',0,$2::jsonb,$3)
+        RETURNING id,created_at AS "createdAt"`, [image, JSON.stringify(fallback.warnings), req.user?.username || "pda-receiver"])).rows[0];
+      fallback.scanId = row.id;
+    } catch (storeError) {
+      console.error("POST /wms/receiving/label-ai fallback store:", storeError.message);
+    }
+    neuralBroadcast({ from: "wms", to: "*", type: "WMS_RECEIVING_AI_RESULT", stationCode: "wms_receiving", priority: "info", payload: fallback });
+    res.json({ success: true, data: fallback });
   }
 });
 
-const receivingPalletRemovalReady = query(`CREATE TABLE IF NOT EXISTS wms_receiving_pallet_box_removals (
+const receivingPalletRemovalReady = (async()=>{await query(`CREATE TABLE IF NOT EXISTS wms_receiving_pallet_box_removals (
   id BIGSERIAL PRIMARY KEY,
   binding_id BIGINT,
   pallet_qr VARCHAR(160) NOT NULL,
@@ -18659,7 +19053,11 @@ const receivingPalletRemovalReady = query(`CREATE TABLE IF NOT EXISTS wms_receiv
   source_type VARCHAR(80) NOT NULL,
   removed_by VARCHAR(120),
   removed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-)`);
+)`);await query(`ALTER TABLE wms_receiving_pallet_box_bindings
+  ADD COLUMN IF NOT EXISTS pda_latitude NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS pda_longitude NUMERIC(10,7),
+  ADD COLUMN IF NOT EXISTS pda_accuracy NUMERIC(10,2),
+  ADD COLUMN IF NOT EXISTS gps_captured_at TIMESTAMPTZ`);})();
 
 async function detachRejectedLotFromPallet(client, lotNo, req, sourceType) {
   await receivingPalletRemovalReady;
@@ -18681,7 +19079,9 @@ app.post("/wms/receiving/pallet-box-bindings", requirePermission("wms.execute"),
     const locationQr = String(req.body?.locationQr || "").trim();
     if (!palletQr || !boxQr || !lotNo) return res.status(400).json(errorEnvelope("QR_LOT_REQUIRED", "palletQr, boxQr and lotNo are required"));
     if (!locationQr) return res.status(400).json(errorEnvelope("LOCATION_QR_REQUIRED", "locationQr is required"));
-    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, locationQr, req.user?.username || "MATERIAL_RECEIVER"]);
+    const latitude=Number(req.body?.gps?.latitude),longitude=Number(req.body?.gps?.longitude),accuracy=Number(req.body?.gps?.accuracy),capturedAt=req.body?.gps?.capturedAt||null;
+    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy))return res.status(400).json(errorEnvelope("PDA_GPS_REQUIRED","PDA GPS latitude, longitude and accuracy are required"));
+    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",pda_latitude AS "pdaLatitude",pda_longitude AS "pdaLongitude",pda_accuracy AS "pdaAccuracy",gps_captured_at AS "gpsCapturedAt"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, locationQr, req.user?.username || "MATERIAL_RECEIVER",latitude,longitude,accuracy,capturedAt]);
     res.status(201).json({ success: true, data: r.rows[0] });
   } catch (err) { res.status(err.code === "23505" ? 409 : 500).json(errorEnvelope(err.code === "23505" ? "BOX_ALREADY_BOUND" : "PALLET_BOX_BIND_FAILED", err.code === "23505" ? "Box QR is already bound to a pallet" : err.message)); }
 });
@@ -19371,6 +19771,10 @@ app.get("/wms/storage-locations", async (req, res) => {
               sl.zone_id AS "zoneId", sl.capacity_qty AS "capacityQty", sl.locked_reason AS "lockedReason",
               sl.length_cm AS "lengthCm", sl.width_cm AS "widthCm", sl.height_cm AS "heightCm",
               sl.allow_receiving AS "allowReceiving", sl.allow_transfer AS "allowTransfer", sl.allow_putaway AS "allowPutaway",
+              sl.x_coord AS "xCoord", sl.y_coord AS "yCoord", sl.coordinate_system AS "coordinateSystem",
+              sl.aisle_code AS "aisleCode", sl.rack_code AS "rackCode", sl.level_code AS "levelCode", sl.bin_code AS "binCode",
+              sl.temperature_min AS "temperatureMin", sl.temperature_max AS "temperatureMax",
+              sl.humidity_min AS "humidityMin", sl.humidity_max AS "humidityMax", sl.msd_allowed AS "msdAllowed", sl.max_pallets AS "maxPallets",
               COALESCE((SELECT json_agg(json_build_object('materialId', r.material_id, 'ruleType', r.rule_type, 'reason', r.reason) ORDER BY r.rule_type, r.material_id)
                         FROM wms_location_material_rules r WHERE r.location_id=sl.id), '[]'::json) AS "materialRules",
               w.code AS "warehouseCode", w.warehouse_type AS "warehouseType", z.code AS "zoneCode"
@@ -22770,7 +23174,7 @@ app.patch("/api/wms/material-loading/:id/release", requirePermission("wms.execut
 
 // Feeder change / 换料
 app.post("/api/wms/feeder-changes", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { work_order_no, station_code, feeder_no, slot_no, old_lot_no, new_lot_no,
             old_material_code, new_material_code, change_reason, operator_id, change_type } = req.body;
@@ -22784,7 +23188,7 @@ app.post("/api/wms/feeder-changes", requirePermission("wms.write"), async (req, 
 });
 
 app.get("/api/wms/feeder-changes", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { work_order_no, station_code, limit=200, offset=0 } = req.query;
     let where = ["1=1"]; let p = [];
@@ -22800,7 +23204,7 @@ app.get("/api/wms/feeder-changes", requirePermission("wms.read"), async (req, re
 
 // Line stop / 停线
 app.post("/api/wms/line-stops", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { work_order_no, station_code, stop_reason, stop_reason_code, start_time, operator_id } = req.body;
     const [r] = await client.query(
@@ -22813,7 +23217,7 @@ app.post("/api/wms/line-stops", requirePermission("wms.write"), async (req, res)
 });
 
 app.patch("/api/wms/line-stops/:id/end", requirePermission("wms.write"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { resolution, production_loss } = req.body;
     const [r] = await client.query(
@@ -22827,7 +23231,7 @@ app.patch("/api/wms/line-stops/:id/end", requirePermission("wms.write"), async (
 });
 
 app.get("/api/wms/line-stops", requirePermission("wms.read"), async (req, res) => {
-  const client = await pool.connect();
+  const client = await getClient();
   try {
     const { station_code, start_date, end_date, limit=200, offset=0 } = req.query;
     let where = ["1=1"]; let p = [];
@@ -23180,8 +23584,8 @@ app.post("/wms/storage-locations", requirePermission("wms.execute"), async(req,r
     if(!p.code||!p.area||!p.nameZh||!p.warehouseId||!p.zoneId)return res.status(400).json(errorEnvelope("VALIDATION","code, area, nameZh, warehouseId and zoneId required"));
     const zone=await query("SELECT id FROM wms_zones WHERE id=$1 AND warehouse_id=$2 AND status='ACTIVE'",[p.zoneId,p.warehouseId]);
     if(!zone.rows[0])return res.status(400).json(errorEnvelope("VALIDATION","active zone must belong to warehouse"));
-    const result=await query(`INSERT INTO storage_locations(code,qr_code,area,name_zh,name_en,name_vi,status,warehouse_id,zone_id,capacity_qty,location_type,length_cm,width_cm,height_cm,allow_receiving,allow_transfer,allow_putaway)
-      VALUES(upper($1),coalesce($2,upper($1)),$3,$4,coalesce($5,$4),coalesce($6,$4),'active',$7,$8,$9,coalesce($10,'STANDARD'),$11,$12,$13,coalesce($14,true),coalesce($15,true),coalesce($16,true)) RETURNING *`,[p.code,p.qrCode??null,p.area,p.nameZh,p.nameEn??null,p.nameVi??null,p.warehouseId,p.zoneId,p.capacityQty??null,p.locationType??null,p.lengthCm??null,p.widthCm??null,p.heightCm??null,p.allowReceiving,p.allowTransfer,p.allowPutaway]);
+    const result=await query(`INSERT INTO storage_locations(code,qr_code,area,name_zh,name_en,name_vi,status,warehouse_id,zone_id,capacity_qty,location_type,length_cm,width_cm,height_cm,allow_receiving,allow_transfer,allow_putaway,x_coord,y_coord,coordinate_system,aisle_code,rack_code,level_code,bin_code,temperature_min,temperature_max,humidity_min,humidity_max,msd_allowed,max_pallets)
+      VALUES(upper($1),coalesce($2,upper($1)),$3,$4,coalesce($5,$4),coalesce($6,$4),'active',$7,$8,$9,coalesce($10,'STANDARD'),$11,$12,$13,coalesce($14,true),coalesce($15,true),coalesce($16,true),$17,$18,coalesce($19,'WAREHOUSE_MAP'),$20,$21,$22,$23,$24,$25,$26,$27,coalesce($28,true),$29) RETURNING *`,[p.code,p.qrCode??null,p.area,p.nameZh,p.nameEn??null,p.nameVi??null,p.warehouseId,p.zoneId,p.capacityQty??null,p.locationType??null,p.lengthCm??null,p.widthCm??null,p.heightCm??null,p.allowReceiving,p.allowTransfer,p.allowPutaway,p.xCoord??null,p.yCoord??null,p.coordinateSystem??null,p.aisleCode??null,p.rackCode??null,p.levelCode??null,p.binCode??null,p.temperatureMin??null,p.temperatureMax??null,p.humidityMin??null,p.humidityMax??null,p.msdAllowed,p.maxPallets??null]);
     await auditWmsMaster(req,"CREATE","STORAGE_LOCATION",result.rows[0].code,null,result.rows[0]);
     res.status(201).json(mutateEnvelope(result.rows[0]));
   }catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
@@ -23196,7 +23600,7 @@ app.patch("/wms/storage-locations/:id", requirePermission("wms.execute"), async(
       const zone=await query("SELECT id FROM wms_zones WHERE id=$1 AND warehouse_id=$2 AND status='ACTIVE'",[p.zoneId??before.zone_id,p.warehouseId??before.warehouse_id]);
       if(!zone.rows[0])return res.status(400).json(errorEnvelope("VALIDATION","active zone must belong to warehouse"));
     }
-    const result=await query(`UPDATE storage_locations SET qr_code=coalesce($2,qr_code),area=coalesce($3,area),name_zh=coalesce($4,name_zh),name_en=coalesce($5,name_en),name_vi=coalesce($6,name_vi),status=coalesce(lower($7),status),warehouse_id=coalesce($8,warehouse_id),zone_id=coalesce($9,zone_id),capacity_qty=coalesce($10,capacity_qty),location_type=coalesce($11,location_type),length_cm=coalesce($12,length_cm),width_cm=coalesce($13,width_cm),height_cm=coalesce($14,height_cm),allow_receiving=coalesce($15,allow_receiving),allow_transfer=coalesce($16,allow_transfer),allow_putaway=coalesce($17,allow_putaway),locked_reason=$18 WHERE id=$1 RETURNING *`,[req.params.id,p.qrCode??null,p.area??null,p.nameZh??null,p.nameEn??null,p.nameVi??null,p.status??null,p.warehouseId??null,p.zoneId??null,p.capacityQty??null,p.locationType??null,p.lengthCm??null,p.widthCm??null,p.heightCm??null,p.allowReceiving,p.allowTransfer,p.allowPutaway,Object.prototype.hasOwnProperty.call(p,"lockedReason")?p.lockedReason:before.locked_reason]);
+    const result=await query(`UPDATE storage_locations SET qr_code=coalesce($2,qr_code),area=coalesce($3,area),name_zh=coalesce($4,name_zh),name_en=coalesce($5,name_en),name_vi=coalesce($6,name_vi),status=coalesce(lower($7),status),warehouse_id=coalesce($8,warehouse_id),zone_id=coalesce($9,zone_id),capacity_qty=coalesce($10,capacity_qty),location_type=coalesce($11,location_type),length_cm=coalesce($12,length_cm),width_cm=coalesce($13,width_cm),height_cm=coalesce($14,height_cm),allow_receiving=coalesce($15,allow_receiving),allow_transfer=coalesce($16,allow_transfer),allow_putaway=coalesce($17,allow_putaway),locked_reason=$18,x_coord=coalesce($19,x_coord),y_coord=coalesce($20,y_coord),coordinate_system=coalesce($21,coordinate_system),aisle_code=coalesce($22,aisle_code),rack_code=coalesce($23,rack_code),level_code=coalesce($24,level_code),bin_code=coalesce($25,bin_code),temperature_min=coalesce($26,temperature_min),temperature_max=coalesce($27,temperature_max),humidity_min=coalesce($28,humidity_min),humidity_max=coalesce($29,humidity_max),msd_allowed=coalesce($30,msd_allowed),max_pallets=coalesce($31,max_pallets) WHERE id=$1 RETURNING *`,[req.params.id,p.qrCode??null,p.area??null,p.nameZh??null,p.nameEn??null,p.nameVi??null,p.status??null,p.warehouseId??null,p.zoneId??null,p.capacityQty??null,p.locationType??null,p.lengthCm??null,p.widthCm??null,p.heightCm??null,p.allowReceiving,p.allowTransfer,p.allowPutaway,Object.prototype.hasOwnProperty.call(p,"lockedReason")?p.lockedReason:before.locked_reason,p.xCoord??null,p.yCoord??null,p.coordinateSystem??null,p.aisleCode??null,p.rackCode??null,p.levelCode??null,p.binCode??null,p.temperatureMin??null,p.temperatureMax??null,p.humidityMin??null,p.humidityMax??null,p.msdAllowed,p.maxPallets??null]);
     await auditWmsMaster(req,"UPDATE","STORAGE_LOCATION",before.code,before,result.rows[0]);
     res.json(mutateEnvelope(result.rows[0]));
   } catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
@@ -23411,6 +23815,262 @@ app.post("/wms/supplier-materials", requirePermission("wms.execute"), async(req,
 app.post("/wms/supplier-materials/:id/decision", requirePermission("wms.execute"), async(req,res)=>{
   try{const p=req.body?.payload??req.body??{};if(!["APPROVE","REJECT"].includes(String(p.decision).toUpperCase()))return res.status(400).json(errorEnvelope("VALIDATION","decision must be APPROVE or REJECT"));const before=(await query("SELECT * FROM wms_supplier_materials WHERE id=$1",[req.params.id])).rows[0];if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier material not found"));const approved=String(p.decision).toUpperCase()==="APPROVE";const result=await query("UPDATE wms_supplier_materials SET approved=$2,status=$3,updated_at=now() WHERE id=$1 RETURNING *",[req.params.id,approved,approved?"ACTIVE":"REJECTED"]);await auditWmsMaster(req,approved?"APPROVE":"REJECT","SUPPLIER_MATERIAL",before.id,before,{...result.rows[0],comments:p.comments??null});res.json(mutateEnvelope(result.rows[0]));}catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
 });
+
+const supplierManagementReady = (async()=>{
+  await query(`ALTER TABLE suppliers
+    ADD COLUMN IF NOT EXISTS email varchar(180), ADD COLUMN IF NOT EXISTS country varchar(80),
+    ADD COLUMN IF NOT EXISTS classification varchar(60), ADD COLUMN IF NOT EXISTS website varchar(240),
+    ADD COLUMN IF NOT EXISTS pricing_tier varchar(30), ADD COLUMN IF NOT EXISTS preferred_language varchar(20) DEFAULT 'zh-CN',
+    ADD COLUMN IF NOT EXISTS portal_enabled boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS label_enabled boolean NOT NULL DEFAULT false,
+    ADD COLUMN IF NOT EXISTS qualification_status varchar(30) NOT NULL DEFAULT 'PENDING',
+    ADD COLUMN IF NOT EXISTS risk_level varchar(20) NOT NULL DEFAULT 'LOW'`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_portal_accounts(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    username varchar(120) NOT NULL UNIQUE, display_name varchar(160), email varchar(180),
+    status varchar(20) NOT NULL DEFAULT 'INVITED', label_permission boolean NOT NULL DEFAULT true,
+    last_login_at timestamptz, invited_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_qualifications(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    scope_type varchar(30) NOT NULL DEFAULT 'MATERIAL', scope_code varchar(120) NOT NULL,
+    factory_code varchar(60) NOT NULL DEFAULT 'VN', status varchar(30) NOT NULL DEFAULT 'PENDING',
+    effective_from date, expires_at date, approved_by bigint REFERENCES users(id), notes text,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_documents(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    document_type varchar(60) NOT NULL, document_no varchar(120), file_name varchar(240),
+    status varchar(30) NOT NULL DEFAULT 'VALID', effective_from date, expires_at date, notes text,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_management_events(
+    id bigserial PRIMARY KEY, supplier_id bigint REFERENCES suppliers(id) ON DELETE CASCADE,
+    event_type varchar(60) NOT NULL, actor_id bigint REFERENCES users(id), detail jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_sites(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    site_code varchar(60) NOT NULL, site_name varchar(180) NOT NULL, site_type varchar(30) NOT NULL DEFAULT 'FACTORY',
+    country varchar(80), province varchar(100), city varchar(100), address_line text, postal_code varchar(30),
+    is_primary boolean NOT NULL DEFAULT false, status varchar(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(supplier_id,site_code))`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_contacts(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    contact_code varchar(60), contact_name varchar(160) NOT NULL, title varchar(120), email varchar(180), phone varchar(80),
+    locale varchar(20), site_id bigint REFERENCES supplier_sites(id) ON DELETE SET NULL,
+    contact_type varchar(30) NOT NULL DEFAULT 'COMMERCIAL',
+    is_primary boolean NOT NULL DEFAULT false, status varchar(20) NOT NULL DEFAULT 'ACTIVE',
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_product_capabilities(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    category_code varchar(100) NOT NULL, product_family varchar(180) NOT NULL, description text,
+    annual_capacity numeric(18,2), capacity_uom varchar(30), minimum_order_qty numeric(18,4),
+    lead_time_days integer, status varchar(30) NOT NULL DEFAULT 'DECLARED',
+    approved_by bigint REFERENCES users(id), approved_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(supplier_id,category_code,product_family))`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_commercial_terms(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    factory_code varchar(60) NOT NULL DEFAULT 'VN', currency_code varchar(10) NOT NULL DEFAULT 'USD',
+    payment_terms_days integer NOT NULL DEFAULT 30, incoterm varchar(20), delivery_terms text,
+    pricing_tier varchar(30), price_valid_from date, price_valid_to date, status varchar(30) NOT NULL DEFAULT 'ACTIVE',
+    approved_by bigint REFERENCES users(id), created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(supplier_id,factory_code))`);
+  await query(`ALTER TABLE supplier_contacts
+    ADD COLUMN IF NOT EXISTS site_id bigint REFERENCES supplier_sites(id) ON DELETE SET NULL,
+    ADD COLUMN IF NOT EXISTS contact_type varchar(30) NOT NULL DEFAULT 'COMMERCIAL'`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_onboarding_cases(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    case_no varchar(80) NOT NULL UNIQUE, requested_scope jsonb NOT NULL DEFAULT '{}'::jsonb,
+    status varchar(40) NOT NULL DEFAULT 'REGISTRATION_PENDING', current_stage varchar(60) NOT NULL DEFAULT 'REGISTRATION',
+    owner_id bigint REFERENCES users(id), submitted_at timestamptz, target_date date, completed_at timestamptz,
+    rejection_reason text, version integer NOT NULL DEFAULT 1,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_approval_decisions(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    onboarding_case_id bigint REFERENCES supplier_onboarding_cases(id) ON DELETE CASCADE,
+    gate_type varchar(50) NOT NULL, decision varchar(30) NOT NULL, decided_by bigint REFERENCES users(id),
+    reason text NOT NULL, evidence_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb, decided_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_performance_scorecards(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    period_start date NOT NULL, period_end date NOT NULL, quality_score numeric(6,2), delivery_score numeric(6,2),
+    service_score numeric(6,2), cost_score numeric(6,2), overall_score numeric(6,2), rating varchar(20),
+    received_lots integer NOT NULL DEFAULT 0, rejected_lots integer NOT NULL DEFAULT 0,
+    on_time_deliveries integer NOT NULL DEFAULT 0, total_deliveries integer NOT NULL DEFAULT 0,
+    calculated_at timestamptz NOT NULL DEFAULT now(), approved_by bigint REFERENCES users(id), notes text,
+    UNIQUE(supplier_id,period_start,period_end), CHECK(period_end>=period_start))`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_risk_assessments(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    risk_type varchar(40) NOT NULL, likelihood smallint NOT NULL, impact smallint NOT NULL,
+    risk_score integer GENERATED ALWAYS AS (likelihood * impact) STORED, risk_level varchar(20) NOT NULL,
+    status varchar(30) NOT NULL DEFAULT 'OPEN', evidence jsonb NOT NULL DEFAULT '{}'::jsonb,
+    assessed_by bigint REFERENCES users(id), assessed_at timestamptz NOT NULL DEFAULT now(),
+    review_due_at date, closed_at timestamptz, CHECK(likelihood BETWEEN 1 AND 5), CHECK(impact BETWEEN 1 AND 5))`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_corrective_actions(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    risk_assessment_id bigint REFERENCES supplier_risk_assessments(id) ON DELETE SET NULL,
+    action_no varchar(80) NOT NULL UNIQUE, source_type varchar(40) NOT NULL, source_reference varchar(120),
+    problem_statement text NOT NULL, root_cause text, containment_action text, corrective_action text,
+    preventive_action text, owner_name varchar(160), owner_id bigint REFERENCES users(id), due_date date,
+    status varchar(30) NOT NULL DEFAULT 'OPEN', effectiveness_result text, verified_by bigint REFERENCES users(id),
+    verified_at timestamptz, closed_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_change_requests(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    request_no varchar(80) NOT NULL UNIQUE, change_type varchar(50) NOT NULL,
+    before_value jsonb NOT NULL DEFAULT '{}'::jsonb, proposed_value jsonb NOT NULL DEFAULT '{}'::jsonb,
+    reason text NOT NULL, status varchar(30) NOT NULL DEFAULT 'PENDING', requested_by bigint REFERENCES users(id),
+    reviewed_by bigint REFERENCES users(id), requested_at timestamptz NOT NULL DEFAULT now(), reviewed_at timestamptz,
+    effective_at timestamptz, review_notes text)`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_shipments(
+    id varchar(80) PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id), asn varchar(100) NOT NULL UNIQUE,
+    po_no varchar(120) NOT NULL, expected_arrival date NOT NULL, shipment_type varchar(20) NOT NULL,
+    status varchar(30) NOT NULL DEFAULT 'DRAFT', submitted_at timestamptz, received_at timestamptz,
+    source_updated_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_shipment_lines(
+    id varchar(80) PRIMARY KEY, shipment_id varchar(80) NOT NULL REFERENCES supplier_shipments(id) ON DELETE CASCADE,
+    material_code varchar(120) NOT NULL, material_name varchar(240), supplier_material_code varchar(120),
+    lot_no varchar(120) NOT NULL, production_date date NOT NULL, quantity numeric(18,4) NOT NULL,
+    per_box_quantity numeric(18,4) NOT NULL, uom varchar(30) NOT NULL DEFAULT 'PCS', msl varchar(30),
+    created_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_shipment_boxes(
+    id bigserial PRIMARY KEY, shipment_line_id varchar(80) NOT NULL REFERENCES supplier_shipment_lines(id) ON DELETE CASCADE,
+    serial_no varchar(80) NOT NULL, qr_value text NOT NULL UNIQUE, box_quantity numeric(18,4) NOT NULL,
+    status varchar(30) NOT NULL DEFAULT 'GENERATED', print_count integer NOT NULL DEFAULT 0,
+    received_at timestamptz, iqc_status varchar(30), created_at timestamptz NOT NULL DEFAULT now(),
+    UNIQUE(shipment_line_id,serial_no))`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_label_print_jobs(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id), shipment_id varchar(80) REFERENCES supplier_shipments(id),
+    requested_by varchar(160), print_scope varchar(20) NOT NULL, box_ids jsonb NOT NULL DEFAULT '[]'::jsonb,
+    copy_count integer NOT NULL DEFAULT 1, reason text, status varchar(30) NOT NULL DEFAULT 'CREATED',
+    created_at timestamptz NOT NULL DEFAULT now(), completed_at timestamptz)`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_portal_sync_events(
+    event_id varchar(100) PRIMARY KEY, remote_sequence bigint NOT NULL UNIQUE, supplier_code varchar(80) NOT NULL,
+    event_type varchar(80) NOT NULL, entity_type varchar(50) NOT NULL, entity_id varchar(100) NOT NULL,
+    payload jsonb NOT NULL, import_status varchar(30) NOT NULL DEFAULT 'IMPORTED', error_message text,
+    remote_created_at timestamptz, imported_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_portal_sync_state(
+    stream_name varchar(80) PRIMARY KEY, last_sequence bigint NOT NULL DEFAULT 0,
+    last_success_at timestamptz, last_error text, updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS supplier_delivery_tracking(
+    id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id), po_no varchar(120) NOT NULL,
+    latitude numeric(10,7) NOT NULL, longitude numeric(10,7) NOT NULL, accuracy_m numeric(10,2),
+    recorded_at timestamptz NOT NULL, imported_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`ALTER TABLE purchase_order_headers
+    ADD COLUMN IF NOT EXISTS supplier_response_status varchar(30),
+    ADD COLUMN IF NOT EXISTS supplier_expected_delivery date,
+    ADD COLUMN IF NOT EXISTS supplier_response_note text,
+    ADD COLUMN IF NOT EXISTS supplier_expected_boxes integer NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS supplier_expected_pallets integer NOT NULL DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS supplier_delivery_status varchar(30) NOT NULL DEFAULT 'NOT_PLANNED',
+    ADD COLUMN IF NOT EXISTS supplier_execution_contact varchar(160),
+    ADD COLUMN IF NOT EXISTS supplier_execution_email varchar(240),
+    ADD COLUMN IF NOT EXISTS carrier_name varchar(200),
+    ADD COLUMN IF NOT EXISTS driver_name varchar(160),
+    ADD COLUMN IF NOT EXISTS driver_phone varchar(80),
+    ADD COLUMN IF NOT EXISTS vehicle_no varchar(80),
+    ADD COLUMN IF NOT EXISTS tracking_no varchar(120),
+    ADD COLUMN IF NOT EXISTS wms_contact_name varchar(160),
+    ADD COLUMN IF NOT EXISTS wms_contact_email varchar(240),
+    ADD COLUMN IF NOT EXISTS wms_contact_phone varchar(80),
+    ADD COLUMN IF NOT EXISTS portal_synced_at timestamptz`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_primary_site ON supplier_sites(supplier_id) WHERE is_primary`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_primary_contact_type ON supplier_contacts(supplier_id,contact_type) WHERE is_primary`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_qualification_scope ON supplier_qualifications(supplier_id,scope_type,scope_code,factory_code)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_documents_expiry ON supplier_documents(supplier_id,expires_at)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_events_timeline ON supplier_management_events(supplier_id,created_at DESC)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_onboarding_status ON supplier_onboarding_cases(status,current_stage)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_risk_open ON supplier_risk_assessments(supplier_id,status,review_due_at)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_capa_open ON supplier_corrective_actions(supplier_id,status,due_date)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_shipments_status ON supplier_shipments(supplier_id,status,expected_arrival)`);
+  await query(`CREATE INDEX IF NOT EXISTS ix_supplier_boxes_status ON supplier_shipment_boxes(status,iqc_status)`);
+})();
+
+const supplierEvent=async(req,supplierId,type,detail={})=>query(`INSERT INTO supplier_management_events(supplier_id,event_type,actor_id,detail) VALUES($1,$2,$3,$4::jsonb)`,[supplierId,type,req.user?.userId??null,JSON.stringify(detail)]);
+
+app.get("/wms/suppliers", requirePermission("wms.view"), async(req,res)=>{try{
+  await supplierManagementReady; const q=String(req.query.q||"").trim(),status=String(req.query.status||"ALL").toLowerCase();
+  const r=await query(`SELECT s.*,
+    (SELECT count(*)::int FROM wms_supplier_materials sm WHERE sm.supplier_id=s.id AND sm.approved=true) approved_materials,
+    (SELECT count(*)::int FROM supplier_portal_accounts a WHERE a.supplier_id=s.id AND a.status='ACTIVE') portal_users,
+    (SELECT count(*)::int FROM supplier_documents d WHERE d.supplier_id=s.id AND d.expires_at BETWEEN current_date AND current_date+30) expiring_documents,
+    (SELECT count(*)::int FROM material_lots ml WHERE ml.supplier_id=s.id) receipt_lots
+    FROM suppliers s WHERE ($1='' OR concat_ws(' ',s.code,s.name_zh,s.name_en,s.name_vi,s.contact_name) ILIKE '%'||$1||'%')
+    AND ($2='all' OR lower(s.status)=$2) ORDER BY s.code`,[q,status]); res.json(listEnvelope(r.rows));
+}catch(e){res.status(500).json(errorEnvelope("SUPPLIER_LIST_FAILED",e.message));}});
+
+app.post("/wms/suppliers", requirePermission("wms.execute"), async(req,res)=>{try{
+  await supplierManagementReady;const p=req.body?.payload??req.body??{};if(!p.code||!p.nameZh)return res.status(400).json(errorEnvelope("VALIDATION","code and nameZh required"));
+  const r=await query(`INSERT INTO suppliers(code,name_zh,name_en,name_vi,short_name,contact_name,contact_phone,email,country,status,default_currency_code,payment_terms_days,portal_enabled,label_enabled,qualification_status,risk_level)
+    VALUES(upper($1),$2,coalesce($3,$2),coalesce($4,$2),$5,$6,$7,$8,$9,coalesce(lower($10),'inactive'),coalesce($11,'USD'),coalesce($12,30),coalesce($13,false),coalesce($14,false),coalesce(upper($15),'PENDING'),coalesce(upper($16),'LOW')) RETURNING *`,
+    [p.code,p.nameZh,p.nameEn,p.nameVi,p.shortName,p.contactName,p.contactPhone,p.email,p.country,p.status,p.currency,p.paymentTermsDays,p.portalEnabled,p.labelEnabled,p.qualificationStatus,p.riskLevel]);await supplierEvent(req,r.rows[0].id,"SUPPLIER_CREATED",r.rows[0]);res.status(201).json(mutateEnvelope(r.rows[0]));
+}catch(e){res.status(400).json(errorEnvelope("SUPPLIER_CREATE_FAILED",e.message));}});
+
+app.put("/wms/suppliers/:id", requirePermission("wms.execute"), async(req,res)=>{try{
+  await supplierManagementReady;const p=req.body?.payload??req.body??{},before=(await query("SELECT * FROM suppliers WHERE id=$1",[req.params.id])).rows[0];if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier not found"));
+  const r=await query(`UPDATE suppliers SET name_zh=coalesce($2,name_zh),name_en=coalesce($3,name_en),name_vi=coalesce($4,name_vi),short_name=coalesce($5,short_name),contact_name=coalesce($6,contact_name),contact_phone=coalesce($7,contact_phone),email=coalesce($8,email),country=coalesce($9,country),status=coalesce(lower($10),status),default_currency_code=coalesce($11,default_currency_code),payment_terms_days=coalesce($12,payment_terms_days),portal_enabled=coalesce($13,portal_enabled),label_enabled=coalesce($14,label_enabled),qualification_status=coalesce(upper($15),qualification_status),risk_level=coalesce(upper($16),risk_level),updated_at=now() WHERE id=$1 RETURNING *`,[req.params.id,p.nameZh,p.nameEn,p.nameVi,p.shortName,p.contactName,p.contactPhone,p.email,p.country,p.status,p.currency,p.paymentTermsDays,p.portalEnabled,p.labelEnabled,p.qualificationStatus,p.riskLevel]);await supplierEvent(req,before.id,"SUPPLIER_UPDATED",{before,after:r.rows[0]});res.json(mutateEnvelope(r.rows[0]));
+}catch(e){res.status(400).json(errorEnvelope("SUPPLIER_UPDATE_FAILED",e.message));}});
+
+app.get("/wms/suppliers/:id/360", requirePermission("wms.view"), async(req,res)=>{try{
+  await supplierManagementReady;const supplier=(await query("SELECT * FROM suppliers WHERE id=$1",[req.params.id])).rows[0];if(!supplier)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier not found"));
+  const [accounts,qualifications,documents,materials,events,sites,contacts,capabilities,commercialTerms,scorecards,risks,correctiveActions,shipments,purchaseOrders]=await Promise.all([
+    query("SELECT * FROM supplier_portal_accounts WHERE supplier_id=$1 ORDER BY invited_at DESC",[req.params.id]),query("SELECT * FROM supplier_qualifications WHERE supplier_id=$1 ORDER BY updated_at DESC",[req.params.id]),query("SELECT * FROM supplier_documents WHERE supplier_id=$1 ORDER BY expires_at NULLS LAST",[req.params.id]),query(`SELECT sm.*,m.code material_code,m.name_zh material_name FROM wms_supplier_materials sm JOIN materials m ON m.id=sm.material_id WHERE sm.supplier_id=$1 ORDER BY m.code`,[req.params.id]),query("SELECT * FROM supplier_management_events WHERE supplier_id=$1 ORDER BY created_at DESC LIMIT 100",[req.params.id]),
+    query("SELECT * FROM supplier_sites WHERE supplier_id=$1 ORDER BY is_primary DESC,site_code",[req.params.id]),query("SELECT * FROM supplier_contacts WHERE supplier_id=$1 ORDER BY is_primary DESC,contact_name",[req.params.id]),query("SELECT * FROM supplier_product_capabilities WHERE supplier_id=$1 ORDER BY category_code,product_family",[req.params.id]),query("SELECT * FROM supplier_commercial_terms WHERE supplier_id=$1 ORDER BY factory_code",[req.params.id]),query("SELECT * FROM supplier_performance_scorecards WHERE supplier_id=$1 ORDER BY period_end DESC LIMIT 24",[req.params.id]),query("SELECT * FROM supplier_risk_assessments WHERE supplier_id=$1 ORDER BY assessed_at DESC",[req.params.id]),query("SELECT * FROM supplier_corrective_actions WHERE supplier_id=$1 ORDER BY created_at DESC",[req.params.id]),query("SELECT * FROM supplier_shipments WHERE supplier_id=$1 ORDER BY created_at DESC LIMIT 100",[req.params.id]),
+    query(`SELECT poh.*,coalesce(poh.wms_contact_name,u.display_name) buyer_name,poh.wms_contact_email buyer_email,poh.wms_contact_phone buyer_phone,(SELECT jsonb_build_object('latitude',t.latitude,'longitude',t.longitude,'accuracy_m',t.accuracy_m,'recorded_at',t.recorded_at) FROM supplier_delivery_tracking t WHERE t.supplier_id=poh.supplier_id AND t.po_no=poh.po_no ORDER BY t.recorded_at DESC LIMIT 1) latest_location,coalesce(jsonb_agg(jsonb_build_object('line_no',pol.line_no,'material_code',pol.material_code,'description',pol.description,'qty_ordered',pol.qty_ordered,'qty_received',pol.qty_received,'unit',pol.unit,'unit_price',pol.unit_price,'promised_date',pol.promised_date) ORDER BY pol.line_no) FILTER (WHERE pol.id IS NOT NULL),'[]'::jsonb) lines FROM purchase_order_headers poh LEFT JOIN purchase_order_lines pol ON pol.po_header_id=poh.id LEFT JOIN users u ON u.id=poh.created_by WHERE poh.supplier_id=$1 GROUP BY poh.id,u.display_name ORDER BY poh.order_date DESC,poh.id DESC`,[req.params.id])]);
+  res.json(envelope({supplier,accounts:accounts.rows,qualifications:qualifications.rows,documents:documents.rows,materials:materials.rows,events:events.rows,sites:sites.rows,contacts:contacts.rows,capabilities:capabilities.rows,commercialTerms:commercialTerms.rows,scorecards:scorecards.rows,risks:risks.rows,correctiveActions:correctiveActions.rows,shipments:shipments.rows,purchaseOrders:purchaseOrders.rows}));
+}catch(e){res.status(500).json(errorEnvelope("SUPPLIER_360_FAILED",e.message));}});
+
+app.post("/wms/suppliers/:id/portal-accounts", requirePermission("wms.execute"), async(req,res)=>{try{await supplierManagementReady;const p=req.body?.payload??req.body??{};if(!p.username)return res.status(400).json(errorEnvelope("VALIDATION","username required"));const r=await query(`INSERT INTO supplier_portal_accounts(supplier_id,username,display_name,email,status,label_permission) VALUES($1,$2,$3,$4,coalesce(upper($5),'INVITED'),coalesce($6,true)) RETURNING *`,[req.params.id,p.username,p.displayName,p.email,p.status,p.labelPermission]);await supplierEvent(req,req.params.id,"PORTAL_ACCOUNT_CREATED",r.rows[0]);res.status(201).json(mutateEnvelope(r.rows[0]));}catch(e){res.status(400).json(errorEnvelope("PORTAL_ACCOUNT_FAILED",e.message));}});
+app.post("/wms/suppliers/:id/qualifications", requirePermission("wms.execute"), async(req,res)=>{try{await supplierManagementReady;const p=req.body?.payload??req.body??{};const r=await query(`INSERT INTO supplier_qualifications(supplier_id,scope_type,scope_code,factory_code,status,effective_from,expires_at,approved_by,notes) VALUES($1,coalesce(upper($2),'MATERIAL'),$3,coalesce($4,'VN'),coalesce(upper($5),'PENDING'),$6,$7,$8,$9) RETURNING *`,[req.params.id,p.scopeType,p.scopeCode,p.factoryCode,p.status,p.effectiveFrom,p.expiresAt,req.user?.userId??null,p.notes]);await supplierEvent(req,req.params.id,"QUALIFICATION_CREATED",r.rows[0]);res.status(201).json(mutateEnvelope(r.rows[0]));}catch(e){res.status(400).json(errorEnvelope("QUALIFICATION_FAILED",e.message));}});
+app.post("/wms/suppliers/:id/documents", requirePermission("wms.execute"), async(req,res)=>{try{await supplierManagementReady;const p=req.body?.payload??req.body??{};const r=await query(`INSERT INTO supplier_documents(supplier_id,document_type,document_no,file_name,status,effective_from,expires_at,notes) VALUES($1,$2,$3,$4,coalesce(upper($5),'VALID'),$6,$7,$8) RETURNING *`,[req.params.id,p.documentType,p.documentNo,p.fileName,p.status,p.effectiveFrom,p.expiresAt,p.notes]);await supplierEvent(req,req.params.id,"DOCUMENT_CREATED",r.rows[0]);res.status(201).json(mutateEnvelope(r.rows[0]));}catch(e){res.status(400).json(errorEnvelope("DOCUMENT_FAILED",e.message));}});
+
+app.post("/wms/suppliers/:id/portal-sync",requirePermission("wms.execute"),async(req,res)=>{try{
+  await supplierManagementReady;const supplier=(await query("SELECT * FROM suppliers WHERE id=$1",[req.params.id])).rows[0];if(!supplier)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier not found"));
+  const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(503).json(errorEnvelope("PORTAL_SYNC_NOT_CONFIGURED","SUPPLIER_PORTAL_URL and SUPPLIER_PORTAL_SYNC_KEY are required"));
+  const response=await fetch(`${base}/sync/suppliers/${encodeURIComponent(supplier.code)}`,{method:"PUT",headers:{"Content-Type":"application/json","x-sync-key":key},body:JSON.stringify({supplier_name:supplier.name_zh,registration_status:supplier.status==="active"?"REGISTERED":"SUSPENDED",portal_enabled:supplier.portal_enabled,label_enabled:supplier.label_enabled,qualification_status:supplier.qualification_status})});
+  if(!response.ok)throw new Error(`portal returned ${response.status}: ${await response.text()}`);await supplierEvent(req,supplier.id,"PORTAL_MASTER_SYNCED",{status:supplier.status,portalEnabled:supplier.portal_enabled,labelEnabled:supplier.label_enabled});res.json(mutateEnvelope(await response.json()));
+}catch(e){res.status(502).json(errorEnvelope("PORTAL_MASTER_SYNC_FAILED",e.message));}});
+
+app.post("/wms/suppliers/:supplierId/purchase-orders/:poId/portal-sync",requirePermission("wms.execute"),async(req,res)=>{try{
+  await supplierManagementReady;const po=(await query(`SELECT poh.*,s.code supplier_code,coalesce(poh.wms_contact_name,u.display_name) buyer_name,poh.wms_contact_email buyer_email,poh.wms_contact_phone buyer_phone FROM purchase_order_headers poh JOIN suppliers s ON s.id=poh.supplier_id LEFT JOIN users u ON u.id=poh.created_by WHERE poh.id=$1 AND poh.supplier_id=$2`,[req.params.poId,req.params.supplierId])).rows[0];if(!po)return res.status(404).json(errorEnvelope("NOT_FOUND","purchase order not found for supplier"));
+  const lines=(await query(`SELECT line_no,material_code,description,qty_ordered,qty_received,unit,unit_price,promised_date FROM purchase_order_lines WHERE po_header_id=$1 ORDER BY line_no`,[po.id])).rows;
+  const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(503).json(errorEnvelope("PORTAL_SYNC_NOT_CONFIGURED","SUPPLIER_PORTAL_URL and SUPPLIER_PORTAL_SYNC_KEY are required"));
+  const payload={status:String(po.status||"SENT").toUpperCase(),requested_delivery_date:po.promised_date,buyer_id:po.created_by?String(po.created_by):null,buyer_name:po.buyer_name,buyer_email:po.buyer_email,buyer_phone:po.buyer_phone,supplier_contact_name:null,supplier_contact_email:null,currency:po.currency_code,total_amount:Number(po.total_amount||0),payment_terms:po.payment_terms,delivery_terms:po.delivery_terms,lines};
+  const remote=await fetch(`${base}/sync/purchase-orders/${encodeURIComponent(po.po_no)}`,{method:"PUT",headers:{"Content-Type":"application/json","x-sync-key":key,"x-supplier-code":po.supplier_code},body:JSON.stringify(payload)});if(!remote.ok)throw new Error(`portal returned ${remote.status}: ${await remote.text()}`);
+  await query("UPDATE purchase_order_headers SET portal_synced_at=now(),sent_at=coalesce(sent_at,now()),status=CASE WHEN status='draft' THEN 'sent' ELSE status END,updated_at=now() WHERE id=$1",[po.id]);await supplierEvent(req,po.supplier_id,"PURCHASE_ORDER_PORTAL_SYNCED",{poId:po.id,poNo:po.po_no});res.json(mutateEnvelope(await remote.json()));
+}catch(e){res.status(502).json(errorEnvelope("PO_PORTAL_SYNC_FAILED",e.message));}});
+
+app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,res)=>{try{
+  await supplierManagementReady;const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(503).json(errorEnvelope("PORTAL_SYNC_NOT_CONFIGURED","SUPPLIER_PORTAL_URL and SUPPLIER_PORTAL_SYNC_KEY are required"));
+  const state=(await query("SELECT last_sequence FROM supplier_portal_sync_state WHERE stream_name='supplier-portal'",[])).rows[0],after=Number(state?.last_sequence||0);
+  const remote=await fetch(`${base}/sync/events?after=${after}&limit=200`,{headers:{"x-sync-key":key}});if(!remote.ok)throw new Error(`portal returned ${remote.status}: ${await remote.text()}`);const events=await remote.json();let imported=0,last=after;
+  for(const event of events){last=Math.max(last,Number(event.id));const exists=(await query("SELECT 1 FROM supplier_portal_sync_events WHERE event_id=$1",[event.event_id])).rowCount;if(exists)continue;
+    let importStatus="IMPORTED",errorMessage=null;try{
+      if(event.event_type==="SHIPMENT_CREATED"){
+        const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
+        await query(`INSERT INTO supplier_shipments(id,supplier_id,asn,po_no,expected_arrival,shipment_type,status,submitted_at,source_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $7='SUBMITTED' THEN now() END,now()) ON CONFLICT(id) DO UPDATE SET po_no=excluded.po_no,expected_arrival=excluded.expected_arrival,shipment_type=excluded.shipment_type,status=excluded.status,source_updated_at=now(),updated_at=now()`,[p.id,supplier.id,p.asn,p.po,p.eta,p.type,p.status]);
+        for(const line of p.lines||[])await query(`INSERT INTO supplier_shipment_lines(id,shipment_id,material_code,material_name,lot_no,production_date,quantity,per_box_quantity,uom) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`,[line.id,p.id,line.materialCode,line.materialName,line.lot,line.productionDate,line.qty,line.perBox,line.unit||"PCS"]);
+      }else if(event.event_type==="PO_RESPONDED"){
+        const p=event.payload;const updated=await query(`UPDATE purchase_order_headers SET supplier_response_status=$2,supplier_expected_delivery=$3,supplier_response_note=$4,supplier_expected_boxes=$5,supplier_expected_pallets=$6,supplier_execution_contact=$7,supplier_execution_email=$8,supplier_delivery_status=$9,carrier_name=$10,driver_name=$11,driver_phone=$12,vehicle_no=$13,tracking_no=$14,acknowledged_at=now(),status=CASE WHEN $2='ACCEPTED' THEN 'acknowledged' ELSE status END,updated_at=now() WHERE po_no=$1 RETURNING supplier_id`,[p.po_no,String(p.decision||"").toUpperCase(),p.expected_delivery_date||null,p.response_note||null,Number(p.expected_boxes||0),Number(p.expected_pallets||0),p.supplier_contact_name||null,p.supplier_contact_email||null,String(p.delivery_status||'PLANNED').toUpperCase(),p.carrier_name||null,p.driver_name||null,p.driver_phone||null,p.vehicle_no||null,p.tracking_no||null]);
+        if(!updated.rowCount)throw new Error(`purchase order ${p.po_no} not found`);
+        await supplierEvent(req,updated.rows[0].supplier_id,"PURCHASE_ORDER_SUPPLIER_RESPONDED",p);
+      }else if(event.event_type==="DELIVERY_LOCATION_UPDATED"){
+        const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
+        await query(`INSERT INTO supplier_delivery_tracking(supplier_id,po_no,latitude,longitude,accuracy_m,recorded_at) VALUES($1,$2,$3,$4,$5,to_timestamp($6))`,[supplier.id,p.po_no,p.latitude,p.longitude,p.accuracy_m||null,p.recorded_at]);
+      }
+    }catch(inner){importStatus="ERROR";errorMessage=inner.message;}
+    await query(`INSERT INTO supplier_portal_sync_events(event_id,remote_sequence,supplier_code,event_type,entity_type,entity_id,payload,import_status,error_message,remote_created_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,to_timestamp($10))`,[event.event_id,event.id,event.supplier_code,event.event_type,event.entity_type,event.entity_id,JSON.stringify(event.payload),importStatus,errorMessage,event.created_at]);
+    if(importStatus==="IMPORTED"){await fetch(`${base}/sync/events/${encodeURIComponent(event.event_id)}/ack`,{method:"POST",headers:{"x-sync-key":key}});imported++;}
+  }
+  await query(`INSERT INTO supplier_portal_sync_state(stream_name,last_sequence,last_success_at,last_error) VALUES('supplier-portal',$1,now(),NULL) ON CONFLICT(stream_name) DO UPDATE SET last_sequence=excluded.last_sequence,last_success_at=now(),last_error=NULL,updated_at=now()`,[last]);res.json(mutateEnvelope({received:events.length,imported,lastSequence:last}));
+}catch(e){await query(`INSERT INTO supplier_portal_sync_state(stream_name,last_error) VALUES('supplier-portal',$1) ON CONFLICT(stream_name) DO UPDATE SET last_error=$1,updated_at=now()`,[e.message]).catch(()=>{});res.status(502).json(errorEnvelope("PORTAL_EVENT_SYNC_FAILED",e.message));}});
+
+app.put("/wms/supplier-portal/shipments/:shipmentId/receiving-feedback",requirePermission("wms.execute"),async(req,res)=>{try{
+  await supplierManagementReady;const shipment=(await query(`SELECT sh.*,s.code supplier_code FROM supplier_shipments sh JOIN suppliers s ON s.id=sh.supplier_id WHERE sh.id=$1`,[req.params.shipmentId])).rows[0];if(!shipment)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier shipment not found"));
+  const p=req.body?.payload??req.body??{},feedback={status:String(p.status||"RECEIVING").toUpperCase(),expected_boxes:Number(p.expectedBoxes||0),scanned_boxes:Number(p.scannedBoxes||0),expected_quantity:Number(p.expectedQuantity||0),received_quantity:Number(p.receivedQuantity||0),accepted_quantity:Number(p.acceptedQuantity||0),hold_quantity:Number(p.holdQuantity||0),rejected_quantity:Number(p.rejectedQuantity||0),discrepancy_code:p.discrepancyCode||null,discrepancy_note:p.discrepancyNote||null,rejection_reason:p.rejectionReason||null,affected_box_qrs:p.affectedBoxQrs||[],evidence_images:p.evidenceImages||[],inspection_reference:p.inspectionReference||null,inspector_name:p.inspectorName||req.user?.displayName||null,iqc_status:p.iqcStatus||null,received_at:p.receivedAt||null,inspected_at:p.inspectedAt||null};
+  await query("UPDATE supplier_shipments SET status=$2,received_at=CASE WHEN $2 IN ('RECEIVED','IQC_PENDING','IQC_PASSED','IQC_HOLD','IQC_REJECTED') THEN coalesce(received_at,now()) ELSE received_at END,updated_at=now() WHERE id=$1",[shipment.id,feedback.status]);
+  await supplierEvent(req,shipment.supplier_id,"RECEIVING_FEEDBACK_PUBLISHED",{shipmentId:shipment.id,...feedback});
+  const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(202).json(mutateEnvelope({shipmentId:shipment.id,localUpdated:true,remoteSynced:false,reason:"portal sync not configured"}));
+  const remote=await fetch(`${base}/sync/shipments/${encodeURIComponent(shipment.id)}/receiving-status`,{method:"PUT",headers:{"Content-Type":"application/json","x-sync-key":key},body:JSON.stringify(feedback)});if(!remote.ok)throw new Error(`portal returned ${remote.status}: ${await remote.text()}`);res.json(mutateEnvelope({shipmentId:shipment.id,localUpdated:true,remoteSynced:true,feedback:await remote.json()}));
+}catch(e){res.status(502).json(errorEnvelope("RECEIVING_FEEDBACK_SYNC_FAILED",e.message));}});
 
 // Durable MES <-> WMS hand-off. The producer owns the event until the consumer
 // acknowledges it; retries reuse eventId and therefore cannot duplicate work.
@@ -31165,11 +31825,11 @@ app.get("/wms/inventory-control/positions", requirePermission("wms.view"), async
     const q = String(req.query.q ?? "").trim();
     const limit = Math.min(1000, Math.max(1, Number(req.query.limit ?? 500)));
     const rows = await query(
-      \`SELECT * FROM wms_inventory_position_balances
+      `SELECT * FROM wms_inventory_position_balances
        WHERE ($1 = '' OR material_code ILIKE '%' || $1 || '%' OR lot_no ILIKE '%' || $1 || '%'
               OR COALESCE(location_code,'') ILIKE '%' || $1 || '%')
        ORDER BY iqc_sla_overdue DESC, location_code NULLS LAST, material_code, lot_no
-       LIMIT $2\`,
+       LIMIT $2`,
       [q, limit],
     );
     res.json(listEnvelope(rows.rows));
@@ -31183,10 +31843,10 @@ app.get("/wms/inventory-control/summary", requirePermission("wms.view"), async (
   try {
     const [summary, totals, sla] = await Promise.all([
       query("SELECT * FROM wms_inventory_position_summary ORDER BY location_code NULLS LAST, material_code"),
-      query(\`SELECT COUNT(*)::int AS lot_count, COALESCE(SUM(quantity),0)::numeric AS quantity,
+      query(`SELECT COUNT(*)::int AS lot_count, COALESCE(SUM(quantity),0)::numeric AS quantity,
               COALESCE(SUM(available_quantity),0)::numeric AS available_quantity,
               COUNT(*) FILTER (WHERE iqc_sla_overdue)::int AS overdue_lot_count
-              FROM wms_inventory_position_balances\`),
+              FROM wms_inventory_position_balances`),
       query("SELECT * FROM wms_process_sla_rules WHERE active=true ORDER BY process_key"),
     ]);
     res.json(envelope({ summary: summary.rows, totals: totals.rows[0], sla: sla.rows }));
@@ -31205,11 +31865,11 @@ app.patch("/wms/inventory-control/sla/:processKey", requirePermission("wms.execu
       return res.status(400).json(errorEnvelope("VALIDATION", "valid processKey, positive integer slaMinutes and warningPercent 1-99 required"));
     }
     const updated = await query(
-      \`INSERT INTO wms_process_sla_rules(process_key, sla_minutes, warning_percent, updated_by, updated_at)
+      `INSERT INTO wms_process_sla_rules(process_key, sla_minutes, warning_percent, updated_by, updated_at)
        VALUES($1,$2,$3,$4,NOW())
        ON CONFLICT(process_key) DO UPDATE SET sla_minutes=EXCLUDED.sla_minutes,
          warning_percent=EXCLUDED.warning_percent, updated_by=EXCLUDED.updated_by, updated_at=NOW()
-       RETURNING *\`,
+       RETURNING *`,
       [processKey, slaMinutes, warningPercent, req.user?.username ?? "system"],
     );
     res.json(mutateEnvelope(updated.rows[0]));
@@ -41192,6 +41852,12 @@ const wms3dControlReady=(async()=>{
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
   await query(`ALTER TABLE wms_floor_storage_areas ADD COLUMN IF NOT EXISTS area_qr VARCHAR(160)`);
+  await query(`CREATE TABLE IF NOT EXISTS wms_canvas_layout_objects(
+    object_id VARCHAR(160) PRIMARY KEY, kind VARCHAR(40) NOT NULL, label VARCHAR(200) NOT NULL,
+    parent_id VARCHAR(160), qr_code VARCHAR(200), position_qr_code VARCHAR(200),
+    x NUMERIC NOT NULL, y NUMERIC NOT NULL, width NUMERIC, height NUMERIC,
+    object_data JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
   await query(`INSERT INTO wms_floor_storage_areas(area_code,area_name,area_type,polygon,capacity,occupied,status)
     VALUES
       ('FL-IQC-01','IQC 待检区','IQC_HOLD','[[-16,-10],[-8,-10],[-8,-6],[-16,-6]]'::jsonb,12,3,'AVAILABLE'),
@@ -41271,6 +41937,41 @@ app.get("/api/3d/wms-snapshot", requirePermission("wms.view"), async (req,res)=>
     wms3dSnapshotInflight.set(search,snapshotPromise);
     res.json(await snapshotPromise);
   }catch(error){res.status(500).json(errorEnvelope("WMS_3D_SNAPSHOT_FAILED",error.message));}
+});
+
+app.post("/api/3d/wms-floor-storage-areas", requirePermission("wms.execute"), async (req,res)=>{
+  try {
+    const p=req.body?.payload ?? req.body ?? {};
+    if(!p.areaCode || !p.areaName || !Array.isArray(p.polygon)) return res.status(400).json(errorEnvelope("VALIDATION","areaCode, areaName and polygon required"));
+    const row=(await query(`INSERT INTO wms_floor_storage_areas(area_code,area_qr,area_name,area_type,polygon,capacity,occupied,status,source_layout)
+      VALUES(upper($1),coalesce($2,'WMS-AREA:'||upper($1)),$3,coalesce($4,'CUSTOM'),$5::jsonb,coalesce($6,0),coalesce($7,0),coalesce(upper($8),'AVAILABLE'),coalesce($9,'WMS warehouse canvas'))
+      ON CONFLICT(area_code) DO UPDATE SET area_qr=excluded.area_qr,area_name=excluded.area_name,area_type=excluded.area_type,polygon=excluded.polygon,capacity=excluded.capacity,status=excluded.status,source_layout=excluded.source_layout,updated_at=now() RETURNING *`,[p.areaCode,p.areaQr??null,p.areaName,p.areaType??null,JSON.stringify(p.polygon),p.capacity??null,p.occupied??null,p.status??null,p.sourceLayout??null])).rows[0];
+    res.status(201).json(envelope(row));
+  } catch(error) { res.status(400).json(errorEnvelope("WMS_AREA_SAVE_ERROR",error.message)); }
+});
+
+app.get("/api/3d/wms-layout", requirePermission("wms.view"), async (_req,res)=>{
+  try { const rows=(await query("SELECT object_data FROM wms_canvas_layout_objects ORDER BY object_id")).rows.map(row=>row.object_data); res.json(envelope({items:rows})); }
+  catch(error) { res.status(500).json(errorEnvelope("WMS_LAYOUT_READ_ERROR",error.message)); }
+});
+
+app.post("/api/3d/wms-layout", requirePermission("wms.execute"), async (req,res)=>{
+  const client=await getClient();
+  try {
+    const items=Array.isArray(req.body?.items) ? req.body.items : [];
+    if(!items.length) return res.status(400).json(errorEnvelope("VALIDATION","layout items required"));
+    await client.query("BEGIN");
+    for(const item of items) {
+      if(!item.id || !item.kind || !item.label) continue;
+      await client.query(`INSERT INTO wms_canvas_layout_objects(object_id,kind,label,parent_id,qr_code,position_qr_code,x,y,width,height,object_data)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
+        ON CONFLICT(object_id) DO UPDATE SET kind=excluded.kind,label=excluded.label,parent_id=excluded.parent_id,qr_code=excluded.qr_code,position_qr_code=excluded.position_qr_code,x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height,object_data=excluded.object_data,updated_at=now()`,
+        [String(item.id),String(item.kind),String(item.label),item.parentId??null,item.qrCode??null,item.positionQrCode??null,Number(item.x)||0,Number(item.y)||0,item.width??null,item.height??null,JSON.stringify(item)]);
+    }
+    await client.query("COMMIT");
+    res.json(envelope({saved:items.length,updatedAt:new Date().toISOString()}));
+  } catch(error) { await client.query("ROLLBACK").catch(()=>{}); res.status(400).json(errorEnvelope("WMS_LAYOUT_SAVE_ERROR",error.message)); }
+  finally { client.release(); }
 });
 
 app.get("/api/3d/wms-control-state", requirePermission("wms.view"), async (req,res)=>{

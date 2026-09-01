@@ -1,6 +1,6 @@
 export type WmsTabKey =
   | "dashboard" | "receiving" | "returnReceive" | "supplierReturn" | "salesReturn"
-  | "iqc" | "iqcClosedLoop" | "iqcDefectLoop" | "iqcInspect" | "iqcReport" | "iqcStandards" | "supplierKpi" | "qualityTrend"
+  | "iqc" | "iqcClosedLoop" | "iqcDefectLoop" | "iqcInspectionLevels" | "iqcInspect" | "iqcReport" | "iqcStandards" | "supplierKpi" | "supplierManagement" | "qualityTrend"
   | "poReceipt" | "lineReturn" | "subcontractReturn" | "mrbReworkReturn" | "qrBinding" | "iqcPassMaintenance" | "defectArchive" | "mrbApproval" | "scrapFinanceApproval" | "reworkComplete" | "iqcReinspection"
   | "putaway" | "inventory" | "picking" | "issue"
   | "cycleCount" | "transferAdjust" | "expiryControl" | "fifoMonitor" | "fifoSimulation"
@@ -22,7 +22,7 @@ export type WmsTabKey =
   | "oqc"
   | "ngManagement"
   | "eightD" | "materialMaster" | "materialBarcodeLoop" | "locationManagement" | "batchManagement"
-  | "incoming" | "materialReceiving" | "materialLoading" | "smtClosedLoop" | "nonSmtClosedLoop" | "nonIqcClosedLoop" | "finishedGoods"
+  | "incoming" | "supplierLabel" | "materialReceiving" | "materialLoading" | "smtClosedLoop" | "nonSmtClosedLoop" | "nonIqcClosedLoop" | "finishedGoods"
   | "pdaReceiving" | "pdaReceivingMobile" | "pdaConsumption" | "pdaMsd" | "pdaCycleCount" | "pdaIqc" | "pdaHistory"
   | "productionInbound" | "productionOutbound"
   | "inboundOrders" | "outboundOrders" | "requisitions" | "returnSlips" | "replenishments" | "syncHealth";
@@ -30,7 +30,7 @@ export type WmsTabKey =
 export const wmsTabKeys: WmsTabKey[] = [
   "dashboard",
   "receiving", "returnReceive", "supplierReturn", "salesReturn",
-  "iqc", "iqcClosedLoop", "iqcDefectLoop", "iqcInspect", "iqcReport", "iqcStandards", "supplierKpi", "qualityTrend",
+  "iqc", "iqcClosedLoop", "iqcDefectLoop", "iqcInspectionLevels", "iqcInspect", "iqcReport", "iqcStandards", "supplierKpi", "supplierManagement", "qualityTrend",
   "poReceipt", "lineReturn", "subcontractReturn", "mrbReworkReturn", "qrBinding", "iqcPassMaintenance", "defectArchive", "mrbApproval", "scrapFinanceApproval", "reworkComplete", "iqcReinspection",
   "putaway", "inventory", "picking", "issue",
   "cycleCount", "transferAdjust", "expiryControl", "fifoMonitor", "fifoSimulation",
@@ -48,7 +48,7 @@ export const wmsTabKeys: WmsTabKey[] = [
   "sqlConsole",
   "lifecycle",
   "basicData", "materialMaster", "materialBarcodeLoop", "locationManagement", "batchManagement",
-  "incoming", "materialReceiving", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop", "finishedGoods", "pdaReceiving", "pdaConsumption", "pdaMsd", "pdaIqc", "pdaHistory",
+  "incoming", "supplierLabel", "materialReceiving", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop", "finishedGoods", "pdaReceiving", "pdaConsumption", "pdaMsd", "pdaIqc", "pdaHistory",
   "inboundOrders", "outboundOrders", "requisitions", "returnSlips", "replenishments", "syncHealth",
   "productionInbound", "productionOutbound",
 ];
@@ -67,7 +67,7 @@ export interface WmsMenuGroup {
 // remain routable for maintainers but are intentionally absent here.
 export const wmsMenuGroups: WmsMenuGroup[] = [
   { key: "overview", translationKey: "wms.group.overview", tabs: ["dashboard", "closure"] },
-  { key: "receivingManagement", translationKey: "wms.group.receiving", tabs: ["materialReceiving", "pdaReceiving", "inboundOrders", "iqcClosedLoop", "pdaIqc", "putaway", "locationManagement", "batchManagement", "pdaHistory"] },
+  { key: "receivingManagement", translationKey: "wms.group.receiving", tabs: ["supplierLabel", "materialReceiving", "pdaReceiving", "inboundOrders", "iqcClosedLoop", "pdaIqc", "putaway", "locationManagement", "batchManagement", "pdaHistory", "syncHealth"] },
   { key: "warehouse", translationKey: "wms.group.warehouse", tabs: [
     "materialMaster", "materialBarcodeLoop", "locationManagement", "batchManagement", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop",
     "receiving", "inboundOrders", "returnReceive", "putaway",
@@ -78,8 +78,8 @@ export const wmsMenuGroups: WmsMenuGroup[] = [
     "smartShelf", "shelfApi", "shelfSim", "shelfSim3d", "shelfOps", "rackSim", "smartRackWorkflow",
   ] },
   { key: "iqcManagement", translationKey: "wms.group.iqc", tabs: [
-    "poReceipt", "lineReturn", "subcontractReturn", "mrbReworkReturn", "qrBinding", "incoming", "iqc", "iqcPassMaintenance", "defectArchive", "mrbApproval", "scrapFinanceApproval", "reworkComplete", "iqcReinspection", "iqcClosedLoop", "iqcDefectLoop", "iqcInspect", "iqcStandards", "iqcReport", "supplierReturn",
-    "salesReturn", "supplierKpi", "qualityTrend", "pdaIqc",
+    "poReceipt", "lineReturn", "subcontractReturn", "mrbReworkReturn", "qrBinding", "incoming", "iqc", "iqcPassMaintenance", "defectArchive", "mrbApproval", "scrapFinanceApproval", "reworkComplete", "iqcReinspection", "iqcClosedLoop", "iqcDefectLoop", "iqcInspectionLevels", "iqcInspect", "iqcStandards", "iqcReport", "supplierReturn",
+    "salesReturn", "supplierKpi", "supplierManagement", "qualityTrend", "pdaIqc",
   ] },
   { key: "collaborationManagement", translationKey: "wms.group.collaboration", tabs: ["syncHealth", "pdaCycleCount", "pdaHistory", "collaboration"] },
   { key: "specialMaterials", translationKey: "wms.group.special", tabs: ["lifecycle", "solderPaste", "auxiliary"] },
@@ -95,6 +95,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   supplierReturn: "wms.subnav.supplierReturn",
   salesReturn: "wms.subnav.salesReturn",
   incoming: "wms.subnav.incoming",
+  supplierLabel: "wms.subnav.supplierLabel",
   materialReceiving: "wms.subnav.incoming",
   materialLoading: "wms.subnav.materialLoading",
   smtClosedLoop: "wms.subnav.smtClosedLoop",
@@ -104,6 +105,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   iqc: "wms.subnav.iqc",
   iqcClosedLoop: "wms.subnav.iqcClosedLoop",
   iqcDefectLoop: "wms.subnav.iqcDefectLoop",
+  iqcInspectionLevels: "wms.subnav.iqcInspectionLevels",
   poReceipt: "wms.subnav.poReceipt",
   lineReturn: "wms.subnav.lineReturn",
   subcontractReturn: "wms.subnav.subcontractReturn",
@@ -126,6 +128,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   pdaIqc: "wms.subnav.pdaIqc",
   pdaHistory: "wms.subnav.pdaHistory",
   supplierKpi: "wms.subnav.supplierKpi",
+  supplierManagement: "wms.subnav.supplierManagement",
   qualityTrend: "wms.subnav.qualityTrend",
   putaway: "wms.subnav.putaway",
   inventory: "wms.subnav.inventory",
@@ -176,6 +179,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
 };
 
 export { WmsIncoming } from "./WmsIncoming";
+export { WmsSupplierLabel } from "./WmsSupplierLabel";
 export { WmsMaterialReceiving } from "./WmsMaterialReceiving";
 export { WmsMaterialLoading } from "./WmsMaterialLoading";
 export { WmsSmtClosedLoop } from "./WmsSmtClosedLoop";
@@ -187,6 +191,7 @@ export { WmsReceiving } from "./WmsReceiving";
 export { WmsIqc } from "./WmsIqc";
 export { WmsIqcClosedLoop } from "./WmsIqcClosedLoop";
 export { WmsIqcDefectLoop } from "./WmsIqcDefectLoop";
+export { WmsIqcInspectionLevels } from "./WmsIqcInspectionLevels";
 export { WmsIqcFlowPages } from "./WmsIqcFlowPages";
 export { WmsPutAway } from "./WmsPutAway";
 export { WmsInventory } from "./WmsInventory";
@@ -250,6 +255,7 @@ export { WmsBasicData } from "./WmsBasicData";
 export { WmsMaterialBarcodeLoop } from "./WmsMaterialBarcodeLoop";
 export { WmsProductionInbound } from "./WmsProductionInbound";
 export { WmsProductionOutbound } from "./WmsProductionOutbound";
+export { WmsSupplierManagement } from "./WmsSupplierManagement";
 export { WmsQualityDashboard } from "./WmsQualityDashboard";
 export { WmsOqc } from "./WmsOqc";
 export { WmsNgManagement } from "./WmsNgManagement";

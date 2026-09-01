@@ -1,0 +1,15 @@
+{
+  "id": "/supplier-label.html",
+  "name": "瑞晶供应商物料标签",
+  "short_name": "供应商标签",
+  "description": "生成、预览及打印瑞晶标准外箱二维码标签",
+  "start_url": "/supplier-label.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#eef2f6",
+  "theme_color": "#0f766e",
+  "orientation": "any",
+  "icons": [
+    { "src": "/supplier-label-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

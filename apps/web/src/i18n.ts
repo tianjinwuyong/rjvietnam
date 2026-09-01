@@ -1101,6 +1101,7 @@ const dictionary = {
   "wms.subnav.iqc": { "zh-CN": "IQC 检验", "vi-VN": "Kiểm tra IQC", "en-US": "IQC Inspection" },
   "wms.subnav.iqcClosedLoop": { "zh-CN": "IQC物料闭环", "vi-VN": "Vòng kín IQC", "en-US": "IQC Closed Loop" },
   "wms.subnav.iqcDefectLoop": { "zh-CN": "IQC不良品闭环", "vi-VN": "Vòng kín lỗi IQC", "en-US": "IQC Defect Closed Loop" },
+  "wms.subnav.iqcInspectionLevels": { "zh-CN": "IQC检验等级与人工判定", "vi-VN": "Cấp kiểm tra IQC và phê duyệt", "en-US": "IQC Inspection Levels & Decisions" },
   "wms.subnav.poReceipt": { "zh-CN": "PO采购到货", "vi-VN": "Nhận hàng PO", "en-US": "PO Receipt" },
   "wms.subnav.lineReturn": { "zh-CN": "产线退料", "vi-VN": "Trả liệu chuyền", "en-US": "Line Return" },
   "wms.subnav.subcontractReturn": { "zh-CN": "外协完工回厂", "vi-VN": "Gia công ngoài hoàn về", "en-US": "Subcontract Return" },
@@ -1876,6 +1877,7 @@ const dictionary = {
   "wms.subnav.iqcInspect": { "zh-CN": "IQC检验执行", "vi-VN": "Thực hiện IQC", "en-US": "IQC Inspect" },
   "wms.subnav.iqcReport": { "zh-CN": "IQC报告", "vi-VN": "Báo cáo IQC", "en-US": "IQC Report" },
   "wms.subnav.supplierKpi": { "zh-CN": "供应商KPI", "vi-VN": "KPI NCC", "en-US": "Supplier KPI" },
+  "wms.subnav.supplierManagement": { "zh-CN": "供应商管理", "vi-VN": "Quản lý nhà cung cấp", "en-US": "Supplier Management" },
   "wms.subnav.qualityTrend": { "zh-CN": "质量趋势", "vi-VN": "Xu hướng chất lượng", "en-US": "Quality Trend" },
     "wms.subnav.qualityDashboard": { "zh-CN": "质量总览", "en-US": "Quality Dashboard", "vi-VN": "Tổng quan chất lượng" },
   "wms.subnav.oqc": { "zh-CN": "出货检验", "en-US": "OQC", "vi-VN": "Kiểm tra xuất hàng" },
@@ -2133,6 +2135,7 @@ const dictionary = {
   "wms.subnav.materialMaster": { "zh-CN": "物料主数据管理", "vi-VN": "Quản lý dữ liệu chính vật tư", "en-US": "Material Master Data" },
   "wms.subnav.materialBarcodeLoop": { "zh-CN": "物料条码闭环", "vi-VN": "Vòng kín mã vạch vật tư", "en-US": "Material Barcode Loop" },
   "wms.subnav.locationManagement": { "zh-CN": "库位精细化管理", "vi-VN": "Quản lý chi tiết vị trí", "en-US": "Location Management" },
+  "wms.subnav.supplierLabel": { "zh-CN": "供应商标签制作", "vi-VN": "Tạo nhãn nhà cung cấp", "en-US": "Supplier Label Creation" },
   "wms.subnav.batchManagement": { "zh-CN": "批次/序列号管理", "vi-VN": "Quản lý batch/serial", "en-US": "Batch/Serial Management" },
   "wms.batch.lotNo": { "zh-CN": "批次号", "vi-VN": "Số batch", "en-US": "Batch No" },
   "wms.transactions.time": { "zh-CN": "时间", "vi-VN": "Thời gian", "en-US": "Time" },
@@ -2167,11 +2170,11 @@ const dictionary = {
   "wms.minStock":          { "zh-CN": "最低库存",   "vi-VN": "Tồn kho tối thiểu", "en-US": "Min Stock" },
   "wms.remainingDays":     { "zh-CN": "剩余天数",   "vi-VN": "Ngày còn lại",     "en-US": "Days Left" },
 
-  "wms.poDate": "采购日期",
-  "wms.stock": "库存",
-  "wms.alert": "预警",
-  "wms.overdueDays": "超期{n}天",
-  "wms.days": "天",
+  "wms.poDate": { "zh-CN": "采购日期", "vi-VN": "Ngày mua", "en-US": "PO Date" },
+  "wms.stock": { "zh-CN": "库存", "vi-VN": "Tồn kho", "en-US": "Stock" },
+  "wms.alert": { "zh-CN": "预警", "vi-VN": "Cảnh báo", "en-US": "Alert" },
+  "wms.overdueDays": { "zh-CN": "超期{n}天", "vi-VN": "Quá hạn {n} ngày", "en-US": "{n} days overdue" },
+  "wms.days": { "zh-CN": "天", "vi-VN": "ngày", "en-US": "days" },
   "wms.alertStatus":       { "zh-CN": "告警状态",   "vi-VN": "Trạng thái cảnh báo", "en-US": "Alert Status" },
   "wms.fifoStatus":        { "zh-CN": "FIFO状态",   "vi-VN": "Trạng thái FIFO",  "en-US": "FIFO Status" },
   "wms.periodicInspection": { "zh-CN": "周期复检",   "vi-VN": "Kiểm tra định kỳ", "en-US": "Periodic Inspection" },
@@ -4907,7 +4910,7 @@ const dictionary = {
 export type TranslationKey = string;
 
 export function t(key: TranslationKey, locale: Locale): string {
-  const translations = dictionary as Record<string, Record<Locale, string>>;
+  const translations = dictionary as unknown as Record<string, Record<Locale, string>>;
   return translations[key]?.[locale] ?? key;
 }
 
