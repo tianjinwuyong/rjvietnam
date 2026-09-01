@@ -92,8 +92,18 @@ type Shipment = {
     received_at?: string;
   } | null;
 };
+const newId = () => {
+  if (typeof globalThis.crypto?.randomUUID === "function") return globalThis.crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const h = [...bytes].map((x) => x.toString(16).padStart(2, "0")).join("");
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+};
 const blankLine = (): ShipmentLine => ({
-  id: crypto.randomUUID(),
+  id: newId(),
   materialCode: "",
   materialName: "",
   lot: "",
@@ -350,7 +360,7 @@ function Shipments({
       return alert("请填写 PO、预计到货日期和完整物料数据");
     const seq = String(items.length + 1).padStart(4, "0"),
       s: Shipment = {
-        id: crypto.randomUUID(),
+        id: newId(),
         asn: `ASN-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${seq}`,
         po: form.po,
         eta: form.eta,
