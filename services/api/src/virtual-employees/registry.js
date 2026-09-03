@@ -1,11 +1,11 @@
 export const FACTORY_VIRTUAL_EMPLOYEES = Object.freeze([
-  employee('OPS-SUPERVISOR-VIRTUAL-01', '全厂运营虚拟主管', 'cmd', 'SUPERVISOR', ['KPI_MONITOR', 'EXCEPTION_ROUTE', 'CROSS_DOMAIN_COORDINATION'], ['release_inventory', 'approve_scrap', 'change_po', 'stop_line']),
+  employee('OPS-SUPERVISOR-VIRTUAL-01', '全厂运营虚拟主管 Hermes', 'cmd', 'SUPERVISOR', ['FACTORY_PATROL', 'KPI_MONITOR', 'EXCEPTION_ROUTE', 'CROSS_DOMAIN_COORDINATION', 'APPROVAL_COORDINATION', 'SHIFT_HANDOVER', 'WECHAT_NOTIFY'], ['release_inventory', 'approve_scrap', 'change_po', 'stop_line', 'approve_payment', 'final_iqc_decision'], '统一管理虚拟员工，验证事实、分配唯一主责、协调跨部门交接、跟踪时限并升级异常；不替代专业岗位或人工审批。', 'HERMES_OPS_SUPERVISOR_V1'),
   employee('WMS-RECEIVING-VIRTUAL-01', 'WMS 收料虚拟员工', 'wms', 'SPECIALIST', ['RECEIVING_VALIDATE', 'LABEL_PLAN', 'HIDDEN_PALLET_BIND', 'LOCATION_BIND', 'IQC_HANDOFF'], ['receive_variance', 'inventory_release'], '确保 PDA 收集的真实箱数据完成 PO 核对、MSL 解析、箱 QR 打印、仓位绑定并进入 IQC HOLD。'),
   employee('IQC-VIRTUAL-01', 'IQC 虚拟检验员', 'quality', 'SPECIALIST', ['IQC_QUEUE_SCAN', 'SUPPLIER_HISTORY', 'SAMPLE_CALCULATION', 'DYNAMIC_PDA_PLAN', 'EVIDENCE_REVIEW'], ['final_iqc_decision', 'exemption', 'supplier_suspension']),
-  employee('WMS-INVENTORY-VIRTUAL-01', 'WMS 库存虚拟员工', 'wms', 'SPECIALIST', ['INVENTORY_RECONCILE', 'FIFO_FEFO', 'LOCATION_OPTIMIZE', 'CYCLE_COUNT'], ['inventory_adjustment', 'material_scrap']),
+  employee('WMS-INVENTORY-VIRTUAL-01', 'WMS 安全库存虚拟员工', 'wms', 'SPECIALIST', ['INVENTORY_RECONCILE', 'FIFO_FEFO', 'LOCATION_OPTIMIZE', 'CYCLE_COUNT', 'SAFETY_STOCK_REPORT'], ['inventory_adjustment', 'material_scrap'], '依据库存流水监控最低库存和安全库存，定期向采购、PMC与Hermes提交报告；只报告和建议，不自行下单或调整库存。'),
   employee('MSD-CONTROL-VIRTUAL-01', '湿敏物料控制虚拟员工', 'wms', 'SPECIALIST', ['MSL_MAP', 'FLOOR_LIFE', 'BAKING_ALERT', 'EXPOSURE_TRACE'], ['override_msl', 'release_expired_material']),
   employee('PMC-VIRTUAL-01', 'PMC 计划虚拟员工', 'pmc', 'COORDINATOR', ['MPS_PLAN', 'MRP_CALCULATE', 'SHORTAGE_ALERT', 'DELIVERY_RISK'], ['commit_delivery', 'change_frozen_plan']),
-  employee('PURCHASING-VIRTUAL-01', '采购与 PO 管理虚拟员工', 'procurement', 'SPECIALIST', ['PO_MONITOR', 'SUPPLIER_FOLLOWUP', 'ASN_MONITOR', 'ETA_ATA_TRACKING', 'PALLET_LOGISTICS', 'QR_TRACE', 'DELIVERY_EXCEPTION', 'PO_ADJUSTMENT_DRAFT'], ['approve_po', 'change_price', 'change_quantity'], '执行采购 SOP，监控 PO、供应商确认、ASN、ETA/ATA、托盘物流和全部 QR；所有高风险变更保留人工审批。'),
+  employee('PURCHASING-VIRTUAL-01', '采购与 PO 管理虚拟员工', 'procurement', 'SPECIALIST', ['PO_MONITOR', 'REPLENISHMENT_REVIEW', 'SUPPLIER_FOLLOWUP', 'ASN_MONITOR', 'ETA_ATA_TRACKING', 'PALLET_LOGISTICS', 'QR_TRACE', 'DELIVERY_EXCEPTION', 'PO_ADJUSTMENT_DRAFT'], ['approve_po', 'change_price', 'change_quantity'], '执行采购 SOP，接收安全库存报告并形成补货建议，监控 PO、供应商确认、ASN、ETA/ATA、托盘物流和全部 QR；所有高风险变更保留人工审批。'),
   employee('SUPPLIER-COLLAB-VIRTUAL-01', '供应商协同虚拟员工', 'supplier', 'SPECIALIST', ['PORTAL_SYNC', 'ASN_MONITOR', 'QR_PRERECEIVING', 'IQC_FEEDBACK'], ['publish_rejection', 'supplier_account_approval']),
   employee('MES-VIRTUAL-01', 'MES 生产执行虚拟员工', 'mes', 'COORDINATOR', ['WORK_ORDER_MONITOR', 'ROUTE_GUARD', 'WIP_TRACE', 'LINE_EXCEPTION'], ['stop_line', 'close_work_order']),
   employee('QUALITY-VIRTUAL-01', '品质闭环虚拟主管', 'quality', 'COORDINATOR', ['QUALITY_TREND', 'NCR_ROUTE', 'CAPA_MONITOR', 'AUDIT_TRACE'], ['close_ncr', 'approve_capa']),
@@ -23,9 +23,9 @@ export const FACTORY_VIRTUAL_EMPLOYEES = Object.freeze([
   employee('UI-DESIGN-QA-VIRTUAL-01', 'UI 设计与测试虚拟员工', 'it', 'SPECIALIST', ['VISUAL_AUDIT', 'RESPONSIVE_TEST', 'ACCESSIBILITY_CHECK', 'REGRESSION_TEST'], ['change_design_system', 'release_ui']),
 ]);
 
-function employee(id, name, domain, level, capabilities, humanGates, jobDescription = '') {
+function employee(id, name, domain, level, capabilities, humanGates, jobDescription = '', promptProfile = '') {
   return {
-    id, name, domain, level, capabilities, humanGates, jobDescription,
+    id, name, domain, level, capabilities, humanGates, jobDescription, promptProfile,
     skills: id === 'UI-DESIGN-QA-VIRTUAL-01' ? [
       'emil-design-eng',
       'prototype',

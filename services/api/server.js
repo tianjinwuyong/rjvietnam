@@ -63,6 +63,8 @@ import { IQC_VIRTUAL_EMPLOYEE, askIqcLlm, runIqcVirtualEmployee } from "./src/iq
 import { IQC_VIRTUAL_HARNESS } from "./src/iqc/virtual-employee-harness.js";
 import { getIqcMemoryContext, rememberIqcMemory, searchIqcMemory } from "./src/iqc/virtual-employee-memory.js";
 import { FACTORY_VIRTUAL_EMPLOYEES, getFactoryVirtualEmployee } from "./src/virtual-employees/registry.js";
+import { buildHermesSupervisorPrompt, hermesPromptProfile, HERMES_SUPERVISOR_ID } from "./src/virtual-employees/hermes-supervisor.js";
+import { classifySafetyStock, safetyReportTaskKey, WAREHOUSE_INVENTORY_EMPLOYEE_ID, WAREHOUSE_SAFETY_REPORT_RECIPIENTS } from "./src/virtual-employees/warehouse-safety-report.js";
 import { validateStationConfiguration } from "../../packages/station-config/validate-stations.mjs";
 import {
   askChat,
@@ -11969,6 +11971,66 @@ app.get('/api/factory/virtual-employees', async (_req, res) => {
     res.json(listEnvelope(FACTORY_VIRTUAL_EMPLOYEES.map(employee => ({ ...employee, ...(configById[employee.id] || {}), taskCounts: byEmployee[employee.id] || {} }))));
   } catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_LIST_FAILED', e.message)); }
 });
+app.get('/api/factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/prompts', async (_req,res) => {
+  res.json(envelope(hermesPromptProfile()));
+});
+app.post('/api/factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/prompt', async (req,res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const config=(await query(`SELECT enabled FROM factory_virtual_employee_configs WHERE employee_id=$1`,[HERMES_SUPERVISOR_ID])).rows[0];
+    if(config?.enabled===false)return res.status(409).json(errorEnvelope('HERMES_SUPERVISOR_DISABLED','Hermes supervisor is disabled'));
+    const operation=String(req.body?.operation||'patrol').trim().toLowerCase();
+    const prompt=buildHermesSupervisorPrompt({operation,now:new Date().toISOString(),context:req.body?.context||{}});
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'SUPERVISOR_PROMPT_PREPARED',$2::jsonb,$3)`,[HERMES_SUPERVISOR_ID,JSON.stringify({operation,contextKeys:Object.keys(req.body?.context||{})}),req.user?.username||'manager']);
+    res.json(mutateEnvelope({employeeId:HERMES_SUPERVISOR_ID,promptProfile:'HERMES_OPS_SUPERVISOR_V1',operation,prompt}));
+  }catch(e){res.status(400).json(errorEnvelope('HERMES_PROMPT_BUILD_FAILED',e.message));}
+});
+let warehouseSafetyReportBusy=false;
+async function runWarehouseSafetyReport(){
+  if(warehouseSafetyReportBusy)return {skipped:true,reason:'already_running'};
+  warehouseSafetyReportBusy=true;
+  try{
+    await factoryVirtualEmployeesReady;
+    const config=(await query(`SELECT enabled FROM factory_virtual_employee_configs WHERE employee_id=$1`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID])).rows[0];
+    if(config?.enabled===false)return {skipped:true,reason:'employee_disabled'};
+    const result=await query(`WITH ledger AS (
+      SELECT ml.material_id,
+        COUNT(it.id)::int AS transaction_count,
+        COALESCE(SUM(CASE
+          WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+          WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty
+          ELSE 0 END),0)::numeric AS ledger_qty
+      FROM material_lots ml
+      LEFT JOIN inventory_transactions it ON it.material_lot_id=ml.id AND it.tx_status='posted'
+      WHERE ml.iqc_status='released' AND ml.lot_status IN('open','active')
+      GROUP BY ml.material_id
+    )
+    SELECT m.id,m.code,m.name_zh,m.uom,COALESCE(m.min_stock_qty,0)::numeric AS min_stock_qty,
+      COALESCE(m.safety_stock_qty,0)::numeric AS safety_stock_qty,COALESCE(m.max_stock_qty,0)::numeric AS max_stock_qty,
+      COALESCE(l.ledger_qty,0)::numeric AS available_qty,COALESCE(l.transaction_count,0)::int AS transaction_count
+    FROM materials m LEFT JOIN ledger l ON l.material_id=m.id
+    WHERE m.status='active' AND (COALESCE(m.min_stock_qty,0)>0 OR COALESCE(m.safety_stock_qty,0)>0)
+    ORDER BY m.code`);
+    const untracked=result.rows.filter(row=>Number(row.transaction_count)===0);
+    const risks=result.rows.filter(row=>Number(row.transaction_count)>0).map(row=>({...row,riskLevel:classifySafetyStock({availableQty:row.available_qty,minStockQty:row.min_stock_qty,safetyStockQty:row.safety_stock_qty})})).filter(row=>row.riskLevel!=='P1');
+    const highest=risks.some(row=>row.riskLevel==='P3')?'P3':risks.length?'P2':'P1';
+    const now=new Date(),bucket=now.toISOString().slice(0,13),summary={reportAt:now.toISOString(),riskLevel:highest,materialCount:result.rowCount,riskCount:risks.length,untrackedCount:untracked.length,recipients:WAREHOUSE_SAFETY_REPORT_RECIPIENTS,humanRecipientRoles:['warehouse_manager','purchasing_manager','pmc_manager'],items:risks.slice(0,200),untrackedMaterialCodes:untracked.slice(0,100).map(row=>row.code)};
+    const taskSpecs=[
+      {employeeId:'PURCHASING-VIRTUAL-01',taskType:'REPLENISHMENT_REVIEW',title:`安全库存补货复核：${risks.length} 项风险`,domain:'procurement'},
+      {employeeId:'PMC-VIRTUAL-01',taskType:'SHORTAGE_ALERT',title:`安全库存生产影响复核：${risks.length} 项风险`,domain:'pmc'},
+      {employeeId:HERMES_SUPERVISOR_ID,taskType:'EXCEPTION_ROUTE',title:`安全库存主管报告：${risks.length} 项风险`,domain:'cmd'},
+    ];
+    if(risks.length||untracked.length)for(const spec of taskSpecs)await query(`INSERT INTO factory_virtual_employee_tasks(task_key,employee_id,task_type,title,domain,status,priority,input,requested_by)
+      VALUES($1,$2,$3,$4,$5,'OPEN',$6,$7::jsonb,$8) ON CONFLICT(task_key) WHERE task_key IS NOT NULL DO UPDATE SET title=EXCLUDED.title,priority=EXCLUDED.priority,input=EXCLUDED.input,updated_at=NOW()`,[safetyReportTaskKey(spec.employeeId,bucket),spec.employeeId,spec.taskType,spec.title,spec.domain,highest==='P3'?'HIGH':highest==='P2'?'WARNING':'NORMAL',JSON.stringify(summary),WAREHOUSE_INVENTORY_EMPLOYEE_ID]);
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'SAFETY_STOCK_REPORT_ISSUED',$2::jsonb,$1)`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID,JSON.stringify(summary)]);
+    if(highest==='P2'||highest==='P3')await sendVirtualEmployeeWechat({employeeId:WAREHOUSE_INVENTORY_EMPLOYEE_ID,subject:`安全库存${highest==='P3'?'严重':''}风险 ${risks.length} 项`,message:`请采购、PMC和仓库主管复核。未建立库存流水的物料 ${untracked.length} 项。`,entityRef:`SAFETY-STOCK:${bucket}`,priority:highest==='P3'?'CRITICAL':'WARNING'}).catch(error=>({sent:false,error:error.message}));
+    return summary;
+  }finally{warehouseSafetyReportBusy=false;}
+}
+app.post('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-report/run-now',async(_req,res)=>{try{res.json(mutateEnvelope(await runWarehouseSafetyReport()));}catch(e){res.status(409).json(errorEnvelope('WAREHOUSE_SAFETY_REPORT_FAILED',e.message));}});
+app.get('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-reports',async(_req,res)=>{try{await factoryVirtualEmployeesReady;const reports=await query(`SELECT id,detail,created_at FROM factory_virtual_employee_events WHERE employee_id=$1 AND event_type='SAFETY_STOCK_REPORT_ISSUED' ORDER BY created_at DESC LIMIT 100`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID]);res.json(listEnvelope(reports.rows));}catch(e){res.status(500).json(errorEnvelope('WAREHOUSE_SAFETY_REPORT_LIST_FAILED',e.message));}});
+const warehouseSafetyReportInterval=Math.max(300000,Number(process.env.WAREHOUSE_SAFETY_REPORT_INTERVAL_MS||21600000));
+setInterval(()=>{void runWarehouseSafetyReport().catch(error=>console.error('[WMS-INVENTORY-VIRTUAL-01]',error.message));},warehouseSafetyReportInterval);
 app.put('/api/factory/virtual-employees/:id/config', async (req,res) => {
   try {
     await factoryVirtualEmployeesReady;

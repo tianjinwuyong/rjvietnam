@@ -303,6 +303,57 @@ components:
           type: string
           format: uri
 paths:
+  /factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/prompts:
+    get:
+      tags: [Admin]
+      summary: Read the versioned Hermes supervisor prompt profile
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Hermes prompt profile
+  /factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/prompt:
+    post:
+      tags: [Admin]
+      summary: Build an audited Hermes supervisor prompt without executing business writes
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operation:
+                  type: string
+                  enum: [patrol, route, replenish, escalate, approval, handover]
+                context:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Prepared prompt
+        '400':
+          description: Invalid operation or oversized context
+        '409':
+          description: Hermes supervisor is disabled
+  /factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-report/run-now:
+    post:
+      tags: [WMS]
+      summary: Run the warehouse safety-stock report and route it to purchasing, PMC, and Hermes
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Safety-stock report issued
+        '409':
+          description: Report execution failed
+  /factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-reports:
+    get:
+      tags: [WMS]
+      summary: List warehouse safety-stock reports
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Recent safety-stock reports
   /3d/wms-control-state:
     get:
       tags: [WMS]
