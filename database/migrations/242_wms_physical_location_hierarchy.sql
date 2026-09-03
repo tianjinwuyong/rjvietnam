@@ -95,6 +95,10 @@ CREATE TABLE IF NOT EXISTS wms_route_edges (
 ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS floor_id bigint REFERENCES wms_floors(id);
 ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS position_code varchar(80);
 ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS cross_aisle_code varchar(40);
+ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS aisle_code varchar(40);
+ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS rack_code varchar(40);
+ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS level_code varchar(40);
+ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS bin_code varchar(40);
 ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS aisle_side varchar(10) CHECK (aisle_side IS NULL OR aisle_side IN ('LEFT','RIGHT','CENTER'));
 ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS access_direction varchar(20) CHECK (access_direction IS NULL OR access_direction IN ('FRONT','REAR','BOTH'));
 ALTER TABLE storage_locations ADD COLUMN IF NOT EXISTS z_coord numeric(12,3);
