@@ -212,49 +212,45 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
     }
   };
   const downloadTemplate = () => {
-    const ws = XLSX.utils.json_to_sheet([
-      {
-        supplierCode: "SUP-001",
-        nameZh: "供应商中文名称",
-        nameEn: "Supplier Name",
-        nameVi: "Tên nhà cung cấp",
-        shortName: "简称",
-        classification: "DIRECT_MATERIAL",
-        products: "电阻;电容;IC",
-        country: "Vietnam",
-        factoryLocations: "Bac Ninh;Shenzhen",
-        contactName: "联系人",
-        contactPhone: "+84...",
-        email: "supplier@example.com",
-        currency: "USD",
-        paymentTermsDays: 30,
-        priceLevel: "A",
-        qualificationStatus: "PENDING",
-        riskLevel: "LOW",
-        qualityScore: 0,
-        deliveryScore: 0,
-        serviceScore: 0,
-        costScore: 0,
-        portalEnabled: false,
-        labelEnabled: false,
-      },
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["供应商代码", "25年供应商", "备注", "", "", "", "", "供应商代码", "26年供应商", "备注"],
+      ["A.101", "深圳市创润达科技有限公司", "发越南", "", "", "", "", "A.457", "深圳市京鸿志电子有限公司", ""],
     ]);
-    ws["!cols"] = Array.from({ length: 23 }, () => ({ wch: 20 }));
+    ws["!cols"] = [14, 36, 16, 4, 4, 4, 4, 14, 36, 16].map((wch) => ({ wch }));
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Suppliers");
-    XLSX.writeFile(wb, "supplier-master-import-template.xlsx");
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet2");
+    XLSX.writeFile(wb, "25.26年下单供应商明细.xlsx");
   };
   const importExcel = async (file: File) => {
     setLoading(true);
     try {
-      const wb = XLSX.read(await file.arrayBuffer()),
-        rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
-          wb.Sheets[wb.SheetNames[0]],
-          { defval: "" },
-        );
+      const wb = XLSX.read(await file.arrayBuffer());
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
+      const headers = matrix[0]?.map((value) => String(value).trim()) || [];
+      const isAnnualOrderList = headers[0] === "供应商代码" && headers[1]?.includes("25年供应商") && headers[7] === "供应商代码" && headers[8]?.includes("26年供应商");
+      const rows: Array<Record<string, unknown>> = isAnnualOrderList
+        ? matrix.slice(1).flatMap((row) => [
+            { supplierCode: row[0], nameZh: row[1], classification: `2025年度订单供应商${String(row[2] || "").includes("越南") ? "；发越南" : ""}` },
+            { supplierCode: row[7], nameZh: row[8], classification: `2026年度订单供应商${String(row[9] || "").includes("越南") ? "；发越南" : ""}` },
+          ]).filter((row) => String(row.supplierCode || "").trim() && String(row.nameZh || "").trim())
+        : XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+      const mergedRows = new Map<string, Record<string, unknown>>();
+      for (const row of rows) {
+        const code = String(row.supplierCode || row["供应商代码"] || row.code || "").trim().toUpperCase();
+        if (!code) continue;
+        const previous = mergedRows.get(code);
+        if (previous && previous.classification !== row.classification) {
+          const years = [previous.classification, row.classification].map(String).join("；").match(/2025|2026/g) || [];
+          row.classification = `${[...new Set(years)].sort().join("/")}年度订单供应商${`${previous.classification}${row.classification}`.includes("发越南") ? "；发越南" : ""}`;
+        }
+        mergedRows.set(code, { ...previous, ...row, supplierCode: code });
+      }
+      const existing = new Map(suppliers.map((supplier) => [supplier.code.toUpperCase(), supplier]));
       let ok = 0;
+      let updated = 0;
       const failed: string[] = [];
-      for (const [i, r] of rows.entries()) {
+      for (const [i, r] of [...mergedRows.values()].entries()) {
         const get = (...k: string[]) =>
           k.map((x) => r[x]).find((v) => v !== "" && v != null);
         const payload = {
@@ -279,14 +275,22 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           labelEnabled: [true, 1, "1", "TRUE", "Y"].includes(
             get("labelEnabled", "标签启用") as any,
           ),
+          classification: String(get("classification", "分类") || ""),
+          status: "active",
         };
         if (!payload.code || !payload.nameZh) {
           failed.push(`第${i + 2}行缺必填项`);
           continue;
         }
         try {
-          await apiClient.post("/wms/suppliers", payload);
-          ok++;
+          const current = existing.get(payload.code.toUpperCase());
+          if (current) {
+            await apiClient.put(`/wms/suppliers/${current.id}`, payload);
+            updated++;
+          } else {
+            await apiClient.post("/wms/suppliers", payload);
+            ok++;
+          }
         } catch (e) {
           failed.push(
             `${payload.code}: ${e instanceof Error ? e.message : "失败"}`,
@@ -296,8 +300,8 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
       await load();
       setError(
         failed.length
-          ? `导入 ${ok} 家；${failed.slice(0, 3).join("；")}`
-          : `成功导入 ${ok} 家供应商`,
+          ? `新增 ${ok} 家、更新 ${updated} 家；${failed.slice(0, 3).join("；")}`
+          : `导入完成：新增 ${ok} 家，更新 ${updated} 家供应商`,
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "Excel读取失败");
@@ -402,6 +406,28 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           toneName="red"
         />
       </div>
+      <section className="sm-command-strip">
+        <div className="sm-command-intro">
+          <span className="sm-command-kicker">TODAY'S CONTROL TOWER</span>
+          <h2>供应商协同行动台</h2>
+          <p>把准入、交付和质量风险集中到一个清晰的工作节奏里。</p>
+        </div>
+        <button className="sm-command-card" onClick={() => setCreating(true)}>
+          <span className="sm-command-icon teal"><Plus /></span>
+          <span><b>建立供应商档案</b><small>从基础主数据开始准入</small></span>
+          <ChevronRight />
+        </button>
+        <button className="sm-command-card" onClick={() => setTab("qualifications")}>
+          <span className="sm-command-icon amber"><ClipboardCheck /></span>
+          <span><b>检查资质有效期</b><small>{stats.review} 家待审核供应商</small></span>
+          <ChevronRight />
+        </button>
+        <button className="sm-command-card" onClick={() => setTab("performance")}>
+          <span className="sm-command-icon blue"><Gauge /></span>
+          <span><b>查看交付表现</b><small>对比质量、交期与服务</small></span>
+          <ChevronRight />
+        </button>
+      </section>
       <section className="sm-workspace">
         <aside className="sm-list">
           <div className="sm-list-head">
@@ -1133,6 +1159,7 @@ function Empty({ text }: { text: string }) {
 }
 
 const styles = `
+.sm-command-strip{display:grid;grid-template-columns:1.25fr repeat(3,1fr);gap:10px;align-items:stretch}.sm-command-intro{padding:15px 4px}.sm-command-kicker{font-size:10px;font-weight:900;letter-spacing:.12em;color:#07875f}.sm-command-intro h2{margin:5px 0 3px;font-size:17px}.sm-command-intro p{margin:0;color:#667085;font-size:12px}.sm-command-card{border:1px solid #dce5e3;background:#fff;border-radius:11px;padding:13px;display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;transition:.18s}.sm-command-card:hover{border-color:#7bcbb4;box-shadow:0 5px 14px #0b5b4812;transform:translateY(-1px)}.sm-command-card>span:nth-child(2){display:grid;gap:3px;min-width:0}.sm-command-card b{font-size:12px}.sm-command-card small{font-size:11px;color:#667085;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sm-command-card>svg{width:15px;margin-left:auto;color:#98a2b3}.sm-command-icon{width:34px;height:34px;border-radius:9px;display:grid;place-items:center;flex:none}.sm-command-icon svg{width:17px}.sm-command-icon.teal{background:#e5f7ed;color:#07875f}.sm-command-icon.amber{background:#fff3d8;color:#b54708}.sm-command-icon.blue{background:#e8f0ff;color:#2563eb}
 .sm-shell{display:grid;gap:16px;color:#17212b}.sm-hero{padding:24px 28px;border-radius:14px;background:linear-gradient(120deg,#0d3b37,#126352);color:#fff;display:flex;justify-content:space-between;align-items:center}.sm-hero h1{font-size:28px;margin:3px 0 6px}.sm-hero p{margin:0;color:#cde3de}.sm-eyebrow{font-size:11px;font-weight:900;letter-spacing:.14em;color:#7be1bd}.sm-hero-actions,.sm-controls{display:flex;gap:9px}.sm-primary,.sm-secondary,.sm-wide{border-radius:8px;min-height:39px;padding:0 13px;display:inline-flex;align-items:center;justify-content:center;gap:6px;font-weight:800;cursor:pointer}.sm-primary{border:1px solid #07875f;background:#07875f;color:#fff}.sm-hero .sm-primary{background:#fff;color:#0b5b48;border-color:#fff}.sm-secondary{border:1px solid #cad7d4;background:#fff;color:#344054}.sm-hero .sm-secondary{background:transparent;color:#fff;border-color:#77a59b}.sm-primary svg,.sm-secondary svg{width:16px}.sm-alert{padding:11px 14px;border:1px solid #f6b8b3;border-radius:9px;background:#fff0ef;color:#b42318;display:flex;align-items:center;gap:8px}.sm-alert svg{width:17px}.sm-alert button{margin-left:auto;border:0;background:transparent}.sm-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.sm-kpi{background:#fff;border:1px solid #dae4e2;border-radius:11px;padding:16px;display:flex;gap:13px}.sm-kpi-icon{width:39px;height:39px;border-radius:9px;background:#e7f7f1;color:#07875f;display:grid;place-items:center}.sm-kpi-icon.amber{background:#fff3d8;color:#d67a00}.sm-kpi-icon.red{background:#feeceb;color:#d92d20}.sm-kpi-icon svg{width:19px}.sm-kpi div:last-child{display:grid}.sm-kpi span,.sm-kpi small{color:#667085;font-size:12px}.sm-kpi strong{font-size:24px}.sm-workspace{min-height:650px;display:grid;grid-template-columns:330px 1fr;border:1px solid #d8e3e1;border-radius:13px;background:#fff;overflow:hidden}.sm-list{border-right:1px solid #dfe7e5;background:#f8faf9}.sm-list-head{padding:14px;display:grid;grid-template-columns:1fr 100px;gap:8px;border-bottom:1px solid #dfe7e5}.sm-search{height:38px;border:1px solid #cbd8d5;background:#fff;border-radius:7px;display:flex;align-items:center;padding:0 9px}.sm-search svg{width:16px;color:#667085}.sm-search input{border:0;outline:0;min-width:0;width:100%;padding-left:7px}.sm-list-head select{border:1px solid #cbd8d5;border-radius:7px;background:#fff}.sm-list-body{max-height:760px;overflow:auto}.sm-supplier{width:100%;border:0;border-bottom:1px solid #e2e9e7;background:transparent;padding:14px;display:flex;align-items:flex-start;gap:10px;text-align:left;cursor:pointer}.sm-supplier.active{background:#eaf7f2;box-shadow:inset 3px 0 #07875f}.sm-supplier>svg{width:16px;margin-left:auto;margin-top:16px;color:#98a2b3}.sm-avatar{width:38px;height:38px;border-radius:9px;background:#dceee9;color:#096c55;display:grid;place-items:center;font-weight:900;flex:none}.sm-avatar.large{width:52px;height:52px;font-size:21px}.sm-avatar.small{width:34px;height:34px}.sm-supplier-main{display:grid;gap:3px;min-width:0}.sm-supplier-main b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.sm-supplier-main small,.sm-company p,.sm-company-meta,.sm-panel-title p{color:#667085}.sm-supplier-main>span{display:flex;gap:5px}.sm-status{width:max-content;padding:3px 7px;border-radius:20px;font-size:9px;font-weight:900;background:#eef2f3;color:#475467}.sm-status.ok{background:#e5f7ed;color:#067647}.sm-status.warn{background:#fff2d6;color:#b54708}.sm-status.bad{background:#feeceb;color:#b42318}.sm-detail{min-width:0}.sm-detail-head{padding:20px 22px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #e0e8e6}.sm-company{display:flex;gap:13px}.sm-company-line{display:flex;align-items:center;gap:9px}.sm-company h2{margin:0;font-size:21px}.sm-company p{margin:3px 0}.sm-company-meta{display:flex;gap:16px;font-size:12px}.sm-tabs{display:flex;overflow:auto;border-bottom:1px solid #e0e8e6;padding:0 14px}.sm-tabs button{height:46px;border:0;border-bottom:2px solid transparent;background:#fff;padding:0 11px;display:flex;align-items:center;gap:6px;white-space:nowrap;color:#596579;font-weight:700}.sm-tabs button.active{color:#07875f;border-color:#07875f}.sm-tabs svg{width:15px}.sm-tab-content{padding:20px;background:#f7f9f9;min-height:500px}.sm-overview-grid{display:grid;grid-template-columns:1.5fr 1fr;gap:14px}.sm-panel{background:#fff;border:1px solid #dce5e3;border-radius:11px;padding:18px}.sm-panel-title{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px}.sm-panel-title h3{margin:0;font-size:16px}.sm-panel-title p{margin:4px 0 0;font-size:12px}.sm-lifecycle{display:grid;grid-template-columns:repeat(5,1fr);gap:5px}.sm-lifecycle>div{display:grid;gap:4px;position:relative;padding-right:8px}.sm-lifecycle>div:not(:last-child):after{content:'';position:absolute;top:14px;left:31px;right:2px;height:2px;background:#b9ddd1}.sm-lifecycle span{width:28px;height:28px;border-radius:50%;background:#07875f;color:#fff;display:grid;place-items:center;z-index:1;font-weight:900}.sm-lifecycle small{color:#667085;font-size:10px}.sm-toggle-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #e9eeee}.sm-toggle-row span{display:grid}.sm-toggle-row small{color:#667085}.sm-toggle-row button{width:42px;height:24px;border:0;border-radius:20px;background:#aeb9b7;padding:3px}.sm-toggle-row button i{display:block;width:18px;height:18px;background:#fff;border-radius:50%}.sm-toggle-row button.on{background:#07875f}.sm-toggle-row button.on i{margin-left:18px}.sm-wide{width:100%;margin-top:12px;border:1px solid #bcd6cf;background:#eaf7f2;color:#08745a}.sm-mini-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:14px}.sm-mini-kpis div{background:#fff;border:1px solid #dce5e3;border-radius:10px;padding:15px;display:grid}.sm-mini-kpis b{font-size:23px}.sm-mini-kpis span{color:#667085}.sm-table{overflow:auto}.sm-table table{width:100%;border-collapse:collapse}.sm-table th,.sm-table td{padding:11px;border-bottom:1px solid #e5ebea;text-align:left;white-space:nowrap}.sm-table th{background:#f6f8f8;color:#667085;font-size:11px}.sm-resource-list>div{display:flex;align-items:center;gap:10px;padding:12px;border-top:1px solid #e7edeb}.sm-resource-list>div>span:nth-child(2){display:grid;flex:1}.sm-resource-list small{color:#667085}.sm-timeline>div{display:grid;grid-template-columns:12px 220px 1fr;gap:10px;padding:12px}.sm-timeline i{width:9px;height:9px;border-radius:50%;background:#07875f;margin-top:5px}.sm-timeline span{display:grid}.sm-timeline small{color:#667085}.sm-timeline code{font-size:10px;color:#667085;overflow:hidden}.sm-workflow{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}.sm-workflow>div{position:relative;display:grid;justify-items:center;text-align:center;gap:5px}.sm-workflow>div:not(:last-child):after{content:'';position:absolute;left:58%;right:-42%;top:16px;height:2px;background:#d8e1df}.sm-workflow span{width:34px;height:34px;border-radius:50%;border:2px solid #ccd7d5;background:#fff;display:grid;place-items:center;z-index:1}.sm-workflow .done span{background:#07875f;border-color:#07875f;color:#fff}.sm-workflow .current span{border-color:#f79009;color:#b54708}.sm-workflow svg{width:17px}.sm-workflow small{color:#667085}.sm-score-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.sm-score-grid div{border:1px solid #dfe7e5;border-radius:9px;padding:15px;display:grid}.sm-score-grid strong{font-size:29px}.sm-score-grid progress{width:100%;margin-top:8px;accent-color:#07875f}.sm-empty{min-height:130px;display:grid;place-items:center;align-content:center;gap:6px;color:#667085}.sm-empty.big{min-height:500px}.sm-empty svg{width:28px;color:#98a2b3}.sm-modal-backdrop{position:fixed;inset:0;background:#10182880;display:grid;place-items:center;z-index:100}.sm-modal{width:min(680px,92vw);background:#fff;border-radius:14px;padding:22px}.sm-modal header{display:flex;justify-content:space-between}.sm-modal header h2{margin:0}.sm-modal header p{color:#667085}.sm-modal header button{border:0;background:transparent}.sm-form{display:grid;grid-template-columns:1fr 1fr;gap:14px}.sm-form label{display:grid;gap:6px;font-weight:700;font-size:12px}.sm-form input{height:42px;border:1px solid #cbd7d4;border-radius:7px;padding:0 10px}.sm-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}@media(max-width:1200px){.sm-workspace{grid-template-columns:280px 1fr}.sm-overview-grid{grid-template-columns:1fr}.sm-controls{flex-direction:column}.sm-lifecycle{grid-template-columns:repeat(3,1fr)}.sm-score-grid{grid-template-columns:1fr 1fr}}@media(max-width:800px){.sm-kpis{grid-template-columns:1fr 1fr}.sm-workspace{grid-template-columns:1fr}.sm-list{border-right:0}.sm-list-body{max-height:280px}.sm-hero,.sm-detail-head{align-items:flex-start;flex-direction:column;gap:14px}.sm-workflow{grid-template-columns:repeat(3,1fr)}.sm-company-meta{flex-direction:column;gap:2px}}
 .sm-upload{position:relative}.sm-upload input{position:absolute;inset:0;opacity:0;cursor:pointer}
 `;
