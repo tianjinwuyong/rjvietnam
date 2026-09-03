@@ -76,6 +76,8 @@ type Shipment = {
   status: string;
   lines: ShipmentLine[];
   createdAt: string;
+  pallets?: Array<{ palletQr?: string; lengthMm?: number; widthMm?: number; heightMm?: number; weightKg?: number }>;
+  qr_codes?: Array<{ qrValue?: string; packageLevel?: string; serialNo?: string }>;
   receiving?: {
     expected_boxes: number;
     scanned_boxes: number;
@@ -84,6 +86,12 @@ type Shipment = {
     accepted_quantity: number;
     hold_quantity: number;
     rejected_quantity: number;
+    passed_sns?: string[];
+    ng_sns?: string[];
+    missing_sns?: string[];
+    unexpected_sns?: string[];
+    shortage_quantity?: number;
+    excess_quantity?: number;
     discrepancy_code?: string;
     rejection_reason?: string;
     evidence_images?: string[];
@@ -126,6 +134,29 @@ const badge = (status: string) => (
     {status}
   </span>
 );
+
+const portalAgentText = {
+  title: { "zh-CN": "PO 协同虚拟员工", "en-US": "PO Collaboration Virtual Employee", "vi-VN": "Nhân viên ảo phối hợp PO" },
+  online: { "zh-CN": "在线监控", "en-US": "Online monitoring", "vi-VN": "Giám sát trực tuyến" },
+  normal: { "zh-CN": "当前资料正常。请持续更新 PO 确认、ASN 和运输状态。", "en-US": "Current data is complete. Keep PO acknowledgement, ASN, and transport status updated.", "vi-VN": "Dữ liệu hiện tại đầy đủ. Hãy tiếp tục cập nhật xác nhận PO, ASN và trạng thái vận chuyển." },
+  warning: { "zh-CN": "有发运资料不完整，请补充 ETA、托盘尺寸重量和全部 QR。", "en-US": "Shipment data is incomplete. Add ETA, pallet dimensions, weight, and all QR codes.", "vi-VN": "Dữ liệu giao hàng chưa đầy đủ. Hãy bổ sung ETA, kích thước, trọng lượng pallet và toàn bộ mã QR." },
+  action: { "zh-CN": "前往发货预报", "en-US": "Open shipment notice", "vi-VN": "Mở thông báo giao hàng" },
+} as const;
+const pat = (key: keyof typeof portalAgentText) => portalAgentText[key][locale];
+
+function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onAction: () => void }) {
+  const incomplete = shipments.filter(item => item.status !== "DRAFT" && (!item.eta || !item.pallets?.length || !item.qr_codes?.length));
+  return <section className="portal-card" style={{ marginBottom: 16, overflow: "hidden", borderColor: incomplete.length ? "#fb923c" : "#34d399" }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, color: "white", background: "linear-gradient(110deg,#065f46,#0f766e)" }}>
+      <img src="/avatars/purchasing-employee-2026.png" alt={pat("title")} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover", border: "2px solid #a7f3d0" }}/>
+      <div><strong>PURCHASING-VIRTUAL-01 · {pat("title")}</strong><div style={{ opacity: .82, fontSize: 12 }}>● {pat("online")}</div></div>
+      <button className="portal-primary" style={{ marginLeft: "auto", background: "white", color: "#065f46" }} onClick={onAction}>{pat("action")}</button>
+    </div>
+    <div role={incomplete.length ? "alert" : undefined} style={{ padding: 14, background: incomplete.length ? "#fff7ed" : "#ecfdf5", color: incomplete.length ? "#9a3412" : "#065f46", fontWeight: 700 }}>
+      {incomplete.length ? `${pat("warning")} (${incomplete.length})` : pat("normal")}
+    </div>
+  </section>;
+}
 
 function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [credentials, setCredentials] = useState({
@@ -272,6 +303,7 @@ function Dashboard({
           创建发货预报
         </button>
       </div>
+      <PortalPoAgent shipments={shipments} onAction={() => setPage("shipments")} />
       <div className="portal-metrics">
         {[
           [Truck, "发货预报", shipments.length, "草稿与已提交"],
@@ -612,6 +644,11 @@ function Shipments({
                       </td>
                       <td>
                         {r?.iqc_status ? badge(r.iqc_status) : badge(s.status)}
+                        {!!r?.passed_sns?.length && <small className="receiving-alert" style={{ color: "#15803d" }}>PASS SN: {r.passed_sns.join(", ")}</small>}
+                        {!!r?.ng_sns?.length && <small className="receiving-alert">NG SN: {r.ng_sns.join(", ")}</small>}
+                        {(Number(r?.shortage_quantity || 0) > 0 || Number(r?.excess_quantity || 0) > 0) && <small className="receiving-alert">数量差异：短缺 {r?.shortage_quantity || 0} / 超收 {r?.excess_quantity || 0}</small>}
+                        {!!r?.missing_sns?.length && <small className="receiving-alert">缺少 SN: {r.missing_sns.join(", ")}</small>}
+                        {!!r?.unexpected_sns?.length && <small className="receiving-alert">计划外 SN: {r.unexpected_sns.join(", ")}</small>}
                         {r?.rejection_reason && (
                           <small className="receiving-alert">
                             {r.rejection_reason}
@@ -627,8 +664,9 @@ function Shipments({
                                 href={url}
                                 target="_blank"
                                 rel="noreferrer"
+                                title={"损坏产品图片 " + (i + 1)}
                               >
-                                图片{i + 1}
+                                <img src={url} alt={"损坏产品图片 " + (i + 1)} style={{ width: 64, height: 48, objectFit: "cover", borderRadius: 6, border: "1px solid #fecaca" }} />
                               </a>
                             ))}
                           </div>

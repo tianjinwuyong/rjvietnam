@@ -42,6 +42,18 @@ ensure_schema()
 
 def password_hash(password, salt): return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 210000).hex()
 def token_hash(token): return hashlib.sha256(token.encode()).hexdigest()
+
+def ensure_test_supplier(c):
+    now=int(time.time());supplier_code="SIM-SUP-001";supplier_name="Test Supplier"
+    c.execute("INSERT INTO portal_suppliers(supplier_code,supplier_name,registration_status,portal_enabled,label_enabled,qualification_status,updated_at) VALUES(?,?,'REGISTERED',1,1,'QUALIFIED',?) ON CONFLICT(supplier_code) DO UPDATE SET registration_status='REGISTERED',portal_enabled=1,label_enabled=1,updated_at=excluded.updated_at",(supplier_code,supplier_name,now))
+    row=c.execute("SELECT * FROM users WHERE username='sim-supplier-admin' AND supplier_code=?",(supplier_code,)).fetchone()
+    if not row:
+      salt=secrets.token_hex(16);unusable_password=secrets.token_urlsafe(48)
+      c.execute("INSERT INTO users(username,password_hash,salt,supplier_code,supplier_name,display_name,active,role,email,updated_at) VALUES(?,?,?,?,?,?,1,'SUPPLIER_ADMIN',NULL,?)",("sim-supplier-admin",password_hash(unusable_password,salt),salt,supplier_code,supplier_name,"Test Supplier Admin",now))
+      row=c.execute("SELECT * FROM users WHERE username='sim-supplier-admin' AND supplier_code=?",(supplier_code,)).fetchone()
+    elif not row["active"] or row["role"]!="SUPPLIER_ADMIN":
+      c.execute("UPDATE users SET active=1,role='SUPPLIER_ADMIN',updated_at=? WHERE id=?",(now,row["id"]));row=c.execute("SELECT * FROM users WHERE id=?",(row["id"],)).fetchone()
+    return row
 def current_user(request: Request):
     token=request.cookies.get("supplier_session")
     if not token: return None
@@ -70,7 +82,10 @@ class PasswordChange(BaseModel): current_password:str; new_password:str=Field(mi
 class ProfileChange(BaseModel): username:str=Field(min_length=3,max_length=120); display_name:str=Field(min_length=1,max_length=160); current_password:str
 class PortalUserCreate(BaseModel): username:str=Field(min_length=3,max_length=120); display_name:str=Field(min_length=1,max_length=160); email:str|None=None; role:str="LABEL_OPERATOR"; temporary_password:str=Field(min_length=10,max_length=128)
 class PortalUserUpdate(BaseModel): display_name:str|None=None; email:str|None=None; role:str|None=None; active:bool|None=None
-class ShipmentCreate(BaseModel): id:str; asn:str; po:str; eta:str; type:str; status:str="DRAFT"; lines:list[dict]
+class ShipmentCreate(BaseModel):
+    id:str; asn:str; po:str; eta:str; type:str; status:str="DRAFT"; lines:list[dict]
+    carrier_name:str|None=None; vehicle_no:str|None=None; driver_name:str|None=None; driver_phone:str|None=None; tracking_no:str|None=None
+    pallet_count:int=Field(default=0,ge=0); total_weight_kg:float=Field(default=0,ge=0); pallets:list[dict]=[]; qr_codes:list[dict]=[]
 class SupplierSync(BaseModel): supplier_name:str; registration_status:str="REGISTERED"; portal_enabled:bool=False; label_enabled:bool=False; qualification_status:str="PENDING"
 class PurchaseOrderSync(BaseModel): status:str="OPEN"; requested_delivery_date:str|None=None; buyer_id:str|None=None; buyer_name:str|None=None; buyer_email:str|None=None; buyer_phone:str|None=None; supplier_contact_name:str|None=None; supplier_contact_email:str|None=None; lines:list[dict]=[]; currency:str="USD"; total_amount:float|None=None
 class PurchaseOrderResponse(BaseModel): decision:str; expected_delivery_date:str; response_note:str|None=None; expected_boxes:int=0; expected_pallets:int=0; supplier_contact_name:str|None=None; supplier_contact_email:str|None=None; delivery_status:str="PLANNED"; carrier_name:str|None=None; driver_name:str|None=None; driver_phone:str|None=None; vehicle_no:str|None=None; tracking_no:str|None=None
@@ -78,9 +93,9 @@ class PurchaseOrderProgress(BaseModel): completed_quantity:float=Field(ge=0); no
 class TrackingPoint(BaseModel): latitude:float=Field(ge=-90,le=90); longitude:float=Field(ge=-180,le=180); accuracy_m:float|None=None; recorded_at:int|None=None
 class PoAdjustmentCreate(BaseModel): adjustment_type:str; line_no:int|None=None; current_value:str|None=None; proposed_value:str=Field(min_length=1,max_length=2000); reason:str=Field(min_length=3,max_length=2000)
 class PoAdjustmentDecision(BaseModel): status:str; review_note:str|None=None; reviewed_by:str|None=None
-class LabelManifestCreate(BaseModel): manifest_key:str=Field(min_length=6,max_length=500); po_no:str|None=None; material_code:str; lot_no:str; total_quantity:float=Field(gt=0); unit:str="PCS"; outer_box_count:int=Field(ge=1); sub_box_count:int=Field(ge=0); pallets:list[str]=[]; labels:list[dict]
+class LabelManifestCreate(BaseModel): manifest_key:str=Field(min_length=6,max_length=500); po_no:str=Field(min_length=1,max_length=120); material_code:str; lot_no:str; total_quantity:float=Field(gt=0); unit:str="PCS"; outer_box_count:int=Field(ge=1); sub_box_count:int=Field(ge=0); pallets:list[str]=[]; labels:list[dict]
 class MesQrManifestCreate(BaseModel): po_no:str; material_code:str; production_date:str; lot_no:str; total_quantity:float=Field(gt=0); outer_box_quantity:float=Field(gt=0); sub_box_quantity:float|None=None; unit:str="PCS"; serial_prefix:str="R"; serial_start:int=Field(default=1,ge=1); outer_boxes_per_pallet:int=Field(default=20,ge=1); pallet_prefix:str="PLT"
-class ReceivingStatusSync(BaseModel): status:str; expected_boxes:int=0; scanned_boxes:int=0; expected_quantity:float=0; received_quantity:float=0; accepted_quantity:float=0; hold_quantity:float=0; rejected_quantity:float=0; discrepancy_code:str|None=None; discrepancy_note:str|None=None; rejection_reason:str|None=None; affected_box_qrs:list[str]=[]; evidence_images:list[str]=[]; inspection_reference:str|None=None; inspector_name:str|None=None; iqc_status:str|None=None; received_at:str|None=None; inspected_at:str|None=None
+class ReceivingStatusSync(BaseModel): status:str; expected_boxes:int=0; scanned_boxes:int=0; expected_quantity:float=0; received_quantity:float=0; accepted_quantity:float=0; hold_quantity:float=0; rejected_quantity:float=0; passed_sns:list[str]=[]; ng_sns:list[str]=[]; missing_sns:list[str]=[]; unexpected_sns:list[str]=[]; shortage_quantity:float=0; excess_quantity:float=0; discrepancy_code:str|None=None; discrepancy_note:str|None=None; rejection_reason:str|None=None; affected_box_qrs:list[str]=[]; evidence_images:list[str]=[]; inspection_reference:str|None=None; inspector_name:str|None=None; iqc_status:str|None=None; received_at:str|None=None; inspected_at:str|None=None
 
 @app.get("/health")
 def health(): return {"ok": True}
@@ -118,8 +133,7 @@ def preview_login(request:Request,response:Response):
 def test_supplier_login(request:Request,response:Response):
     if os.environ.get("ENABLE_TEST_LOGIN","0")!="1": raise HTTPException(404,"Test login disabled")
     with db() as c:
-      row=c.execute("SELECT u.* FROM users u JOIN portal_suppliers p ON p.supplier_code=u.supplier_code WHERE u.username='sim-supplier-admin' AND u.supplier_code='SIM-SUP-001' AND u.active=1 AND p.registration_status='REGISTERED' AND p.portal_enabled=1").fetchone()
-      if not row: raise HTTPException(503,"Test supplier account is not configured")
+      row=ensure_test_supplier(c)
       token=secrets.token_urlsafe(32);now=int(time.time());c.execute("INSERT INTO sessions VALUES(?,?,?,?)",(token_hash(token),row["id"],now+SESSION_TTL,now));audit_event(c,row["id"],"TEST_SUPPLIER_QUICK_LOGIN",request);c.commit()
     response.set_cookie("supplier_session",token,max_age=SESSION_TTL,httponly=True,samesite="strict",secure=os.environ.get("COOKIE_SECURE","0")=="1",path="/")
     return {k:row[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")}
@@ -257,15 +271,22 @@ def create_order_adjustment(po_no:str,body:PoAdjustmentCreate,request:Request):
 
 @app.post("/label-manifests")
 def register_label_manifest(body:LabelManifestCreate,request:Request):
-    user=require_write_user(request);now=int(time.time());payload=body.model_dump();payload.update({"supplier_code":user["supplier_code"],"status":"PRE_RECEIVING_UNCONFIRMED","registered_at":now})
+    user=require_write_user(request);now=int(time.time())
     if len(body.labels)!=body.outer_box_count+body.sub_box_count: raise HTTPException(400,"Label count does not match outer/sub-box totals")
     if abs(sum(float(x.get("qty",0)) for x in body.labels if x.get("level")=="OUTER")-body.total_quantity)>0.0001: raise HTTPException(400,"Outer-box quantity does not equal total quantity")
     with db() as c:
+      po=c.execute("SELECT payload FROM purchase_orders WHERE po_no=? AND supplier_code=?",(body.po_no,user["supplier_code"])).fetchone()
+      if not po: raise HTTPException(404,"Purchase order not found for this supplier")
+      purchase_order=json.loads(po["payload"])
+      po_materials={str(line.get("material_code","")).strip().upper() for line in purchase_order.get("lines",[])}
+      if po_materials and body.material_code.strip().upper() not in po_materials: raise HTTPException(409,"Material is not registered on this purchase order")
+      printed_qrs=[{**label,"printed_at":now} for label in body.labels]
+      payload=body.model_dump();payload.update({"supplier_code":user["supplier_code"],"purchase_order":purchase_order,"printed_qrs":printed_qrs,"labels":printed_qrs,"status":"PRE_RECEIVING_UNCONFIRMED","registered_at":now})
       row=c.execute("SELECT id FROM supplier_label_manifests WHERE manifest_key=? AND supplier_code=?",(body.manifest_key,user["supplier_code"])).fetchone()
       if row:c.execute("UPDATE supplier_label_manifests SET po_no=?,material_code=?,lot_no=?,total_quantity=?,unit=?,outer_box_count=?,sub_box_count=?,payload=?,updated_at=? WHERE id=?",(body.po_no,body.material_code,body.lot_no,body.total_quantity,body.unit,body.outer_box_count,body.sub_box_count,json.dumps(payload,ensure_ascii=False),now,row["id"]));manifest_id=row["id"]
       else:manifest_id=c.execute("INSERT INTO supplier_label_manifests(manifest_key,supplier_code,po_no,material_code,lot_no,total_quantity,unit,outer_box_count,sub_box_count,status,payload,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(body.manifest_key,user["supplier_code"],body.po_no,body.material_code,body.lot_no,body.total_quantity,body.unit,body.outer_box_count,body.sub_box_count,"PRE_RECEIVING_UNCONFIRMED",json.dumps(payload,ensure_ascii=False),user["id"],now,now)).lastrowid
-      outbox(c,user["supplier_code"],"LABEL_MANIFEST_REGISTERED","LABEL_MANIFEST",manifest_id,payload);audit_event(c,user["id"],"LABEL_MANIFEST_REGISTERED",request,json.dumps({"manifest_id":manifest_id,"labels":len(body.labels)}));c.commit()
-    return {"id":manifest_id,"manifest_key":body.manifest_key,"registered":True,"status":"PRE_RECEIVING_UNCONFIRMED","outer_box_count":body.outer_box_count,"sub_box_count":body.sub_box_count,"label_count":len(body.labels)}
+      outbox(c,user["supplier_code"],"SUPPLIER_PO_QRS_REGISTERED","PURCHASE_ORDER_QRS",manifest_id,payload);audit_event(c,user["id"],"SUPPLIER_PO_QRS_REGISTERED",request,json.dumps({"manifest_id":manifest_id,"po_no":body.po_no,"printed_qrs":len(printed_qrs)}));c.commit()
+    return {"id":manifest_id,"manifest_key":body.manifest_key,"registered":True,"wms_registration":"QUEUED","po_no":body.po_no,"status":"PRE_RECEIVING_UNCONFIRMED","outer_box_count":body.outer_box_count,"sub_box_count":body.sub_box_count,"label_count":len(printed_qrs)}
 
 @app.get("/label-manifests")
 def list_label_manifests(request:Request):
@@ -279,7 +300,11 @@ def mes_generate_qr_manifest(body:MesQrManifestCreate,request:Request):
     with db() as c:
       key=c.execute("SELECT * FROM supplier_mes_api_keys WHERE key_hash=? AND active=1",(key_hash,)).fetchone()
       if not key: raise HTTPException(401,"Invalid supplier MES API key")
-      supplier_code=key["supplier_code"];outer_count=math.ceil(body.total_quantity/body.outer_box_quantity);width=max(3,len(str(body.serial_start+outer_count-1)));labels=[];pallets=[]
+      supplier_code=key["supplier_code"];po=c.execute("SELECT payload FROM purchase_orders WHERE po_no=? AND supplier_code=?",(body.po_no,supplier_code)).fetchone()
+      if not po: raise HTTPException(404,"Purchase order not found for this supplier")
+      purchase_order=json.loads(po["payload"]);po_materials={str(line.get("material_code","")).strip().upper() for line in purchase_order.get("lines",[])}
+      if po_materials and body.material_code.strip().upper() not in po_materials: raise HTTPException(409,"Material is not registered on this purchase order")
+      outer_count=math.ceil(body.total_quantity/body.outer_box_quantity);width=max(3,len(str(body.serial_start+outer_count-1)));labels=[];pallets=[]
       for i in range(outer_count):
         qty=min(body.outer_box_quantity,body.total_quantity-i*body.outer_box_quantity);serial=f"{body.serial_prefix}{body.serial_start+i:0{width}d}";pallet_no=i//body.outer_boxes_per_pallet+1;pallet_qr=f"WMS-PALLET:{supplier_code}:{body.po_no or body.lot_no}:{body.pallet_prefix}{pallet_no:03d}"
         if pallet_qr not in pallets:pallets.append(pallet_qr)
@@ -288,11 +313,11 @@ def mes_generate_qr_manifest(body:MesQrManifestCreate,request:Request):
           sub_count=math.ceil(qty/body.sub_box_quantity);sub_width=max(2,len(str(sub_count)))
           for j in range(sub_count):
             sub_qty=min(body.sub_box_quantity,qty-j*body.sub_box_quantity);child=f"{serial}-S{j+1:0{sub_width}d}";labels.append({"qr":"*".join(map(str,[supplier_code,body.material_code,body.production_date,sub_qty,body.lot_no,child,"SUB_BOX",serial])),"serial":child,"qty":sub_qty,"level":"SUB_BOX","parent_serial":serial,"pallet_qr":pallet_qr})
-      now=int(time.time());manifest_key="|".join(map(str,[supplier_code,body.po_no,body.material_code,body.lot_no,body.production_date,body.total_quantity,body.outer_box_quantity,body.sub_box_quantity or 0,body.outer_boxes_per_pallet,body.serial_prefix,body.serial_start]));payload={**body.model_dump(),"manifest_key":manifest_key,"supplier_code":supplier_code,"outer_box_count":outer_count,"sub_box_count":len(labels)-outer_count,"pallets":pallets,"labels":labels,"status":"PRE_RECEIVING_UNCONFIRMED","registered_at":now,"source":"SUPPLIER_MES_API"}
+      now=int(time.time());printed_qrs=[{**label,"printed_at":now} for label in labels];manifest_key="|".join(map(str,[supplier_code,body.po_no,body.material_code,body.lot_no,body.production_date,body.total_quantity,body.outer_box_quantity,body.sub_box_quantity or 0,body.outer_boxes_per_pallet,body.serial_prefix,body.serial_start]));payload={**body.model_dump(),"manifest_key":manifest_key,"supplier_code":supplier_code,"purchase_order":purchase_order,"outer_box_count":outer_count,"sub_box_count":len(labels)-outer_count,"pallets":pallets,"printed_qrs":printed_qrs,"labels":printed_qrs,"status":"PRE_RECEIVING_UNCONFIRMED","registered_at":now,"source":"SUPPLIER_MES_API"}
       row=c.execute("SELECT id FROM supplier_label_manifests WHERE manifest_key=?",(manifest_key,)).fetchone()
       if row:manifest_id=row["id"];c.execute("UPDATE supplier_label_manifests SET payload=?,updated_at=? WHERE id=?",(json.dumps(payload,ensure_ascii=False),now,manifest_id))
       else:manifest_id=c.execute("INSERT INTO supplier_label_manifests(manifest_key,supplier_code,po_no,material_code,lot_no,total_quantity,unit,outer_box_count,sub_box_count,status,payload,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(manifest_key,supplier_code,body.po_no,body.material_code,body.lot_no,body.total_quantity,body.unit,outer_count,len(labels)-outer_count,"PRE_RECEIVING_UNCONFIRMED",json.dumps(payload,ensure_ascii=False),0,now,now)).lastrowid
-      c.execute("UPDATE supplier_mes_api_keys SET last_used_at=? WHERE id=?",(now,key["id"]));outbox(c,supplier_code,"LABEL_MANIFEST_REGISTERED","LABEL_MANIFEST",manifest_id,payload);c.commit()
+      c.execute("UPDATE supplier_mes_api_keys SET last_used_at=? WHERE id=?",(now,key["id"]));outbox(c,supplier_code,"SUPPLIER_PO_QRS_REGISTERED","PURCHASE_ORDER_QRS",manifest_id,payload);c.commit()
     return {"manifest_id":manifest_id,"status":"PRE_RECEIVING_UNCONFIRMED","pallets":pallets,"outer_box_count":outer_count,"sub_box_count":len(labels)-outer_count,"labels":labels}
 
 @app.post("/shipments",status_code=201)

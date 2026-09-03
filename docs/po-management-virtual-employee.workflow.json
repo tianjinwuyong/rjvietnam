@@ -1,0 +1,68 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "采购 PO 虚拟员工管理闭环",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1220, 860],
+    "output": "apps/web/public/architecture/po-management-virtual-employee-workflow.html"
+  },
+  "lanes": [
+    { "id": "planning", "label": "需求与供应商" },
+    { "id": "purchasing", "label": "PURCHASING-VIRTUAL-01" },
+    { "id": "execution", "label": "收货、质量与财务" },
+    { "id": "exception", "label": "异常与人工审批", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "create", "label": "创建与发布", "fromCol": 0, "toCol": 1 },
+    { "id": "deliver", "label": "确认与交付", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "close", "label": "核对与关闭", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": ["request", "validate", "publish", "acknowledge", "receive", "iqc", "match", "closePo"],
+  "semanticChecks": {
+    "allowedRoots": ["request"],
+    "allowedTerminals": ["closePo", "approval"],
+    "requiredPaths": [
+      { "from": "request", "to": "closePo" },
+      { "from": "alert", "to": "approval" }
+    ]
+  },
+  "nodes": [
+    { "id": "request", "lane": "planning", "col": 0, "type": "external", "label": "采购需求", "sublabel": "PR / RFQ / 中标报价", "width": 150 },
+    { "id": "validate", "lane": "purchasing", "col": 0, "type": "backend", "label": "PO 校验", "sublabel": "供应商、价格、数量、交期", "width": 158 },
+    { "id": "publish", "lane": "purchasing", "col": 1, "type": "messagebus", "label": "发布 PO", "sublabel": "人工批准后发送", "width": 150 },
+    { "id": "acknowledge", "lane": "planning", "col": 2, "type": "external", "label": "供应商确认 / ASN", "sublabel": "ETA、托盘、重量、全部 QR", "width": 170 },
+    { "id": "receive", "lane": "execution", "col": 3, "type": "backend", "label": "WMS 收料", "sublabel": "到货数量与批次", "width": 150 },
+    { "id": "iqc", "lane": "execution", "col": 4, "type": "security", "label": "IQC 放行", "sublabel": "合格、拒收或待处置", "width": 150 },
+    { "id": "match", "lane": "execution", "col": 5, "type": "database", "label": "三方核对", "sublabel": "PO / 收货 / 发票", "width": 150 },
+    { "id": "closePo", "lane": "purchasing", "col": 5, "type": "backend", "label": "关闭 PO", "sublabel": "五项门禁全部通过", "tag": "可审计", "width": 150 },
+    { "id": "alert", "lane": "exception", "col": 2, "type": "security", "label": "PO 风险预警", "sublabel": "未确认、延期、差异、拒收", "width": 170 },
+    { "id": "approval", "lane": "exception", "col": 4, "type": "security", "label": "人工审批", "sublabel": "价格、数量、取消、超收", "tag": "禁止自动批准", "width": 170 }
+  ],
+  "edges": [
+    { "id": "requestValidate", "from": "request", "to": "validate", "label": "需求与报价", "variant": "default", "role": "main" },
+    { "id": "validatePublish", "from": "validate", "to": "publish", "label": "校验通过", "variant": "emphasis", "role": "main" },
+    { "id": "publishAck", "from": "publish", "to": "acknowledge", "label": "发送供应商", "variant": "default", "role": "main" },
+    { "id": "ackReceive", "from": "acknowledge", "to": "receive", "label": "ASN / 到货", "variant": "default", "role": "main" },
+    { "id": "receiveIqc", "from": "receive", "to": "iqc", "label": "IQC HOLD", "variant": "security", "role": "main" },
+    { "id": "iqcMatch", "from": "iqc", "to": "match", "label": "放行数量", "variant": "emphasis", "role": "main" },
+    { "id": "matchClose", "from": "match", "to": "closePo", "label": "结算完成", "variant": "emphasis", "role": "main" },
+    { "id": "ackAlert", "from": "acknowledge", "to": "alert", "label": "未确认或延期", "variant": "security", "role": "error" },
+    { "id": "receiveAlert", "from": "receive", "to": "alert", "label": "数量差异", "variant": "security", "role": "error" },
+    { "id": "alertApproval", "from": "alert", "to": "approval", "label": "创建审批任务", "variant": "security", "role": "branch" },
+    { "id": "approvalPublish", "from": "approval", "to": "publish", "label": "批准变更后重发", "variant": "dashed", "role": "return" }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "自动预警",
+      "items": ["供应商未确认或承诺交期已逾期", "收货、IQC 或发票与 PO 出现差异"]
+    },
+    {
+      "dot": "emerald",
+      "title": "关闭门禁",
+      "items": ["供应商确认、足量收货、IQC 放行", "三方匹配且付款结清后才允许关闭"]
+    }
+  ]
+}

@@ -190,6 +190,18 @@ export interface PoClosure {
   history: unknown[];
 }
 
+export interface PoIncomingLogistics {
+  poId: number;
+  poNo: string;
+  shipments: Array<{
+    id: string; asn: string; poNo: string; eta: string; ata: string | null; shipmentType: string; status: string;
+    logisticsPayload?: { carrierName?: string; vehicleNo?: string; driverName?: string; driverPhone?: string; trackingNo?: string; palletCount?: number; totalWeightKg?: number; pallets?: Array<{ palletQr?: string; lengthMm?: number; widthMm?: number; heightMm?: number; weightKg?: number }>; qrCodes?: Array<{ type?: string; value?: string }> };
+    lines: Array<{ id: string; materialCode: string; materialName?: string; lotNo: string; productionDate: string; quantity: number; perBoxQuantity: number; uom: string; msl?: string }>;
+  }>;
+  manifests: Array<{ id: number; manifestKey: string; materialCode: string; lotNo: string; totalQuantity: number; unit: string; outerBoxCount: number; subBoxCount: number; status: string; registeredAt: string }>;
+  qrCodes: Array<{ manifestId: number; qrValue: string; serialNo: string; quantity: number; packageLevel: string; parentSerialNo: string | null; palletQr: string | null; receivingStatus: string; scannedAt: string | null }>;
+}
+
 // API
 
 export const procurementApi = {
@@ -275,6 +287,7 @@ export const procurementApi = {
   sendPo: (id: number) => apiClient.put<{ sent: boolean }>(`/api/procurement/pos/${id}/send`),
   acknowledgePo: (id: number) => apiClient.put<{ acknowledged: boolean }>(`/api/procurement/pos/${id}/acknowledge`),
   getPoClosure: (id: number) => apiClient.get<PoClosure>(`/api/procurement/pos/${id}/closure`),
+  getPoIncomingLogistics: (id: number) => apiClient.get<PoIncomingLogistics>(`/api/procurement/pos/${id}/incoming-logistics`),
   closePo: (id: number) => apiClient.put<{ closed: boolean }>(`/api/procurement/pos/${id}/close`),
   listPoAdjustments: () => apiClient.get<ListEnvelope<PoAdjustmentRequest>>("/procurement/po-adjustments"),
   decidePoAdjustment: (x: PoAdjustmentRequest, status: "APPROVED" | "REJECTED", reviewNote: string) => apiClient.put(`/procurement/suppliers/${x.supplier_id}/po-adjustments/${encodeURIComponent(x.request_no)}/decision`, { status, reviewNote }),

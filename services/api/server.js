@@ -62,6 +62,7 @@ import { evaluateProductGate } from "./src/product-gate.js";
 import { IQC_VIRTUAL_EMPLOYEE, askIqcLlm, runIqcVirtualEmployee } from "./src/iqc/virtual-employee.js";
 import { IQC_VIRTUAL_HARNESS } from "./src/iqc/virtual-employee-harness.js";
 import { getIqcMemoryContext, rememberIqcMemory, searchIqcMemory } from "./src/iqc/virtual-employee-memory.js";
+import { FACTORY_VIRTUAL_EMPLOYEES, getFactoryVirtualEmployee } from "./src/virtual-employees/registry.js";
 import { validateStationConfiguration } from "../../packages/station-config/validate-stations.mjs";
 import {
   askChat,
@@ -11816,6 +11817,14 @@ const iqcDefectLoopReady=(async()=>{
   await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_virtual_tasks_subject ON qms_iqc_virtual_tasks(material_code,supplier_code,lot_no,status,scheduled_at DESC)`);
   await query(`CREATE INDEX IF NOT EXISTS idx_qms_iqc_virtual_tasks_human ON qms_iqc_virtual_tasks(requires_human,status,priority,scheduled_at)`);
   await query(`ALTER TABLE qms_iqc_virtual_tasks ADD COLUMN IF NOT EXISTS assigned_to VARCHAR(120), ADD COLUMN IF NOT EXISTS assigned_by VARCHAR(120), ADD COLUMN IF NOT EXISTS due_at TIMESTAMPTZ, ADD COLUMN IF NOT EXISTS instructions TEXT, ADD COLUMN IF NOT EXISTS completion_summary TEXT`);
+  await query(`CREATE TABLE IF NOT EXISTS qms_iqc_virtual_employee_config(
+    employee_id VARCHAR(80) PRIMARY KEY, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    provider VARCHAR(40) NOT NULL DEFAULT 'minimax', model VARCHAR(160) NOT NULL DEFAULT 'MiniMax-M2.7',
+    base_url TEXT, credential_env VARCHAR(80), timeout_ms INTEGER NOT NULL DEFAULT 120000,
+    updated_by VARCHAR(120) NOT NULL DEFAULT 'system', updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
+  await query(`INSERT INTO qms_iqc_virtual_employee_config(employee_id,provider,model,base_url,credential_env)
+    VALUES('IQC-VIRTUAL-01','minimax','MiniMax-M2.7','https://api.minimax.io/v1','MINIMAX_API_KEY')
+    ON CONFLICT(employee_id) DO NOTHING`);
 })();
 
 function advanceInspectionLevelServer(level, counters, result) {
@@ -11858,6 +11867,305 @@ function notifyIqcWaiting(row, sourceType) {
   });
 }
 
+const factoryVirtualEmployeesReady = (async () => {
+  await query(`CREATE TABLE IF NOT EXISTS factory_virtual_employee_configs(
+    employee_id VARCHAR(80) PRIMARY KEY, enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    provider VARCHAR(40) NOT NULL DEFAULT 'minimax', model VARCHAR(160) NOT NULL DEFAULT 'MiniMax-M2.7',
+    base_url TEXT, credential_env VARCHAR(120), timeout_ms INTEGER NOT NULL DEFAULT 120000,
+    temperature NUMERIC(3,2) NOT NULL DEFAULT 0.20,
+    display_name VARCHAR(120), avatar_url TEXT, preferred_language VARCHAR(16) NOT NULL DEFAULT 'zh-CN',
+    communication_tone VARCHAR(40) NOT NULL DEFAULT 'professional', personality TEXT,
+    interval_seconds INTEGER NOT NULL DEFAULT 300 CHECK(interval_seconds>=60),
+    owner VARCHAR(120), notes TEXT, updated_by VARCHAR(120) NOT NULL DEFAULT 'system',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await query(`ALTER TABLE factory_virtual_employee_configs
+    ADD COLUMN IF NOT EXISTS base_url TEXT,
+    ADD COLUMN IF NOT EXISTS credential_env VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS timeout_ms INTEGER NOT NULL DEFAULT 120000,
+    ADD COLUMN IF NOT EXISTS temperature NUMERIC(3,2) NOT NULL DEFAULT 0.20,
+    ADD COLUMN IF NOT EXISTS display_name VARCHAR(120),
+    ADD COLUMN IF NOT EXISTS avatar_url TEXT,
+    ADD COLUMN IF NOT EXISTS preferred_language VARCHAR(16) NOT NULL DEFAULT 'zh-CN',
+    ADD COLUMN IF NOT EXISTS communication_tone VARCHAR(40) NOT NULL DEFAULT 'professional',
+    ADD COLUMN IF NOT EXISTS personality TEXT`);
+  for (const employee of FACTORY_VIRTUAL_EMPLOYEES) {
+    await query(`INSERT INTO factory_virtual_employee_configs(employee_id,enabled,provider,model,interval_seconds,updated_by)
+      VALUES($1,TRUE,'minimax','MiniMax-M2.7',300,'system-bootstrap')
+      ON CONFLICT(employee_id) DO NOTHING`,[employee.id]);
+  }
+  await query(`CREATE TABLE IF NOT EXISTS factory_virtual_employee_tasks(
+    id BIGSERIAL PRIMARY KEY,
+    employee_id VARCHAR(80) NOT NULL,
+    task_type VARCHAR(80) NOT NULL,
+    title VARCHAR(240) NOT NULL,
+    domain VARCHAR(40) NOT NULL,
+    status VARCHAR(24) NOT NULL DEFAULT 'OPEN',
+    priority VARCHAR(16) NOT NULL DEFAULT 'NORMAL',
+    input JSONB NOT NULL DEFAULT '{}'::jsonb,
+    output JSONB NOT NULL DEFAULT '{}'::jsonb,
+    requires_human BOOLEAN NOT NULL DEFAULT FALSE,
+    human_gate VARCHAR(120),
+    requested_by VARCHAR(120) NOT NULL DEFAULT 'system',
+    approved_by VARCHAR(120),
+    started_at TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await query(`CREATE INDEX IF NOT EXISTS idx_factory_virtual_tasks_employee_status ON factory_virtual_employee_tasks(employee_id,status,created_at DESC)`);
+  await query(`ALTER TABLE factory_virtual_employee_tasks ADD COLUMN IF NOT EXISTS task_key VARCHAR(240)`);
+  await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_factory_virtual_tasks_key ON factory_virtual_employee_tasks(task_key) WHERE task_key IS NOT NULL`);
+  await query(`CREATE TABLE IF NOT EXISTS factory_virtual_employee_events(
+    id BIGSERIAL PRIMARY KEY, employee_id VARCHAR(80) NOT NULL, task_id BIGINT,
+    event_type VARCHAR(60) NOT NULL, detail JSONB NOT NULL DEFAULT '{}'::jsonb,
+    actor VARCHAR(120) NOT NULL DEFAULT 'system', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS factory_virtual_employee_training_cases(
+    id BIGSERIAL PRIMARY KEY, employee_id VARCHAR(80) NOT NULL, title VARCHAR(240) NOT NULL,
+    scenario TEXT NOT NULL, expected_behavior TEXT NOT NULL, acceptance_criteria JSONB NOT NULL DEFAULT '[]'::jsonb,
+    status VARCHAR(24) NOT NULL DEFAULT 'DRAFT', created_by VARCHAR(120) NOT NULL,
+    approved_by VARCHAR(120), created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS factory_virtual_employee_training_runs(
+    id BIGSERIAL PRIMARY KEY, case_id BIGINT NOT NULL REFERENCES factory_virtual_employee_training_cases(id),
+    employee_id VARCHAR(80) NOT NULL, response TEXT NOT NULL, score INTEGER CHECK(score BETWEEN 0 AND 100),
+    result VARCHAR(20) NOT NULL DEFAULT 'WAITING_REVIEW', reviewer VARCHAR(120), feedback TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), reviewed_at TIMESTAMPTZ
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS factory_virtual_employee_evaluations(
+    id BIGSERIAL PRIMARY KEY,
+    employee_id VARCHAR(80) NOT NULL,
+    period_start DATE NOT NULL,
+    period_end DATE NOT NULL,
+    employment_stage VARCHAR(30) NOT NULL DEFAULT 'REGULAR',
+    task_completion_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    quality_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    efficiency_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    compliance_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    collaboration_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    supervisor_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    total_score NUMERIC(5,2) NOT NULL DEFAULT 0,
+    grade VARCHAR(8) NOT NULL DEFAULT 'D',
+    strengths TEXT,
+    improvement_plan TEXT,
+    status VARCHAR(24) NOT NULL DEFAULT 'DRAFT',
+    evaluator VARCHAR(120),
+    approved_by VARCHAR(120),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    approved_at TIMESTAMPTZ,
+    CHECK(period_end >= period_start)
+  )`);
+})();
+
+app.use('/api/factory/virtual-employees', authenticateJWT);
+app.get('/api/factory/virtual-employees', async (_req, res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const configs = await query(`SELECT * FROM factory_virtual_employee_configs`);
+    const configById = Object.fromEntries(configs.rows.map(row => [row.employee_id,row]));
+    const stats = await query(`SELECT employee_id,status,COUNT(*)::int AS count FROM factory_virtual_employee_tasks GROUP BY employee_id,status`);
+    const byEmployee = stats.rows.reduce((acc, row) => { (acc[row.employee_id] ||= {})[row.status] = row.count; return acc; }, {});
+    res.json(listEnvelope(FACTORY_VIRTUAL_EMPLOYEES.map(employee => ({ ...employee, ...(configById[employee.id] || {}), taskCounts: byEmployee[employee.id] || {} }))));
+  } catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_LIST_FAILED', e.message)); }
+});
+app.put('/api/factory/virtual-employees/:id/config', async (req,res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};
+    if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
+    const provider=String(p.provider||'minimax').trim().toLowerCase(),model=String(p.model||'MiniMax-M2.7').trim().slice(0,160);
+    const intervalSeconds=Math.max(60,Math.min(86400,Number(p.intervalSeconds||p.interval_seconds||300)));
+    const baseUrl=String(p.baseUrl||p.base_url||'').trim(),credentialEnv=String(p.credentialEnv||p.credential_env||'').trim();
+    const timeoutMs=Math.max(5000,Math.min(300000,Number(p.timeoutMs||p.timeout_ms||120000)));
+    const temperature=Math.max(0,Math.min(1,Number(p.temperature??0.2)));
+    const displayName=String(p.displayName||p.display_name||employee.name).trim().slice(0,120);
+    const avatarUrl=String(p.avatarUrl||p.avatar_url||'').trim();
+    const preferredLanguage=String(p.preferredLanguage||p.preferred_language||'zh-CN');
+    const communicationTone=String(p.communicationTone||p.communication_tone||'professional').trim().slice(0,40);
+    const personality=String(p.personality||'').trim().slice(0,2000);
+    if(!['minimax','openai-compatible','ollama','hermes','rules'].includes(provider))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_PROVIDER_INVALID','unsupported provider'));
+    if(!model)return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_MODEL_REQUIRED','model is required'));
+    if(baseUrl&&!/^https?:\/\/[^\s]+$/i.test(baseUrl))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_BASE_URL_INVALID','baseUrl must be an http(s) URL'));
+    if(credentialEnv&&!/^[A-Z][A-Z0-9_]{2,119}$/.test(credentialEnv))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_CREDENTIAL_ENV_INVALID','credentialEnv must be an environment variable name'));
+    if(avatarUrl&&!/^\/(?!\/)[^\s]+$|^https?:\/\/[^\s]+$/i.test(avatarUrl))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_AVATAR_INVALID','avatarUrl must be an app path or http(s) URL'));
+    if(!['zh-CN','vi-VN','en-US'].includes(preferredLanguage))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_LANGUAGE_INVALID','unsupported language'));
+    const actor=req.user?.username||'admin';
+    const row=(await query(`INSERT INTO factory_virtual_employee_configs(employee_id,enabled,provider,model,base_url,credential_env,timeout_ms,temperature,display_name,avatar_url,preferred_language,communication_tone,personality,interval_seconds,owner,notes,updated_by)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(employee_id) DO UPDATE SET enabled=EXCLUDED.enabled,provider=EXCLUDED.provider,model=EXCLUDED.model,base_url=EXCLUDED.base_url,credential_env=EXCLUDED.credential_env,timeout_ms=EXCLUDED.timeout_ms,temperature=EXCLUDED.temperature,display_name=EXCLUDED.display_name,avatar_url=EXCLUDED.avatar_url,preferred_language=EXCLUDED.preferred_language,communication_tone=EXCLUDED.communication_tone,personality=EXCLUDED.personality,interval_seconds=EXCLUDED.interval_seconds,owner=EXCLUDED.owner,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING *`,[employee.id,p.enabled!==false,provider,model,baseUrl||null,credentialEnv||null,timeoutMs,temperature,displayName,avatarUrl||null,preferredLanguage,communicationTone,personality||null,intervalSeconds,String(p.owner||'').trim()||null,String(p.notes||'').trim()||null,actor])).rows[0];
+    const safeRow={...row,credential_configured:row.credential_env?Boolean(String(process.env[row.credential_env]||'').trim()):true};
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'CONFIG_UPDATED',$2::jsonb,$3)`,[employee.id,JSON.stringify({...safeRow,credential_env:row.credential_env||null}),actor]);
+    res.json(mutateEnvelope(safeRow));
+  }catch(e){res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_CONFIG_FAILED',e.message));}
+});
+app.get('/api/factory/virtual-employees/:id/training-cases', async (req,res)=>{
+  try{await factoryVirtualEmployeesReady;const employee=getFactoryVirtualEmployee(req.params.id);if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));const r=await query(`SELECT c.*,COALESCE(json_agg(r ORDER BY r.created_at DESC) FILTER(WHERE r.id IS NOT NULL),'[]') AS runs FROM factory_virtual_employee_training_cases c LEFT JOIN factory_virtual_employee_training_runs r ON r.case_id=c.id WHERE c.employee_id=$1 GROUP BY c.id ORDER BY c.created_at DESC`,[employee.id]);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('TRAINING_CASE_LIST_FAILED',e.message));}
+});
+app.post('/api/factory/virtual-employees/:id/training-cases', async (req,res)=>{
+  try{await factoryVirtualEmployeesReady;const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));if(!String(p.title||'').trim()||!String(p.scenario||'').trim()||!String(p.expectedBehavior||'').trim())return res.status(400).json(errorEnvelope('TRAINING_CASE_REQUIRED','title, scenario and expectedBehavior are required'));const row=(await query(`INSERT INTO factory_virtual_employee_training_cases(employee_id,title,scenario,expected_behavior,acceptance_criteria,created_by) VALUES($1,$2,$3,$4,$5::jsonb,$6) RETURNING *`,[employee.id,String(p.title).trim(),String(p.scenario).trim(),String(p.expectedBehavior).trim(),JSON.stringify(Array.isArray(p.acceptanceCriteria)?p.acceptanceCriteria:[]),req.user?.username||'trainer'])).rows[0];res.status(201).json(mutateEnvelope(row));}catch(e){res.status(400).json(errorEnvelope('TRAINING_CASE_CREATE_FAILED',e.message));}
+});
+app.post('/api/factory/virtual-employees/training-cases/:caseId/runs', async (req,res)=>{
+  try{await factoryVirtualEmployeesReady;const p=req.body||{},testCase=(await query(`SELECT * FROM factory_virtual_employee_training_cases WHERE id=$1`,[req.params.caseId])).rows[0];if(!testCase)return res.status(404).json(errorEnvelope('TRAINING_CASE_NOT_FOUND','training case not found'));const response=String(p.response||'').trim();if(!response)return res.status(400).json(errorEnvelope('TRAINING_RESPONSE_REQUIRED','response is required'));const row=(await query(`INSERT INTO factory_virtual_employee_training_runs(case_id,employee_id,response) VALUES($1,$2,$3) RETURNING *`,[testCase.id,testCase.employee_id,response])).rows[0];res.status(201).json(mutateEnvelope(row));}catch(e){res.status(400).json(errorEnvelope('TRAINING_RUN_CREATE_FAILED',e.message));}
+});
+app.post('/api/factory/virtual-employees/training-runs/:runId/review', async (req,res)=>{
+  try{await factoryVirtualEmployeesReady;const p=req.body||{},score=Math.max(0,Math.min(100,Number(p.score)));if(!Number.isFinite(score))return res.status(400).json(errorEnvelope('TRAINING_SCORE_REQUIRED','score is required'));const result=score>=Number(p.passScore||80)?'PASSED':'FAILED';const row=(await query(`UPDATE factory_virtual_employee_training_runs SET score=$1,result=$2,reviewer=$3,feedback=$4,reviewed_at=NOW() WHERE id=$5 AND result='WAITING_REVIEW' RETURNING *`,[score,result,req.user?.username||'trainer',String(p.feedback||''),req.params.runId])).rows[0];if(!row)return res.status(409).json(errorEnvelope('TRAINING_REVIEW_INVALID','run is unavailable or already reviewed'));await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'TRAINING_REVIEWED',$2::jsonb,$3)`,[row.employee_id,JSON.stringify({runId:row.id,score,result}),req.user?.username||'trainer']);res.json(mutateEnvelope(row));}catch(e){res.status(409).json(errorEnvelope('TRAINING_REVIEW_FAILED',e.message));}
+});
+app.get('/api/factory/virtual-employees/:id/evaluations', async (req,res)=>{
+  try {
+    await factoryVirtualEmployeesReady;
+    const employee=getFactoryVirtualEmployee(req.params.id);
+    if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
+    const evaluations=await query(`SELECT * FROM factory_virtual_employee_evaluations WHERE employee_id=$1 ORDER BY period_end DESC,created_at DESC`,[employee.id]);
+    const metrics=(await query(`SELECT
+      COUNT(*)::int AS total_tasks,
+      COUNT(*) FILTER(WHERE status IN('COMPLETED','HANDED_OFF'))::int AS completed_tasks,
+      COUNT(*) FILTER(WHERE status='FAILED')::int AS failed_tasks,
+      COUNT(*) FILTER(WHERE requires_human)::int AS gated_tasks,
+      COUNT(*) FILTER(WHERE status='WAITING_APPROVAL')::int AS waiting_approval
+      FROM factory_virtual_employee_tasks WHERE employee_id=$1`,[employee.id])).rows[0];
+    const training=(await query(`SELECT COUNT(*)::int AS total_runs,
+      COUNT(*) FILTER(WHERE result='PASSED')::int AS passed_runs,
+      COALESCE(ROUND(AVG(score) FILTER(WHERE score IS NOT NULL),2),0) AS average_score
+      FROM factory_virtual_employee_training_runs WHERE employee_id=$1`,[employee.id])).rows[0];
+    res.json(envelope({items:evaluations.rows,metrics,training}));
+  }catch(e){res.status(500).json(errorEnvelope('EMPLOYEE_EVALUATION_LIST_FAILED',e.message));}
+});
+app.post('/api/factory/virtual-employees/:id/evaluations', async (req,res)=>{
+  try {
+    await factoryVirtualEmployeesReady;
+    const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};
+    if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
+    const score=(name)=>Math.max(0,Math.min(100,Number(p[name]??0)));
+    const values=['taskCompletionScore','qualityScore','efficiencyScore','complianceScore','collaborationScore','supervisorScore'].map(score);
+    if(values.some(v=>!Number.isFinite(v)))return res.status(400).json(errorEnvelope('EMPLOYEE_EVALUATION_SCORE_INVALID','all scores must be numbers from 0 to 100'));
+    const total=Number((values[0]*.15+values[1]*.25+values[2]*.15+values[3]*.20+values[4]*.10+values[5]*.15).toFixed(2));
+    const grade=total>=90?'A':total>=80?'B':total>=70?'C':total>=60?'D':'E';
+    const stage=['PROBATION','REGULAR','COACHING'].includes(String(p.employmentStage||'').toUpperCase())?String(p.employmentStage).toUpperCase():'REGULAR';
+    const row=(await query(`INSERT INTO factory_virtual_employee_evaluations(employee_id,period_start,period_end,employment_stage,task_completion_score,quality_score,efficiency_score,compliance_score,collaboration_score,supervisor_score,total_score,grade,strengths,improvement_plan,evaluator)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[employee.id,p.periodStart,p.periodEnd,stage,...values,total,grade,String(p.strengths||''),String(p.improvementPlan||''),req.user?.username||'manager'])).rows[0];
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'EVALUATION_DRAFTED',$2::jsonb,$3)`,[employee.id,JSON.stringify({evaluationId:row.id,total,grade}),req.user?.username||'manager']);
+    res.status(201).json(mutateEnvelope(row));
+  }catch(e){res.status(400).json(errorEnvelope('EMPLOYEE_EVALUATION_CREATE_FAILED',e.message));}
+});
+app.post('/api/factory/virtual-employees/evaluations/:evaluationId/approve', async (req,res)=>{
+  try {
+    await factoryVirtualEmployeesReady;
+    const row=(await query(`UPDATE factory_virtual_employee_evaluations SET status='APPROVED',approved_by=$1,approved_at=NOW() WHERE id=$2 AND status='DRAFT' RETURNING *`,[req.user?.username||'manager',req.params.evaluationId])).rows[0];
+    if(!row)return res.status(409).json(errorEnvelope('EMPLOYEE_EVALUATION_APPROVAL_INVALID','evaluation is unavailable or already approved'));
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'EVALUATION_APPROVED',$2::jsonb,$3)`,[row.employee_id,JSON.stringify({evaluationId:row.id,total:row.total_score,grade:row.grade}),req.user?.username||'manager']);
+    res.json(mutateEnvelope(row));
+  }catch(e){res.status(409).json(errorEnvelope('EMPLOYEE_EVALUATION_APPROVAL_FAILED',e.message));}
+});
+app.get('/api/factory/virtual-employees/:id', async (req, res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const employee = getFactoryVirtualEmployee(req.params.id);
+    if (!employee) return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND', 'virtual employee not found'));
+    const tasks = await query(`SELECT * FROM factory_virtual_employee_tasks WHERE employee_id=$1 ORDER BY created_at DESC LIMIT 100`, [employee.id]);
+    res.json(envelope({ ...employee, tasks: tasks.rows }));
+  } catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_READ_FAILED', e.message)); }
+});
+app.post('/api/factory/virtual-employees/:id/tasks', async (req, res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const employee = getFactoryVirtualEmployee(req.params.id), p = req.body || {};
+    if (!employee) return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND', 'virtual employee not found'));
+    const taskType = String(p.taskType || '').trim().toUpperCase(), title = String(p.title || '').trim();
+    if (!taskType || !title) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_REQUIRED', 'taskType and title are required'));
+    if (!employee.capabilities.includes(taskType)) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_CAPABILITY_DENIED', `${employee.id} cannot execute ${taskType}`));
+    const humanGate = String(p.humanGate || '').trim();
+    if (humanGate && !employee.humanGates.includes(humanGate)) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_GATE_INVALID', 'humanGate is not registered for this employee'));
+    const requiresHuman = Boolean(humanGate || p.requiresHuman);
+    const row = (await query(`INSERT INTO factory_virtual_employee_tasks(employee_id,task_type,title,domain,status,priority,input,requires_human,human_gate,requested_by)
+      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`, [employee.id, taskType, title, employee.domain, requiresHuman ? 'WAITING_APPROVAL' : 'OPEN', String(p.priority || 'NORMAL').toUpperCase(), JSON.stringify(p.input || {}), requiresHuman, humanGate || null, req.user?.username || 'system'])).rows[0];
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'TASK_CREATED',$3::jsonb,$4)`, [employee.id,row.id,JSON.stringify({ taskType, requiresHuman, humanGate: humanGate || null }),req.user?.username || 'system']);
+    res.status(201).json(mutateEnvelope(row));
+  } catch (e) { res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_CREATE_FAILED', e.message)); }
+});
+app.post('/api/factory/virtual-employees/tasks/:taskId/approve', async (req, res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const row = (await query(`UPDATE factory_virtual_employee_tasks SET status='OPEN',approved_by=$1,updated_at=NOW() WHERE id=$2 AND status='WAITING_APPROVAL' RETURNING *`, [req.user?.username || 'manager', req.params.taskId])).rows[0];
+    if (!row) return res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_APPROVAL_INVALID', 'task is not waiting for approval'));
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'HUMAN_APPROVED',$3::jsonb,$4)`, [row.employee_id,row.id,JSON.stringify({ humanGate: row.human_gate }),req.user?.username || 'manager']);
+    if (row.employee_id === 'WMS-RECEIVING-VIRTUAL-01') {
+      neuralBroadcast({ from: row.employee_id, to: 'wms_receiving_archify', type: 'WMS_RECEIVING_EMPLOYEE_STATUS', priority: 'info', payload: { taskId: row.id, taskType: row.task_type, title: row.title, status: 'OPEN', input: row.input, approvedBy: row.approved_by } });
+    }
+    res.json(mutateEnvelope(row));
+  } catch (e) { res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_APPROVAL_FAILED', e.message)); }
+});
+app.get('/api/factory/virtual-employees/events/audit', async (req, res) => {
+  try { await factoryVirtualEmployeesReady; const r = await query(`SELECT * FROM factory_virtual_employee_events WHERE ($1='' OR employee_id=$1) ORDER BY created_at DESC LIMIT 500`, [String(req.query.employeeId || '')]); res.json(listEnvelope(r.rows)); }
+  catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_AUDIT_FAILED', e.message)); }
+});
+
+let receivingVirtualEmployeeBusy = false;
+function broadcastReceivingEmployee(payload) {
+  neuralBroadcast({
+    from: 'WMS-RECEIVING-VIRTUAL-01',
+    to: 'wms_receiving_archify',
+    type: 'WMS_RECEIVING_EMPLOYEE_STATUS',
+    priority: payload.status === 'WAITING_APPROVAL' ? 'warning' : 'info',
+    payload
+  });
+}
+async function runReceivingVirtualEmployee() {
+  if (receivingVirtualEmployeeBusy) return { skipped: true, reason: 'already_running' };
+  receivingVirtualEmployeeBusy = true;
+  const employeeId = 'WMS-RECEIVING-VIRTUAL-01';
+  try {
+    broadcastReceivingEmployee({ phase: 'SCANNING', status: 'RUNNING', message: 'Scanning unfinished receiving lots' });
+    await Promise.all([factoryVirtualEmployeesReady, receivingQrRegistrationReady]);
+    const config=(await query(`SELECT enabled FROM factory_virtual_employee_configs WHERE employee_id=$1`,[employeeId])).rows[0];
+    if(config?.enabled===false)return {skipped:true,reason:'employee_disabled'};
+    const lots = await query(`SELECT ml.id,ml.lot_no,ml.po_no,ml.received_qty,ml.iqc_status,ml.storage_location_id,
+      m.code AS material_code,COALESCE(s.code,'') AS supplier_code,sl.code AS location_code,
+      q.material_qr,q.document_no,q.msd_level,q.location_code AS qr_location,q.status AS qr_status,q.quantity AS qr_quantity
+      FROM material_lots ml JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN suppliers s ON s.id=ml.supplier_id LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
+      LEFT JOIN wms_receiving_qr_registrations q ON q.material_lot_id=ml.id
+      WHERE ml.iqc_status IN('pending','hold') ORDER BY ml.received_at ASC NULLS LAST LIMIT 200`);
+    let created = 0, readyForIqc = 0, exceptions = 0;
+    for (const lot of lots.rows) {
+      let taskType = 'RECEIVING_VALIDATE', title = `核对收料批次 ${lot.lot_no}`, requiresHuman = false, humanGate = null;
+      const missing = [];
+      if (!lot.po_no) missing.push('PO');
+      if (!lot.supplier_code) missing.push('supplier');
+      if (!(Number(lot.received_qty) > 0)) missing.push('received quantity');
+      if (missing.length) { requiresHuman = true; humanGate = 'receive_variance'; title = `收料资料异常 ${lot.lot_no}: ${missing.join(', ')}`; exceptions += 1; }
+      else if (!lot.material_qr) { taskType = 'LABEL_PLAN'; title = `生成并打印箱 QR ${lot.lot_no}`; }
+      else if (!lot.qr_location && !lot.location_code) { taskType = 'LOCATION_BIND'; title = `扫描并绑定仓位 ${lot.lot_no}`; }
+      else if (lot.qr_status === 'IQC_PENDING') { taskType = 'IQC_HANDOFF'; title = `已收料，交接 IQC ${lot.lot_no}`; readyForIqc += 1; }
+      const taskKey = `RECEIVING:${lot.id}:${taskType}`;
+      const input = { materialLotId: lot.id, lotNo: lot.lot_no, poNo: lot.po_no, materialCode: lot.material_code, supplierCode: lot.supplier_code, receivedQty: Number(lot.received_qty || 0), registeredQty: Number(lot.qr_quantity || 0), materialQr: lot.material_qr, documentNo: lot.document_no, msl: lot.msd_level, locationCode: lot.qr_location || lot.location_code, missing };
+      const result = await query(`INSERT INTO factory_virtual_employee_tasks(task_key,employee_id,task_type,title,domain,status,priority,input,requires_human,human_gate,requested_by)
+        VALUES($1,$2,$3,$4,'wms',$5,$6,$7::jsonb,$8,$9,'WMS-RECEIVING-VIRTUAL-01')
+        ON CONFLICT(task_key) WHERE task_key IS NOT NULL DO UPDATE SET title=EXCLUDED.title,input=EXCLUDED.input,requires_human=EXCLUDED.requires_human,human_gate=EXCLUDED.human_gate,updated_at=NOW()
+        RETURNING id,(xmax=0) AS inserted`, [taskKey,employeeId,taskType,title,requiresHuman?'WAITING_APPROVAL':taskType==='IQC_HANDOFF'?'DONE':'OPEN',requiresHuman?'HIGH':'NORMAL',JSON.stringify(input),requiresHuman,humanGate]);
+      broadcastReceivingEmployee({ taskId: result.rows[0]?.id, taskType, title, status: requiresHuman ? 'WAITING_APPROVAL' : taskType === 'IQC_HANDOFF' ? 'DONE' : 'OPEN', input });
+      if (result.rows[0]?.inserted) {
+        created += 1;
+        await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'RECEIVING_STAGE_DETECTED',$3::jsonb,$1)`, [employeeId,result.rows[0].id,JSON.stringify({ taskType, lotNo: lot.lot_no, missing })]);
+      }
+    }
+    const summary = { scanned: lots.rowCount, created, readyForIqc, exceptions, runAt: new Date().toISOString() };
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'SCAN_COMPLETED',$2::jsonb,$1)`, [employeeId,JSON.stringify(summary)]);
+    if (!lots.rowCount) broadcastReceivingEmployee({ phase: 'IDLE', status: 'IDLE', ...summary });
+    else broadcastReceivingEmployee({ phase: 'SCAN_COMPLETED', status: 'COMPLETED', ...summary });
+    return summary;
+  } finally { receivingVirtualEmployeeBusy = false; }
+}
+app.post('/api/factory/virtual-employees/WMS-RECEIVING-VIRTUAL-01/run-now', async (_req,res) => {
+  try { res.json(mutateEnvelope(await runReceivingVirtualEmployee())); }
+  catch (e) { res.status(409).json(errorEnvelope('RECEIVING_VIRTUAL_EMPLOYEE_FAILED',e.message)); }
+});
+app.get('/api/factory/virtual-employees/WMS-RECEIVING-VIRTUAL-01/work-queue', async (_req,res) => {
+  try { await factoryVirtualEmployeesReady; const r=await query(`SELECT * FROM factory_virtual_employee_tasks WHERE employee_id='WMS-RECEIVING-VIRTUAL-01' ORDER BY CASE status WHEN 'WAITING_APPROVAL' THEN 0 WHEN 'OPEN' THEN 1 ELSE 2 END,created_at DESC LIMIT 200`); res.json(listEnvelope(r.rows)); }
+  catch(e){res.status(500).json(errorEnvelope('RECEIVING_VIRTUAL_QUEUE_FAILED',e.message));}
+});
+const receivingVirtualEmployeeInterval = Math.max(60000,Number(process.env.RECEIVING_AGENT_INTERVAL_MS || 300000));
+setInterval(() => { void runReceivingVirtualEmployee().catch(error => console.error('[WMS-RECEIVING-VIRTUAL-01]',error.message)); },receivingVirtualEmployeeInterval);
+
 // IQC routes are mounted on the main management API root; authenticate them
 // before the permission gate so the virtual employee can use the same JWT
 // session as the WMS page.
@@ -11866,19 +12174,52 @@ app.get('/qms/iqc/inspection-levels', requirePermission('quality.view'), async (
   try { await iqcDefectLoopReady; const p=String(req.query.supplierCode||'').trim(), m=String(req.query.materialCode||'').trim(); const r=await query(`SELECT * FROM qms_iqc_inspection_states WHERE ($1='' OR supplier_code=$1) AND ($2='' OR material_code=$2) ORDER BY updated_at DESC LIMIT 500`,[p,m]); res.json(listEnvelope(r.rows)); }
   catch(e){ res.status(500).json(errorEnvelope('IQC_LEVEL_LIST_FAILED',e.message)); }
 });
-app.get('/qms/iqc/virtual-employee', requirePermission('quality.view'), async (_req, res) => { res.json(envelope({ ...IQC_VIRTUAL_EMPLOYEE, harness: IQC_VIRTUAL_HARNESS })); });
+const IQC_LLM_PROVIDER_OPTIONS = Object.freeze([
+  { value:'minimax',label:'MiniMax',defaultModel:'MiniMax-M2.7',credentialEnv:'MINIMAX_API_KEY' },
+  { value:'ollama',label:'Ollama (local)',defaultModel:'qwen2.5:7b',credentialEnv:null },
+  { value:'openai-compatible',label:'OpenAI-compatible',defaultModel:'gpt-4o-mini',credentialEnv:'OPENAI_API_KEY' },
+  { value:'hermes',label:'Hermes CLI',defaultModel:'configured-default',credentialEnv:null },
+  { value:'opencode',label:'OpenCode CLI',defaultModel:'configured-default',credentialEnv:null },
+  { value:'pi',label:'Pi CLI',defaultModel:'configured-default',credentialEnv:null },
+]);
+async function getIqcLlmConfig(){
+  await iqcDefectLoopReady;
+  const row=(await query(`SELECT employee_id,enabled,provider,model,base_url,credential_env,timeout_ms,updated_by,updated_at FROM qms_iqc_virtual_employee_config WHERE employee_id='IQC-VIRTUAL-01'`)).rows[0];
+  return { employeeId:row.employee_id,enabled:row.enabled,provider:row.provider,model:row.model,baseUrl:row.base_url||'',credentialEnv:row.credential_env||'',credentialConfigured:row.credential_env?Boolean(String(process.env[row.credential_env]||'').trim()):true,timeoutMs:row.timeout_ms,updatedBy:row.updated_by,updatedAt:row.updated_at };
+}
+app.get('/qms/iqc/virtual-employee', requirePermission('quality.view'), async (_req, res) => { try { const llmConfig=await getIqcLlmConfig(); res.json(envelope({ ...IQC_VIRTUAL_EMPLOYEE, provider:llmConfig.provider, model:llmConfig.model, enabled:llmConfig.enabled, llmConfig, providerOptions:IQC_LLM_PROVIDER_OPTIONS, harness: IQC_VIRTUAL_HARNESS })); } catch(e){res.status(500).json(errorEnvelope('IQC_AGENT_CONFIG_READ_FAILED',e.message));} });
+app.put('/qms/iqc/virtual-employee/llm-config', requirePermission('quality.execute'), async (req,res)=>{try{
+  await iqcDefectLoopReady;const p=req.body||{},provider=String(p.provider||'').toLowerCase(),option=IQC_LLM_PROVIDER_OPTIONS.find(item=>item.value===provider);
+  if(!option)return res.status(400).json(errorEnvelope('IQC_LLM_PROVIDER_INVALID','Unsupported IQC LLM provider'));
+  const model=String(p.model||option.defaultModel).trim().slice(0,160);if(!model)return res.status(400).json(errorEnvelope('IQC_LLM_MODEL_REQUIRED','model is required'));
+  const baseUrl=String(p.baseUrl||'').trim();if(baseUrl&&!/^https?:\/\/[^\s]+$/i.test(baseUrl))return res.status(400).json(errorEnvelope('IQC_LLM_BASE_URL_INVALID','baseUrl must be an http(s) URL'));
+  const credentialEnv=option.credentialEnv||null,timeoutMs=Math.min(300000,Math.max(5000,Number(p.timeoutMs||120000))),actor=req.user?.username||p.operator||'quality';
+  await query(`UPDATE qms_iqc_virtual_employee_config SET enabled=$1,provider=$2,model=$3,base_url=$4,credential_env=$5,timeout_ms=$6,updated_by=$7,updated_at=NOW() WHERE employee_id='IQC-VIRTUAL-01'`,[p.enabled!==false,provider,model,baseUrl||null,credentialEnv,timeoutMs,actor]);
+  res.json(mutateEnvelope({...(await getIqcLlmConfig()),providerOptions:IQC_LLM_PROVIDER_OPTIONS}));
+}catch(e){res.status(409).json(errorEnvelope('IQC_LLM_CONFIG_UPDATE_FAILED',e.message));}});
 async function getActiveIqcGuidance(guidanceKey = 'SMT_IQC') {
   await iqcDefectLoopReady;
   const r = await query(`SELECT id,file_name,version_no,workbook FROM qms_iqc_guidance_documents WHERE guidance_key=$1 AND status='ACTIVE' ORDER BY activated_at DESC LIMIT 1`, [guidanceKey]);
   if (!r.rows[0]) throw new Error('No ACTIVE IQC Excel guidance is configured');
   const workbook = r.rows[0].workbook || {};
+  const templateResult = await query(`SELECT id,file_name,version_no,workbook FROM qms_iqc_guidance_documents WHERE guidance_key=$1 AND status='ACTIVE' ORDER BY activated_at DESC LIMIT 1`, [`${guidanceKey}_TEMPLATE`]);
+  const templateDocument = templateResult.rows[0] || null;
+  const templateWorkbook = templateDocument?.workbook || {};
   const sheets = Array.isArray(workbook.sheets) ? workbook.sheets : [];
+  const templateSheets = Array.isArray(templateWorkbook.sheets) ? templateWorkbook.sheets : [];
   const allRows = sheets.flatMap(sheet => Array.isArray(sheet.rows) ? sheet.rows : []);
+  const templateRows = templateSheets.flatMap(sheet => Array.isArray(sheet.rows) ? sheet.rows : []);
   const text = allRows.flatMap(row => Array.isArray(row) ? row.map(cell => String(cell ?? '').trim()).filter(Boolean) : []);
+  const templateText = templateRows.flatMap(row => Array.isArray(row) ? row.map(cell => String(cell ?? '').trim()).filter(Boolean) : []);
   const samplingRows = [...(workbook.samplingRows || []), ...allRows.filter(row => Array.isArray(row) && row.some(cell => /\d+\s*[~～至-]\s*\d+/.test(String(cell ?? ''))))];
-  const inspectionItems = [...new Set([...(workbook.inspectionItems || []), ...text.filter(value => /包装|标签|外观|尺寸|规格|焊端|抽样|电气|电阻|电容|MSD|ESD|packing|label|visual|dimension|electrical|solder/i.test(value))])].slice(0, 100);
+  const approvedItemPattern = /合格供应商|出货检验报告|出货报告|标签内容核对|外箱完好|缩水|模具印|划伤|披锋|同色点|异色点|脏污|异物|色差|燃烧测试|盐雾测试|球击测试|球压测试|RoHS|无卤测试|第三方环保测试报告|焊端|电气测试|电阻测试|电容测试|MSD|ESD/i;
+  const headingPattern = /抽样方案|正常检验一次抽样方案|加严检验一次抽样方案|放宽检验一次抽样方案|特殊检验水平|一般检验水平|表示箭头|使用箭头|检验属性|检验内容\/标准|判定标准&测试结果/i;
+  const inspectionItems = [...new Set([
+    ...(templateWorkbook.inspectionItems || []),
+    ...templateText.filter(value => approvedItemPattern.test(value) && !headingPattern.test(value)),
+  ])].slice(0, 100);
   const levelRules = text.filter(value => /8\.2\.[1-5]|正常检查|加严检查|放宽检查|免检|暂停检查/.test(value));
-  return { ...workbook, sheets, samplingRows, inspectionItems, levelRules, fileName: `${r.rows[0].file_name} (${r.rows[0].version_no})`, guidanceDocumentId: r.rows[0].id, guidanceVersion: r.rows[0].version_no, learnedAt: new Date().toISOString() };
+  return { ...workbook, sheets: [...sheets, ...templateSheets], samplingRows, inspectionItems, levelRules, fileName: `${r.rows[0].file_name} (${r.rows[0].version_no})`, inspectionTemplateFileName: templateDocument ? `${templateDocument.file_name} (${templateDocument.version_no})` : null, guidanceDocumentId: r.rows[0].id, guidanceVersion: r.rows[0].version_no, learnedAt: new Date().toISOString() };
 }
 async function getIqcMaterialHistory(materialCode, supplierCode = '') {
   const r = await query(`SELECT supplier_code,material_code,lot_no,result,level_before,level_after,transition,inspection_date,source_file,abnormal_type,operator,created_at
@@ -11887,7 +12228,7 @@ async function getIqcMaterialHistory(materialCode, supplierCode = '') {
 }
 app.post('/qms/iqc/virtual-employee/learn-guidance', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const row = await rememberIqcMemory(query, { memoryType: 'AUTHORITATIVE_GUIDANCE', materialCode: req.body?.materialCode, sourceType: 'ACTIVE_IQC_EXCEL', sourceId: String(guidance.guidanceDocumentId), content: { fileName: guidance.fileName, version: guidance.guidanceVersion, sheets: guidance.sheets.map(sheet => sheet.name), samplingRows: guidance.samplingRows, inspectionItems: guidance.inspectionItems, levelRules: guidance.levelRules }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ guidance, memory: row })); } catch (e) { res.status(409).json(errorEnvelope('IQC_GUIDANCE_LEARN_FAILED', e.message)); } });
 app.post('/qms/iqc/virtual-employee/plan', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const history = await getIqcMaterialHistory(req.body?.materialCode, req.body?.supplierCode); const plan = await runIqcVirtualEmployee({ ...(req.body || {}), guidance, history }); res.json(mutateEnvelope({ ...plan, historyCount: history.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { res.status(409).json(errorEnvelope('IQC_VIRTUAL_PLAN_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/advice', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const memoryContext = await getIqcMemoryContext(query, req.body || {}); const advice = await askIqcLlm({ ...(req.body || {}), guidance, memoryContext }); await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', materialCode: req.body?.materialCode, lotNo: req.body?.lotNo, sourceType: 'VIRTUAL_EMPLOYEE_ADVICE', content: { question: req.body?.question || '', pageContext: String(req.body?.pageContext || '').slice(0, 2000), response: advice.output }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ ...advice, memoryCount: memoryContext.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { if (String(e.message || '').includes('No ACTIVE IQC')) return res.status(409).json(errorEnvelope('IQC_GUIDANCE_REQUIRED', e.message)); res.json(mutateEnvelope({ model: process.env.IQC_LLM_MODEL || 'qwen3.8:latest', output: { summary: 'IQC-VIRTUAL-01 已读取当前 IQC 指导文件，但本地 LLM 暂时不可用。请先录入真实检验结果；系统不会编造结果或自动放行。', requiredTests: [], missingEvidence: ['本地 LLM 响应或真实检验结果'], recommendation: 'WAIT_FOR_REAL_EVIDENCE', nextAction: '请录入 PDA/仪器/人工授权的真实检验结果后继续。', actionArguments: {}, humanApprovalRequired: true, blockedReason: String(e.message || 'LLM unavailable') }, degraded: true })); } });
+app.post('/qms/iqc/virtual-employee/advice', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const memoryContext = await getIqcMemoryContext(query, req.body || {}); const llmConfig=await getIqcLlmConfig(); if(!llmConfig.enabled)return res.status(409).json(errorEnvelope('IQC_VIRTUAL_EMPLOYEE_DISABLED','IQC virtual employee is disabled')); const advice = await askIqcLlm({ ...(req.body || {}), guidance, memoryContext, llmConfig }); await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', materialCode: req.body?.materialCode, lotNo: req.body?.lotNo, sourceType: 'VIRTUAL_EMPLOYEE_ADVICE', content: { question: req.body?.question || '', pageContext: String(req.body?.pageContext || '').slice(0, 2000), provider:advice.provider, model:advice.model, response: advice.output }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ ...advice, memoryCount: memoryContext.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { if (String(e.message || '').includes('No ACTIVE IQC')) return res.status(409).json(errorEnvelope('IQC_GUIDANCE_REQUIRED', e.message)); const llmConfig=await getIqcLlmConfig().catch(()=>null); res.json(mutateEnvelope({ provider:llmConfig?.provider||'minimax', model:llmConfig?.model||process.env.IQC_LLM_MODEL||'configured-model', output: { summary: 'IQC-VIRTUAL-01 cannot access the configured LLM. No inspection result or inventory release was generated.', requiredTests: [], missingEvidence: ['Configured LLM response or real inspection evidence'], recommendation: 'WAIT_FOR_REAL_EVIDENCE', nextAction: 'Check the selected provider configuration and enter real PDA/tester results.', actionArguments: {}, humanApprovalRequired: true, blockedReason: String(e.message || 'LLM unavailable') }, degraded: true })); } });
 const IQC_POWERSHELL_COMMANDS = Object.freeze({
   check_agent_runtime: "Get-Date; Get-Process -Name node,ollama -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,CPU",
   inspect_active_guidance: "Write-Output 'Use /qms/iqc/guidance-documents for ACTIVE Excel guidance; no filesystem mutation is permitted.'",
@@ -12061,7 +12402,7 @@ app.post("/wms/receiving/qr-bindings", requirePermission("wms.execute"), async (
   try{const resolved=await resolveReceivingMsl(lotNo,p.materialCode);const documentNo=`RCV-${Date.now()}-${Math.random().toString(36).slice(2,8).toUpperCase()}`;const qrPayload={schema:'ruijing.wms-receiving.v1',materialCode:resolved.materialCode,lotNo:resolved.lotNo,quantity:qty,msdLevel:resolved.msdLevel,documentNo,sourceType,warehouseCode:warehouse,locationCode:location,issuedBy:'WMS',issuedAt:new Date().toISOString()};const materialQr=`WMS-MAT|${resolved.materialCode}|${resolved.lotNo}|${qty}|${resolved.msdLevel}|${documentNo}`;if(materialQr.length>200||materialQr.includes('\n'))return res.status(422).json(errorEnvelope('QR_VALUE_TOO_LONG','material code or lot number is too long for the receiving QR'));const r=await query(`INSERT INTO wms_receiving_qr_registrations(material_lot_id,material_qr,pallet_qr,location_code,registered_by,document_no,source_type,warehouse_code,status,quantity,msd_level,qr_payload) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'IQC_PENDING',$9,$10,$11::jsonb) ON CONFLICT(material_lot_id) DO UPDATE SET material_qr=EXCLUDED.material_qr,pallet_qr=EXCLUDED.pallet_qr,location_code=EXCLUDED.location_code,registered_by=EXCLUDED.registered_by,document_no=EXCLUDED.document_no,source_type=EXCLUDED.source_type,warehouse_code=EXCLUDED.warehouse_code,status='IQC_PENDING',quantity=EXCLUDED.quantity,msd_level=EXCLUDED.msd_level,qr_payload=EXCLUDED.qr_payload,updated_at=NOW() RETURNING *`,[resolved.materialLotId,materialQr,String(p.sourcePalletCode||`PALLET-${lotNo}`),location,String(p.operator||req.user?.username||'operator'),documentNo,sourceType,warehouse,qty,resolved.msdLevel,JSON.stringify(qrPayload)]);await query("UPDATE material_lots SET iqc_status='pending',label_id=$2,updated_at=NOW() WHERE id=$1",[resolved.materialLotId,materialQr]);notifyIqcWaiting(r.rows[0],sourceType);res.status(201).json(mutateEnvelope({...r.rows[0],materialCode:resolved.materialCode,lotNo:resolved.lotNo,msdLevel:resolved.msdLevel,materialQr,qrPayload}));}catch(e){res.status(e.code==='MATERIAL_LOT_NOT_FOUND'?404:409).json(errorEnvelope(e.code||"QR_BINDING_FAILED",e.message,e.details));}
 });
 app.post("/wms/receiving/qr-bindings/:id/confirm", requirePermission("wms.execute"), async (req,res)=>{try{await iqcDefectLoopReady;const r=await query("UPDATE wms_receiving_qr_registrations SET status='IQC_PENDING',updated_at=NOW() WHERE material_lot_id=$1 AND status='CREATED' RETURNING *",[req.params.id]);if(!r.rows[0])return res.status(409).json(errorEnvelope("QR_INVALID_STATE","QR document is not in CREATED state"));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(500).json(errorEnvelope("QR_CONFIRM_FAILED",e.message));}});
-app.post("/wms/receiving/qr-bindings/:id/iqc-result", requirePermission("quality.execute"), async(req,res)=>{const result=String(req.body?.result||'').toUpperCase();if(!['PASS','FAIL'].includes(result))return res.status(400).json(errorEnvelope("IQC_RESULT_REQUIRED","result must be PASS or FAIL"));const client=await pgPool.connect();try{await iqcDefectLoopReady;await client.query('BEGIN');const qr=(await client.query("SELECT * FROM wms_receiving_qr_registrations WHERE material_lot_id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!qr||qr.status!=='IQC_PENDING')throw new Error('QR document is not waiting for IQC');const next=result==='PASS'?'RELEASED':'DEFECTIVE';const u=(await client.query("UPDATE wms_receiving_qr_registrations SET status=$1,updated_at=NOW() WHERE material_lot_id=$2 RETURNING *",[next,req.params.id])).rows[0];const lotStatus=result==='PASS'?'released':'rejected';await client.query("UPDATE material_lots SET iqc_status=$1,updated_at=NOW() WHERE id=$2",[lotStatus,req.params.id]);await client.query(`INSERT INTO inventory_transactions(tx_no,action,material_lot_id,qty,operator_id,tx_status,reference_type,reference_no) VALUES($1,$2,$3,$4,$5,'posted','IQC_RECEIVING',$6)`,[`IQC_RECEIVING_${Date.now()}`,result==='PASS'?'IQC_RELEASE':'IQC_REJECT',req.params.id,Number(qr.quantity||0),null,qr.document_no]);if(result==='FAIL'){await client.query(`INSERT INTO wms_iqc_defect_cases(case_no,material_lot_id,lot_no,source_pallet_code,defective_qty,defect_code,defect_description,source_qr_document_no,created_by) SELECT $1,id,lot_no,COALESCE($2,pallet_qr),COALESCE(quantity,received_qty),'IQC_NG','IQC initial inspection failed',document_no,$3 FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id WHERE q.material_lot_id=$4 ON CONFLICT(case_no) DO NOTHING`,[`NG-${qr.document_no}`,qr.pallet_qr,String(req.body?.inspector||req.user?.username||'iqc'),req.params.id]);}await client.query('COMMIT');res.json(mutateEnvelope({binding:u,destination:result==='PASS'?'FINISHED-GOODS':'DEFECTIVE'}));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("IQC_RESULT_FAILED",e.message));}finally{client.release();}});
+app.post("/wms/receiving/qr-bindings/:id/iqc-result", requirePermission("quality.execute"), async(req,res)=>{const result=String(req.body?.result||'').toUpperCase();if(!['PASS','FAIL'].includes(result))return res.status(400).json(errorEnvelope("IQC_RESULT_REQUIRED","result must be PASS or FAIL"));const client=await pgPool.connect();let supplierNotice=null;try{await iqcDefectLoopReady;await client.query('BEGIN');const qr=(await client.query("SELECT q.*,ml.lot_no,ml.po_no,m.code AS material_code,COALESCE(s.code,'') AS supplier_code FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id JOIN materials m ON m.id=ml.material_id LEFT JOIN suppliers s ON s.id=ml.supplier_id WHERE q.material_lot_id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!qr||qr.status!=='IQC_PENDING')throw new Error('QR document is not waiting for IQC');const next=result==='PASS'?'RELEASED':'DEFECTIVE';const u=(await client.query("UPDATE wms_receiving_qr_registrations SET status=$1,updated_at=NOW() WHERE material_lot_id=$2 RETURNING *",[next,req.params.id])).rows[0];const lotStatus=result==='PASS'?'released':'rejected';await client.query("UPDATE material_lots SET iqc_status=$1,updated_at=NOW() WHERE id=$2",[lotStatus,req.params.id]);await client.query(`INSERT INTO inventory_transactions(tx_no,action,material_lot_id,qty,operator_id,tx_status,reference_type,reference_no) VALUES($1,$2,$3,$4,$5,'posted','IQC_RECEIVING',$6)`,[`IQC_RECEIVING_${Date.now()}`,result==='PASS'?'IQC_RELEASE':'IQC_REJECT',req.params.id,Number(qr.quantity||0),null,qr.document_no]);if(result==='FAIL'){await client.query(`INSERT INTO wms_iqc_defect_cases(case_no,material_lot_id,lot_no,source_pallet_code,defective_qty,defect_code,defect_description,source_qr_document_no,created_by) SELECT $1,id,lot_no,COALESCE($2,pallet_qr),COALESCE(quantity,received_qty),$3,$4,document_no,$5 FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id WHERE q.material_lot_id=$6 ON CONFLICT(case_no) DO NOTHING`,[`NG-${qr.document_no}`,qr.pallet_qr,String(req.body?.defectCode||'IQC_NG'),String(req.body?.defectDescription||req.body?.reason||'IQC initial inspection failed'),String(req.body?.inspector||req.user?.username||'iqc'),req.params.id]);}supplierNotice={lotNo:qr.lot_no,poNo:qr.po_no,materialCode:qr.material_code,supplierCode:qr.supplier_code,quantity:Number(qr.quantity||0),documentNo:qr.document_no,result,reason:String(req.body?.defectDescription||req.body?.reason||req.body?.defectCode||''),evidenceImages:Array.isArray(req.body?.evidenceImages)?req.body.evidenceImages:[],inspector:String(req.body?.inspector||req.user?.username||'iqc')};await client.query('COMMIT');const supplierSync=await publishSupplierIqcResult(supplierNotice,req).catch(error=>({synced:false,error:error.message}));res.json(mutateEnvelope({binding:u,destination:result==='PASS'?'FINISHED-GOODS':'DEFECTIVE',supplierCommunication:supplierSync}));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("IQC_RESULT_FAILED",e.message));}finally{client.release();}});
 app.get("/quality/iqc-defect-cases", requirePermission("quality.view"), async(_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT c.*,COALESCE(SUM(r.removed_qty),0) removed_qty,GREATEST(c.defective_qty-COALESCE(SUM(r.removed_qty),0),0) remaining_on_pallet FROM wms_iqc_defect_cases c LEFT JOIN wms_iqc_pallet_removals r ON r.defect_case_id=c.id GROUP BY c.id ORDER BY c.created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope("DEFECT_LIST_FAILED",e.message));}});
 app.post("/quality/iqc-defect-cases/:id/pallet-removal", requirePermission("wms.execute"), async(req,res)=>{const client=await pgPool.connect();try{await iqcDefectLoopReady;await client.query('BEGIN');const c=(await client.query("SELECT * FROM wms_iqc_defect_cases WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];if(!c||c.status!=='PALLET_REMOVAL_PENDING')throw new Error('defect case is not awaiting pallet removal');await client.query("INSERT INTO wms_iqc_pallet_removals(defect_case_id,pallet_code,removed_qty,removed_by) VALUES($1,$2,$3,$4)",[req.params.id,req.body?.palletCode||c.source_pallet_code,req.body?.removedQty||c.defective_qty,String(req.body?.operator||req.user?.username||'operator')]);const total=(await client.query("SELECT COALESCE(SUM(removed_qty),0) n FROM wms_iqc_pallet_removals WHERE defect_case_id=$1",[req.params.id])).rows[0].n;if(Number(total)<Number(c.defective_qty))throw new Error(`pallet removal incomplete: ${total}/${c.defective_qty}`);const u=(await client.query("UPDATE wms_iqc_defect_cases SET status='IN_MRB',pallet_removed_at=NOW() WHERE id=$1 RETURNING *",[req.params.id])).rows[0];await client.query("INSERT INTO wms_iqc_mrb_tasks(defect_case_id,task_no) VALUES($1,$2) ON CONFLICT(defect_case_id) DO NOTHING",[req.params.id,`MRB-${c.case_no}`]);await client.query('COMMIT');res.json(mutateEnvelope(u));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope("PALLET_REMOVAL_FAILED",e.message));}finally{client.release();}});
 app.get("/quality/iqc-mrb-tasks", requirePermission("quality.view"), async(_req,res)=>{try{await iqcDefectLoopReady;const r=await query("SELECT t.*,c.case_no,c.lot_no,c.defective_qty,c.pallet_removed_at FROM wms_iqc_mrb_tasks t JOIN wms_iqc_defect_cases c ON c.id=t.defect_case_id WHERE t.status IN('OPEN','OVERDUE','IN_PROGRESS') ORDER BY t.due_at");res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope("MRB_LIST_FAILED",e.message));}});
@@ -14674,6 +15015,10 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
       "SELECT severity, SUM(defect_count) as total FROM iqc_defect_records WHERE inspection_id=? GROUP BY severity",
       [req.params.id]
     );
+    const [defectDetails] = await client.query(
+      "SELECT defect_type,defect_location,defect_count,severity,photo_url FROM iqc_defect_records WHERE inspection_id=? ORDER BY id",
+      [req.params.id]
+    );
     let dc = { critical: 0, major: 0, minor: 0 };
     for (const d of defects) dc[d.severity] = parseInt(d.total) || 0;
     // AQL 判定
@@ -14691,7 +15036,17 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
     const incoming_status = result === 'pass' ? 'approved' : (result === 'conditional_pass' ? 'pending' : 'pending');
     await client.query("UPDATE wms_incoming_records SET iqc_status=? WHERE id=?", [incoming_status, i.incoming_record_id]);
     const [updated] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
-    res.json({ ...updated[0], defects_summary: dc });
+    const ngQuantity=defectDetails.reduce((sum,row)=>sum+Number(row.defect_count||0),0);
+    const supplierCommunication=await publishSupplierIqcResult({
+      lotNo:i.lot_no,materialCode:i.material_code,supplierCode:i.supplier_code,
+      quantity:Number(i.batch_size||0),expectedQuantity:Number(i.batch_size||0),receivedQuantity:Number(i.batch_size||0),
+      passedQuantity:Math.max(0,Number(i.batch_size||0)-ngQuantity),ngQuantity,
+      result:result==='pass'?'PASS':result==='conditional_pass'?'HOLD':'FAIL',
+      reason:defectDetails.map(row=>[row.defect_type,row.defect_location,row.severity].filter(Boolean).join(" / ")).join("; "),
+      evidenceImages:defectDetails.map(row=>row.photo_url).filter(Boolean),
+      documentNo:"IQC-"+req.params.id,inspector:i.inspector_id||req.user?.username||'iqc'
+    },req).catch(error=>({synced:false,error:error.message}));
+    res.json({ ...updated[0], defects_summary: dc, supplierCommunication });
   } catch (err) {
     res.status(500).json({ error: "SERVER_ERROR", message: err.message });
   } finally { client.release(); }
@@ -18047,6 +18402,20 @@ api.get("/pda/management/overview", requirePermission("pda.view"), async (req, r
     const workOrders = (await query(`SELECT wo.code, p.code AS product_code, COALESCE(p.revision,'') AS product_revision, wo.status, wo.completed_qty AS loaded_quantity, wo.planned_qty AS required_quantity FROM work_orders wo JOIN products p ON p.id=wo.product_id JOIN production_lines pl ON pl.id=wo.line_id WHERE ${workWhere.join(" AND ")} ORDER BY wo.created_at DESC LIMIT 100`, workParams)).rows;
     res.json(envelope({ process_domain: "manual-line", generated_at: new Date().toISOString(), mes_online: stations.some((row) => row.status === "ONLINE"), stations, work_orders: workOrders }));
   } catch (error) { res.status(500).json(errorEnvelope("PDA_MANAGEMENT_OVERVIEW_FAILED", error.message)); }
+});
+
+api.get("/procurement/pos/:id/incoming-logistics", authenticateJWT, requirePermission("procurement.view"), async (req, res) => {
+  try {
+    await supplierManagementReady;
+    const po=(await query(`SELECT id,po_no,supplier_id FROM purchase_order_headers WHERE id=$1`,[req.params.id])).rows[0];
+    if(!po)return res.status(404).json(errorEnvelope("NOT_FOUND","purchase order not found"));
+    const shipments=(await query(`SELECT id,asn,po_no AS "poNo",expected_arrival AS "eta",received_at AS "ata",shipment_type AS "shipmentType",status,logistics_payload AS "logisticsPayload" FROM supplier_shipments WHERE po_no=$1 AND supplier_id=$2 ORDER BY expected_arrival DESC,created_at DESC`,[po.po_no,po.supplier_id])).rows;
+    for(const shipment of shipments)shipment.lines=(await query(`SELECT id,material_code AS "materialCode",material_name AS "materialName",lot_no AS "lotNo",production_date AS "productionDate",quantity,per_box_quantity AS "perBoxQuantity",uom,msl FROM supplier_shipment_lines WHERE shipment_id=$1 ORDER BY id`,[shipment.id])).rows;
+    const manifests=(await query(`SELECT id,manifest_key AS "manifestKey",material_code AS "materialCode",lot_no AS "lotNo",total_quantity AS "totalQuantity",unit,outer_box_count AS "outerBoxCount",sub_box_count AS "subBoxCount",status,registered_at AS "registeredAt" FROM supplier_label_manifests WHERE po_no=$1 AND supplier_id=$2 ORDER BY registered_at DESC`,[po.po_no,po.supplier_id])).rows;
+    const manifestIds=manifests.map(x=>x.id);
+    const qrCodes=manifestIds.length?(await query(`SELECT manifest_id AS "manifestId",qr_value AS "qrValue",serial_no AS "serialNo",quantity,package_level AS "packageLevel",parent_serial_no AS "parentSerialNo",pallet_qr AS "palletQr",receiving_status AS "receivingStatus",scanned_at AS "scannedAt" FROM supplier_label_manifest_items WHERE manifest_id=ANY($1::bigint[]) ORDER BY manifest_id,package_level,serial_no`,[manifestIds])).rows:[];
+    res.json(envelope({poId:po.id,poNo:po.po_no,shipments,manifests,qrCodes}));
+  } catch (err) { console.error("GET /procurement/pos/:id/incoming-logistics:",err.message); res.status(500).json(errorEnvelope("PO_INCOMING_LOGISTICS_FAILED",err.message)); }
 });
 
 api.get("/procurement/pos/:id/closure", authenticateJWT, requirePermission("procurement.view"), async (req, res) => {
@@ -23955,6 +24324,7 @@ const supplierManagementReady = (async()=>{
     lot_no varchar(120) NOT NULL, production_date date NOT NULL, quantity numeric(18,4) NOT NULL,
     per_box_quantity numeric(18,4) NOT NULL, uom varchar(30) NOT NULL DEFAULT 'PCS', msl varchar(30),
     created_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`ALTER TABLE supplier_shipments ADD COLUMN IF NOT EXISTS logistics_payload jsonb NOT NULL DEFAULT '{}'::jsonb`);
   await query(`CREATE TABLE IF NOT EXISTS supplier_shipment_boxes(
     id bigserial PRIMARY KEY, shipment_line_id varchar(80) NOT NULL REFERENCES supplier_shipment_lines(id) ON DELETE CASCADE,
     serial_no varchar(80) NOT NULL, qr_value text NOT NULL UNIQUE, box_quantity numeric(18,4) NOT NULL,
@@ -24097,7 +24467,7 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
     let importStatus="IMPORTED",errorMessage=null;try{
       if(event.event_type==="SHIPMENT_CREATED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
-        await query(`INSERT INTO supplier_shipments(id,supplier_id,asn,po_no,expected_arrival,shipment_type,status,submitted_at,source_updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $7='SUBMITTED' THEN now() END,now()) ON CONFLICT(id) DO UPDATE SET po_no=excluded.po_no,expected_arrival=excluded.expected_arrival,shipment_type=excluded.shipment_type,status=excluded.status,source_updated_at=now(),updated_at=now()`,[p.id,supplier.id,p.asn,p.po,p.eta,p.type,p.status]);
+        await query(`INSERT INTO supplier_shipments(id,supplier_id,asn,po_no,expected_arrival,shipment_type,status,submitted_at,source_updated_at,logistics_payload) VALUES($1,$2,$3,$4,$5,$6,$7,CASE WHEN $7='SUBMITTED' THEN now() END,now(),$8::jsonb) ON CONFLICT(id) DO UPDATE SET po_no=excluded.po_no,expected_arrival=excluded.expected_arrival,shipment_type=excluded.shipment_type,status=excluded.status,logistics_payload=excluded.logistics_payload,source_updated_at=now(),updated_at=now()`,[p.id,supplier.id,p.asn,p.po,p.eta,p.type,p.status,JSON.stringify({carrierName:p.carrier_name||null,vehicleNo:p.vehicle_no||null,driverName:p.driver_name||null,driverPhone:p.driver_phone||null,trackingNo:p.tracking_no||null,palletCount:Number(p.pallet_count||0),totalWeightKg:Number(p.total_weight_kg||0),pallets:Array.isArray(p.pallets)?p.pallets:[],qrCodes:Array.isArray(p.qr_codes)?p.qr_codes:[]})]);
         for(const line of p.lines||[])await query(`INSERT INTO supplier_shipment_lines(id,shipment_id,material_code,material_name,lot_no,production_date,quantity,per_box_quantity,uom) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO NOTHING`,[line.id,p.id,line.materialCode,line.materialName,line.lot,line.productionDate,line.qty,line.perBox,line.unit||"PCS"]);
       }else if(event.event_type==="PO_RESPONDED"){
         const p=event.payload;const updated=await query(`UPDATE purchase_order_headers SET supplier_response_status=$2,supplier_expected_delivery=$3,supplier_response_note=$4,supplier_expected_boxes=$5,supplier_expected_pallets=$6,supplier_execution_contact=$7,supplier_execution_email=$8,supplier_delivery_status=$9,carrier_name=$10,driver_name=$11,driver_phone=$12,vehicle_no=$13,tracking_no=$14,acknowledged_at=now(),status=CASE WHEN $2='ACCEPTED' THEN 'acknowledged' ELSE status END,updated_at=now() WHERE po_no=$1 RETURNING supplier_id`,[p.po_no,String(p.decision||"").toUpperCase(),p.expected_delivery_date||null,p.response_note||null,Number(p.expected_boxes||0),Number(p.expected_pallets||0),p.supplier_contact_name||null,p.supplier_contact_email||null,String(p.delivery_status||'PLANNED').toUpperCase(),p.carrier_name||null,p.driver_name||null,p.driver_phone||null,p.vehicle_no||null,p.tracking_no||null]);
@@ -24111,10 +24481,14 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
       }else if(event.event_type==="PO_ADJUSTMENT_REQUESTED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
         await query(`INSERT INTO supplier_po_adjustment_requests(request_no,supplier_id,po_no,adjustment_type,line_no,current_value,proposed_value,reason,status,requested_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9,'PENDING'),to_timestamp($10)) ON CONFLICT(request_no) DO NOTHING`,[p.request_no,supplier.id,p.po_no,p.adjustment_type,p.line_no||null,p.current_value||null,p.proposed_value,p.reason,p.status||'PENDING',p.created_at]);
-      }else if(event.event_type==="LABEL_MANIFEST_REGISTERED"){
+      }else if(event.event_type==="LABEL_MANIFEST_REGISTERED"||event.event_type==="SUPPLIER_PO_QRS_REGISTERED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
+        if(!p.po_no)throw new Error("supplier QR registration requires po_no");
+        const po=(await query(`SELECT poh.id FROM purchase_order_headers poh WHERE poh.po_no=$1 AND poh.supplier_id=$2`,[p.po_no,supplier.id])).rows[0];if(!po)throw new Error(`purchase order ${p.po_no} is not registered for supplier ${event.supplier_code}`);
+        const poMaterial=(await query(`SELECT 1 FROM purchase_order_lines WHERE po_header_id=$1 AND UPPER(material_code)=UPPER($2) LIMIT 1`,[po.id,p.material_code])).rowCount;if(!poMaterial)throw new Error(`material ${p.material_code} is not registered on purchase order ${p.po_no}`);
         const manifest=(await query(`INSERT INTO supplier_label_manifests(manifest_key,supplier_id,po_no,material_code,lot_no,total_quantity,unit,outer_box_count,sub_box_count,status,registered_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'PRE_RECEIVING_UNCONFIRMED',to_timestamp($10)) ON CONFLICT(manifest_key) DO UPDATE SET total_quantity=excluded.total_quantity,outer_box_count=excluded.outer_box_count,sub_box_count=excluded.sub_box_count,status='PRE_RECEIVING_UNCONFIRMED',updated_at=now() RETURNING id`,[p.manifest_key,supplier.id,p.po_no||null,p.material_code,p.lot_no,p.total_quantity,p.unit||'PCS',p.outer_box_count,p.sub_box_count||0,p.registered_at])).rows[0];
-        for(const label of p.labels||[])await query(`INSERT INTO supplier_label_manifest_items(manifest_id,qr_value,serial_no,quantity,package_level,parent_serial_no,pallet_qr) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(qr_value) DO UPDATE SET quantity=excluded.quantity,package_level=excluded.package_level,parent_serial_no=excluded.parent_serial_no,pallet_qr=excluded.pallet_qr`,[manifest.id,label.qr,label.serial,label.qty,label.level,label.parent_serial||null,label.pallet_qr||null]);
+        const printedQrs=p.printed_qrs||p.labels||[];if(!printedQrs.length)throw new Error(`no printed QR records supplied for purchase order ${p.po_no}`);
+        for(const label of printedQrs){const owner=(await query(`SELECT manifest_id FROM supplier_label_manifest_items WHERE qr_value=$1`,[label.qr])).rows[0];if(owner&&Number(owner.manifest_id)!==Number(manifest.id))throw new Error(`QR ${label.qr} is already registered to another manifest`);await query(`INSERT INTO supplier_label_manifest_items(manifest_id,qr_value,serial_no,quantity,package_level,parent_serial_no,pallet_qr) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(qr_value) DO UPDATE SET quantity=excluded.quantity,package_level=excluded.package_level,parent_serial_no=excluded.parent_serial_no,pallet_qr=excluded.pallet_qr`,[manifest.id,label.qr,label.serial,label.qty,label.level,label.parent_serial||null,label.pallet_qr||null]);}
       }
     }catch(inner){importStatus="ERROR";errorMessage=inner.message;}
     await query(`INSERT INTO supplier_portal_sync_events(event_id,remote_sequence,supplier_code,event_type,entity_type,entity_id,payload,import_status,error_message,remote_created_at) VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,to_timestamp($10))`,[event.event_id,event.id,event.supplier_code,event.event_type,event.entity_type,event.entity_id,JSON.stringify(event.payload),importStatus,errorMessage,event.created_at]);
@@ -24125,9 +24499,27 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
 
 app.get("/pmc/supplier-supply-signals",requirePermission("pmc.view"),async(req,res)=>{try{await supplierManagementReady;const rows=await query(`SELECT p.*,s.code AS supplier_code,s.name_zh AS supplier_name FROM pmc_supplier_supply_signals p LEFT JOIN suppliers s ON s.id=p.supplier_id ORDER BY CASE p.risk_level WHEN 'HIGH' THEN 0 WHEN 'MEDIUM' THEN 1 ELSE 2 END,p.promised_date NULLS LAST`);res.json(listEnvelope(rows.rows));}catch(e){res.status(500).json(errorEnvelope("PMC_SUPPLY_SIGNALS_FAILED",e.message));}});
 
+async function publishSupplierIqcResult(notice,req){
+  await supplierManagementReady;
+  const shipment=(await query(`SELECT sh.*,s.code supplier_code FROM supplier_shipments sh JOIN suppliers s ON s.id=sh.supplier_id LEFT JOIN supplier_shipment_lines sl ON sl.shipment_id=sh.id WHERE ($1<>'' AND UPPER(sl.lot_no)=UPPER($1)) OR ($2<>'' AND sh.po_no=$2) ORDER BY CASE WHEN UPPER(COALESCE(sl.lot_no,''))=UPPER($1) THEN 0 ELSE 1 END,sh.created_at DESC LIMIT 1`,[String(notice.lotNo||''),String(notice.poNo||'')])).rows[0];
+  if(!shipment)return {synced:false,reason:"No supplier ASN matched this PO/lot"};
+  const passedQuantity=Number(notice.passedQuantity??(notice.result==='PASS'?notice.quantity:0));
+  const ngQuantity=Number(notice.ngQuantity??(notice.result==='FAIL'?notice.quantity:0));
+  const expectedQuantity=Number(notice.expectedQuantity??notice.quantity??0),receivedQuantity=Number(notice.receivedQuantity??notice.quantity??0),shortageQuantity=Math.max(0,expectedQuantity-receivedQuantity),excessQuantity=Math.max(0,receivedQuantity-expectedQuantity);
+  const iqcStatus=notice.result==='PASS'?'IQC_PASSED':notice.result==='HOLD'?'IQC_HOLD':'IQC_REJECTED';
+  const feedback={status:iqcStatus,expected_boxes:Number(notice.expectedBoxes||0),scanned_boxes:Number(notice.scannedBoxes||0),expected_quantity:expectedQuantity,received_quantity:receivedQuantity,accepted_quantity:passedQuantity,hold_quantity:notice.result==='HOLD'?ngQuantity:0,rejected_quantity:notice.result==='HOLD'?0:ngQuantity,passed_sns:notice.passedSns||[],ng_sns:notice.ngSns||[],missing_sns:notice.missingSns||[],unexpected_sns:notice.unexpectedSns||[],shortage_quantity:shortageQuantity,excess_quantity:excessQuantity,discrepancy_code:ngQuantity>0?'IQC_NG':shortageQuantity>0?'SHORT_RECEIPT':excessQuantity>0?'OVER_RECEIPT':null,discrepancy_note:notice.discrepancyNote||null,rejection_reason:notice.reason||null,affected_box_qrs:[...(notice.ngSns||[]),...(notice.missingSns||[]),...(notice.unexpectedSns||[])],evidence_images:notice.evidenceImages||[],inspection_reference:notice.documentNo||null,inspector_name:notice.inspector||null,iqc_status:iqcStatus,inspected_at:new Date().toISOString()};
+  await query("UPDATE supplier_shipments SET status=$2,received_at=coalesce(received_at,now()),updated_at=now() WHERE id=$1",[shipment.id,feedback.status]);
+  await supplierEvent(req,shipment.supplier_id,"IQC_RESULT_PUBLISHED",{shipmentId:shipment.id,lotNo:notice.lotNo,materialCode:notice.materialCode,...feedback});
+  const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;
+  if(!base||!key)return {synced:false,localUpdated:true,shipmentId:shipment.id,reason:"portal sync not configured"};
+  const remote=await fetch(`${base}/sync/shipments/${encodeURIComponent(shipment.id)}/receiving-status`,{method:"PUT",headers:{"Content-Type":"application/json","x-sync-key":key},body:JSON.stringify(feedback)});
+  if(!remote.ok)throw new Error(`portal returned ${remote.status}: ${await remote.text()}`);
+  return {synced:true,shipmentId:shipment.id};
+}
+
 app.put("/wms/supplier-portal/shipments/:shipmentId/receiving-feedback",requirePermission("wms.execute"),async(req,res)=>{try{
   await supplierManagementReady;const shipment=(await query(`SELECT sh.*,s.code supplier_code FROM supplier_shipments sh JOIN suppliers s ON s.id=sh.supplier_id WHERE sh.id=$1`,[req.params.shipmentId])).rows[0];if(!shipment)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier shipment not found"));
-  const p=req.body?.payload??req.body??{},feedback={status:String(p.status||"RECEIVING").toUpperCase(),expected_boxes:Number(p.expectedBoxes||0),scanned_boxes:Number(p.scannedBoxes||0),expected_quantity:Number(p.expectedQuantity||0),received_quantity:Number(p.receivedQuantity||0),accepted_quantity:Number(p.acceptedQuantity||0),hold_quantity:Number(p.holdQuantity||0),rejected_quantity:Number(p.rejectedQuantity||0),discrepancy_code:p.discrepancyCode||null,discrepancy_note:p.discrepancyNote||null,rejection_reason:p.rejectionReason||null,affected_box_qrs:p.affectedBoxQrs||[],evidence_images:p.evidenceImages||[],inspection_reference:p.inspectionReference||null,inspector_name:p.inspectorName||req.user?.displayName||null,iqc_status:p.iqcStatus||null,received_at:p.receivedAt||null,inspected_at:p.inspectedAt||null};
+  const p=req.body?.payload??req.body??{},feedback={status:String(p.status||"RECEIVING").toUpperCase(),expected_boxes:Number(p.expectedBoxes||0),scanned_boxes:Number(p.scannedBoxes||0),expected_quantity:Number(p.expectedQuantity||0),received_quantity:Number(p.receivedQuantity||0),accepted_quantity:Number(p.acceptedQuantity||0),hold_quantity:Number(p.holdQuantity||0),rejected_quantity:Number(p.rejectedQuantity||0),passed_sns:p.passedSns||p.passed_sns||[],ng_sns:p.ngSns||p.ng_sns||[],missing_sns:p.missingSns||p.missing_sns||[],unexpected_sns:p.unexpectedSns||p.unexpected_sns||[],shortage_quantity:Number(p.shortageQuantity||p.shortage_quantity||0),excess_quantity:Number(p.excessQuantity||p.excess_quantity||0),discrepancy_code:p.discrepancyCode||null,discrepancy_note:p.discrepancyNote||null,rejection_reason:p.rejectionReason||null,affected_box_qrs:p.affectedBoxQrs||[],evidence_images:p.evidenceImages||[],inspection_reference:p.inspectionReference||null,inspector_name:p.inspectorName||req.user?.displayName||null,iqc_status:p.iqcStatus||null,received_at:p.receivedAt||null,inspected_at:p.inspectedAt||null};
   await query("UPDATE supplier_shipments SET status=$2,received_at=CASE WHEN $2 IN ('RECEIVED','IQC_PENDING','IQC_PASSED','IQC_HOLD','IQC_REJECTED') THEN coalesce(received_at,now()) ELSE received_at END,updated_at=now() WHERE id=$1",[shipment.id,feedback.status]);
   await supplierEvent(req,shipment.supplier_id,"RECEIVING_FEEDBACK_PUBLISHED",{shipmentId:shipment.id,...feedback});
   const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(202).json(mutateEnvelope({shipmentId:shipment.id,localUpdated:true,remoteSynced:false,reason:"portal sync not configured"}));

@@ -597,6 +597,27 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MutationEnvelope"
+  /procurement/pos/{id}/incoming-logistics:
+    get:
+      tags: [Procurement]
+      summary: Get PO incoming ASN, pallet logistics, shipment lines, and registered QR hierarchy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: PO incoming logistics detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DataEnvelope"
+        "404":
+          description: Purchase order not found
   /erp/products:
     get:
       tags: [ERP]

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
-import { procurementApi, type PoAdjustmentRequest, type PoClosure, type PurchaseOrderHeader } from "../api/procurement";
+import { procurementApi, type PoAdjustmentRequest, type PoClosure, type PoIncomingLogistics, type PurchaseOrderHeader } from "../api/procurement";
+import { PoManagementEmployeeCommunication } from "./PoManagementEmployeeCommunication";
+import { t } from "../i18n";
 
 const gateLabels: Record<keyof PoClosure["gates"], string> = {
   supplierAcknowledged: "供应商已确认",
@@ -10,9 +12,10 @@ const gateLabels: Record<keyof PoClosure["gates"], string> = {
   paymentSettled: "财务已结清"
 };
 
-export function ProcurementPoList({ locale: _locale, canManage = false }: { locale: Locale; canManage?: boolean }) {
+export function ProcurementPoList({ locale, canManage = false }: { locale: Locale; canManage?: boolean }) {
   const [items, setItems] = useState<PurchaseOrderHeader[]>([]);
   const [selected, setSelected] = useState<PoClosure | null>(null);
+  const [incoming, setIncoming] = useState<PoIncomingLogistics | null>(null);
   const [adjustments, setAdjustments] = useState<PoAdjustmentRequest[]>([]);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,12 +28,13 @@ export function ProcurementPoList({ locale: _locale, canManage = false }: { loca
   };
   const inspect = async (id: number) => {
     setBusy(true); setMessage("");
-    try { setSelected(await procurementApi.getPoClosure(id)); } catch (e) { setMessage(e instanceof Error ? e.message : String(e)); }
+    try { const [closure, logistics] = await Promise.all([procurementApi.getPoClosure(id), procurementApi.getPoIncomingLogistics(id)]); setSelected(closure); setIncoming(logistics); } catch (e) { setMessage(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
 
   return (
     <div className="screen-stack">
+      <PoManagementEmployeeCommunication locale={locale} items={items} adjustments={adjustments} />
       {message && <div className="surface-panel" style={{ padding: 12 }}>{message}</div>}
       <div className="surface-panel" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -77,6 +81,19 @@ export function ProcurementPoList({ locale: _locale, canManage = false }: { loca
           {canManage && <button style={{ marginTop: 12 }} disabled={busy || !selected.canClose} onClick={() => act(() => procurementApi.closePo(selected.po.id), "采购订单已闭环关闭")}>确认关闭采购订单</button>}
         </div>
       )}
+      {selected && incoming && <div className="surface-panel" style={{ padding: 16 }}>
+        <div className="toolbar" style={{ justifyContent: "space-between", marginBottom: 12 }}><div><strong>{t("poGuide.incomingTitle", locale)} · {incoming.poNo}</strong><div style={{ color: "var(--muted)", fontSize: 12 }}>{t("poGuide.incomingHint", locale)}</div></div><span className="badge tone-info">ASN {incoming.shipments.length} · QR {incoming.qrCodes.length}</span></div>
+        {!incoming.shipments.length ? <div role="alert" style={{ padding: 12, borderRadius: 8, background: "#fff7ed", color: "#9a3412" }}>{t("poGuide.noAsn", locale)}</div> : incoming.shipments.map(shipment => {
+          const logistics=shipment.logisticsPayload||{}, pallets=Array.isArray(logistics.pallets)?logistics.pallets:[];
+          return <div key={shipment.id} style={{ border: "1px solid var(--border)", borderRadius: 10, padding: 12, marginBottom: 12 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}><strong>ASN {shipment.asn}</strong><span className="badge tone-info">{shipment.status}</span><span>ETA: {shipment.eta||"—"}</span><span>ATA: {shipment.ata||"—"}</span><span>{t("poGuide.carrier", locale)}: {logistics.carrierName||"—"}</span><span>{t("poGuide.vehicle", locale)}: {logistics.vehicleNo||"—"}</span></div>
+            <div className="metric-grid" style={{ marginTop: 10 }}><div className="stat-card"><span className="stat-label">{t("poGuide.palletCount", locale)}</span><strong>{logistics.palletCount??pallets.length}</strong></div><div className="stat-card"><span className="stat-label">{t("poGuide.totalWeight", locale)}</span><strong>{logistics.totalWeightKg??0} kg</strong></div><div className="stat-card"><span className="stat-label">{t("poGuide.lines", locale)}</span><strong>{shipment.lines.length}</strong></div><div className="stat-card"><span className="stat-label">{t("poGuide.registeredQr", locale)}</span><strong>{incoming.qrCodes.length}</strong></div></div>
+            {!pallets.length && <div role="alert" style={{ marginTop: 10, padding: 9, background: "#fff7ed", color: "#9a3412", borderRadius: 7 }}>{t("poGuide.missingPalletData", locale)}</div>}
+            {!!pallets.length && <div style={{ overflowX: "auto", marginTop: 10 }}><table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr>{[t("poGuide.palletQr",locale),"L × W × H (mm)",t("poGuide.weight",locale)].map(x=><th key={x} style={{ textAlign:"left",padding:8,borderBottom:"1px solid var(--border)" }}>{x}</th>)}</tr></thead><tbody>{pallets.map((p,index)=><tr key={p.palletQr||index}><td style={{padding:8,fontFamily:"monospace"}}>{p.palletQr||"—"}</td><td style={{padding:8}}>{p.lengthMm||"—"} × {p.widthMm||"—"} × {p.heightMm||"—"}</td><td style={{padding:8}}>{p.weightKg??"—"} kg</td></tr>)}</tbody></table></div>}
+          </div>;
+        })}
+        <details><summary style={{ cursor:"pointer",fontWeight:800 }}>{t("poGuide.allQr", locale)} ({incoming.qrCodes.length})</summary><div style={{ maxHeight:320,overflow:"auto",marginTop:8 }}><table style={{ width:"100%",borderCollapse:"collapse" }}><thead><tr>{[t("poGuide.level",locale),t("poGuide.serial",locale),t("poGuide.qrValue",locale),t("poGuide.palletQr",locale),t("poGuide.scanStatus",locale)].map(x=><th key={x} style={{textAlign:"left",padding:8,borderBottom:"1px solid var(--border)"}}>{x}</th>)}</tr></thead><tbody>{incoming.qrCodes.map(q=><tr key={q.qrValue}><td style={{padding:8}}>{q.packageLevel}</td><td style={{padding:8}}>{q.serialNo}</td><td style={{padding:8,fontFamily:"monospace"}}>{q.qrValue}</td><td style={{padding:8,fontFamily:"monospace"}}>{q.palletQr||"—"}</td><td style={{padding:8}}>{q.receivingStatus}</td></tr>)}</tbody></table></div></details>
+      </div>}
     </div>
   );
 }
