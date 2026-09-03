@@ -1,0 +1,61 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OA 受控文档分类审批路线",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "docs/architecture/oa-document-approval-routes.html"
+  },
+  "lanes": [
+    { "id": "intake", "label": "OA 文控员工" },
+    { "id": "operations", "label": "业务与生产文件" },
+    { "id": "governance", "label": "治理与法定文件" },
+    { "id": "control", "label": "批准、发布与执行", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "register", "label": "导入登记", "fromCol": 0, "toCol": 1 },
+    { "id": "review", "label": "分级评审", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "release", "label": "受控发布", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["upload", "classify", "procRoute", "publish"],
+  "semanticChecks": {
+    "allowedRoots": ["upload"],
+    "allowedTerminals": ["publish", "returnDraft", "wmsRoute", "qualityRoute", "hrRoute", "financeRoute", "ehsRoute", "aiRoute"],
+    "requiredPaths": [
+      { "from": "upload", "to": "publish" },
+      { "from": "returnDraft", "to": "upload" }
+    ]
+  },
+  "nodes": [
+    { "id": "upload", "lane": "intake", "col": 0, "type": "frontend", "label": "导入文档", "sublabel": "文件 + 元数据", "width": 138 },
+    { "id": "classify", "lane": "intake", "col": 1, "type": "backend", "label": "分类与版本登记", "sublabel": "SHA-256 去重", "width": 148 },
+    { "id": "procRoute", "lane": "operations", "col": 2, "type": "security", "label": "采购 / 合同", "sublabel": "采购主管 → 财务 → 厂长", "width": 168 },
+    { "id": "wmsRoute", "lane": "operations", "col": 3, "type": "security", "label": "WMS / 库存 SOP", "sublabel": "仓库主管 → 质量 → 运营 → 发布", "width": 178 },
+    { "id": "qualityRoute", "lane": "operations", "col": 4, "type": "security", "label": "IQC / SMT 质量标准", "sublabel": "质量工程师 → 质量经理 → 厂长 → 发布", "width": 190 },
+    { "id": "hrRoute", "lane": "governance", "col": 2, "type": "security", "label": "HR 制度", "sublabel": "HR 主管 → 合规 → 厂长 → 发布", "width": 178 },
+    { "id": "financeRoute", "lane": "governance", "col": 3, "type": "security", "label": "财务 / 税务制度", "sublabel": "财务经理 → 法务/合规 → 厂长 → 发布", "width": 190 },
+    { "id": "ehsRoute", "lane": "governance", "col": 4, "type": "security", "label": "EHS / 法规文件", "sublabel": "EHS 主管 → 合规 → 厂长 → 发布", "width": 184 },
+    { "id": "aiRoute", "lane": "control", "col": 4, "type": "security", "label": "AI 员工行为规则", "sublabel": "流程责任人 → IT/安全 → 厂长 → 发布", "width": 196, "yOffset": -64 },
+    { "id": "publish", "lane": "control", "col": 5, "type": "database", "label": "批准并受控发布", "sublabel": "员工执行版本", "tag": "PUBLISHED", "width": 158, "yOffset": 92 },
+    { "id": "returnDraft", "lane": "control", "col": 1, "type": "messagebus", "label": "退回修订", "sublabel": "任一级拒绝均返回", "tag": "REJECTED", "width": 148 }
+  ],
+  "edges": [
+    { "id": "uploadClassify", "from": "upload", "to": "classify", "label": "登记", "variant": "default", "role": "main" },
+    { "id": "procSelect", "from": "classify", "to": "procRoute", "label": "采购类", "variant": "emphasis", "role": "main" },
+    { "id": "wmsSelect", "from": "classify", "to": "wmsRoute", "label": "仓储类", "variant": "default", "role": "branch" },
+    { "id": "qualitySelect", "from": "classify", "to": "qualityRoute", "label": "质量类", "variant": "default", "role": "branch" },
+    { "id": "hrSelect", "from": "classify", "to": "hrRoute", "label": "人事类", "variant": "default", "role": "branch" },
+    { "id": "financeSelect", "from": "classify", "to": "financeRoute", "label": "财税类", "variant": "default", "role": "branch" },
+    { "id": "ehsSelect", "from": "classify", "to": "ehsRoute", "label": "EHS / 法规", "variant": "security", "role": "branch" },
+    { "id": "aiSelect", "from": "classify", "to": "aiRoute", "label": "AI 规则", "variant": "security", "role": "branch" },
+    { "id": "procPublish", "from": "procRoute", "to": "publish", "label": "全部层级通过", "variant": "emphasis", "role": "main" },
+    { "id": "rejectReturn", "from": "procRoute", "to": "returnDraft", "label": "任一级拒绝", "variant": "security", "role": "error" },
+    { "id": "reviseUpload", "from": "returnDraft", "to": "upload", "label": "新版本重新提交", "variant": "dashed", "role": "return" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "内部文件", "items": ["部门负责人 → 流程责任人 → 质量/合规", "高风险、跨部门或重大成本变更再由厂长批准"] },
+    { "dot": "cyan", "title": "外部文件", "items": ["先核验官方来源、版本和使用授权", "由专业责任人确认适用条款，再进入质量/合规审批"] },
+    { "dot": "rose", "title": "强制控制", "items": ["任何拒绝都保留原因并退回草稿", "仅 PUBLISHED 版本可供虚拟员工执行"] }
+  ]
+}
