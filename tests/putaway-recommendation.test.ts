@@ -9,8 +9,8 @@ describe('put-away recommendation', () => {
   });
 
   it('blocks capacity, dimensions and MSD violations', () => {
-    const result = evaluatePutawayLocation({ ...base, zoneType: 'IQC_HOLD', capacityQty: 45, lengthCm: 100, widthCm: 80, heightCm: 50, msdAllowed: false }, { qty: 10, iqcStatus: 'hold', msdLevel: '3', lengthCm: 120, widthCm: 90, heightCm: 60 });
-    expect(result.rejected).toEqual(expect.arrayContaining(['CAPACITY_EXCEEDED', 'MSD_NOT_ALLOWED', 'FOOTPRINT_EXCEEDED', 'HEIGHT_EXCEEDED']));
+    const result = evaluatePutawayLocation({ ...base, zoneType: 'IQC_HOLD', capacityQty: 45, lengthCm: 100, widthCm: 80, heightCm: 50, maxWeightKg: 500, maxVolumeM3: 0.4, msdAllowed: false }, { qty: 10, iqcStatus: 'hold', msdLevel: '3', lengthCm: 120, widthCm: 90, heightCm: 60, weightKg: 600 });
+    expect(result.rejected).toEqual(expect.arrayContaining(['CAPACITY_EXCEEDED', 'WEIGHT_CAPACITY_EXCEEDED', 'VOLUME_CAPACITY_EXCEEDED', 'MSD_NOT_ALLOWED', 'FOOTPRINT_EXCEEDED', 'HEIGHT_EXCEEDED']));
   });
 
   it('prefers a compliant same-material location', () => {
@@ -21,9 +21,10 @@ describe('put-away recommendation', () => {
   });
 
   it('returns an auditable hierarchy path and scan confirmation', () => {
-    const path = buildPutawayPath({ code: 'BIN-01', warehouseCode: 'WH-A', zoneCode: 'IQC', aisleCode: 'A02', rackCode: 'R03', levelCode: 'L02', binCode: 'B01', xCoord: 12, yCoord: 9 }, { code: 'RECV-01', xCoord: 2, yCoord: 9 });
-    expect(path.steps.map(step => step.type)).toEqual(['START', 'WAREHOUSE', 'ZONE', 'AISLE', 'RACK', 'LEVEL', 'BIN', 'SCAN_CONFIRM']);
+    const path = buildPutawayPath({ code: 'BIN-01', warehouseCode: 'WH-A', zoneCode: 'IQC', aisleCode: 'A02', crossAisleCode: 'CA-03', aisleSide: 'RIGHT', accessDirection: 'FRONT', rackCode: 'R03', levelCode: 'L02', binCode: 'B01', xCoord: 12, yCoord: 9 }, { code: 'RECV-01', xCoord: 2, yCoord: 9 });
+    expect(path.steps.map(step => step.type)).toEqual(['START', 'WAREHOUSE', 'ZONE', 'AISLE', 'CROSS_AISLE', 'RACK', 'LEVEL', 'BIN', 'SCAN_CONFIRM']);
     expect(path.estimatedDistance).toBe(10);
+    expect(path.destination).toMatchObject({ aisleSide: 'RIGHT', accessDirection: 'FRONT' });
     expect(PUTAWAY_RULES.filter(rule => rule.type === 'HARD')).toHaveLength(5);
   });
 });

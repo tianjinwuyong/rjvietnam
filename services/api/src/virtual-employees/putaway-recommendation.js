@@ -18,12 +18,15 @@ export function evaluatePutawayLocation(location, goods) {
   if (location.lockedReason) rejected.push('LOCATION_LOCKED');
   if (capacity > 0 && occupied + qty > capacity) rejected.push('CAPACITY_EXCEEDED');
   if (Number(location.maxPallets || 0) > 0 && pallets + Number(goods.palletCount || 1) > Number(location.maxPallets)) rejected.push('PALLET_CAPACITY_EXCEEDED');
+  if (goods.weightKg != null && location.maxWeightKg != null && Number(goods.weightKg) > Number(location.maxWeightKg)) rejected.push('WEIGHT_CAPACITY_EXCEEDED');
   if (goods.msdLevel && normalized(goods.msdLevel) !== 'N/A' && location.msdAllowed === false) rejected.push('MSD_NOT_ALLOWED');
 
   const length = Number(goods.lengthCm || 0), width = Number(goods.widthCm || 0), height = Number(goods.heightCm || 0);
   const locLength = Number(location.lengthCm || 0), locWidth = Number(location.widthCm || 0), locHeight = Number(location.heightCm || 0);
   if (length && width && locLength && locWidth && !((length <= locLength && width <= locWidth) || (length <= locWidth && width <= locLength))) rejected.push('FOOTPRINT_EXCEEDED');
   if (height && locHeight && height > locHeight) rejected.push('HEIGHT_EXCEEDED');
+  const volumeM3 = length && width && height ? (length * width * height) / 1_000_000 : 0;
+  if (volumeM3 && Number(location.maxVolumeM3 || 0) > 0 && volumeM3 > Number(location.maxVolumeM3)) rejected.push('VOLUME_CAPACITY_EXCEEDED');
 
   const temperature = goods.temperature == null ? null : Number(goods.temperature);
   const humidity = goods.humidity == null ? null : Number(goods.humidity);
@@ -63,7 +66,7 @@ export const PUTAWAY_RULES = Object.freeze([
   { order: 1, id: 'STATUS_AND_PERMISSION', type: 'HARD', rule: 'Warehouse, zone and location must be active, unlocked and allow put-away.' },
   { order: 2, id: 'QUALITY_SEGREGATION', type: 'HARD', rule: 'Pending/Hold goods stay in IQC or receiving Hold; rejected goods stay in quarantine; released goods cannot enter Hold.' },
   { order: 3, id: 'MSD_AND_ENVIRONMENT', type: 'HARD', rule: 'MSD permission and configured temperature/humidity limits must match the goods.' },
-  { order: 4, id: 'CAPACITY_AND_DIMENSIONS', type: 'HARD', rule: 'Quantity, pallet count and pallet dimensions must fit the location.' },
+  { order: 4, id: 'CAPACITY_AND_DIMENSIONS', type: 'HARD', rule: 'Quantity, pallet count, weight, volume and pallet dimensions must fit the location.' },
   { order: 5, id: 'TRACEABILITY', type: 'HARD', rule: 'Lot, pallet and location QR must be scanned before placement is confirmed.' },
   { order: 6, id: 'CONSOLIDATION', type: 'SCORE', rule: 'Prefer a compliant location already holding the same material.' },
   { order: 7, id: 'BALANCED_UTILIZATION', type: 'SCORE', rule: 'Prefer 35%-85% projected utilization and avoid nearly full locations.' },
@@ -76,6 +79,7 @@ export function buildPutawayPath(location, source = {}) {
     location.warehouseCode && { type: 'WAREHOUSE', code: location.warehouseCode, instructionKey: 'wms.putawayPath.warehouse' },
     location.zoneCode && { type: 'ZONE', code: location.zoneCode, instructionKey: 'wms.putawayPath.zone' },
     location.aisleCode && { type: 'AISLE', code: location.aisleCode, instructionKey: 'wms.putawayPath.aisle' },
+    location.crossAisleCode && { type: 'CROSS_AISLE', code: location.crossAisleCode, instructionKey: 'wms.putawayPath.crossAisle' },
     location.rackCode && { type: 'RACK', code: location.rackCode, instructionKey: 'wms.putawayPath.rack' },
     location.levelCode && { type: 'LEVEL', code: location.levelCode, instructionKey: 'wms.putawayPath.level' },
     { type: 'BIN', code: location.binCode || location.code, instructionKey: 'wms.putawayPath.bin' },
@@ -87,7 +91,7 @@ export function buildPutawayPath(location, source = {}) {
   return {
     mode: hasCoordinates ? 'COORDINATE_GUIDED' : 'HIERARCHY_GUIDED',
     steps,
-    destination: { code: location.code, xCoord: location.xCoord ?? null, yCoord: location.yCoord ?? null },
+    destination: { code: location.code, aisleSide: location.aisleSide ?? null, accessDirection: location.accessDirection ?? null, xCoord: location.xCoord ?? null, yCoord: location.yCoord ?? null },
     estimatedDistance: hasCoordinates ? Number(Math.hypot(dx - sx, dy - sy).toFixed(2)) : null,
     warning: hasCoordinates ? 'WAREHOUSE_ROUTE_GRAPH_NOT_CONFIGURED' : 'LOCATION_COORDINATES_NOT_CONFIGURED',
   };
