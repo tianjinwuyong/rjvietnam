@@ -35,6 +35,7 @@ export function ProcurementPoList({ locale, canManage = false }: { locale: Local
   return (
     <div className="screen-stack">
       <PoManagementEmployeeCommunication locale={locale} items={items} adjustments={adjustments} />
+      {canManage && <div style={{ display:"flex",justifyContent:"flex-end" }}><button disabled={busy} onClick={() => act(() => procurementApi.runPurchasingEmployee(),t("poGuide.runComplete",locale))}>{t("poGuide.runNow",locale)}</button></div>}
       {message && <div className="surface-panel" style={{ padding: 12 }}>{message}</div>}
       <div className="surface-panel" style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>

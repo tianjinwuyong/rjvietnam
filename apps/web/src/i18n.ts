@@ -56,6 +56,8 @@ const dictionary = {
   "poGuide.serial": { "zh-CN": "序列号", "vi-VN": "Số sê-ri", "en-US": "Serial" },
   "poGuide.qrValue": { "zh-CN": "QR 内容", "vi-VN": "Nội dung QR", "en-US": "QR value" },
   "poGuide.scanStatus": { "zh-CN": "扫描状态", "vi-VN": "Trạng thái quét", "en-US": "Scan status" },
+  "poGuide.runNow": { "zh-CN": "立即运行采购员工", "vi-VN": "Chạy nhân viên mua hàng ngay", "en-US": "Run purchasing employee" },
+  "poGuide.runComplete": { "zh-CN": "采购流程扫描完成", "vi-VN": "Đã quét xong quy trình mua hàng", "en-US": "Purchasing procedure scan completed" },
   "msdGuide.specialist": { "zh-CN": "湿敏物料管控专员", "vi-VN": "Chuyên viên kiểm soát vật liệu nhạy ẩm", "en-US": "Moisture-sensitive material specialist" },
   "msdGuide.monitoring": { "zh-CN": "实时监控", "vi-VN": "Giám sát trực tiếp", "en-US": "Live monitoring" },
   "msdGuide.openTooltip": { "zh-CN": "在新窗口打开完整湿敏物料管控流程", "vi-VN": "Mở toàn bộ quy trình kiểm soát MSD trong cửa sổ mới", "en-US": "Open the full MSD control workflow in a new window" },

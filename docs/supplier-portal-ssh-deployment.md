@@ -28,7 +28,10 @@ readlink -f /var/www/ruijing-supplier-label/current
 curl -fsS http://127.0.0.1:8098/health
 ```
 
+## Purchasing employee communication
+
+`PURCHASING-VIRTUAL-01` sends PO requests to the Portal through `/sync/agent-messages/{event_id}`. Supplier acknowledgements return through the durable Portal outbox. Set `VIRTUAL_EMPLOYEE_WECOM_WEBHOOK_URL` on the factory API host to allow every registered virtual employee to send audited Enterprise WeChat group-bot messages. Never commit the webhook URL.
+
 ## Release policy
 
 Upload each frontend build into a new timestamped directory under `releases/`, then atomically switch the `current` symlink. Back up `main.py` before replacing the API and restart `ruijing-supplier-portal.service` only after the upload completes.
-

@@ -141,11 +141,18 @@ const portalAgentText = {
   normal: { "zh-CN": "当前资料正常。请持续更新 PO 确认、ASN 和运输状态。", "en-US": "Current data is complete. Keep PO acknowledgement, ASN, and transport status updated.", "vi-VN": "Dữ liệu hiện tại đầy đủ. Hãy tiếp tục cập nhật xác nhận PO, ASN và trạng thái vận chuyển." },
   warning: { "zh-CN": "有发运资料不完整，请补充 ETA、托盘尺寸重量和全部 QR。", "en-US": "Shipment data is incomplete. Add ETA, pallet dimensions, weight, and all QR codes.", "vi-VN": "Dữ liệu giao hàng chưa đầy đủ. Hãy bổ sung ETA, kích thước, trọng lượng pallet và toàn bộ mã QR." },
   action: { "zh-CN": "前往发货预报", "en-US": "Open shipment notice", "vi-VN": "Mở thông báo giao hàng" },
+  acknowledge: { "zh-CN": "确认收到", "en-US": "Acknowledge", "vi-VN": "Xác nhận đã nhận" },
+  noMessage: { "zh-CN": "采购员工暂无新消息", "en-US": "No new purchasing-agent message", "vi-VN": "Không có tin nhắn mới từ nhân viên mua hàng" },
 } as const;
 const pat = (key: keyof typeof portalAgentText) => portalAgentText[key][locale];
 
 function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onAction: () => void }) {
   const incomplete = shipments.filter(item => item.status !== "DRAFT" && (!item.eta || !item.pallets?.length || !item.qr_codes?.length));
+  const [messages,setMessages]=useState<Array<{id:number;po_no?:string;subject:string;message:string;priority:string;status:string}>>([]);
+  const loadMessages=()=>fetch("/supplier-api/agent-messages",{credentials:"include"}).then(r=>r.ok?r.json():[]).then(setMessages).catch(()=>undefined);
+  useEffect(()=>{void loadMessages();const timer=window.setInterval(loadMessages,15000);return()=>window.clearInterval(timer);},[]);
+  const latest=messages.find(item=>item.status==="NEW");
+  const acknowledge=async()=>{if(!latest)return;await fetch(`/supplier-api/agent-messages/${latest.id}/acknowledge`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({response_note:"Portal acknowledged"})});void loadMessages();};
   return <section className="portal-card" style={{ marginBottom: 16, overflow: "hidden", borderColor: incomplete.length ? "#fb923c" : "#34d399" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, color: "white", background: "linear-gradient(110deg,#065f46,#0f766e)" }}>
       <img src="/avatars/purchasing-employee-2026.png" alt={pat("title")} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover", border: "2px solid #a7f3d0" }}/>
@@ -154,6 +161,10 @@ function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onActio
     </div>
     <div role={incomplete.length ? "alert" : undefined} style={{ padding: 14, background: incomplete.length ? "#fff7ed" : "#ecfdf5", color: incomplete.length ? "#9a3412" : "#065f46", fontWeight: 700 }}>
       {incomplete.length ? `${pat("warning")} (${incomplete.length})` : pat("normal")}
+    </div>
+    <div style={{ padding: 14, borderTop: "1px solid #d1fae5", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1 }}><strong>{latest ? `${latest.po_no || "PO"} · ${latest.subject}` : pat("noMessage")}</strong>{latest && <div style={{ marginTop: 4, color: "var(--text-2)", fontSize: 13 }}>{latest.message}</div>}</div>
+      {latest && <button className="portal-secondary" onClick={()=>void acknowledge()}>{pat("acknowledge")}</button>}
     </div>
   </section>;
 }

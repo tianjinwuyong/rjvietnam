@@ -12098,6 +12098,12 @@ app.get('/api/factory/virtual-employees/events/audit', async (req, res) => {
   try { await factoryVirtualEmployeesReady; const r = await query(`SELECT * FROM factory_virtual_employee_events WHERE ($1='' OR employee_id=$1) ORDER BY created_at DESC LIMIT 500`, [String(req.query.employeeId || '')]); res.json(listEnvelope(r.rows)); }
   catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_AUDIT_FAILED', e.message)); }
 });
+app.post('/api/factory/virtual-employees/:id/wechat', async (req,res)=>{try{
+  await factoryVirtualEmployeesReady;const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
+  const subject=String(p.subject||'').trim(),message=String(p.message||'').trim(),priority=String(p.priority||'NORMAL').toUpperCase();if(!subject||!message)return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_WECHAT_REQUIRED','subject and message are required'));if(!['NORMAL','WARNING','CRITICAL'].includes(priority))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_WECHAT_PRIORITY_INVALID','invalid priority'));
+  const result=await sendVirtualEmployeeWechat({employeeId:employee.id,subject,message,entityRef:String(p.entityRef||''),priority});await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'WECHAT_MESSAGE_ATTEMPTED',$2::jsonb,$3)`,[employee.id,JSON.stringify({subject,priority,entityRef:p.entityRef||null,...result}),req.user?.username||employee.id]);
+  res.status(result.sent?200:202).json(mutateEnvelope(result));
+}catch(e){res.status(502).json(errorEnvelope('VIRTUAL_EMPLOYEE_WECHAT_FAILED',e.message));}});
 
 let receivingVirtualEmployeeBusy = false;
 function broadcastReceivingEmployee(payload) {
@@ -18418,6 +18424,33 @@ api.get("/procurement/pos/:id/incoming-logistics", authenticateJWT, requirePermi
   } catch (err) { console.error("GET /procurement/pos/:id/incoming-logistics:",err.message); res.status(500).json(errorEnvelope("PO_INCOMING_LOGISTICS_FAILED",err.message)); }
 });
 
+const purchasingProcedure=[
+  {code:'PR_VALIDATE',name:'采购需求校验',humanGate:false},{code:'SOURCE_COMPARE',name:'询价与供应商比较',humanGate:false},
+  {code:'SUPPLIER_APPROVAL',name:'供应商选择审批',humanGate:true},{code:'PO_APPROVAL',name:'PO 发布审批',humanGate:true},
+  {code:'PO_ACKNOWLEDGEMENT',name:'供应商确认 PO',humanGate:false},{code:'ASN_COLLECTION',name:'收集 ASN 与物流资料',humanGate:false},
+  {code:'DELIVERY_MONITOR',name:'跟踪 ETA/ATA',humanGate:false},{code:'RECEIVING_IQC',name:'WMS 收料与 IQC',humanGate:false},
+  {code:'THREE_WAY_MATCH',name:'PO/收货/发票三方核对',humanGate:true},{code:'PO_CLOSE',name:'关闭 PO 与供应商绩效',humanGate:true}
+];
+app.get('/procurement/purchasing-employee/procedure',requirePermission('procurement.view'),(_req,res)=>res.json(envelope({employeeId:'PURCHASING-VIRTUAL-01',version:'1.0',steps:purchasingProcedure})));
+app.post('/procurement/purchasing-employee/run-now',requirePermission('procurement.manage'),async(req,res)=>{try{
+  await Promise.all([supplierManagementReady,factoryVirtualEmployeesReady]);const pos=(await query(`SELECT poh.id,poh.po_no,poh.status,poh.promised_date,poh.acknowledged_at,poh.supplier_id,s.code supplier_code,
+    EXISTS(SELECT 1 FROM supplier_shipments sh WHERE sh.po_no=poh.po_no AND sh.supplier_id=poh.supplier_id) has_asn,
+    EXISTS(SELECT 1 FROM supplier_label_manifests lm WHERE lm.po_no=poh.po_no AND lm.supplier_id=poh.supplier_id) has_qr
+    FROM purchase_order_headers poh JOIN suppliers s ON s.id=poh.supplier_id WHERE lower(poh.status) NOT IN('closed','cancelled','voided') ORDER BY poh.id LIMIT 500`)).rows;
+  let created=0,notified=0,wechatSent=0;const base=String(process.env.SUPPLIER_PORTAL_URL||'').replace(/\/$/,''),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;
+  for(const po of pos){let stage='PR_VALIDATE',taskType='PO_MONITOR',priority='NORMAL',requiresHuman=false,humanGate=null,message=null;
+    if(String(po.status).toLowerCase()==='draft'){stage='PO_APPROVAL';taskType='PO_ADJUSTMENT_DRAFT';requiresHuman=true;humanGate='approve_po';}
+    else if(!po.acknowledged_at){stage='PO_ACKNOWLEDGEMENT';taskType='SUPPLIER_FOLLOWUP';priority='WARNING';message=`请确认 PO ${po.po_no}，并提交承诺交期。`;}
+    else if(!po.has_asn||!po.has_qr){stage='ASN_COLLECTION';taskType='ASN_MONITOR';priority='WARNING';message=`请为 PO ${po.po_no} 补充 ASN、ETA、托盘数量、L×W×H、重量及全部 QR。`;}
+    else if(po.promised_date&&new Date(po.promised_date)<new Date()){stage='DELIVERY_MONITOR';taskType='DELIVERY_EXCEPTION';priority='CRITICAL';message=`PO ${po.po_no} 已超过承诺交期，请立即更新 ETA/ATA 和纠正措施。`;}
+    else {stage='DELIVERY_MONITOR';taskType='ETA_ATA_TRACKING';}
+    const taskKey=`PURCHASING:${po.id}:${stage}`;const eventId=message?randomUUID():null;
+    const result=await query(`INSERT INTO factory_virtual_employee_tasks(task_key,employee_id,task_type,title,domain,status,priority,input,requires_human,human_gate,requested_by) VALUES($1,'PURCHASING-VIRTUAL-01',$2,$3,'procurement',$4,$5,$6::jsonb,$7,$8,'PURCHASING-VIRTUAL-01') ON CONFLICT(task_key) DO NOTHING RETURNING id`,[taskKey,taskType,`${purchasingProcedure.find(x=>x.code===stage)?.name||stage} · ${po.po_no}`,requiresHuman?'WAITING_APPROVAL':'OPEN',priority,JSON.stringify({poId:po.id,poNo:po.po_no,stage,eventId}),requiresHuman,humanGate]);if(result.rowCount)created++;
+    if(message&&result.rowCount&&base&&key){const payload={supplier_code:po.supplier_code,po_no:po.po_no,subject:`${stage} · ${po.po_no}`,message,priority,created_by:'PURCHASING-VIRTUAL-01'};const remote=await fetch(`${base}/sync/agent-messages/${eventId}`,{method:'PUT',headers:{'Content-Type':'application/json','x-sync-key':key},body:JSON.stringify(payload)});if(remote.ok){const wechat=await sendVirtualEmployeeWechat({employeeId:'PURCHASING-VIRTUAL-01',subject:payload.subject,message,entityRef:po.po_no,priority});if(wechat.sent)wechatSent++;await query(`INSERT INTO purchasing_agent_communications(event_id,supplier_id,po_header_id,direction,subject,message,priority,status,wechat_status) VALUES($1,$2,$3,'TO_PORTAL',$4,$5,$6,'SENT',$7) ON CONFLICT DO NOTHING`,[eventId,po.supplier_id,po.id,payload.subject,message,priority,wechat.status]);notified++;}}
+  }
+  const summary={scanned:pos.length,tasksCreated:created,portalNotifications:notified,wechatNotifications:wechatSent};await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES('PURCHASING-VIRTUAL-01','PROCEDURE_RUN',$1::jsonb,'PURCHASING-VIRTUAL-01')`,[JSON.stringify(summary)]);res.json(mutateEnvelope(summary));
+}catch(e){res.status(500).json(errorEnvelope('PURCHASING_EMPLOYEE_RUN_FAILED',e.message));}});
+
 api.get("/procurement/pos/:id/closure", authenticateJWT, requirePermission("procurement.view"), async (req, res) => {
   try {
     const evaluation = await evaluatePurchaseOrderClosure(req.params.id);
@@ -24344,6 +24377,12 @@ const supplierManagementReady = (async()=>{
   await query(`CREATE TABLE IF NOT EXISTS supplier_portal_sync_state(
     stream_name varchar(80) PRIMARY KEY, last_sequence bigint NOT NULL DEFAULT 0,
     last_success_at timestamptz, last_error text, updated_at timestamptz NOT NULL DEFAULT now())`);
+  await query(`CREATE TABLE IF NOT EXISTS purchasing_agent_communications(
+    event_id varchar(120) PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id), po_header_id bigint REFERENCES purchase_order_headers(id),
+    direction varchar(20) NOT NULL, subject varchar(240) NOT NULL, message text NOT NULL, priority varchar(20) NOT NULL DEFAULT 'NORMAL',
+    status varchar(30) NOT NULL DEFAULT 'NEW', response_note text, sent_at timestamptz NOT NULL DEFAULT now(), acknowledged_at timestamptz,
+    created_by varchar(120) NOT NULL DEFAULT 'PURCHASING-VIRTUAL-01', wechat_status varchar(30) NOT NULL DEFAULT 'NOT_CONFIGURED')`);
+  await query(`ALTER TABLE purchasing_agent_communications ADD COLUMN IF NOT EXISTS wechat_status varchar(30) NOT NULL DEFAULT 'NOT_CONFIGURED'`);
   await query(`CREATE TABLE IF NOT EXISTS supplier_delivery_tracking(
     id bigserial PRIMARY KEY, supplier_id bigint NOT NULL REFERENCES suppliers(id), po_no varchar(120) NOT NULL,
     latitude numeric(10,7) NOT NULL, longitude numeric(10,7) NOT NULL, accuracy_m numeric(10,2),
@@ -24405,6 +24444,10 @@ const supplierManagementReady = (async()=>{
 })();
 
 const supplierEvent=async(req,supplierId,type,detail={})=>query(`INSERT INTO supplier_management_events(supplier_id,event_type,actor_id,detail) VALUES($1,$2,$3,$4::jsonb)`,[supplierId,type,req.user?.userId??null,JSON.stringify(detail)]);
+const sendVirtualEmployeeWechat=async({employeeId,subject,message,entityRef,priority='NORMAL'})=>{
+  const webhook=String(process.env.VIRTUAL_EMPLOYEE_WECOM_WEBHOOK_URL||process.env.PURCHASING_WECOM_WEBHOOK_URL||'').trim();if(!webhook)return {sent:false,status:'NOT_CONFIGURED'};
+  try{const response=await fetch(webhook,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({msgtype:'markdown',markdown:{content:`### ${priority==='CRITICAL'?'🚨 ':priority==='WARNING'?'⚠️ ':''}${subject}\n> 业务对象：${entityRef||'—'}\n> ${message}\n> 来源：${employeeId}`}})});const body=await response.json().catch(()=>({}));return response.ok&&Number(body.errcode||0)===0?{sent:true,status:'SENT'}:{sent:false,status:'FAILED',error:body.errmsg||`HTTP ${response.status}`};}catch(error){return {sent:false,status:'FAILED',error:error.message};}
+};
 
 app.get("/wms/suppliers", requirePermission("wms.view"), async(req,res)=>{try{
   await supplierManagementReady; const q=String(req.query.q||"").trim(),status=String(req.query.status||"ALL").toLowerCase();
@@ -24459,6 +24502,20 @@ app.post("/wms/suppliers/:supplierId/purchase-orders/:poId/portal-sync",requireP
   await query("UPDATE purchase_order_headers SET portal_synced_at=now(),sent_at=coalesce(sent_at,now()),status=CASE WHEN status='draft' THEN 'sent' ELSE status END,updated_at=now() WHERE id=$1",[po.id]);await supplierEvent(req,po.supplier_id,"PURCHASE_ORDER_PORTAL_SYNCED",{poId:po.id,poNo:po.po_no});res.json(mutateEnvelope(await remote.json()));
 }catch(e){res.status(502).json(errorEnvelope("PO_PORTAL_SYNC_FAILED",e.message));}});
 
+app.post("/procurement/pos/:id/portal-message",requirePermission("procurement.manage"),async(req,res)=>{try{
+  await supplierManagementReady;const p=req.body?.payload??req.body??{};
+  const po=(await query(`SELECT poh.id,poh.po_no,poh.supplier_id,s.code supplier_code FROM purchase_order_headers poh JOIN suppliers s ON s.id=poh.supplier_id WHERE poh.id=$1`,[req.params.id])).rows[0];
+  if(!po)return res.status(404).json(errorEnvelope("NOT_FOUND","purchase order not found"));
+  const subject=String(p.subject||`PO ${po.po_no} supplier action required`).trim(),message=String(p.message||'').trim(),priority=String(p.priority||'NORMAL').toUpperCase();
+  if(!message)return res.status(400).json(errorEnvelope("VALIDATION","message is required"));if(!['NORMAL','WARNING','CRITICAL'].includes(priority))return res.status(400).json(errorEnvelope("VALIDATION","invalid priority"));
+  const eventId=randomUUID(),base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(503).json(errorEnvelope("PORTAL_SYNC_NOT_CONFIGURED","supplier portal sync is not configured"));
+  const payload={supplier_code:po.supplier_code,po_no:po.po_no,subject,message,priority,created_by:'PURCHASING-VIRTUAL-01'};
+  const remote=await fetch(`${base}/sync/agent-messages/${eventId}`,{method:'PUT',headers:{'Content-Type':'application/json','x-sync-key':key},body:JSON.stringify(payload)});if(!remote.ok)throw new Error(`portal returned ${remote.status}: ${await remote.text()}`);
+  const wechat=await sendVirtualEmployeeWechat({employeeId:'PURCHASING-VIRTUAL-01',subject,message,entityRef:po.po_no,priority});
+  const row=(await query(`INSERT INTO purchasing_agent_communications(event_id,supplier_id,po_header_id,direction,subject,message,priority,status,wechat_status) VALUES($1,$2,$3,'TO_PORTAL',$4,$5,$6,'SENT',$7) RETURNING *`,[eventId,po.supplier_id,po.id,subject,message,priority,wechat.status])).rows[0];
+  await supplierEvent(req,po.supplier_id,'PURCHASING_AGENT_MESSAGE_SENT',{eventId,poNo:po.po_no,subject,priority,wechat});res.status(201).json(mutateEnvelope({...row,wechat}));
+}catch(e){res.status(502).json(errorEnvelope("PURCHASING_AGENT_PORTAL_MESSAGE_FAILED",e.message));}});
+
 app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,res)=>{try{
   await supplierManagementReady;const base=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),key=process.env.SUPPLIER_PORTAL_SYNC_KEY;if(!base||!key)return res.status(503).json(errorEnvelope("PORTAL_SYNC_NOT_CONFIGURED","SUPPLIER_PORTAL_URL and SUPPLIER_PORTAL_SYNC_KEY are required"));
   const state=(await query("SELECT last_sequence FROM supplier_portal_sync_state WHERE stream_name='supplier-portal'",[])).rows[0],after=Number(state?.last_sequence||0);
@@ -24481,6 +24538,9 @@ app.post("/wms/supplier-portal/sync",requirePermission("wms.execute"),async(req,
       }else if(event.event_type==="PO_ADJUSTMENT_REQUESTED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
         await query(`INSERT INTO supplier_po_adjustment_requests(request_no,supplier_id,po_no,adjustment_type,line_no,current_value,proposed_value,reason,status,requested_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,coalesce($9,'PENDING'),to_timestamp($10)) ON CONFLICT(request_no) DO NOTHING`,[p.request_no,supplier.id,p.po_no,p.adjustment_type,p.line_no||null,p.current_value||null,p.proposed_value,p.reason,p.status||'PENDING',p.created_at]);
+      }else if(event.event_type==="PURCHASING_AGENT_MESSAGE_RESPONDED"){
+        const p=event.payload;await query(`UPDATE purchasing_agent_communications SET status='ACKNOWLEDGED',response_note=$2,acknowledged_at=to_timestamp($3) WHERE event_id=$1`,[p.event_id,p.response_note||null,p.acknowledged_at]);
+        await query(`UPDATE factory_virtual_employee_tasks SET status='COMPLETED',output=$2::jsonb,completed_at=now(),updated_at=now() WHERE employee_id='PURCHASING-VIRTUAL-01' AND input->>'eventId'=$1 AND status IN('OPEN','HANDED_OFF')`,[p.event_id,JSON.stringify(p)]);
       }else if(event.event_type==="LABEL_MANIFEST_REGISTERED"||event.event_type==="SUPPLIER_PO_QRS_REGISTERED"){
         const p=event.payload,supplier=(await query("SELECT id FROM suppliers WHERE code=$1",[event.supplier_code])).rows[0];if(!supplier)throw new Error(`unregistered supplier ${event.supplier_code}`);
         if(!p.po_no)throw new Error("supplier QR registration requires po_no");

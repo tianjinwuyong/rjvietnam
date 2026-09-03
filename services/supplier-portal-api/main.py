@@ -22,6 +22,7 @@ def db():
       CREATE TABLE IF NOT EXISTS po_adjustment_requests(id INTEGER PRIMARY KEY,request_no TEXT UNIQUE NOT NULL,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,adjustment_type TEXT NOT NULL,line_no INTEGER,current_value TEXT,proposed_value TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',requested_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS supplier_label_manifests(id INTEGER PRIMARY KEY,manifest_key TEXT UNIQUE NOT NULL,supplier_code TEXT NOT NULL,po_no TEXT,material_code TEXT NOT NULL,lot_no TEXT NOT NULL,total_quantity REAL NOT NULL,unit TEXT NOT NULL,outer_box_count INTEGER NOT NULL,sub_box_count INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'PRE_RECEIVING_UNCONFIRMED',payload TEXT NOT NULL,created_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS supplier_mes_api_keys(id INTEGER PRIMARY KEY,key_hash TEXT UNIQUE NOT NULL,key_prefix TEXT NOT NULL,supplier_code TEXT NOT NULL,name TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,last_used_at INTEGER,created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS purchasing_agent_messages(id INTEGER PRIMARY KEY,event_id TEXT UNIQUE NOT NULL,supplier_code TEXT NOT NULL,po_no TEXT,subject TEXT NOT NULL,message TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',status TEXT NOT NULL DEFAULT 'NEW',created_by TEXT NOT NULL DEFAULT 'PURCHASING-VIRTUAL-01',created_at INTEGER NOT NULL,acknowledged_at INTEGER,response_note TEXT);
     """); return conn
 
 def ensure_schema():
@@ -96,9 +97,28 @@ class PoAdjustmentDecision(BaseModel): status:str; review_note:str|None=None; re
 class LabelManifestCreate(BaseModel): manifest_key:str=Field(min_length=6,max_length=500); po_no:str=Field(min_length=1,max_length=120); material_code:str; lot_no:str; total_quantity:float=Field(gt=0); unit:str="PCS"; outer_box_count:int=Field(ge=1); sub_box_count:int=Field(ge=0); pallets:list[str]=[]; labels:list[dict]
 class MesQrManifestCreate(BaseModel): po_no:str; material_code:str; production_date:str; lot_no:str; total_quantity:float=Field(gt=0); outer_box_quantity:float=Field(gt=0); sub_box_quantity:float|None=None; unit:str="PCS"; serial_prefix:str="R"; serial_start:int=Field(default=1,ge=1); outer_boxes_per_pallet:int=Field(default=20,ge=1); pallet_prefix:str="PLT"
 class ReceivingStatusSync(BaseModel): status:str; expected_boxes:int=0; scanned_boxes:int=0; expected_quantity:float=0; received_quantity:float=0; accepted_quantity:float=0; hold_quantity:float=0; rejected_quantity:float=0; passed_sns:list[str]=[]; ng_sns:list[str]=[]; missing_sns:list[str]=[]; unexpected_sns:list[str]=[]; shortage_quantity:float=0; excess_quantity:float=0; discrepancy_code:str|None=None; discrepancy_note:str|None=None; rejection_reason:str|None=None; affected_box_qrs:list[str]=[]; evidence_images:list[str]=[]; inspection_reference:str|None=None; inspector_name:str|None=None; iqc_status:str|None=None; received_at:str|None=None; inspected_at:str|None=None
+class PurchasingAgentMessageSync(BaseModel): supplier_code:str; po_no:str|None=None; subject:str; message:str; priority:str="NORMAL"; created_by:str="PURCHASING-VIRTUAL-01"
+class PurchasingAgentMessageResponse(BaseModel): response_note:str|None=None
 
 @app.get("/health")
 def health(): return {"ok": True}
+
+@app.get("/agent-messages")
+def agent_messages(request:Request):
+    user=require_user(request)
+    with db() as c:
+      return [dict(row) for row in c.execute("SELECT id,event_id,po_no,subject,message,priority,status,created_by,created_at,acknowledged_at,response_note FROM purchasing_agent_messages WHERE supplier_code=? ORDER BY created_at DESC LIMIT 100",(user["supplier_code"],)).fetchall()]
+
+@app.post("/agent-messages/{message_id}/acknowledge")
+def acknowledge_agent_message(message_id:int,body:PurchasingAgentMessageResponse,request:Request):
+    user=require_write_user(request);now=int(time.time())
+    with db() as c:
+      row=c.execute("SELECT * FROM purchasing_agent_messages WHERE id=? AND supplier_code=?",(message_id,user["supplier_code"])).fetchone()
+      if not row: raise HTTPException(404,"Agent message not found")
+      c.execute("UPDATE purchasing_agent_messages SET status='ACKNOWLEDGED',acknowledged_at=?,response_note=? WHERE id=?",(now,body.response_note,message_id))
+      payload={"event_id":row["event_id"],"po_no":row["po_no"],"status":"ACKNOWLEDGED","response_note":body.response_note,"acknowledged_by":user["display_name"],"acknowledged_at":now}
+      outbox(c,user["supplier_code"],"PURCHASING_AGENT_MESSAGE_RESPONDED","PURCHASE_ORDER",row["po_no"] or row["event_id"],payload);audit_event(c,user["id"],"PURCHASING_AGENT_MESSAGE_RESPONDED",request,json.dumps(payload,ensure_ascii=False));c.commit()
+    return payload
 
 @app.get("/me")
 def me(request:Request):
@@ -350,6 +370,16 @@ def sync_po_adjustment_decision(request_no:str,body:PoAdjustmentDecision,request
       if not row: raise HTTPException(404,"PO adjustment request not found")
       now=int(time.time());c.execute("UPDATE po_adjustment_requests SET status=?,updated_at=? WHERE request_no=?",(status,now,request_no));audit_event(c,None,"PO_ADJUSTMENT_DECIDED",request,json.dumps({"request_no":request_no,"status":status,"review_note":body.review_note,"reviewed_by":body.reviewed_by},ensure_ascii=False));c.commit()
     return {"request_no":request_no,"status":status,"review_note":body.review_note,"reviewed_by":body.reviewed_by,"updated_at":now}
+
+@app.put("/sync/agent-messages/{event_id}")
+def sync_agent_message(event_id:str,body:PurchasingAgentMessageSync,request:Request):
+    if not secrets.compare_digest(request.headers.get("x-sync-key",""),os.environ.get("WMS_SYNC_KEY","disabled")): raise HTTPException(401,"Invalid sync key")
+    now=int(time.time());supplier_code=body.supplier_code.upper();priority=body.priority.upper()
+    if priority not in {"NORMAL","WARNING","CRITICAL"}: raise HTTPException(400,"Invalid priority")
+    with db() as c:
+      if not c.execute("SELECT 1 FROM portal_suppliers WHERE supplier_code=? AND registration_status='REGISTERED'",(supplier_code,)).fetchone(): raise HTTPException(409,"Supplier is not registered")
+      c.execute("INSERT INTO purchasing_agent_messages(event_id,supplier_code,po_no,subject,message,priority,status,created_by,created_at) VALUES(?,?,?,?,?,?,'NEW',?,?) ON CONFLICT(event_id) DO UPDATE SET subject=excluded.subject,message=excluded.message,priority=excluded.priority",(event_id,supplier_code,body.po_no,body.subject,body.message,priority,body.created_by,now));c.commit()
+    return {"event_id":event_id,"supplier_code":supplier_code,"po_no":body.po_no,"status":"NEW","created_at":now}
 
 @app.put("/sync/suppliers/{supplier_code}")
 def sync_supplier(supplier_code:str,body:SupplierSync,request:Request):
