@@ -21,21 +21,21 @@ export interface SessionResult {
 
 export const authApi = {
   async login(username: string, password: string): Promise<LoginResult> {
-    const result = await apiClient.post<LoginResult>("/auth/login", { username, password });
+    const result = await apiClient.post<LoginResult>("/api/auth/login", { username, password });
     authStorage.setToken(result.token);
     return result;
   },
 
   async logout(): Promise<void> {
     try {
-      await apiClient.post("/auth/logout");
+      await apiClient.post("/api/auth/logout");
     } finally {
       authStorage.clearToken();
     }
   },
 
   async getSession(): Promise<SessionResult> {
-    return apiClient.get<SessionResult>("/auth/session");
+    return apiClient.get<SessionResult>("/api/auth/session");
   },
 
   isLoggedIn(): boolean {
