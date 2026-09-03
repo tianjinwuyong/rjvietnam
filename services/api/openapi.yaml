@@ -354,6 +354,48 @@ paths:
       responses:
         '200':
           description: Recent safety-stock reports
+  /factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/putaway-recommendations:
+    post:
+      tags: [WMS]
+      summary: Recommend safe and efficient storage locations for newly arrived goods
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                materialLotId: { type: integer }
+                materialCode: { type: string }
+                qty: { type: number }
+                palletCount: { type: integer }
+                lengthCm: { type: number }
+                widthCm: { type: number }
+                heightCm: { type: number }
+                weightKg: { type: number }
+                temperature: { type: number }
+                humidity: { type: number }
+                iqcStatus: { type: string }
+                sourceLocationCode: { type: string }
+                sourceXCoord: { type: number }
+                sourceYCoord: { type: number }
+                limit: { type: integer, minimum: 1, maximum: 20 }
+      responses:
+        '200':
+          description: Ranked eligible locations with reasons and warnings
+        '400':
+          description: Material identity is missing
+        '404':
+          description: Material or lot was not found
+  /factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/putaway-rules:
+    get:
+      tags: [WMS]
+      summary: Read the governed incoming-goods placement rules
+      security: [{ bearerAuth: [] }]
+      responses:
+        '200':
+          description: Ordered hard rules and scoring rules
   /3d/wms-control-state:
     get:
       tags: [WMS]

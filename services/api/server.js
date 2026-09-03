@@ -65,6 +65,7 @@ import { getIqcMemoryContext, rememberIqcMemory, searchIqcMemory } from "./src/i
 import { FACTORY_VIRTUAL_EMPLOYEES, getFactoryVirtualEmployee } from "./src/virtual-employees/registry.js";
 import { buildHermesSupervisorPrompt, hermesPromptProfile, HERMES_SUPERVISOR_ID } from "./src/virtual-employees/hermes-supervisor.js";
 import { classifySafetyStock, safetyReportTaskKey, WAREHOUSE_INVENTORY_EMPLOYEE_ID, WAREHOUSE_SAFETY_REPORT_RECIPIENTS } from "./src/virtual-employees/warehouse-safety-report.js";
+import { buildPutawayPath, PUTAWAY_RULES, rankPutawayLocations } from "./src/virtual-employees/putaway-recommendation.js";
 import { validateStationConfiguration } from "../../packages/station-config/validate-stations.mjs";
 import {
   askChat,
@@ -12029,6 +12030,32 @@ async function runWarehouseSafetyReport(){
 }
 app.post('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-report/run-now',async(_req,res)=>{try{res.json(mutateEnvelope(await runWarehouseSafetyReport()));}catch(e){res.status(409).json(errorEnvelope('WAREHOUSE_SAFETY_REPORT_FAILED',e.message));}});
 app.get('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-reports',async(_req,res)=>{try{await factoryVirtualEmployeesReady;const reports=await query(`SELECT id,detail,created_at FROM factory_virtual_employee_events WHERE employee_id=$1 AND event_type='SAFETY_STOCK_REPORT_ISSUED' ORDER BY created_at DESC LIMIT 100`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID]);res.json(listEnvelope(reports.rows));}catch(e){res.status(500).json(errorEnvelope('WAREHOUSE_SAFETY_REPORT_LIST_FAILED',e.message));}});
+app.get('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/putaway-rules',requirePermission('wms.view'),(_req,res)=>res.json(listEnvelope(PUTAWAY_RULES)));
+app.post('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/putaway-recommendations',requirePermission('wms.view'),async(req,res)=>{try{
+  await factoryVirtualEmployeesReady;const p=req.body||{},lotId=Number(p.materialLotId||0),materialCode=String(p.materialCode||'').trim();
+  if(!lotId&&!materialCode)return res.status(400).json(errorEnvelope('PUTAWAY_MATERIAL_REQUIRED','materialLotId or materialCode is required'));
+  const material=(await query(`SELECT m.id,m.code,m.msd_level,m.storage_condition,ml.id AS lot_id,ml.lot_no,ml.iqc_status
+    FROM materials m LEFT JOIN material_lots ml ON ml.material_id=m.id AND ($1::bigint=0 OR ml.id=$1)
+    WHERE ($1::bigint>0 AND ml.id=$1) OR ($1::bigint=0 AND UPPER(m.code)=UPPER($2)) ORDER BY ml.created_at DESC NULLS LAST LIMIT 1`,[lotId,materialCode])).rows[0];
+  if(!material)return res.status(404).json(errorEnvelope('PUTAWAY_MATERIAL_NOT_FOUND','material or lot not found'));
+  const locations=(await query(`SELECT sl.id,sl.code,sl.status,w.code AS warehouse_code,w.status AS warehouse_status,z.code AS zone_code,z.status AS zone_status,z.zone_type,
+    sl.allow_putaway,sl.locked_reason,sl.capacity_qty,sl.max_pallets,sl.length_cm,sl.width_cm,sl.height_cm,
+    sl.aisle_code,sl.rack_code,sl.level_code,sl.bin_code,sl.x_coord,sl.y_coord,
+    COALESCE(sl.temperature_min,z.temperature_min) AS temperature_min,COALESCE(sl.temperature_max,z.temperature_max) AS temperature_max,
+    COALESCE(sl.humidity_min,z.humidity_min) AS humidity_min,COALESCE(sl.humidity_max,z.humidity_max) AS humidity_max,sl.msd_allowed,
+    COALESCE(SUM(CASE WHEN ml.lot_status IN('open','active') THEN ml.received_qty ELSE 0 END),0)::numeric AS occupied_qty,
+    COUNT(DISTINCT ml.id) FILTER(WHERE ml.lot_status IN('open','active'))::int AS occupied_pallets,
+    COUNT(DISTINCT ml.id) FILTER(WHERE ml.material_id=$1 AND ml.lot_status IN('open','active'))::int AS same_material_lots
+    FROM storage_locations sl JOIN wms_warehouses w ON w.id=sl.warehouse_id JOIN wms_zones z ON z.id=sl.zone_id
+    LEFT JOIN material_lots ml ON ml.storage_location_id=sl.id GROUP BY sl.id,w.code,w.status,z.code,z.status,z.zone_type,z.temperature_min,z.temperature_max,z.humidity_min,z.humidity_max ORDER BY sl.code`,[material.id])).rows;
+  const goods={qty:Number(p.qty||0),palletCount:Number(p.palletCount||1),lengthCm:p.lengthCm,widthCm:p.widthCm,heightCm:p.heightCm,weightKg:p.weightKg,temperature:p.temperature,humidity:p.humidity,iqcStatus:String(p.iqcStatus||material.iqc_status||'pending'),msdLevel:material.msd_level,storageCondition:material.storage_condition};
+  const source=p.sourceLocationCode?(await query(`SELECT code,x_coord,y_coord FROM storage_locations WHERE UPPER(code)=UPPER($1) LIMIT 1`,[String(p.sourceLocationCode)])).rows[0]||{}:{code:'RECEIVING_STAGING',x_coord:p.sourceXCoord,y_coord:p.sourceYCoord};
+  const candidates=locations.map(row=>({id:row.id,code:row.code,status:row.status,warehouseCode:row.warehouse_code,warehouseStatus:row.warehouse_status,zoneCode:row.zone_code,zoneStatus:row.zone_status,zoneType:row.zone_type,aisleCode:row.aisle_code,rackCode:row.rack_code,levelCode:row.level_code,binCode:row.bin_code,xCoord:row.x_coord,yCoord:row.y_coord,routeDistance:[source.x_coord,source.y_coord,row.x_coord,row.y_coord].every(value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value)))?Math.hypot(Number(row.x_coord)-Number(source.x_coord),Number(row.y_coord)-Number(source.y_coord)):null,allowPutaway:row.allow_putaway,lockedReason:row.locked_reason,capacityQty:row.capacity_qty,maxPallets:row.max_pallets,lengthCm:row.length_cm,widthCm:row.width_cm,heightCm:row.height_cm,temperatureMin:row.temperature_min,temperatureMax:row.temperature_max,humidityMin:row.humidity_min,humidityMax:row.humidity_max,msdAllowed:row.msd_allowed,occupiedQty:row.occupied_qty,occupiedPallets:row.occupied_pallets,sameMaterialLots:row.same_material_lots,utilization:Number(row.capacity_qty)>0?Number(row.occupied_qty)/Number(row.capacity_qty):0,zoneStorageMatch:material.storage_condition?String(row.zone_type||'').toUpperCase().includes(String(material.storage_condition).toUpperCase()):false}));
+  const recommendations=rankPutawayLocations(candidates,goods,p.limit||5).map(location=>({...location,path:buildPutawayPath(location,{code:source.code,xCoord:source.x_coord,yCoord:source.y_coord})})),warnings=[];if(p.weightKg!=null)warnings.push('LOCATION_WEIGHT_LIMIT_NOT_CONFIGURED');if(!recommendations.length)warnings.push('NO_ELIGIBLE_LOCATION');
+  const output={employeeId:WAREHOUSE_INVENTORY_EMPLOYEE_ID,rulesVersion:'1.0.0',rules:PUTAWAY_RULES,material:{id:material.id,code:material.code,lotId:material.lot_id,lotNo:material.lot_no,iqcStatus:goods.iqcStatus,msdLevel:material.msd_level,storageCondition:material.storage_condition},goods,recommendations,warnings,approvalRequired:!recommendations.length};
+  await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'PUTAWAY_RECOMMENDATION_CREATED',$2::jsonb,$3)`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID,JSON.stringify({materialCode:material.code,lotId:material.lot_id,recommendationCodes:recommendations.map(x=>x.code),warnings}),req.user?.username||WAREHOUSE_INVENTORY_EMPLOYEE_ID]);
+  res.json(mutateEnvelope(output));
+}catch(e){res.status(409).json(errorEnvelope('PUTAWAY_RECOMMENDATION_FAILED',e.message));}});
 const warehouseSafetyReportInterval=Math.max(300000,Number(process.env.WAREHOUSE_SAFETY_REPORT_INTERVAL_MS||21600000));
 setInterval(()=>{void runWarehouseSafetyReport().catch(error=>console.error('[WMS-INVENTORY-VIRTUAL-01]',error.message));},warehouseSafetyReportInterval);
 app.put('/api/factory/virtual-employees/:id/config', async (req,res) => {
