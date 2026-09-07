@@ -89,12 +89,11 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
-import { WmsSupplierLabel } from "./wms/WmsSupplierLabel";
+import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
 import { WmsIqcInspectionLevels } from "./wms/WmsIqcInspectionLevels";
-import { IqcVirtualEmployeeDock } from "./wms/IqcVirtualEmployeeDock";
 import { QmsDashboard, QmsOqcBatches, QmsNgCases, QmsEightD } from "./qms";
 import type { PmcTabKey } from "./pmc";
 import { pmcTabKeys, pmcTabTranslationKeys, PmcDashboard, PmcWorkOrderList, PmcWorkOrderDetail, PmcCreateWorkOrder,
@@ -129,6 +128,7 @@ import { qualityPatrol, maintenancePatrol, mesPatrol, hrPatrol } from "./ai/patr
 import { Projects } from "./projects/Projects";
 import { ProjectMgmt } from "./project-mgmt";
 import { AgentsModule } from "./agents/AgentsModule";
+import { GlobalVirtualEmployeeGuide } from "./agents/GlobalVirtualEmployeeGuide";
 import { EmployeePanel } from "./employee/EmployeePanel";
 import { ManagerDashboard } from "./manager-dashboard/ManagerDashboard";
 import { WorkflowDashboard } from "./workflow/WorkflowDashboard";
@@ -1741,7 +1741,7 @@ function Maintenance({ locale }: { locale: Locale }) {
   );
 }
 
-function Wms({ locale, permissions }: { locale: Locale; permissions: string[] }) {
+function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: string[]; roleKey: string }) {
   const [activeTab, setActiveTab] = useState<WmsTabKey>(() => {
     const requested = new URLSearchParams(window.location.search).get("wmsTab") as WmsTabKey | null;
     return requested && Object.prototype.hasOwnProperty.call(wmsTabTranslationKeys, requested)
@@ -1794,7 +1794,7 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "iqcReport": return <WmsIqcReport locale={locale} />;
       case "iqcStandards": return <WmsIqcStandards locale={locale} />;
       case "supplierKpi": return <WmsSupplierKpi locale={locale} />;
-      case "supplierManagement": return <WmsSupplierManagement locale={locale} />;
+      case "supplierManagement": return <WmsSupplierManagement locale={locale} roleKey={roleKey} />;
       case "qualityTrend": return <WmsQualityTrend locale={locale} />;
       case "putaway": return <WmsPutAway locale={locale} />;
       case "inventory": return <WmsInventory locale={locale} />;
@@ -1805,6 +1805,8 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "expiryControl": return <WmsExpiryControl locale={locale} />;
       case "fifoMonitor": return <WmsFifoMonitor locale={locale} />;
       case "transactions": return <WmsTransactions locale={locale} />;
+      case "materialConsumption": return <WmsMaterialConsumption locale={locale} />;
+      case "materialDistribution": return <WmsMaterialDistribution locale={locale} />;
       case "traceability": return <WmsTraceability locale={locale} />;
       case "materialTrace": return <WmsMaterialTraceRoute locale={locale} />;
       case "wms3dFlow": return <Suspense fallback={<div className="surface-panel"><div className="placeholder-view">Loading 3D WMS flow...</div></div>}><LazyWms3dFlow locale={locale} /></Suspense>;
@@ -1842,12 +1844,11 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "pdaHistory": return <WmsPdaHistory locale={locale} />;
       case "inboundOrders": return <WmsInboundOrders />;
       case "outboundOrders": return <WmsOutboundOrders />;
-      case "requisitions": return <WmsRequisitions />;
+      case "requisitions": return <WmsRequisitions locale={locale} />;
       case "returnSlips": return <WmsReturnSlips />;
       case "replenishments": return <WmsReplenishments locale={locale} />;
       case "syncHealth": return <WmsSyncHealth locale={locale} />;
       case "incoming": return <WmsIncoming locale={locale} />;
-      case "supplierLabel": return <WmsSupplierLabel locale={locale} />;
       case "materialReceiving": return <WmsMaterialReceiving locale={locale} />;
       case "materialLoading": return <WmsMaterialLoading locale={locale} />;
       case "smtClosedLoop": return <WmsSmtClosedLoop locale={locale} />;
@@ -1926,7 +1927,6 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       )}
 
       {!isMenuPage && renderActiveView()}
-      {activeTab !== "iqc" && <IqcVirtualEmployeeDock locale={locale} />}
     </div>
   );
 }
@@ -2966,7 +2966,7 @@ export function App() {
     pmc: <Pmc locale={locale} permissions={currentUser.permissions} />,
     mobile: <MobileCheckin locale={locale} />,
     qms: <QmsApp locale={locale} />,
-    wms: <Wms locale={locale} permissions={currentUser.permissions} />,
+    wms: <Wms locale={locale} permissions={currentUser.permissions} roleKey={currentUser.roleKey} />,
     bom: <Bom locale={locale} />,
     mes: <Mes locale={locale} />,
     quality: <Quality locale={locale} />,
@@ -2988,7 +2988,7 @@ export function App() {
     employee: <EmployeePanel locale={locale} employeeId={Number(currentUser.username.replace(/\D/g, "")) || 1} onSignOut={async () => { sessionStorage.removeItem("demo_user"); sessionStorage.removeItem("auth_token"); await authApi.logout(); setCurrentUser(null); }} />,
     managerDashboard: <ManagerDashboard locale={locale} />,
     workflow: <WorkflowDashboard locale={locale} />,
-    oa: <OaModule locale={locale} />,
+    oa: <OaModule locale={locale} currentUsername={currentUser.username} roleKey={currentUser.roleKey} />,
     manualLine3d: <LazyManualLineDashboard />,
     pdaAgent3d: <LazyPdaStationMonitor locale={locale} />,
     aoiAgent3d: <LazyAoiStationMonitor locale={locale} />,
@@ -3102,6 +3102,7 @@ export function App() {
       }
     }}>
       {content}
+      <GlobalVirtualEmployeeGuide moduleKey={active} locale={locale} />
     </Shell>
   );
 }

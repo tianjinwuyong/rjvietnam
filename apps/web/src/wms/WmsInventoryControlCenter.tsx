@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi } from "../api/wms";
 
+const SMART_INVENTORY_DEMO_LOTS = [
+  { id: "demo-r", materialCode: "SMT-R-10K-0603", lotNo: "TEST-PO-20260827-01", availableQty: 5000, locationCode: "GOOD-A01-01", iqcStatus: "RELEASED", labelId: "TEST-QR-R0603-001", receivedAt: "2026-08-27T08:20:00+07:00" },
+  { id: "demo-c", materialCode: "SMT-C-100N-0402", lotNo: "TEST-PO-20260827-02", availableQty: 12000, locationCode: "IQC-A01-02", iqcStatus: "PENDING_IQC", labelId: "TEST-QR-C0402-002", receivedAt: "2026-08-27T07:45:00+07:00" },
+  { id: "demo-led", materialCode: "SMT-LED-GRN-0805", lotNo: "TEST-PO-20260827-03", availableQty: 3000, locationCode: "NG-A01-03", iqcStatus: "NG_MRB", labelId: "TEST-QR-LED0805-003", receivedAt: "2026-08-27T06:10:00+07:00" },
+];
+
 export function WmsInventoryControlCenter({ locale }: { locale: Locale }) {
   const en = locale === "en-US";
   const [lots, setLots] = useState<any[]>([]);
@@ -11,7 +17,17 @@ export function WmsInventoryControlCenter({ locale }: { locale: Locale }) {
   const [query, setQuery] = useState("");
   useEffect(() => {
     Promise.all([wmsApi.getMaterialLots({ limit: 500 }), wmsApi.getStorageLocations({ limit: 500 }), wmsApi.getTransactions({ limit: 500 })])
-      .then(([l, s, t]) => { setLots(l.items || []); setLocations(s.items || []); setTransactions(t.items || []); })
+      .then(([l, s, t]) => {
+        // Keep the control view useful in a fresh/test plant while clearly
+        // marking the rows as demo data until real WMS lots arrive.
+        setLots(l.items?.length ? l.items : SMART_INVENTORY_DEMO_LOTS);
+        setLocations(s.items?.length ? s.items : SMART_INVENTORY_DEMO_LOTS.map(lot => ({ code: lot.locationCode })));
+        setTransactions(t.items || []);
+      })
+      .catch(() => {
+        setLots(SMART_INVENTORY_DEMO_LOTS);
+        setLocations(SMART_INVENTORY_DEMO_LOTS.map(lot => ({ code: lot.locationCode })));
+      })
       .finally(() => setLoading(false));
   }, []);
   const filtered = useMemo(() => lots.filter(lot => !query || [lot.materialCode, lot.lotNo, lot.labelId, lot.locationCode].some(v => String(v || "").toLowerCase().includes(query.toLowerCase()))), [lots, query]);

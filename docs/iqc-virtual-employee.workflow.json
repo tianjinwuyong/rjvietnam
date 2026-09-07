@@ -1,0 +1,55 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "IQC 虚拟员工检验闭环",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "intake", "label": "接收与计划", "focus": ["iqcQueue", "identityCheck", "history", "samplingPlan"], "note": "从 WMS IQC HOLD 批次生成受控检验计划。" },
+      { "id": "inspection", "label": "现场检验", "focus": ["pdaTask", "humanEvidence", "evidenceGate"], "note": "人工完成样本、测量、照片和缺陷记录。" },
+      { "id": "decision", "label": "判定与交接", "focus": ["decision", "release", "mrb"], "note": "真实证据进入确定性判定，随后放行或转 MRB。" }
+    ],
+    "output": "apps/web/public/architecture/iqc-virtual-employee-workflow.html"
+  },
+  "lanes": [
+    { "id": "wms", "label": "WMS / 来料" },
+    { "id": "virtual", "label": "IQC-VIRTUAL-01" },
+    { "id": "human", "label": "IQC 人员与 PDA" },
+    { "id": "result", "label": "质量判定与库存" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "接收与策划", "fromCol": 0, "toCol": 2 },
+    { "id": "execute", "label": "执行与证据", "fromCol": 3, "toCol": 4, "variant": "emphasis" },
+    { "id": "close", "label": "判定与交接", "fromCol": 5, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["iqcQueue", "identityCheck", "history", "samplingPlan", "pdaTask", "humanEvidence", "evidenceGate", "decision", "release"],
+  "nodes": [
+    { "id": "iqcQueue", "lane": "wms", "col": 0, "type": "database", "label": "IQC HOLD 队列", "sublabel": "PO · 批次 · 箱 QR", "width": 142 },
+    { "id": "identityCheck", "lane": "virtual", "col": 1, "type": "backend", "label": "身份与资料核对", "sublabel": "物料 · 供应商 · 数量", "width": 142 },
+    { "id": "history", "lane": "virtual", "col": 2, "type": "database", "label": "读取受控依据", "sublabel": "ACTIVE Excel · 历史", "width": 142 },
+    { "id": "samplingPlan", "lane": "virtual", "col": 3, "type": "backend", "label": "生成检验计划", "sublabel": "等级 · 样本量 · Ac/Re", "width": 142 },
+    { "id": "pdaTask", "lane": "human", "col": 3, "type": "frontend", "label": "下发 PDA 任务", "sublabel": "动态检验项目", "width": 142 },
+    { "id": "humanEvidence", "lane": "human", "col": 4, "type": "external", "label": "人工现场检验", "sublabel": "测量 · 照片 · 缺陷", "tag": "真实输入", "width": 142 },
+    { "id": "evidenceGate", "lane": "virtual", "col": 4, "type": "security", "label": "证据完整性门禁", "sublabel": "缺失则停留当前步骤", "width": 142 },
+    { "id": "decision", "lane": "result", "col": 5, "type": "security", "label": "确定性 IQC 判定", "sublabel": "PASS / FAIL", "width": 142 },
+    { "id": "release", "lane": "wms", "col": 5, "type": "database", "label": "库存放行", "sublabel": "进入可用库存", "width": 142 },
+    { "id": "mrb", "lane": "result", "col": 4, "type": "security", "label": "隔离并转 MRB", "sublabel": "人工评审与处置", "width": 142 }
+  ],
+  "edges": [
+    { "id": "queue-identity", "from": "iqcQueue", "to": "identityCheck", "label": "读取待检批次", "variant": "default" },
+    { "id": "identity-history", "from": "identityCheck", "to": "history", "label": "身份核对通过", "variant": "default" },
+    { "id": "history-plan", "from": "history", "to": "samplingPlan", "label": "批准规则与风险", "variant": "emphasis" },
+    { "id": "plan-pda", "from": "samplingPlan", "to": "pdaTask", "label": "创建动态任务", "variant": "emphasis" },
+    { "id": "pda-human", "from": "pdaTask", "to": "humanEvidence", "label": "指导逐项执行", "variant": "default" },
+    { "id": "human-gate", "from": "humanEvidence", "to": "evidenceGate", "label": "回传真实证据", "variant": "emphasis" },
+    { "id": "gate-decision", "from": "evidenceGate", "to": "decision", "label": "证据完整", "variant": "emphasis" },
+    { "id": "decision-release", "from": "decision", "to": "release", "label": "PASS", "variant": "emphasis" },
+    { "id": "decision-mrb", "from": "decision", "to": "mrb", "label": "FAIL / 异常", "variant": "security", "role": "branch" },
+    { "id": "gate-rework", "from": "evidenceGate", "to": "humanEvidence", "label": "缺少证据", "variant": "security", "role": "return" }
+  ],
+  "cards": [
+    { "dot": "orange", "title": "人工输入边界", "items": ["检验员负责样本、测量、照片和缺陷事实", "主管负责免检、特采与重大质量决定"] },
+    { "dot": "emerald", "title": "虚拟员工推进条件", "items": ["仅在真实证据完整后进入判定", "不编造结果、不绕过审批、不直接放行库存"] }
+  ]
+}

@@ -14,6 +14,7 @@
     "@types/qrcode": "^1.5.6",
     "@types/three": "^0.185.1",
     "@vitejs/plugin-react": "^5.2.0",
+    "@xyflow/react": "^12.11.6",
     "bwip-js": "^4.6.0",
     "echarts": "^6.1.0",
     "flint-chart": "^0.4.1",
@@ -25,6 +26,7 @@
     "react-i18next": "^17.0.11",
     "react-is": "^19.2.7",
     "recharts": "^3.9.2",
+    "sonner": "^2.0.8",
     "three": "^0.185.1",
     "xlsx": "^0.18.5"
   },

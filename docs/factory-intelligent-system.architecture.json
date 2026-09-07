@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "越南工厂智能管理系统总架构",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1180, 720],
+    "views": [
+      {
+        "id": "receiving-path",
+        "label": "物料收料主路径",
+        "focus": ["supplier", "supplierPortal", "factoryApi", "wms", "iqc", "mes"],
+        "note": "从供应商预报和标签开始，经过 WMS 收料与 IQC 放行进入生产。"
+      },
+      {
+        "id": "pda-collaboration",
+        "label": "统一 PDA 协作",
+        "focus": ["unifiedPda", "factoryApi", "wms", "iqc"],
+        "note": "PDA 负责现场采集和执行，业务判断及库存状态由管理系统控制。"
+      },
+      {
+        "id": "employee-governance",
+        "label": "虚拟员工治理",
+        "focus": ["virtualEmployees", "humanGate", "factoryApi", "postgres"],
+        "note": "虚拟员工提出建议并执行低风险任务，高风险动作必须经过人工审批。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "supplier",
+      "type": "external",
+      "label": "物料供应商",
+      "sublabel": "PO · ASN · 箱标签",
+      "pos": [30, 300],
+      "size": [135, 72]
+    },
+    {
+      "id": "supplierPortal",
+      "type": "frontend",
+      "label": "供应商门户",
+      "sublabel": "交期 · 发运 · QR 预收料",
+      "pos": [215, 300],
+      "size": [155, 72]
+    },
+    {
+      "id": "unifiedPda",
+      "type": "frontend",
+      "label": "统一 PDA",
+      "sublabel": "扫码 · OCR · 拍照 · 打印",
+      "pos": [420, 500],
+      "size": [155, 72],
+      "tag": "Kotlin Android"
+    },
+    {
+      "id": "factoryApi",
+      "type": "backend",
+      "label": "工厂管理 API",
+      "sublabel": "鉴权 · 规则 · 同步 · 审计",
+      "pos": [420, 300],
+      "size": [155, 72],
+      "tag": "Node.js"
+    },
+    {
+      "id": "virtualEmployees",
+      "type": "backend",
+      "label": "虚拟员工中心",
+      "sublabel": "任务 · 训练 · 绩效 · 决策",
+      "pos": [420, 90],
+      "size": [155, 76],
+      "tag": "MiniMax 可配置"
+    },
+    {
+      "id": "humanGate",
+      "type": "security",
+      "label": "人工审批门",
+      "sublabel": "异常 · 放行 · 调整 · 发布",
+      "pos": [650, 90],
+      "size": [150, 76],
+      "tag": "可审计"
+    },
+    {
+      "id": "wms",
+      "type": "backend",
+      "label": "WMS",
+      "sublabel": "收料 · QR · 库位 · 库存",
+      "pos": [625, 300],
+      "size": [145, 72]
+    },
+    {
+      "id": "iqc",
+      "type": "backend",
+      "label": "IQC",
+      "sublabel": "抽样 · 动态检验 · 判定",
+      "pos": [820, 300],
+      "size": [145, 72]
+    },
+    {
+      "id": "mes",
+      "type": "backend",
+      "label": "MES / PMC",
+      "sublabel": "备料 · 排程 · 生产执行",
+      "pos": [1015, 300],
+      "size": [145, 72]
+    },
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL",
+      "sublabel": "主数据 · 批次 · 证据 · 审计",
+      "pos": [650, 500],
+      "size": [155, 72]
+    },
+    {
+      "id": "labelPrinter",
+      "type": "external",
+      "label": "标签打印设备",
+      "sublabel": "箱 QR · 库位 QR",
+      "pos": [1010, 500],
+      "size": [150, 72]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "瑞晶越南工厂内部系统",
+      "wraps": ["unifiedPda", "factoryApi", "virtualEmployees", "humanGate", "wms", "iqc", "mes", "postgres", "labelPrinter"],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "受控决策与人工授权",
+      "wraps": ["virtualEmployees", "humanGate"],
+      "pad": 12
+    }
+  ],
+  "connections": [
+    {
+      "id": "supplier-portal",
+      "from": "supplier",
+      "to": "supplierPortal",
+      "label": "维护 PO 进度与发运信息",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "portal-api",
+      "from": "supplierPortal",
+      "to": "factoryApi",
+      "label": "HTTPS 同步 ASN 与 QR",
+      "labelDy": 60
+    },
+    {
+      "id": "api-wms",
+      "from": "factoryApi",
+      "to": "wms",
+      "label": "收料任务与库存事务",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "wms-iqc",
+      "from": "wms",
+      "to": "iqc",
+      "label": "IQC HOLD 与检验队列",
+      "variant": "emphasis",
+      "labelDy": 60
+    },
+    {
+      "id": "iqc-mes",
+      "from": "iqc",
+      "to": "mes",
+      "label": "合格放行与生产可用量",
+      "variant": "emphasis",
+      "labelDy": -30
+    },
+    {
+      "id": "pda-api",
+      "from": "unifiedPda",
+      "to": "factoryApi",
+      "label": "扫码、OCR、照片与执行结果"
+    },
+    {
+      "id": "employee-api",
+      "from": "virtualEmployees",
+      "to": "factoryApi",
+      "label": "读取任务并提交建议",
+      "labelDy": 28
+    },
+    {
+      "id": "employee-gate",
+      "from": "virtualEmployees",
+      "to": "humanGate",
+      "label": "高风险动作申请",
+      "variant": "security"
+    },
+    {
+      "id": "gate-wms",
+      "from": "humanGate",
+      "to": "wms",
+      "label": "批准放行或异常处理",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "api-db",
+      "from": "factoryApi",
+      "to": "postgres",
+      "label": "事务数据与审计记录"
+    },
+    {
+      "id": "wms-printer",
+      "from": "wms",
+      "to": "labelPrinter",
+      "label": "生成可追溯 QR",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "printer-pda",
+      "from": "labelPrinter",
+      "to": "unifiedPda",
+      "label": "现场打印状态",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [[1085, 620], [497.5, 620]],
+      "labelDy": 18
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "现场与管理分工",
+      "items": ["PDA 负责采集、提示和执行", "WMS/IQC/MES 保存唯一业务状态"]
+    },
+    {
+      "dot": "violet",
+      "title": "虚拟员工治理",
+      "items": ["批准知识驱动决策", "高风险动作必须人工审批", "训练、绩效和执行全程留痕"]
+    },
+    {
+      "dot": "emerald",
+      "title": "收料闭环",
+      "items": ["供应商预报减少现场录入", "箱 QR 与库位绑定形成库存", "IQC 结果反馈供应商并控制生产放行"]
+    }
+  ]
+}

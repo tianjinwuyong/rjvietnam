@@ -13,7 +13,6 @@ import {
   Plus,
   RefreshCw,
   Search,
-  ShieldCheck,
   Truck,
   Upload,
   Users,
@@ -22,6 +21,7 @@ import {
 import * as XLSX from "xlsx";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { apiClient } from "../api/client";
+import { t } from "../i18n";
 
 type Supplier = {
   id: number;
@@ -70,8 +70,7 @@ type Tab =
   | "shipments"
   | "performance"
   | "risk"
-  | "portal"
-  | "audit";
+  | "portal";
 const tabs: Array<[Tab, string, typeof Building2]> = [
   ["overview", "供应商360", Building2],
   ["onboarding", "准入审核", ClipboardCheck],
@@ -82,7 +81,6 @@ const tabs: Array<[Tab, string, typeof Building2]> = [
   ["performance", "绩效评分", Gauge],
   ["risk", "风险与CAPA", AlertTriangle],
   ["portal", "门户账号", Users],
-  ["audit", "审计记录", ShieldCheck],
 ];
 const tone = (value: string) => {
   const v = String(value || "").toUpperCase();
@@ -129,26 +127,29 @@ const Card = ({
   </article>
 );
 
-export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
+type SupplierImportPreview = {
+  sourceFile: string;
+  sourceModifiedAt: string;
+  sourceRows: number;
+  duplicateRows: number;
+  rows: Array<{ code: string; nameZh: string }>;
+  existingMatches: number;
+  toDeactivate: number;
+};
+
+export function WmsSupplierManagement({ locale, roleKey }: { locale: Locale; roleKey: string }) {
+  const canReplaceSupplierList = ["admin", "management", "plant_manager", "factory_manager"].includes(roleKey.trim().toLowerCase());
   const [suppliers, setSuppliers] = useState<Supplier[]>([]),
     [selected, setSelected] = useState<number | null>(null),
     [detail, setDetail] = useState<Detail | null>(null),
     [tab, setTab] = useState<Tab>("overview"),
     [query, setQuery] = useState(""),
-    [status, setStatus] = useState("ALL"),
+    [status, setStatus] = useState("active"),
     [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
-    [creating, setCreating] = useState(false),
-    [view, setView] = useState<"management" | "annual">("management");
-  const [form, setForm] = useState({
-    code: "",
-    nameZh: "",
-    nameEn: "",
-    contactName: "",
-    contactPhone: "",
-    email: "",
-    country: "Vietnam",
-  });
+    [view, setView] = useState<"management" | "annual">("management"),
+    [importPreview, setImportPreview] = useState<SupplierImportPreview | null>(null),
+    [importing, setImporting] = useState(false);
   const load = async () => {
     setLoading(true);
     setError("");
@@ -187,30 +188,25 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
       total: suppliers.length,
       qualified: suppliers.filter((s) => s.qualification_status === "QUALIFIED")
         .length,
-      review: suppliers.filter((s) => s.qualification_status === "PENDING")
-        .length,
       risk: suppliers.filter((s) => ["HIGH", "CRITICAL"].includes(s.risk_level))
         .length,
     }),
     [suppliers],
   );
-  const create = async () => {
-    if (!form.code || !form.nameZh) return setError("供应商代码和中文名称必填");
+  const exportCurrentSuppliers = async () => {
     try {
-      await apiClient.post("/wms/suppliers", form);
-      setCreating(false);
-      setForm({
-        code: "",
-        nameZh: "",
-        nameEn: "",
-        contactName: "",
-        contactPhone: "",
-        email: "",
-        country: "Vietnam",
-      });
-      await load();
+      const snapshot = await apiClient.get<{ items: Supplier[] }>("/wms/suppliers", { status: "active" });
+      const rows = (snapshot.items || []).map((supplier) => ({
+        供应商代码: supplier.code,
+        供应商名称: supplier.name_zh,
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      ws["!cols"] = [{ wch: 18 }, { wch: 48 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "供应商名单");
+      XLSX.writeFile(wb, `WMS供应商名单-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "创建失败");
+      setError(e instanceof Error ? e.message : t("wms.supplierExport.failed", locale));
     }
   };
   const downloadTemplate = () => {
@@ -224,18 +220,25 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
     XLSX.writeFile(wb, "25.26年下单供应商明细.xlsx");
   };
   const importExcel = async (file: File) => {
-    setLoading(true);
+    if (!canReplaceSupplierList) {
+      setError(t("wms.supplierImport.plantManagerOnly", locale));
+      return;
+    }
     try {
-      const wb = XLSX.read(await file.arrayBuffer());
+      const bytes = await file.arrayBuffer();
+      const wb = XLSX.read(bytes);
       const sheet = wb.Sheets[wb.SheetNames[0]];
       const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" });
       const headers = matrix[0]?.map((value) => String(value).trim()) || [];
       const isAnnualOrderList = headers[0] === "供应商代码" && headers[1]?.includes("25年供应商") && headers[7] === "供应商代码" && headers[8]?.includes("26年供应商");
+      const isSingleAnnualOrderList = headers[0] === "供应商代码" && /^\d{2}年供应商$/.test(headers[1] || "");
       const rows: Array<Record<string, unknown>> = isAnnualOrderList
         ? matrix.slice(1).flatMap((row) => [
             { supplierCode: row[0], nameZh: row[1], classification: `2025年度订单供应商${String(row[2] || "").includes("越南") ? "；发越南" : ""}` },
             { supplierCode: row[7], nameZh: row[8], classification: `2026年度订单供应商${String(row[9] || "").includes("越南") ? "；发越南" : ""}` },
           ]).filter((row) => String(row.supplierCode || "").trim() && String(row.nameZh || "").trim())
+        : isSingleAnnualOrderList
+          ? matrix.slice(1).map((row) => ({ supplierCode: row[0], nameZh: row[1], classification: `${headers[1].slice(0, 2)}年度订单供应商` })).filter((row) => String(row.supplierCode || "").trim() && String(row.nameZh || "").trim())
         : XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
       const mergedRows = new Map<string, Record<string, unknown>>();
       for (const row of rows) {
@@ -248,67 +251,46 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
         }
         mergedRows.set(code, { ...previous, ...row, supplierCode: code });
       }
-      const existing = new Map(suppliers.map((supplier) => [supplier.code.toUpperCase(), supplier]));
-      let ok = 0;
-      let updated = 0;
-      const failed: string[] = [];
+      const normalizedRows: Array<{ code: string; nameZh: string }> = [];
       for (const [i, r] of [...mergedRows.values()].entries()) {
         const get = (...k: string[]) =>
           k.map((x) => r[x]).find((v) => v !== "" && v != null);
-        const payload = {
-          code: String(get("supplierCode", "供应商代码", "code") || "").trim(),
-          nameZh: String(get("nameZh", "中文名称", "供应商名称") || "").trim(),
-          nameEn: String(get("nameEn", "英文名称") || ""),
-          nameVi: String(get("nameVi", "越文名称") || ""),
-          shortName: String(get("shortName", "简称") || ""),
-          country: String(get("country", "国家") || "Vietnam"),
-          contactName: String(get("contactName", "联系人") || ""),
-          contactPhone: String(get("contactPhone", "电话") || ""),
-          email: String(get("email", "邮箱") || ""),
-          currency: String(get("currency", "币种") || "USD"),
-          paymentTermsDays: Number(get("paymentTermsDays", "付款账期") || 30),
-          qualificationStatus: String(
-            get("qualificationStatus", "资质状态") || "PENDING",
-          ),
-          riskLevel: String(get("riskLevel", "风险等级") || "LOW"),
-          portalEnabled: [true, 1, "1", "TRUE", "Y"].includes(
-            get("portalEnabled", "门户启用") as any,
-          ),
-          labelEnabled: [true, 1, "1", "TRUE", "Y"].includes(
-            get("labelEnabled", "标签启用") as any,
-          ),
-          classification: String(get("classification", "分类") || ""),
-          status: "active",
-        };
-        if (!payload.code || !payload.nameZh) {
-          failed.push(`第${i + 2}行缺必填项`);
-          continue;
-        }
-        try {
-          const current = existing.get(payload.code.toUpperCase());
-          if (current) {
-            await apiClient.put(`/wms/suppliers/${current.id}`, payload);
-            updated++;
-          } else {
-            await apiClient.post("/wms/suppliers", payload);
-            ok++;
-          }
-        } catch (e) {
-          failed.push(
-            `${payload.code}: ${e instanceof Error ? e.message : "失败"}`,
-          );
-        }
+        const code = String(get("supplierCode", "供应商代码", "code") || "").trim().toUpperCase();
+        const nameZh = String(get("nameZh", "中文名称", "供应商名称") || "").trim();
+        if (!code || !nameZh) throw new Error(t("wms.supplierImport.missingRequired", locale).replace("{row}", String(i + 2)));
+        normalizedRows.push({ code, nameZh });
       }
-      await load();
-      setError(
-        failed.length
-          ? `新增 ${ok} 家、更新 ${updated} 家；${failed.slice(0, 3).join("；")}`
-          : `导入完成：新增 ${ok} 家，更新 ${updated} 家供应商`,
-      );
+      const supplierSnapshot = await apiClient.get<{ items: Supplier[] }>("/wms/suppliers", { status: "ALL" });
+      const allSuppliers = supplierSnapshot.items || [];
+      const existingCodes = new Set(allSuppliers.map((supplier) => supplier.code.toUpperCase()));
+      setImportPreview({
+        sourceFile: file.name,
+        sourceModifiedAt: new Date(file.lastModified).toISOString(),
+        sourceRows: rows.length,
+        duplicateRows: rows.length - normalizedRows.length,
+        rows: normalizedRows,
+        existingMatches: normalizedRows.filter((row) => existingCodes.has(row.code)).length,
+        toDeactivate: allSuppliers.filter((supplier) => supplier.status !== "inactive" && !normalizedRows.some((row) => row.code === supplier.code.toUpperCase())).length,
+      });
+      setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Excel读取失败");
+    }
+  };
+  const confirmSupplierReplace = async () => {
+    if (!importPreview) return;
+    setImporting(true);
+    try {
+      const result = await apiClient.post<{ activeSuppliers: number; deactivated: number }>("/wms/suppliers/import-replace", importPreview);
+      setImportPreview(null);
+      setError(t("wms.supplierImport.completed", locale)
+        .replace("{active}", String(result.activeSuppliers))
+        .replace("{inactive}", String(result.deactivated)));
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("wms.supplierImport.failed", locale));
     } finally {
-      setLoading(false);
+      setImporting(false);
     }
   };
   const updateSupplier = async (patch: Record<string, unknown>) => {
@@ -319,15 +301,6 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
       setDetail(await apiClient.get<Detail>(`/wms/suppliers/${active.id}/360`));
     } catch (e) {
       setError(e instanceof Error ? e.message : "更新失败");
-    }
-  };
-  const syncPortal = async () => {
-    if (!active) return;
-    try {
-      await apiClient.post(`/wms/suppliers/${active.id}/portal-sync`, {});
-      setError("");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "门户同步失败");
     }
   };
   return (
@@ -344,24 +317,21 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           </p>
         </div>
         <div className="sm-hero-actions">
-          <button
-            className="sm-secondary"
-            title={view === "annual" ? "返回供应商360管理" : "查看并修改年度供应商明细"}
-            onClick={() => setView(view === "annual" ? "management" : "annual")}
-          >
-            <FileText />
-            {view === "annual" ? "返回管理" : "年度明细视图"}
-          </button>
           <button className="sm-secondary" onClick={downloadTemplate}>
             <Download />
             Excel模板
           </button>
-          <label className="sm-secondary sm-upload">
+          <button className="sm-secondary" title={t("wms.supplierExport.tooltip", locale)} onClick={() => void exportCurrentSuppliers()}>
+            <Download />
+            {t("wms.supplierExport.button", locale)}
+          </button>
+          <label className={`sm-secondary sm-upload${canReplaceSupplierList ? "" : " disabled"}`} title={canReplaceSupplierList ? t("wms.supplierImport.tooltip", locale) : t("wms.supplierImport.plantManagerOnly", locale)}>
             <Upload />
-            导入供应商
+            {t("wms.supplierImport.button", locale)}
             <input
               type="file"
               accept=".xlsx,.xls"
+              disabled={!canReplaceSupplierList}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void importExcel(f);
@@ -372,10 +342,6 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           <button className="sm-secondary" onClick={() => void load()}>
             <RefreshCw />
             刷新
-          </button>
-          <button className="sm-primary" onClick={() => setCreating(true)}>
-            <Plus />
-            新增供应商
           </button>
         </div>
       </section>
@@ -411,13 +377,6 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           icon={CheckCircle2}
         />
         <Card
-          title="待审核"
-          value={stats.review}
-          sub="需要完成准入"
-          icon={ClipboardCheck}
-          toneName="amber"
-        />
-        <Card
           title="高风险"
           value={stats.risk}
           sub="需要整改或暂停"
@@ -431,14 +390,9 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           <h2>供应商协同行动台</h2>
           <p>把准入、交付和质量风险集中到一个清晰的工作节奏里。</p>
         </div>
-        <button className="sm-command-card" onClick={() => setCreating(true)}>
-          <span className="sm-command-icon teal"><Plus /></span>
-          <span><b>建立供应商档案</b><small>从基础主数据开始准入</small></span>
-          <ChevronRight />
-        </button>
-        <button className="sm-command-card" onClick={() => setTab("qualifications")}>
-          <span className="sm-command-icon amber"><ClipboardCheck /></span>
-          <span><b>检查资质有效期</b><small>{stats.review} 家待审核供应商</small></span>
+        <button className="sm-command-card" onClick={() => void exportCurrentSuppliers()}>
+          <span className="sm-command-icon teal"><Download /></span>
+          <span><b>{t("wms.supplierExport.button", locale)}</b><small>{t("wms.supplierExport.workflow", locale)}</small></span>
           <ChevronRight />
         </button>
         <button className="sm-command-card" onClick={() => setTab("performance")}>
@@ -487,10 +441,7 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
                     <small>
                       {s.code} · {s.country || "未设置国家"}
                     </small>
-                    <span>
-                      <Status value={s.qualification_status} />
-                      <Status value={s.risk_level} />
-                    </span>
+                    <span><Status value={s.status} /></span>
                   </span>
                   <ChevronRight />
                 </button>
@@ -535,13 +486,6 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
                   >
                     {active.status === "active" ? "暂停供应商" : "恢复供应商"}
                   </button>
-                  <button
-                    className="sm-primary"
-                    onClick={() => void syncPortal()}
-                  >
-                    <RefreshCw />
-                    同步远程门户
-                  </button>
                 </div>
               </header>
               <nav className="sm-tabs">
@@ -562,7 +506,6 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
                   active,
                   detail,
                   updateSupplier,
-                  syncPortal,
                   async () => {
                     setDetail(
                       await apiClient.get<Detail>(
@@ -583,51 +526,18 @@ export function WmsSupplierManagement({ locale: _locale }: { locale: Locale }) {
           )}
         </main>
       </section>
-      {creating && (
+      {importPreview && (
         <div className="sm-modal-backdrop">
-          <section className="sm-modal">
-            <header>
-              <div>
-                <h2>新增供应商</h2>
-                <p>创建主数据后再进行准入审核和门户授权。</p>
-              </div>
-              <button onClick={() => setCreating(false)}>
-                <X />
-              </button>
-            </header>
+          <section className="sm-modal" role="dialog" aria-modal="true" aria-label={t("wms.supplierImport.previewTitle", locale)}>
+            <header><div><h2>{t("wms.supplierImport.previewTitle", locale)}</h2><p>{importPreview.sourceFile} · {new Date(importPreview.sourceModifiedAt).toLocaleString(locale)}</p></div><button title={t("wms.supplierImport.cancelTooltip", locale)} onClick={() => setImportPreview(null)}><X /></button></header>
             <div className="sm-form">
-              {[
-                ["code", "供应商代码 *", "SUP-001"],
-                ["nameZh", "中文名称 *", "供应商公司名称"],
-                ["nameEn", "英文名称", "Supplier company"],
-                ["contactName", "联系人", "姓名"],
-                ["contactPhone", "电话", "+84..."],
-                ["email", "邮箱", "name@company.com"],
-                ["country", "国家/地区", "Vietnam"],
-              ].map(([k, l, p]) => (
-                <label key={k}>
-                  {l}
-                  <input
-                    value={form[k as keyof typeof form]}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, [k]: e.target.value }))
-                    }
-                    placeholder={p}
-                  />
-                </label>
-              ))}
+              <p>{t("wms.supplierImport.sourceRows", locale)}：<b>{importPreview.sourceRows}</b></p>
+              <p>{t("wms.supplierImport.validSuppliers", locale)}：<b>{importPreview.rows.length}</b></p>
+              <p>{t("wms.supplierImport.duplicates", locale)}：<b>{importPreview.duplicateRows}</b></p>
+              <p>{t("wms.supplierImport.deactivate", locale)}：<b>{importPreview.toDeactivate}</b></p>
             </div>
-            <footer>
-              <button
-                className="sm-secondary"
-                onClick={() => setCreating(false)}
-              >
-                取消
-              </button>
-              <button className="sm-primary" onClick={() => void create()}>
-                创建并进入准入
-              </button>
-            </footer>
+            <div className="sm-alert"><AlertTriangle />{t("wms.supplierImport.warning", locale)}</div>
+            <footer><button className="sm-secondary" title={t("wms.supplierImport.cancelTooltip", locale)} onClick={() => setImportPreview(null)}>{t("wms.supplierImport.cancel", locale)}</button><button className="sm-primary" title={t("wms.supplierImport.confirmTooltip", locale)} disabled={importing} onClick={() => void confirmSupplierReplace()}>{importing ? t("wms.supplierImport.importing", locale) : t("wms.supplierImport.confirm", locale)}</button></footer>
           </section>
         </div>
       )}
@@ -650,7 +560,6 @@ function AnnualSupplierViewer({
 }) {
   const annual = suppliers.filter((supplier) => supplier.classification?.includes("年度订单供应商"));
   const [drafts, setDrafts] = useState<Record<number, { nameZh: string; years: string; vietnam: boolean }>>({});
-  const [creating, setCreating] = useState({ code: "", nameZh: "", years: "2026", vietnam: false });
   const draftFor = (supplier: Supplier) => drafts[supplier.id] || {
     nameZh: supplier.name_zh,
     years: supplier.classification?.match(/2025\/2026|2025|2026/)?.[0] || "2026",
@@ -670,41 +579,12 @@ function AnnualSupplierViewer({
       onError(error instanceof Error ? error.message : "供应商保存失败");
     }
   };
-  const create = async () => {
-    if (!creating.code.trim() || !creating.nameZh.trim()) return onError("供应商代码和名称为必填项");
-    try {
-      await apiClient.post("/wms/suppliers", {
-        code: creating.code.trim(), nameZh: creating.nameZh.trim(), status: "active",
-        classification: classification(creating.years, creating.vietnam),
-      });
-      setCreating({ code: "", nameZh: "", years: "2026", vietnam: false });
-      await onRefresh();
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "供应商创建失败");
-    }
-  };
-  const archive = async (supplier: Supplier) => {
-    if (!window.confirm(`确认停用供应商 ${supplier.code}？历史业务数据将保留。`)) return;
-    try {
-      await apiClient.delete(`/wms/suppliers/${supplier.id}`);
-      await onRefresh();
-    } catch (error) {
-      onError(error instanceof Error ? error.message : "供应商停用失败");
-    }
-  };
   return (
     <section className="sm-annual-viewer">
       <header className="sm-annual-head">
         <div><span className="sm-command-kicker">WMS SUPPLIER MASTER</span><h2>年度供应商明细查看与维护</h2><p>按业务原表结构维护；删除操作采用停用，不清除历史记录。</p></div>
         <b>{annual.length} 家年度供应商</b>
       </header>
-      <div className="sm-annual-create">
-        <input aria-label="新供应商代码" title="输入唯一供应商代码" placeholder="供应商代码" value={creating.code} onChange={(event) => setCreating({ ...creating, code: event.target.value })} />
-        <input aria-label="新供应商名称" title="输入供应商中文名称" placeholder="供应商名称" value={creating.nameZh} onChange={(event) => setCreating({ ...creating, nameZh: event.target.value })} />
-        <select aria-label="订单年度" title="选择订单年度" value={creating.years} onChange={(event) => setCreating({ ...creating, years: event.target.value })}><option>2025</option><option>2026</option><option>2025/2026</option></select>
-        <label title="标记该供应商向越南供货"><input type="checkbox" checked={creating.vietnam} onChange={(event) => setCreating({ ...creating, vietnam: event.target.checked })} /> 发越南</label>
-        <button className="sm-primary" title="新增到WMS供应商主数据" onClick={() => void create()}><Plus />新增</button>
-      </div>
       <div className="sm-table sm-annual-table">
         <table>
           <thead><tr><th>供应商代码</th><th>供应商名称</th><th>订单年度</th><th>备注</th><th>状态</th><th>操作</th></tr></thead>
@@ -718,7 +598,7 @@ function AnnualSupplierViewer({
                 <td><select aria-label={`${supplier.code}订单年度`} title="修改订单年度" value={draft.years} onChange={(event) => updateDraft({ years: event.target.value })}><option>2025</option><option>2026</option><option>2025/2026</option></select></td>
                 <td><label title="标记是否向越南供货"><input type="checkbox" checked={draft.vietnam} onChange={(event) => updateDraft({ vietnam: event.target.checked })} /> 发越南</label></td>
                 <td><Status value={supplier.status} /></td>
-                <td><div className="sm-row-actions"><button title="保存本行修改" onClick={() => void save(supplier)}>保存</button><button className="danger" title="停用供应商并保留历史记录" onClick={() => void archive(supplier)}>停用</button></div></td>
+                <td><div className="sm-row-actions"><button title="保存本行修改" onClick={() => void save(supplier)}>保存</button></div></td>
               </tr>;
             })}
           </tbody>
@@ -733,7 +613,6 @@ function renderTab(
   s: Supplier,
   d: Detail | null,
   update: (p: Record<string, unknown>) => Promise<void>,
-  sync: () => Promise<void>,
   refresh: () => Promise<void>,
   notify: (x: string) => void,
 ) {
@@ -793,9 +672,6 @@ function renderTab(
                 <i />
               </button>
             </div>
-            <button className="sm-wide" onClick={() => void sync()}>
-              立即同步到远程门户
-            </button>
           </section>
         </div>
         <div className="sm-mini-kpis">
@@ -1028,36 +904,6 @@ function renderTab(
           </div>
         </section>
       </>
-    );
-  if (tab === "audit")
-    return (
-      <section className="sm-panel">
-        <div className="sm-panel-title">
-          <div>
-            <h3>不可变审计记录</h3>
-            <p>主数据、权限、审核、打印和同步操作均保留。</p>
-          </div>
-        </div>
-        <div className="sm-timeline">
-          {d?.events?.length ? (
-            d.events.map((e) => (
-              <div key={e.id}>
-                <i />
-                <span>
-                  <b>{e.event_type}</b>
-                  <small>
-                    {new Date(e.created_at).toLocaleString()} · 操作人{" "}
-                    {e.actor_id || "SYSTEM"}
-                  </small>
-                </span>
-                <code>{JSON.stringify(e.detail).slice(0, 120)}</code>
-              </div>
-            ))
-          ) : (
-            <Empty text="暂无审计事件" />
-          )}
-        </div>
-      </section>
     );
   if (tab === "onboarding")
     return (

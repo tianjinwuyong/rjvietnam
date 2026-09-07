@@ -45,7 +45,7 @@ type ControlState = {
   stateVersion: string; generatedAt: string; actor: { username: string; roleKey: string };
   cells: Cell[]; tasks: Task[]; commands: Command[]; floorAreas: FloorArea[]; floorPlacements:FloorPlacement[];
 };
-type PdaReceivingStatus = { phase: "DRAFT" | "SCANNED" | "RECEIVING" | "COMPLETED" | "FAILED"; lotNo?: string; materialCode?: string; materialName?: string; palletQr?: string; boxQr?: string; expectedQty?: string; receivedQty?: string; qty?: number; locationCode?: string; floorAreaCode?: string; iqcResult?: string; operator?: string; changedField?: string; at: string };
+type PdaReceivingStatus = { phase: "DRAFT" | "SCANNED" | "RECEIVING" | "COMPLETED" | "FAILED"; step?: string; lotNo?: string; materialCode?: string; materialName?: string; palletQr?: string; boxQr?: string; boxCount?: string | number; palletQuantity?: string | number; expectedQty?: string; receivedQty?: string; qty?: number; areaQr?: string; locationCode?: string; floorAreaCode?: string; iqcResult?: string; operator?: string; changedField?: string; labelsPrinted?: boolean; labelsApplied?: boolean; labelsScanned?: string[]; at: string };
 type Action = "ANDON" | "ANDON_CLEAR" | "LIGHT_ON" | "LIGHT_OFF" | "RESERVE" | "RELEASE" | "MOVE" | "COUNT";
 type FocusPoint = [number, number, number];
 
@@ -493,7 +493,11 @@ export function WarehouseScene3d() {
       <div style={{ fontSize: 10, color: "#93c5fd", letterSpacing: ".08em", fontWeight: 800 }}>PDA RECEIVING · LIVE</div>
       <strong style={{ display: "block", marginTop: 4 }}>{pdaReceiving.phase} · {pdaReceiving.lotNo || "—"}</strong>
       <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>{pdaReceiving.materialCode || "—"} · {pdaReceiving.qty ?? 0} pcs</div>
+      <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>Pallet: {pdaReceiving.palletQr || "pending generation"} · Qty: {pdaReceiving.palletQuantity ?? pdaReceiving.receivedQty ?? "—"}</div>
+      <div style={{ fontSize: 11, color: "#cbd5e1", marginTop: 4 }}>Boxes: {pdaReceiving.boxCount ?? "—"} · Labels: {pdaReceiving.labelsScanned?.length ?? 0} scanned · {pdaReceiving.labelsPrinted ? "printed" : "not printed"}</div>
+      <div style={{ fontSize: 11, color: "#a7f3d0", marginTop: 4 }}>Receiving area QR: {pdaReceiving.areaQr || "scan area first"}</div>
       <div style={{ fontSize: 11, color: "#7dd3fc", marginTop: 4 }}>WMS location: {pdaReceiving.locationCode || pdaReceiving.floorAreaCode || "pending assignment"}</div>
+      <div style={{ fontSize: 10, color: "#fbbf24", marginTop: 4 }}>Step: {pdaReceiving.step || pdaReceiving.changedField || "receiving"} · {pdaReceiving.labelsApplied ? "labels applied" : "labels pending"}</div>
       <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>IQC {pdaReceiving.iqcResult || "pending"} · {new Date(pdaReceiving.at).toLocaleTimeString()}</div>
     </section>}
 

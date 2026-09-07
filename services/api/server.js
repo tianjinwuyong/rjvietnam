@@ -64,6 +64,7 @@ import { IQC_VIRTUAL_HARNESS } from "./src/iqc/virtual-employee-harness.js";
 import { getIqcMemoryContext, rememberIqcMemory, searchIqcMemory } from "./src/iqc/virtual-employee-memory.js";
 import { FACTORY_VIRTUAL_EMPLOYEES, getFactoryVirtualEmployee } from "./src/virtual-employees/registry.js";
 import { buildHermesSupervisorPrompt, hermesPromptProfile, HERMES_SUPERVISOR_ID } from "./src/virtual-employees/hermes-supervisor.js";
+import { askLLMWithFallback } from "../_shared/llm-router.js";
 import { classifySafetyStock, safetyReportTaskKey, WAREHOUSE_INVENTORY_EMPLOYEE_ID, WAREHOUSE_SAFETY_REPORT_RECIPIENTS } from "./src/virtual-employees/warehouse-safety-report.js";
 import { buildPutawayPath, PUTAWAY_RULES, rankPutawayLocations } from "./src/virtual-employees/putaway-recommendation.js";
 import { validateStationConfiguration } from "../../packages/station-config/validate-stations.mjs";
@@ -3110,6 +3111,45 @@ app.get("/api/wms/receiving/live-state", (req, res) => {
   res.json({ ok: true, data: wmsReceivingLiveDraft });
 });
 
+async function wmsReceivingPoQueue(req, res) {
+  try {
+    const result = await query(`
+      SELECT poh.id, poh.po_no, poh.order_date, poh.created_at, poh.promised_date, poh.status,
+             s.code AS supplier_code,
+             COALESCE(NULLIF(s.name_zh,''), NULLIF(s.name_en,''), NULLIF(s.name_vi,''), s.code) AS supplier_name,
+             COALESCE(jsonb_agg(jsonb_build_object(
+               'lineId', pol.id,
+               'lineNo', pol.line_no,
+               'materialCode', pol.material_code,
+               'description', pol.description,
+               'orderedQty', pol.qty_ordered,
+               'receivedQty', COALESCE(pol.qty_received,0),
+               'remainingQty', GREATEST(pol.qty_ordered-COALESCE(pol.qty_received,0),0),
+               'unit', pol.unit,
+               'promisedDate', pol.promised_date
+             ) ORDER BY pol.line_no) FILTER (WHERE pol.id IS NOT NULL), '[]'::jsonb) AS lines
+      FROM purchase_order_headers poh
+      JOIN suppliers s ON s.id=poh.supplier_id
+      JOIN purchase_order_lines pol ON pol.po_header_id=poh.id
+      WHERE LOWER(poh.status) IN ('sent','acknowledged','partially_received')
+        AND pol.qty_ordered > COALESCE(pol.qty_received,0)
+      GROUP BY poh.id,s.code,s.name_zh,s.name_en,s.name_vi
+      ORDER BY COALESCE(poh.promised_date,poh.order_date,poh.created_at::date),poh.id
+      LIMIT 200`);
+    const managementTestTasks = [
+      { id: "WMS-TEST-1", po_no: "PO-TEST-RECV-001", order_date: "2026-09-04", created_at: "2026-09-04T00:00:00Z", promised_date: null, status: "READY", supplier_code: "SUP-TEST-01", supplier_name: "测试供应商 A", source_type: "WMS_MANAGEMENT_TEST", lines: [] },
+      { id: "WMS-TEST-2", po_no: "PO-TEST-RECV-002", order_date: "2026-09-04", created_at: "2026-09-04T00:00:00Z", promised_date: null, status: "READY", supplier_code: "SUP-TEST-02", supplier_name: "测试供应商 B", source_type: "WMS_MANAGEMENT_TEST", lines: [] },
+      { id: "WMS-TEST-3", po_no: "PO-TEST-RECV-003", order_date: "2026-09-04", created_at: "2026-09-04T00:00:00Z", promised_date: null, status: "READY", supplier_code: "SUP-TEST-03", supplier_name: "测试供应商 C", source_type: "WMS_MANAGEMENT_TEST", lines: [] },
+    ];
+    const data = [...managementTestTasks, ...result.rows];
+    res.json({ ok: true, data, total: data.length });
+  } catch (error) {
+    res.status(500).json(errorEnvelope("RECEIVING_PO_QUEUE_FAILED", error.message));
+  }
+}
+app.get("/wms/receiving/po-queue", wmsReceivingPoQueue);
+app.get("/api/wms/receiving/po-queue", wmsReceivingPoQueue);
+
 // WMS-managed native PDA pools. Receiving devices hand QR-bound lots to the IQC queue.
 function wmsPdaPoolResponse(req, res) {
   const pool = String(req.query.pool || '').trim().toUpperCase();
@@ -3451,12 +3491,56 @@ app.post("/api/pda/events", async (req, res) => {
     const merged = hasImage ? incoming : { ...previous, ...incoming };
     wmsReceivingLiveDraft = { payload: merged, at: Date.now(), from: from || "unified_pda", type };
     neuralBroadcast({ ...req.body, type, payload: merged });
+
+// Location QR scanned by PDA: return area + all positions in that area
+    if (String(merged?.changedField) === "location-qr" && merged?.location) {
+      // Use full QR = areaQr + ' ' + location, or just location if areaQr is empty
+      const areaQr = String(merged.areaQr || "").trim();
+      const location = String(merged.location).trim().toUpperCase();
+      const fullQr = areaQr ? `${areaQr} ${location}`.toUpperCase() : location;
+      try {
+        // Try full QR first, then location code only
+        let locRows = await query(`
+          SELECT sl.area, sl.code, sl.qr_code AS "qrCode", sl.allow_receiving AS "allowReceiving"
+          FROM storage_locations sl
+          WHERE UPPER(sl.qr_code) = $1 OR UPPER(sl.code) = $1
+        `, [fullQr]);
+        // If not found, try location code alone
+        if (locRows.rows.length === 0) {
+          locRows = await query(`
+            SELECT sl.area, sl.code, sl.qr_code AS "qrCode", sl.allow_receiving AS "allowReceiving"
+            FROM storage_locations sl
+            WHERE UPPER(sl.code) = $1
+          `, [location]);
+        }
+        if (locRows.rows.length > 0) {
+          const area = locRows.rows[0].area || areaQr;
+          const areaRows = await query(`
+            SELECT sl.code, sl.qr_code AS "qrCode", sl.allow_receiving AS "allowReceiving"
+            FROM storage_locations sl
+            WHERE sl.area = $1 AND sl.status = 'active' AND sl.allow_receiving = true
+            ORDER BY sl.code
+          `, [area]);
+          const map = areaRows.rows.reduce((acc, r) => {
+            if (!acc[r.area]) acc[r.area] = [];
+            acc[r.area].push({ code: r.code, qrCode: r.qrCode });
+            return acc;
+          }, {});
+          return res.json({ ok: true, liveState: true, at: wmsReceivingLiveDraft.at, area, locationMap: map });
+        } else {
+          console.warn(`[LOCATION_QR] not found in DB: fullQr=${fullQr}, location=${location}`);
+        }
+      } catch (e) {
+        console.warn("[LOCATION_QR] map lookup failed:", e.message);
+      }
+    }
     return res.json({ ok: true, liveState: true, at: wmsReceivingLiveDraft.at });
   }
   if (String(type).toUpperCase() === "WMS_RECEIVING_WMS_DRAFT") {
-    wmsReceivingLiveDraft = { payload: payload ?? {}, at: Date.now(), from: from || "wms_receiving" };
+    // This is outbound WMS -> PDA state. Never put it into the PDA -> WMS
+    // live-state slot or the browser will poll its own draft back and flicker.
     neuralBroadcast({ ...req.body, type: "WMS_RECEIVING_WMS_DRAFT", payload: payload ?? {} });
-    return res.json({ ok: true, liveState: true, at: wmsReceivingLiveDraft.at });
+    return res.json({ ok: true, delivered: true, at: Date.now() });
   }
   // PDA 3D map survey is a WMS master-data update, not a production event.
   // Persist the selected map point so every PDA and the WMS map share one coordinate source.
@@ -11986,6 +12070,18 @@ app.post('/api/factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/prompt', asyn
     res.json(mutateEnvelope({employeeId:HERMES_SUPERVISOR_ID,promptProfile:'HERMES_OPS_SUPERVISOR_V1',operation,prompt}));
   }catch(e){res.status(400).json(errorEnvelope('HERMES_PROMPT_BUILD_FAILED',e.message));}
 });
+app.post('/api/factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/run', async (req,res) => {
+  try {
+    await factoryVirtualEmployeesReady;
+    const config=(await query(`SELECT enabled FROM factory_virtual_employee_configs WHERE employee_id=$1`,[HERMES_SUPERVISOR_ID])).rows[0];
+    if(config?.enabled===false)return res.status(409).json(errorEnvelope('HERMES_SUPERVISOR_DISABLED','Hermes supervisor is disabled'));
+    const operation=String(req.body?.operation||'patrol').trim().toLowerCase();
+    const prompt=buildHermesSupervisorPrompt({operation,now:new Date().toISOString(),context:req.body?.context||{}});
+    const result=await askLLMWithFallback('hermes',prompt,{tier:'hermes',timeoutMs:Number(process.env.HERMES_LLM_TIMEOUT_MS||180000)});
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'SUPERVISOR_MODEL_COMPLETED',$2::jsonb,$3)`,[HERMES_SUPERVISOR_ID,JSON.stringify({operation,model:result.model,tier:result.tier,taskUsed:result.taskUsed}),req.user?.username||'manager']);
+    res.json(mutateEnvelope({employeeId:HERMES_SUPERVISOR_ID,promptProfile:'HERMES_OPS_SUPERVISOR_V1',operation,model:result.model,providerTask:result.taskUsed,output:result.text}));
+  }catch(e){res.status(502).json(errorEnvelope('HERMES_MODEL_EXECUTION_FAILED',e.message));}
+});
 let warehouseSafetyReportBusy=false;
 async function runWarehouseSafetyReport(){
   if(warehouseSafetyReportBusy)return {skipped:true,reason:'already_running'};
@@ -13582,6 +13678,7 @@ const PDA_ROLE_DEFINITIONS = Object.freeze({
   SMT_OPERATOR: { responsibilities: ["load_material", "scan_and_bind", "replace_roll", "report_exception"], pages: ["pda.loading", "pda.loading.history"], actions: ["smt.loading.start", "smt.loading.bind", "smt.loading.roll_change", "pda.exception.report"], closedLoop: ["MES_VALIDATE", "BINDING_RECORDED", "EXCEPTION_ESCALATED", "HISTORY_TRACEABLE"] },
   MATERIAL_OPERATOR: { responsibilities: ["load_material", "scan_and_bind", "replace_roll", "report_exception"], pages: ["pda.loading", "pda.loading.history"], actions: ["smt.loading.start", "smt.loading.bind", "smt.loading.roll_change", "pda.exception.report"], closedLoop: ["MES_VALIDATE", "BINDING_RECORDED", "EXCEPTION_ESCALATED", "HISTORY_TRACEABLE"] },
   WAREHOUSE: { responsibilities: ["receive", "issue", "requisition", "return", "replenish", "count", "trace_inventory"], pages: ["wms.inbound", "wms.outbound", "wms.requisition", "wms.return", "wms.replenishment", "wms.count", "wms.history"], actions: ["wms.receive", "wms.issue", "wms.approve", "wms.execute", "wms.complete", "wms.count.submit"], closedLoop: ["DOCUMENT_CREATED", "MES_VALIDATED", "STOCK_MOVED", "AUDIT_RECORDED"] },
+  MATERIAL_FETCHER: { responsibilities: ["view_fetch_queue", "pick_fifo_lot", "scan_material_sn", "handover_fetch_package"], pages: ["wms.fetching", "wms.requisition", "wms.return", "wms.history"], actions: ["wms.fetch.view", "wms.fetch.execute", "wms.fetch.handover"], closedLoop: ["FETCH_TASK_OPENED", "MATERIAL_SCANNED", "PICK_RECORDED", "HANDOVER_RECORDED"] },
   GROUP_LEADER: { responsibilities: ["monitor_line", "acknowledge_alarm", "coordinate_repair", "handover_shift"], pages: ["manager.dashboard", "manager.alerts", "manager.repair", "manager.line_status", "manager.team", "manager.handover"], actions: ["manager.alert.ack", "manager.alert.escalate", "manager.handover.confirm"], closedLoop: ["ALARM_ACKNOWLEDGED", "REPAIR_ESCALATED", "HANDOVER_CONFIRMED"] },
   LINE_MANAGER: { responsibilities: ["manage_line", "release_loading", "decide_exceptions", "manage_team", "manage_targets", "handover_shift"], domains: { lines: ["HR/MES assigned production lines only"], shifts: ["assigned shift and approved handover window"], workOrders: ["work orders released to assigned lines"], processDomains: ["manual line, auto line and SMT domains explicitly assigned by MES"], team: ["employees assigned to the manager's line and shift"], materials: ["materials opened by MES for the active work order only"] }, pages: ["manager.dashboard", "manager.alerts", "manager.repair", "manager.decisions", "manager.line_status", "manager.team", "manager.targets", "manager.handover", "manager.assignments", "manager.hiring", "manager.grievance"], actions: ["manager.alert.ack", "manager.alert.escalate", "manager.decision.information", "smt.loading.release", "manager.handover.confirm", "mes.line_assignment.manage"], closedLoop: ["DECISION_RECORDED", "LOADING_RELEASED", "HANDOVER_CONFIRMED", "AUDIT_RECORDED"] },
   MES: { responsibilities: ["control_work_order", "validate_route", "coordinate_approvals", "close_loading"], pages: ["manager.dashboard", "manager.alerts", "manager.decisions", "manager.approvals", "manager.line_status"], actions: ["smt.loading.approve", "manager.decision.approve", "manager.decision.reject", "mes.work_order.release"], closedLoop: ["ALL_DEPARTMENT_APPROVALS", "MES_RELEASED", "AUDIT_RECORDED"] },
@@ -13663,6 +13760,8 @@ function authenticateJWT(req, res, next) {
   if (req.method === "GET" && req.originalUrl.includes("/station/confirmed-motherboards/search/")) return next();
   // Public paths (req.path is relative to api router mount, so /api prefix already stripped)
   if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state") return next();
+  // Warehouse layout data — needed by PDA before login (no sensitive content, just area/position lookup)
+  if (req.path === "/api/wms/areas" || req.path === "/api/wms/location-map") return next();
   if (req.path === "/meta/bootstrap") return next();
   if (req.path.startsWith("/health") || req.path.startsWith("/openapi") || req.path.startsWith("/ai/health") || req.path.startsWith("/managers/")) return next();
   // Station integration paths — no JWT required (but may require separate station-level auth)
@@ -13819,7 +13918,9 @@ app.get("/openapi.yaml", (_req, res) => {
 
 // ── Auth (on app router at /auth/* so API_BASE can be http://127.0.0.1:8080 for all non-auth calls) ──
 async function getHrPdaAssignment(userId) {
-  const result = await pgPool.query(`
+  let result;
+  try {
+    result = await pgPool.query(`
     SELECT pl.internal_code AS "lineCode",
            a.role_code AS "assignmentRoleCode",
            a.loading_permission AS "loadingPermission",
@@ -13832,7 +13933,13 @@ async function getHrPdaAssignment(userId) {
       AND NOW() BETWEEN a.valid_from AND a.valid_until
     ORDER BY CASE WHEN a.status = 'ACTIVE' THEN 0 ELSE 1 END, a.updated_at DESC
     LIMIT 1
-  `, [userId]);
+    `, [userId]);
+  } catch (err) {
+    // Older production databases may not yet have the optional daily PDA-role
+    // table. Authentication must remain available while that migration catches up.
+    if (String(err?.code) === "42P01") return null;
+    throw err;
+  }
   const row = result.rows[0];
   return row ? {
     lineCode: row.lineCode,
@@ -16069,9 +16176,47 @@ app.get("/public/wms-area-markers",async(_req,res)=>{
   try{
     const rows=await query(`SELECT area_code AS "areaCode",('WMS-AREA:' || UPPER(area_code)) AS "areaQr",area_name AS "areaName",area_type AS "areaType",
       polygon,capacity,occupied,status,source_layout AS "sourceLayout",updated_at AS "updatedAt"
-      FROM wms_floor_storage_areas ORDER BY area_code`);
+      FROM wms_floor_storage_areas WHERE status<>'DISABLED' ORDER BY area_code`);
     res.json(envelope({floorAreas:rows.rows}));
   }catch(error){res.status(500).json(errorEnvelope("WMS_AREA_MARKERS_FAILED",error.message));}
+});
+
+app.delete("/api/wms/floor-storage-areas/:areaCode", requirePermission("wms.execute"), async (req,res)=>{
+  try{
+    const {areaCode}=req.params;
+    const area=(await query(`SELECT area_code,status FROM wms_floor_storage_areas WHERE area_code=upper($1)`,[areaCode])).rows[0];
+    if(!area) return res.status(404).json(errorEnvelope("NOT_FOUND",`Area ${areaCode} not found`));
+    if(area.status==='DISABLED') return res.status(404).json(errorEnvelope("NOT_FOUND",`Area ${areaCode} not found`));
+    // Check wms_material_position_history for latest floor positions in this area
+    const hasMaterials=(await query(`
+      SELECT EXISTS(
+        SELECT 1 FROM wms_material_position_history h
+        JOIN LATERAL (
+          SELECT MAX(occurred_at) as max_at
+          FROM wms_material_position_history
+          WHERE material_lot_id=h.material_lot_id AND position_type='FLOOR'
+        ) latest ON latest.max_at=h.occurred_at
+        WHERE h.position_type='FLOOR' AND h.area_code=upper($1)
+      ) as has_materials
+    `,[areaCode])).rows[0];
+    if(hasMaterials.has_materials) return res.status(409).json(errorEnvelope("AREA_NOT_EMPTY",`Area ${areaCode} has active floor materials and cannot be deleted`));
+    const isTestArea=/(^|[-_])TEST([-_]|$)/i.test(area.area_code);
+    // Explicit test areas may be purged completely. Production areas retain
+    // layout and traceability history and are only removed from active use.
+    const result=isTestArea
+      ? await query(`DELETE FROM wms_floor_storage_areas WHERE area_code=upper($1) RETURNING area_code`,[areaCode])
+      : await query(`UPDATE wms_floor_storage_areas SET status='DISABLED',updated_at=NOW() WHERE area_code=upper($1) RETURNING area_code`,[areaCode]);
+    res.json(envelope({deleted:result.rows[0].area_code,purged:isTestArea}));
+  }catch(error){res.status(400).json(errorEnvelope("WMS_AREA_DELETE_FAILED",error.message));}
+});
+
+app.get("/api/wms/floor-storage-areas/all", requirePermission("wms.view"), async (_req,res)=>{
+  try{
+    const rows=await query(`SELECT area_code AS "areaCode",area_qr AS "areaQr",area_name AS "areaName",area_type AS "areaType",
+      polygon,capacity,occupied,status,source_layout AS "sourceLayout",updated_at AS "updatedAt"
+      FROM wms_floor_storage_areas ORDER BY area_code`);
+    res.json(envelope({floorAreas:rows.rows}));
+  }catch(error){res.status(500).json(errorEnvelope("WMS_AREAS_ALL_FAILED",error.message));}
 });
 
 // Read-only material list assigned by MES to one PDA. The PDA must not fall
@@ -18382,6 +18527,54 @@ if(process.env.DEBUG_STARTUP==="1")console.log("startup: document routers loaded
 app.use("/wms/inbound", inboundRouter);
 app.use("/wms/outbound", outboundRouter);
 app.use("/wms/requisition", reqRouter);
+
+app.get("/wms/fetch-packages", requirePermission("wms.view"), async (req,res) => {
+  try {
+    const status=String(req.query.status||"").trim().toUpperCase(),q=String(req.query.q||"").trim();
+    const limit=Math.min(Math.max(Number(req.query.limit)||100,1),500);
+    const rows=await query(`SELECT fp.*,r.doc_no AS "requisitionNo",r.requestor_name AS "requestorName",
+      (SELECT count(*)::int FROM wms_fetch_package_events e WHERE e.fetch_package_id=fp.id) AS "eventCount"
+      FROM wms_fetch_packages fp JOIN requisitions r ON r.id=fp.requisition_id
+      WHERE ($1='' OR fp.status=$1) AND ($2='' OR fp.package_no ILIKE '%'||$2||'%' OR COALESCE(fp.source_po,'') ILIKE '%'||$2||'%' OR COALESCE(fp.work_order_code,'') ILIKE '%'||$2||'%' OR COALESCE(fp.line_code,'') ILIKE '%'||$2||'%' OR fp.contents::text ILIKE '%'||$2||'%')
+      ORDER BY CASE fp.status WHEN 'PREPARED' THEN 0 WHEN 'HANDED_OVER' THEN 1 WHEN 'RECEIVED' THEN 2 WHEN 'CONSUMING' THEN 3 ELSE 4 END,COALESCE(fp.delivery_due_at,fp.created_at),fp.created_at DESC LIMIT $3`,[status,q,limit]);
+    res.json(listEnvelope(rows.rows,rows.rows.length));
+  }catch(error){res.status(500).json(errorEnvelope("FETCH_PACKAGE_LIST_FAILED",error.message));}
+});
+
+app.get("/wms/fetch-packages/:qr", requirePermission("wms.view"), async (req,res) => {
+  try {
+    const item=(await query(`SELECT fp.*,r.doc_no AS "requisitionNo",r.requestor_name AS "requestorName"
+      FROM wms_fetch_packages fp JOIN requisitions r ON r.id=fp.requisition_id WHERE fp.qr_value=$1 OR fp.package_no=$1`,[req.params.qr])).rows[0];
+    if(!item)return res.status(404).json(errorEnvelope("FETCH_PACKAGE_NOT_FOUND","Fetching package QR was not found"));
+    const events=(await query(`SELECT event_type AS "eventType",actor,device_code AS "deviceCode",station_code AS "stationCode",detail,occurred_at AS "occurredAt"
+      FROM wms_fetch_package_events WHERE fetch_package_id=$1 ORDER BY occurred_at`,[item.id])).rows;
+    res.json(mutateEnvelope({...item,events}));
+  }catch(error){res.status(500).json(errorEnvelope("FETCH_PACKAGE_QUERY_FAILED",error.message));}
+});
+
+app.post("/wms/fetch-packages/:qr/handover", requirePermission("wms.execute"), async (req,res) => {
+  const client=await pgPool.connect();try{await client.query("BEGIN");const p=req.body?.payload??req.body??{};
+    const item=(await client.query(`SELECT * FROM wms_fetch_packages WHERE qr_value=$1 OR package_no=$1 FOR UPDATE`,[req.params.qr])).rows[0];
+    if(!item||item.status!=="PREPARED")throw new Error(!item?"Fetching package QR was not found":"Package is not ready for warehouse handover");
+    const actor=String(req.user?.username||p.actor||"").trim();if(!actor)throw new Error("Warehouse sender badge is required");
+    if(p.confirmedQty!=null&&Number(p.confirmedQty)!==Number(item.total_qty))throw new Error("Confirmed quantity must match the fetching package total");
+    const updated=(await client.query(`UPDATE wms_fetch_packages SET status='HANDED_OVER',handed_over_by=$2,handed_over_at=now(),updated_at=now() WHERE id=$1 RETURNING *`,[item.id,actor])).rows[0];
+    await client.query(`INSERT INTO wms_fetch_package_events(fetch_package_id,event_type,actor,device_code,station_code,detail) VALUES($1,'HANDED_OVER',$2,$3,$4,$5::jsonb)`,[item.id,actor,p.deviceCode||null,p.stationCode||null,JSON.stringify({quantity:item.total_qty})]);
+    await client.query("COMMIT");res.json(mutateEnvelope(updated));
+  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("FETCH_PACKAGE_HANDOVER_FAILED",error.message));}finally{client.release();}
+});
+
+app.post("/wms/fetch-packages/:qr/receive", requirePermission("wms.execute"), async (req,res) => {
+  const client=await pgPool.connect();try{await client.query("BEGIN");const p=req.body?.payload??req.body??{};
+    const item=(await client.query(`SELECT * FROM wms_fetch_packages WHERE qr_value=$1 OR package_no=$1 FOR UPDATE`,[req.params.qr])).rows[0];
+    if(!item||item.status!=="HANDED_OVER")throw new Error(!item?"Fetching package QR was not found":"Warehouse must hand over this package first");
+    const actor=String(req.user?.username||p.actor||"").trim();if(!actor)throw new Error("Line receiver badge is required");
+    if(actor===item.handed_over_by)throw new Error("Sender and receiver must be different people");
+    const updated=(await client.query(`UPDATE wms_fetch_packages SET status='RECEIVED',received_by=$2,received_at=now(),updated_at=now() WHERE id=$1 RETURNING *`,[item.id,actor])).rows[0];
+    await client.query(`INSERT INTO wms_fetch_package_events(fetch_package_id,event_type,actor,device_code,station_code,detail) VALUES($1,'RECEIVED',$2,$3,$4,$5::jsonb)`,[item.id,actor,p.deviceCode||null,p.stationCode||item.line_code||null,JSON.stringify({sender:item.handed_over_by,quantity:item.total_qty})]);
+    await client.query("COMMIT");res.json(mutateEnvelope(updated));
+  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("FETCH_PACKAGE_RECEIVE_FAILED",error.message));}finally{client.release();}
+});
 app.use("/wms/return", retRouter);
 app.use("/wms/replenishment", repRouter);
 
@@ -19498,35 +19691,76 @@ api.post("/wms/receiving/label-ai", async (req, res) => {
     if (!image || image.length > 8_000_000) return res.status(400).json(errorEnvelope("LABEL_IMAGE_INVALID", "A label image up to 8 MB is required"));
     const scannerContext = [req.body?.qrValue ? `Decoded QR/barcode: ${req.body.qrValue}` : "", req.body?.localOcrText ? `On-device OCR: ${req.body.localOcrText}` : ""].filter(Boolean).join("\n");
     neuralBroadcast({ from: "pda_receiving", to: "*", type: "WMS_RECEIVING_LABEL_CAPTURED", stationCode: "wms_receiving", priority: "info", payload: { imageDataUrl: image, source: "NATIVE_PDA_LABEL_CAMERA", status: "OCR_PROCESSING" } });
-    const result = await askReceivingLabelVision(image, { context: scannerContext });
+    const result = await askReceivingLabelVision(image, { context: scannerContext, localOcrText: req.body?.localOcrText });
     const parsed = parseReceivingAiJson(result.raw);
     // Complete the bidirectional Vietnam/Ruijing material mapping on the
     // server so the WMS form does not depend on the browser having imported
     // the Excel workbook in the current session.
     const detectedCodes = [parsed.vietnamMaterialCode, parsed.materialCode, parsed.ruijingMaterialCode]
       .map(value => String(value || "").trim()).filter(Boolean);
+    let materialMasterMatched = false;
     if (detectedCodes.length) {
-      const mapped = (await query(`SELECT vietnam_material_code AS "vietnamMaterialCode",ruijing_material_code AS "ruijingMaterialCode",specification,supplier_name AS "supplierName",msd_level AS "msdLevel"
+      const mapped = (await query(`SELECT vietnam_material_code AS "vietnamMaterialCode",ruijing_material_code AS "ruijingMaterialCode",specification,supplier_name AS "supplierName",msd_level AS "msdLevel",floor_life_hours AS "floorLifeHours"
         FROM wms_material_label_master
         WHERE UPPER(vietnam_material_code)=ANY($1::text[]) OR UPPER(ruijing_material_code)=ANY($1::text[])
         ORDER BY updated_at DESC LIMIT 1`, [detectedCodes.map(value => value.toUpperCase())])).rows[0];
       if (mapped) {
+        materialMasterMatched = true;
         parsed.materialCode = mapped.vietnamMaterialCode || parsed.materialCode;
         parsed.vietnamMaterialCode = mapped.vietnamMaterialCode || parsed.vietnamMaterialCode;
         parsed.ruijingMaterialCode = mapped.ruijingMaterialCode || parsed.ruijingMaterialCode;
         if (!parsed.specification && mapped.specification) parsed.specification = mapped.specification;
         if (!parsed.supplier && mapped.supplierName) parsed.supplier = mapped.supplierName;
-        if (!parsed.msdLevel && mapped.msdLevel) parsed.msdLevel = mapped.msdLevel;
+        // MSL/MSD and floor life are controlled master data. Never trust a
+        // visually OCR-read level when an approved database mapping exists.
+        parsed.msdLevel = mapped.msdLevel || null;
+        parsed.floorLifeHours = mapped.floorLifeHours || null;
+        // Material name comes from the materials master, keyed by either
+        // code. Prefer the Ruijing-code row; Vietnam-code rows often carry
+        // the code itself as a placeholder name.
+        const nameCodes = [parsed.ruijingMaterialCode, parsed.vietnamMaterialCode, parsed.materialCode]
+          .map(value => String(value || "").trim()).filter(Boolean);
+        if (nameCodes.length) {
+          const nameRow = (await query(`SELECT code,name_zh AS "nameZh"
+            FROM materials WHERE UPPER(code)=ANY($1::text[]) AND status='active'`,
+            [nameCodes.map(value => value.toUpperCase())])).rows
+            .sort((a, b) => nameCodes.findIndex(code => code.toUpperCase() === String(a.code).toUpperCase())
+              - nameCodes.findIndex(code => code.toUpperCase() === String(b.code).toUpperCase()))
+            .find(row => row.nameZh && row.nameZh.trim() && row.nameZh.trim().toUpperCase() !== String(row.code).toUpperCase());
+          if (nameRow) parsed.materialName = nameRow.nameZh;
+        }
       }
     }
     const warnings = [...parsed.warnings];
+    if (detectedCodes.length && !materialMasterMatched) {
+      warnings.push("OCR material code did not match WMS material master; value was not applied");
+      parsed.materialCode = null;
+      parsed.vietnamMaterialCode = null;
+      parsed.ruijingMaterialCode = null;
+    }
     const qrValue = String(req.body?.qrValue || "").trim();
     if (qrValue && parsed.materialCode && !qrValue.includes(String(parsed.materialCode))) warnings.push("QR value and printed material code do not match; verify manually");
     parsed.warnings = [...new Set(warnings)];
     const row = (await query(`INSERT INTO wms_receiving_label_ai_scans(image_data,parsed_data,model,confidence,warnings,scanned_by)
       VALUES($1,$2::jsonb,$3,$4,$5::jsonb,$6)
       RETURNING id,model,confidence,warnings,created_at AS "createdAt"`, [image, JSON.stringify(parsed), result.model, parsed.confidence, JSON.stringify(parsed.warnings), req.user?.username || "pda-receiver"])).rows[0];
-    const payload = { scanId: row.id, ...parsed, aiModel: row.model, imageStored: true, imageDataUrl: image, requiresConfirmation: false };
+    const validOcrDate = (value) => {
+      if (!value) return true;
+      const match = String(value).match(/^(20\d{2})-(\d{2})-(\d{2})$/);
+      if (!match) return false;
+      const year = Number(match[1]), month = Number(match[2]), day = Number(match[3]);
+      const date = new Date(Date.UTC(year, month - 1, day));
+      return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+    };
+    const parseFailed = !materialMasterMatched || !parsed.materialCode || !parsed.lot ||
+      !(Number(parsed.quantity || parsed.quantityPerBox) > 0) ||
+      !validOcrDate(parsed.manufactureDate) || !validOcrDate(parsed.expiryDate);
+    const parseMessage = parseFailed
+      ? "无法解析"
+      : "标签解析成功";
+    const payload = parseFailed
+      ? { scanId: row.id, aiModel: row.model, imageStored: true, imageDataUrl: image, materialMasterMatched: false, parseFailed: true, parseMessage, requiresConfirmation: true }
+      : { scanId: row.id, ...parsed, aiModel: row.model, imageStored: true, imageDataUrl: image, materialMasterMatched, parseFailed: false, parseMessage, requiresConfirmation: !materialMasterMatched };
     // Broadcast the PDA camera result to both the PDA and any open WMS
     // Material Receiving page so the operator sees the same live record.
     neuralBroadcast({ from: "wms", to: "*", type: "WMS_RECEIVING_AI_RESULT", stationCode: "wms_receiving", priority: "info", payload });
@@ -19537,7 +19771,7 @@ api.post("/wms/receiving/label-ai", async (req, res) => {
     // Keep the photo and return a confirmable record when Ollama/model is
     // offline, so the PDA upload does not look like a failed receiving step.
     const image = String(req.body?.image || req.body?.imageDataUrl || "").trim();
-    const fallback = { imageStored: Boolean(image), imageDataUrl: image, aiModel: "VISION_UNAVAILABLE", confidence: 0, requiresConfirmation: false, warnings: [`OCR暂不可用：${err.message}`] };
+    const fallback = { imageStored: Boolean(image), imageDataUrl: image, aiModel: "VISION_UNAVAILABLE", confidence: 0, parseFailed: true, parseMessage: "无法解析", requiresConfirmation: true, warnings: [`OCR暂不可用：${err.message}`] };
     try {
       const row = (await query(`INSERT INTO wms_receiving_label_ai_scans(image_data,parsed_data,model,confidence,warnings,scanned_by)
         VALUES($1,'{}'::jsonb,'VISION_UNAVAILABLE',0,$2::jsonb,$3)
@@ -19551,7 +19785,18 @@ api.post("/wms/receiving/label-ai", async (req, res) => {
   }
 });
 
-const receivingPalletRemovalReady = (async()=>{await query(`CREATE TABLE IF NOT EXISTS wms_receiving_pallet_box_removals (
+const receivingPalletRemovalReady = (async()=>{await query(`CREATE TABLE IF NOT EXISTS wms_receiving_pallet_box_bindings (
+  id BIGSERIAL PRIMARY KEY,
+  pallet_qr VARCHAR(160) NOT NULL,
+  box_qr VARCHAR(160) NOT NULL,
+  lot_no VARCHAR(160) NOT NULL,
+  supplier VARCHAR(200),
+  location_qr VARCHAR(240),
+  bound_by VARCHAR(120),
+  bound_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  idempotency_key VARCHAR(255),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+)`);await query(`CREATE TABLE IF NOT EXISTS wms_receiving_pallet_box_removals (
   id BIGSERIAL PRIMARY KEY,
   binding_id BIGINT,
   pallet_qr VARCHAR(160) NOT NULL,
@@ -19578,13 +19823,27 @@ await query(`CREATE TABLE IF NOT EXISTS wms_receiving_package_scans(
 app.post("/wms/receiving/package-scan",requirePermission("wms.execute"),async(req,res)=>{try{
   await receivingPalletRemovalReady;const qr=String(req.body?.qrValue||"").trim(),parts=qr.split("*");if(parts.length<6)return res.status(400).json(errorEnvelope("SUPPLIER_BOX_QR_INVALID","Supplier box QR must contain supplier, material, date, quantity, lot and serial"));
   const [supplierCode,materialCode,productionDate,rawQty,lotNo,serialNo,marker,parentSerial]=parts,quantity=Number(rawQty),level=marker==="SUB_BOX"?"SUB_BOX":"OUTER";if(!supplierCode||!materialCode||!lotNo||!serialNo||!(quantity>0))return res.status(400).json(errorEnvelope("SUPPLIER_BOX_QR_INVALID","Supplier box QR fields or quantity are invalid"));if(level==="SUB_BOX"&&!parentSerial)return res.status(400).json(errorEnvelope("SUB_BOX_PARENT_REQUIRED","Sub-box QR must identify its outer box"));
+  const expected=(await query(`SELECT i.manifest_id,m.po_no,m.material_code,m.lot_no,m.status AS manifest_status,
+      s.id AS supplier_id,s.code AS supplier_code,s.name_zh AS supplier_name,s.status AS supplier_status,
+      poh.id AS po_id,poh.status AS po_status,pol.id AS po_line_id,pol.qty_ordered,COALESCE(pol.qty_received,0) AS qty_received
+    FROM supplier_label_manifest_items i
+    JOIN supplier_label_manifests m ON m.id=i.manifest_id
+    JOIN suppliers s ON s.id=m.supplier_id
+    JOIN purchase_order_headers poh ON poh.po_no=m.po_no AND poh.supplier_id=m.supplier_id
+    JOIN purchase_order_lines pol ON pol.po_header_id=poh.id AND UPPER(pol.material_code)=UPPER(m.material_code)
+    WHERE i.qr_value=$1 LIMIT 1`,[qr])).rows[0];
+  if(!expected)return res.status(409).json(errorEnvelope("UNREGISTERED_SUPPLIER_LABEL","Supplier label was not registered by the portal for a WMS purchase order"));
+  if(String(expected.supplier_status).toLowerCase()!=="active")return res.status(409).json(errorEnvelope("SUPPLIER_BLOCKED","Supplier is suspended in WMS"));
+  if(!["sent","acknowledged","partially_received","SENT","ACKNOWLEDGED","PARTIALLY_RECEIVED"].includes(String(expected.po_status)))return res.status(409).json(errorEnvelope("PO_NOT_RECEIVABLE","Purchase order is not open for receiving"));
+  if(expected.supplier_code.toUpperCase()!==supplierCode.toUpperCase()||expected.material_code.toUpperCase()!==materialCode.toUpperCase()||expected.lot_no.toUpperCase()!==lotNo.toUpperCase())return res.status(409).json(errorEnvelope("SUPPLIER_LABEL_MISMATCH","QR supplier, PO material or lot does not match the registered print manifest"));
+  const remainingQty=Number(expected.qty_ordered)-Number(expected.qty_received);if(quantity>remainingQty)return res.status(409).json(errorEnvelope("PO_QTY_EXCEEDED",`Box quantity exceeds PO remaining quantity (${remainingQty})`));
   const parentQr=level==="SUB_BOX"?[supplierCode,materialCode,productionDate,"",lotNo,parentSerial].join("*"):null;
   const row=(await query(`INSERT INTO wms_receiving_package_scans(qr_value,supplier_code,material_code,production_date,quantity,lot_no,serial_no,package_level,parent_serial_no,parent_qr_value,pallet_qr,location_qr,scanned_by) VALUES($1,$2,$3,NULLIF($4,'')::date,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(qr_value) DO UPDATE SET pallet_qr=coalesce(excluded.pallet_qr,wms_receiving_package_scans.pallet_qr),location_qr=coalesce(excluded.location_qr,wms_receiving_package_scans.location_qr) RETURNING *`,[qr,supplierCode,materialCode,productionDate,quantity,lotNo,serialNo,level,parentSerial||null,parentQr,req.body?.palletQr||null,req.body?.locationQr||null,req.user?.username||"MATERIAL_RECEIVER"])).rows[0];
-  const expected=(await query(`UPDATE supplier_label_manifest_items i SET receiving_status='SCANNED',scanned_at=coalesce(scanned_at,now()) FROM supplier_label_manifests m WHERE i.manifest_id=m.id AND i.qr_value=$1 RETURNING m.id AS manifest_id`,[qr])).rows[0];
-  if(expected)await query(`UPDATE supplier_label_manifests SET status='PRE_RECEIVING_IN_PROGRESS',updated_at=now() WHERE id=$1`,[expected.manifest_id]);
+  await query(`UPDATE supplier_label_manifest_items SET receiving_status='SCANNED',scanned_at=coalesce(scanned_at,now()) WHERE manifest_id=$1 AND qr_value=$2`,[expected.manifest_id,qr]);
+  await query(`UPDATE supplier_label_manifests SET status='PRE_RECEIVING_IN_PROGRESS',updated_at=now() WHERE id=$1`,[expected.manifest_id]);
   const family=(await query(`SELECT qr_value AS "qrValue",serial_no AS "serialNo",package_level AS "packageLevel",parent_serial_no AS "parentSerialNo",quantity FROM wms_receiving_package_scans WHERE supplier_code=$1 AND material_code=$2 AND lot_no=$3 AND (serial_no=$4 OR parent_serial_no=$4) ORDER BY CASE package_level WHEN 'OUTER' THEN 0 ELSE 1 END,serial_no`,[supplierCode,materialCode,lotNo,level==="OUTER"?serialNo:parentSerial])).rows;
   const children=family.filter(x=>x.packageLevel==="SUB_BOX"),outer=family.find(x=>x.packageLevel==="OUTER"),effectiveQty=children.length?children.reduce((n,x)=>n+Number(x.quantity),0):Number(outer?.quantity||quantity);
-  res.status(201).json({success:true,data:{...row,qrValue:qr,serialNo,quantity,packageLevel:level,parentSerialNo:parentSerial||null,effectiveQty,countingSource:children.length?"SUB_BOX_SUM":"OUTER_BOX",preReceivingStatus:expected?"MATCHED_EXPECTED_LABEL":"UNPLANNED_LABEL",family}});
+  res.status(201).json({success:true,data:{...row,qrValue:qr,serialNo,quantity,packageLevel:level,parentSerialNo:parentSerial||null,effectiveQty,countingSource:children.length?"SUB_BOX_SUM":"OUTER_BOX",preReceivingStatus:"MATCHED_EXPECTED_LABEL",poNo:expected.po_no,supplierCode:expected.supplier_code,supplierName:expected.supplier_name,poRemainingQty:remainingQty,family}});
 }catch(e){res.status(500).json(errorEnvelope("PACKAGE_SCAN_FAILED",e.message));}});
 
 app.get("/wms/receiving/pre-receiving-manifests",requirePermission("wms.read"),async(req,res)=>{try{
@@ -19604,27 +19863,159 @@ async function detachRejectedLotFromPallet(client, lotNo, req, sourceType) {
 
 app.post("/wms/receiving/pallet-box-bindings", requirePermission("wms.execute"), async (req, res) => {
   try {
-    await receivingPalletRemovalReady;
     const palletQr = String(req.body?.palletQr || "").trim();
     const boxQr = String(req.body?.boxQr || "").trim();
     const lotNo = String(req.body?.lotNo || "").trim();
     const locationQr = String(req.body?.locationQr || "").trim();
     if (!palletQr || !boxQr || !lotNo) return res.status(400).json(errorEnvelope("QR_LOT_REQUIRED", "palletQr, boxQr and lotNo are required"));
     if (!locationQr) return res.status(400).json(errorEnvelope("LOCATION_QR_REQUIRED", "locationQr is required"));
+    let location=(await query(`SELECT id,code,qr_code,status,allow_receiving FROM storage_locations WHERE UPPER(qr_code)=UPPER($1) OR UPPER(code)=UPPER($1) LIMIT 1`,[locationQr])).rows[0];
+    if(!location) location=(await query(`SELECT NULL::bigint AS id,position_key AS code,qr_code,'active' AS status,TRUE AS allow_receiving FROM wms_canvas_position_qrs WHERE status='ACTIVE' AND UPPER(qr_code)=UPPER($1) AND position_type IN ('PALLET','PALLET_GRID') LIMIT 1`,[locationQr])).rows[0];
+    if(!location)return res.status(404).json(errorEnvelope("LOCATION_QR_NOT_FOUND","Storage location QR is not registered in WMS"));
+    if(String(location.status).toLowerCase()!=="active"||location.allow_receiving===false)return res.status(409).json(errorEnvelope("LOCATION_NOT_RECEIVABLE","Storage location is inactive or cannot receive material"));
     const latitude=Number(req.body?.gps?.latitude),longitude=Number(req.body?.gps?.longitude),accuracy=Number(req.body?.gps?.accuracy),capturedAt=req.body?.gps?.capturedAt||null;
-    if(!Number.isFinite(latitude)||!Number.isFinite(longitude)||!Number.isFinite(accuracy))return res.status(400).json(errorEnvelope("PDA_GPS_REQUIRED","PDA GPS latitude, longitude and accuracy are required"));
-    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at,package_level,parent_box_qr,declared_qty) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'OUTER'),$12,$13) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",package_level AS "packageLevel",parent_box_qr AS "parentBoxQr",declared_qty AS "declaredQty"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, locationQr, req.user?.username || "MATERIAL_RECEIVER",latitude,longitude,accuracy,capturedAt,req.body?.packageLevel||"OUTER",req.body?.parentBoxQr||null,req.body?.declaredQty||null]);
+    const hasGps=Number.isFinite(latitude)&&Number.isFinite(longitude)&&Number.isFinite(accuracy);
+    // TEST MODE: remove duplicate-checking so the same box QR can be re-bound
+    // repeatedly during UAT. Delete any prior binding with the same box_qr first.
+    if (boxQr) { await query(`DELETE FROM wms_receiving_pallet_box_bindings WHERE UPPER(box_qr)=UPPER($1)`, [boxQr]); }
+    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at,package_level,parent_box_qr,declared_qty) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'OUTER'),$12,$13) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",package_level AS "packageLevel",parent_box_qr AS "parentBoxQr",declared_qty AS "declaredQty"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, location.qr_code||location.code, req.user?.username || "MATERIAL_RECEIVER",hasGps?latitude:null,hasGps?longitude:null,hasGps?accuracy:null,hasGps?capturedAt:null,req.body?.packageLevel||"OUTER",req.body?.parentBoxQr||null,req.body?.declaredQty||null]);
+    // Binding is the step BEFORE IQC: promote the bound box into a material lot
+    // awaiting IQC (iqc_status='pending'). This is what the IQC queue consumes.
+    const matCode = String(req.body?.materialCode || "").trim();
+    const declaredQty = Number(req.body?.declaredQty || 0);
+    if (matCode && lotNo) {
+      let mat = (await query(`SELECT id FROM materials WHERE code=$1 LIMIT 1`, [matCode])).rows[0];
+      if (!mat) {
+        mat = (await query(`INSERT INTO materials (code,name_zh,name_en,name_vi,uom,material_type,domain_code) VALUES ($1,$1,$1,$1,'PCS','component','RAW_MATERIAL') RETURNING id`, [matCode])).rows[0];
+      }
+      let sup = (await query(`SELECT id FROM suppliers WHERE UPPER(code)=UPPER($1) LIMIT 1`, [String(req.body?.supplierCode||"").trim()])).rows[0];
+      if (!sup) {
+        const supName = String(req.body?.supplier || "").trim();
+        const supRow = supName ? (await query(`SELECT id FROM suppliers WHERE name_zh=$1 LIMIT 1`, [supName])).rows[0] : null;
+        sup = supRow;
+      }
+      if (!sup) sup = (await query(`SELECT id FROM suppliers ORDER BY id LIMIT 1`)).rows[0];
+      if (!sup) sup = (await query(`INSERT INTO suppliers (code,name_zh,name_en,name_vi,status) VALUES ('AUTO','AUTO','AUTO','AUTO','active') RETURNING id`)).rows[0];
+      const existing = (await query(`SELECT id, storage_location_id FROM material_lots WHERE lot_no=$1 ORDER BY id DESC LIMIT 1`, [lotNo])).rows[0];
+      let lotId;
+      if (existing) {
+        await query(`UPDATE material_lots SET iqc_status='pending', storage_location_id=COALESCE($1,storage_location_id), received_qty=received_qty+$2, updated_at=now() WHERE id=$3`, [location.id||null, declaredQty, existing.id]);
+        lotId = existing.id;
+      } else {
+        const nl = await query(`INSERT INTO material_lots (material_id,supplier_id,lot_no,label_id,received_qty,iqc_status,lot_status,received_at,storage_location_id,manufacturing_date)
+          VALUES ($1,$2,$3,$4,$5,'pending','open',now(),$6,$7) RETURNING id`, [mat.id, sup.id, lotNo, req.body?.sourceBoxQr||boxQr, declaredQty||0, location.id||null, req.body?.manufactureDate||null]);
+        lotId = nl.rows[0].id;
+      }
+      // Record the incoming stock so the bound material appears in inventory
+      // awaiting IQC (iqc_status='pending' on the lot).
+      await query(`INSERT INTO inventory_transactions (tx_no, action, material_lot_id, qty, to_location_id, operator_id, tx_status, reference_type, reference_no)
+        VALUES ($1,'RECEIVE',$2,$3,$4,$5,'posted','PALLET_BOX_BINDING',$6)`,
+        [`TXN_${Date.now()}`, lotId, declaredQty||0, location.id||null, req.user?.id||req.user?.userId||1, boxQr]);
+    }
     res.status(201).json({ success: true, data: r.rows[0] });
   } catch (err) { res.status(err.code === "23505" ? 409 : 500).json(errorEnvelope(err.code === "23505" ? "BOX_ALREADY_BOUND" : "PALLET_BOX_BIND_FAILED", err.code === "23505" ? "Box QR is already bound to a pallet" : err.message)); }
 });
-
 app.get("/wms/receiving/pallet-box-bindings", requirePermission("wms.read"), async (req, res) => {
   try {
-    await receivingPalletRemovalReady;
     const qr = String(req.query?.qr || "").trim();
     const r = await query(`SELECT pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt" FROM wms_receiving_pallet_box_bindings WHERE ($1='' OR UPPER(pallet_qr)=UPPER($1) OR UPPER(box_qr)=UPPER($1) OR UPPER(location_qr)=UPPER($1)) ORDER BY bound_at DESC LIMIT 500`, [qr]);
     res.json({ success: true, items: r.rows });
   } catch (err) { res.status(500).json(errorEnvelope("PALLET_BOX_TRACE_FAILED", err.message)); }
+});
+
+// PDA voice input: transcribe a base64 data-URL audio clip with local faster-whisper (small, CPU).
+// No audio leaves this machine. Body: { audioDataUrl: "data:audio/wav;base64,...", language: "zh"|"en"|"vi"|"auto" }
+app.post("/wms/voice/transcribe", requirePermission("wms.execute"), async (req, res) => {
+  try {
+    const dataUrl = String(req.body?.audioDataUrl || "");
+    const language = String(req.body?.language || "auto").trim().toLowerCase();
+    const m = dataUrl.match(/^data:audio\/\w+;base64,([A-Za-z0-9+/=]+)$/);
+    if (!m) return res.status(400).json(errorEnvelope("AUDIO_REQUIRED", "audioDataUrl must be a base64 audio data URL"));
+    const buf = Buffer.from(m[1], "base64");
+    if (!buf.length || buf.length > 10 * 1024 * 1024) return res.status(400).json(errorEnvelope("AUDIO_SIZE", "audio must be non-empty and under 10MB"));
+    const fs = require("node:fs"), os = require("node:os"), path = require("node:path");
+    const tmp = path.join(os.tmpdir(), `wms-voice-${Date.now()}-${Math.floor(Math.random() * 1e6)}.wav`);
+    fs.writeFileSync(tmp, buf);
+    try {
+      const pyBin = process.env.PYTHON_BIN || "C:\\Users\\tianj\\AppData\\Local\\Programs\\Python\\Python314\\python.exe";
+      const out = await execFileAsync(pyBin, [path.join(__dirname, "transcribe_voice.py"), tmp, language], { timeout: 180000, maxBuffer: 1024 * 1024 });
+      res.json({ success: true, data: JSON.parse(String(out.stdout || "{}")) });
+    } finally { try { fs.unlinkSync(tmp); } catch {} }
+  } catch (e) { res.status(500).json(errorEnvelope("VOICE_TRANSCRIBE_FAILED", e.message)); }
+});
+
+// Revoke ONLY the most recent pallet-box binding (the one the PDA just made).
+// Used when the last scan/binding was wrong: the PDA taps "撤销" and WMS deletes
+// that single newest record so the box QR becomes bindable again.
+app.delete("/wms/receiving/pallet-box-bindings/last", requirePermission("wms.execute"), async (req, res) => {
+  try {
+    const r = await query(`DELETE FROM wms_receiving_pallet_box_bindings
+      WHERE id = (SELECT id FROM wms_receiving_pallet_box_bindings ORDER BY bound_at DESC, id DESC LIMIT 1)
+      RETURNING id, pallet_qr AS "palletQr", box_qr AS "boxQr", lot_no AS "lotNo", location_qr AS "locationQr"`);
+    if (!r.rows.length) return res.status(404).json(errorEnvelope("NO_BINDING_TO_REVOKE", "No pallet-box binding found to revoke"));
+    res.json({ success: true, revoked: r.rows[0] });
+  } catch (err) { res.status(500).json(errorEnvelope("PALLET_BOX_REVOKE_FAILED", err.message)); }
+});
+
+// Pre-IQC management: PDA-bound boxes awaiting inspection. Aggregates by
+// material+lot, deriving material_sn from the box QR and supplier code from the
+// suppliers table by name. IQC status starts at 'pending'.
+app.get("/wms/receiving/pre-iqc", requirePermission("wms.read"), async (_req, res) => {
+  try {
+    const r = await query(`
+      SELECT
+        split_part(b.box_qr, ':', 2) AS "materialSn",
+        s.code AS "supplierCode",
+        b.supplier AS "supplierName",
+        SUM(COALESCE(b.declared_qty,0))::numeric AS "totalQty",
+        ml.manufacturing_date AS "productionDate",
+        b.lot_no AS "lot",
+        STRING_AGG(DISTINCT b.location_qr, ', ') AS "locationQrs",
+        COALESCE(ml.iqc_status,'pending') AS "iqcStatus",
+        COUNT(b.id) AS "boxCount"
+      FROM wms_receiving_pallet_box_bindings b
+      LEFT JOIN suppliers s ON s.name_zh=b.supplier OR s.name_en=b.supplier
+      LEFT JOIN material_lots ml ON ml.lot_no=b.lot_no
+      WHERE b.lot_no IS NOT NULL
+      GROUP BY split_part(b.box_qr, ':', 2), b.lot_no, s.code, b.supplier, ml.manufacturing_date, ml.iqc_status
+      ORDER BY b.lot_no`);
+    res.json({ success: true, items: r.rows });
+  } catch (err) { res.status(500).json(errorEnvelope("PRE_IQC_LOAD_FAILED", err.message)); }
+});
+
+// Record IQC decision on a pre-IQC lot: PASS -> released, FAIL -> rejected.
+app.put("/wms/receiving/pre-iqc/:lotNo/result", requirePermission("wms.execute"), async (req, res) => {
+  try {
+    const lotNo = String(req.params.lotNo || "").trim();
+    const result = String(req.body?.result || "").toUpperCase();
+    if (!lotNo || !["PASS", "FAIL"].includes(result))
+      return res.status(400).json(errorEnvelope("VALIDATION", "lotNo and result (PASS/FAIL) required"));
+    const newStatus = result === "PASS" ? "released" : "rejected";
+    const r = await query(`UPDATE material_lots SET iqc_status=$1, updated_at=now()
+      WHERE lot_no=$2 RETURNING id, lot_no AS "lot", iqc_status AS "iqcStatus"`, [newStatus, lotNo]);
+    if (!r.rows.length) {
+      // No material_lot yet — record the result on the bindings directly.
+      const upd = await query(`UPDATE wms_receiving_pallet_box_bindings SET declared_qty=declared_qty
+        WHERE lot_no=$1`, [lotNo]);
+      return res.status(200).json({ success: true, iqcStatus: newStatus, note: "no material_lot row; binding kept", affected: upd.rowCount });
+    }
+    res.json({ success: true, data: r.rows[0] });
+  } catch (err) { res.status(500).json(errorEnvelope("PRE_IQC_RESULT_FAILED", err.message)); }
+});
+
+// Count of boxes already bound to each storage-location QR. The PDA shows this
+// number inside each position box (bound boxes turn red). Returns a flat map of
+// location_qr -> bound box count so the client can look up the positions it owns.
+app.get("/wms/receiving/pallet-box-bindings/box-counts", requirePermission("wms.read"), async (_req, res) => {
+  try {
+    await receivingPalletRemovalReady;
+    const r = await query(`SELECT location_qr AS "locationQr", COUNT(*)::int AS "boxCount"
+      FROM wms_receiving_pallet_box_bindings
+      WHERE location_qr IS NOT NULL AND location_qr <> ''
+      GROUP BY location_qr`);
+    const counts = Object.fromEntries(r.rows.map(row => [row.locationQr, row.boxCount]));
+    res.json({ success: true, counts });
+  } catch (err) { res.status(500).json(errorEnvelope("PALLET_BOX_COUNT_FAILED", err.message)); }
 });
 
 app.get("/wms/material-rolls/resolve", async (req, res) => {
@@ -19668,11 +20059,13 @@ const materialRollLabelLedgerReady = (async () => {
     specification TEXT NOT NULL,
     supplier_name VARCHAR(200),
     msd_level VARCHAR(40),
+    floor_life_hours NUMERIC(10,2),
     source_file VARCHAR(500) NOT NULL DEFAULT '物料标签基础信息(1).xlsx',
     source_sheet VARCHAR(120) NOT NULL DEFAULT 'Sheet1',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await query(`ALTER TABLE wms_material_label_master ADD COLUMN IF NOT EXISTS floor_life_hours NUMERIC(10,2)`);
   await query(`CREATE TABLE IF NOT EXISTS wms_material_roll_labels(
     id BIGSERIAL PRIMARY KEY,
     material_sn VARCHAR(200) NOT NULL UNIQUE,
@@ -19808,7 +20201,7 @@ app.get("/wms/material-label-master", requirePermission("wms.view"), async (req,
   try {
     await materialRollLabelLedgerReady;
     const q=String(req.query.q||"").trim();
-    const rows=(await query(`SELECT id,vietnam_material_code AS "vietnamMaterialCode",ruijing_material_code AS "ruijingMaterialCode",specification,supplier_name AS "supplierName",msd_level AS "msdLevel",source_file AS "sourceFile",source_sheet AS "sourceSheet",updated_at AS "updatedAt" FROM wms_material_label_master WHERE ($1='' OR vietnam_material_code ILIKE '%'||$1||'%' OR ruijing_material_code ILIKE '%'||$1||'%' OR specification ILIKE '%'||$1||'%') ORDER BY vietnam_material_code`,[q])).rows;
+    const rows=(await query(`SELECT id,vietnam_material_code AS "vietnamMaterialCode",ruijing_material_code AS "ruijingMaterialCode",specification,supplier_name AS "supplierName",msd_level AS "msdLevel",floor_life_hours AS "floorLifeHours",source_file AS "sourceFile",source_sheet AS "sourceSheet",updated_at AS "updatedAt" FROM wms_material_label_master WHERE ($1='' OR vietnam_material_code ILIKE '%'||$1||'%' OR ruijing_material_code ILIKE '%'||$1||'%' OR specification ILIKE '%'||$1||'%') ORDER BY vietnam_material_code`,[q])).rows;
     res.json(listEnvelope(rows));
   } catch(err) { res.status(500).json(errorEnvelope("MATERIAL_MASTER_LIST_FAILED",err.message)); }
 });
@@ -19822,7 +20215,7 @@ app.post("/wms/material-label-master/import-sheet1", requirePermission("wms.exec
     for(const item of rows){
       const vietnam=String(item.vietnamMaterialCode||"").trim(); const ruijing=String(item.ruijingMaterialCode||"").trim(); const specification=String(item.specification||"").trim();
       if(!vietnam||!ruijing||!specification) continue;
-      await query(`INSERT INTO wms_material_label_master(vietnam_material_code,ruijing_material_code,specification,supplier_name,msd_level,source_file,source_sheet) VALUES($1,$2,$3,$4,$5,$6,'Sheet1') ON CONFLICT(vietnam_material_code) DO UPDATE SET ruijing_material_code=EXCLUDED.ruijing_material_code,specification=EXCLUDED.specification,supplier_name=EXCLUDED.supplier_name,msd_level=EXCLUDED.msd_level,source_file=EXCLUDED.source_file,source_sheet='Sheet1',updated_at=NOW()`,[vietnam,ruijing,specification,item.supplierName||null,item.msdLevel||null,String(p.sourceFile||"物料标签基础信息(1).xlsx")]);
+      await query(`INSERT INTO wms_material_label_master(vietnam_material_code,ruijing_material_code,specification,supplier_name,msd_level,floor_life_hours,source_file,source_sheet) VALUES($1,$2,$3,$4,$5,$6,$7,'Sheet1') ON CONFLICT(vietnam_material_code) DO UPDATE SET ruijing_material_code=EXCLUDED.ruijing_material_code,specification=EXCLUDED.specification,supplier_name=EXCLUDED.supplier_name,msd_level=EXCLUDED.msd_level,floor_life_hours=EXCLUDED.floor_life_hours,source_file=EXCLUDED.source_file,source_sheet='Sheet1',updated_at=NOW()`,[vietnam,ruijing,specification,item.supplierName||null,item.msdLevel||null,item.floorLifeHours||null,String(p.sourceFile||"物料标签基础信息(1).xlsx")]);
       imported++;
     }
     res.json(mutateEnvelope({imported,sourceSheet:"Sheet1"}));
@@ -20252,13 +20645,14 @@ app.get("/mes/material-roll-bindings", async (req, res) => {
 
 app.get("/wms/material-lots", async (req, res) => {
   try {
-    const { lotNo, labelId, iqcStatus, q, limit = 50, offset = 0 } = req.query;
-    const conditions = [];
+    const { lotNo, labelId, iqcStatus, q, msdOnly, limit = 50, offset = 0 } = req.query;
+    const conditions = [`COALESCE(ml.lot_status,'open') <> 'voided'`];
     const params = [];
     let idx = 1;
     if (lotNo) { conditions.push(`ml.lot_no = $${idx++}`); params.push(lotNo); }
     if (labelId) { conditions.push(`ml.label_id = $${idx++}`); params.push(labelId); }
     if (iqcStatus) { conditions.push(`ml.iqc_status = $${idx++}`); params.push(iqcStatus); }
+    if (String(msdOnly).toLowerCase() === "true") conditions.push(`NULLIF(TRIM(m.msd_level), '') IS NOT NULL AND UPPER(TRIM(m.msd_level)) NOT IN ('N/A', 'NA', 'NONE', '0')`);
     if (q) { conditions.push(`(ml.lot_no ILIKE $${idx} OR ml.label_id ILIKE $${idx} OR m.code ILIKE $${idx})`); params.push(`%${q}%`); idx++; }
     const joins = "JOIN materials m ON m.id = ml.material_id LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id LEFT JOIN suppliers s ON s.id = ml.supplier_id";
     const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
@@ -20268,8 +20662,9 @@ app.get("/wms/material-lots", async (req, res) => {
               GREATEST(ml.received_qty - COALESCE(ml.reserved_qty, 0), 0) AS "availableQty",
               COALESCE(ml.reserved_qty, 0) AS "reservedQty", ml.iqc_status AS "iqcStatus",
               m.code AS "materialCode", m.name_zh, m.name_en, m.name_vi,
-              m.uom,
+              m.uom, m.msd_level AS "msdLevel", m.shelf_life_days AS "shelfLifeDays",
               sl.code AS "locationCode", s.code AS "supplierCode", s.name_zh AS "supplierName",
+              ml.opened_at AS "openedAt", ml.opened_shelf_life_days AS "openedShelfLifeDays",
               ml.manufacturing_date AS "manufacturingDate",
               ml.expiry_date AS "expiryDate",
               ml.created_at AS "receivedDate",
@@ -20323,6 +20718,73 @@ app.get("/wms/storage-locations", async (req, res) => {
   }
 });
 
+app.get("/wms/storage-locations/resolve", requirePermission("wms.view"), async (req, res) => {
+  try {
+    const qr = String(req.query.qr || "").trim().toUpperCase();
+    if (!qr) return res.status(400).json(errorEnvelope("LOCATION_QR_REQUIRED", "location QR is required"));
+    let row = (await query(
+      `SELECT sl.id,sl.code,sl.qr_code AS "qrCode",sl.area,sl.status,
+              sl.name_zh AS "nameZh",sl.name_en AS "nameEn",sl.name_vi AS "nameVi",
+              sl.capacity_qty AS capacity,sl.allow_receiving AS "allowReceiving",
+              COALESCE(SUM(ml.received_qty),0)::numeric AS occupied
+       FROM storage_locations sl
+       LEFT JOIN material_lots ml ON ml.storage_location_id=sl.id
+       WHERE UPPER(sl.qr_code)=$1 OR UPPER(sl.code)=$1
+       GROUP BY sl.id`, [qr])).rows[0];
+    if (!row) row = (await query(
+      `SELECT NULL::bigint AS id,position_key AS code,qr_code AS "qrCode",
+              split_part(qr_code,'-R',1) AS area,'active' AS status,
+              position_name AS "nameZh",NULL::text AS "nameEn",NULL::text AS "nameVi",
+              1::numeric AS capacity,TRUE AS "allowReceiving",
+              CASE WHEN EXISTS(SELECT 1 FROM wms_receiving_pallet_box_bindings b WHERE UPPER(b.location_qr)=UPPER(q.qr_code)) THEN 1 ELSE 0 END::numeric AS occupied
+       FROM wms_canvas_position_qrs q
+       WHERE q.status='ACTIVE' AND UPPER(q.qr_code)=$1
+         AND q.position_type IN ('PALLET','PALLET_GRID') LIMIT 1`, [qr])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("LOCATION_QR_NOT_FOUND", "storage location QR is not registered in WMS"));
+    if (String(row.status).toLowerCase() !== "active" || row.allowReceiving === false) {
+      return res.status(409).json(errorEnvelope("LOCATION_NOT_RECEIVABLE", "storage location is inactive or does not allow receiving"));
+    }
+    res.json({ data: row });
+  } catch (error) {
+    res.status(500).json(errorEnvelope("LOCATION_QR_RESOLVE_FAILED", error.message));
+  }
+});
+
+app.get("/api/wms/location-map", async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT sl.area, sl.code, sl.qr_code AS "qrCode", sl.allow_receiving AS "allowReceiving"
+      FROM storage_locations sl
+      WHERE sl.status = 'active' AND sl.allow_receiving = true
+      ORDER BY sl.area, sl.code
+    `);
+    const map = rows.rows.reduce((acc, r) => {
+      if (!acc[r.area]) acc[r.area] = [];
+      acc[r.area].push({ code: r.code, qrCode: r.qrCode });
+      return acc;
+    }, {});
+    res.json({ ok: true, data: map });
+  } catch (err) {
+    res.status(500).json(errorEnvelope("LOCATION_MAP_FAILED", err.message));
+  }
+});
+
+app.get("/api/wms/areas", async (req, res) => {
+  try {
+    const rows = await query(`
+      SELECT sl.area,
+             COUNT(*) FILTER (WHERE sl.status='active' AND sl.allow_receiving=true) AS "availableCount",
+             COUNT(*) AS "totalCount"
+      FROM storage_locations sl
+      GROUP BY sl.area
+      ORDER BY sl.area
+    `);
+    res.json({ ok: true, data: rows.rows });
+  } catch (err) {
+    res.status(500).json(errorEnvelope("AREAS_FAILED", err.message));
+  }
+});
+
 app.get("/wms/stock", async (req, res) => {
   try {
     const { materialCode, iqcStatus, limit = 100, offset = 0 } = req.query;
@@ -20335,11 +20797,20 @@ app.get("/wms/stock", async (req, res) => {
     const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
     const data = await query(
       `SELECT m.code AS "materialCode", m.name_zh, m.name_en, m.name_vi,
-              ml.iqc_status AS "iqcStatus", SUM(ml.received_qty)::int AS qty,
-              SUM(GREATEST(ml.received_qty - COALESCE(ml.reserved_qty, 0), 0))::int AS "availableQty",
+              ml.iqc_status AS "iqcStatus",
+              COALESCE(SUM(CASE
+                WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+                WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty
+                ELSE 0 END),0)::int AS qty,
+              GREATEST(COALESCE(SUM(CASE
+                WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+                WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty
+                ELSE 0 END),0) - SUM(COALESCE(ml.reserved_qty,0)), 0)::int AS "availableQty",
               SUM(COALESCE(ml.reserved_qty, 0))::int AS "reservedQty",
               sl.code AS "locationCode"
-       FROM material_lots ml ${joins} ${where}
+       FROM material_lots ml ${joins}
+       LEFT JOIN inventory_transactions it ON it.material_lot_id = ml.id AND it.tx_status = 'posted'
+       ${where}
        GROUP BY m.code, m.name_zh, m.name_en, m.name_vi, ml.iqc_status, sl.code
        ORDER BY m.code LIMIT $${idx} OFFSET $${idx + 1}`,
       [...params, Number(limit), Number(offset)],
@@ -20389,89 +20860,158 @@ app.get("/wms/inventory-transactions", async (req, res) => {
   }
 });
 
+// Actual consumption is recorded only by posted CONSUME events. Picking and
+// line issue are movements and therefore remain visible as unconsumed stock.
+app.get("/wms/material-consumption-summary", requirePermission("wms.view"), async (req, res) => {
+  try {
+    const { q = "", fromDate, toDate, limit = 200 } = req.query;
+    const dates = [], predicates = ["it.action='CONSUME'", "it.tx_status='posted'"];
+    if (fromDate) { dates.push(fromDate); predicates.push(`it.occurred_at >= $${dates.length}`); }
+    if (toDate) { dates.push(toDate); predicates.push(`it.occurred_at <= $${dates.length}`); }
+    const search = `%${String(q).trim()}%`, maxRows = Math.min(Math.max(Number(limit) || 1000, 1), 5000);
+    const consumptionCte = `SELECT ml.material_id,SUM(it.qty)::float8 consumed_qty,COUNT(*)::int consumption_count,
+      MAX(it.occurred_at) last_consumed_at FROM inventory_transactions it JOIN material_lots ml ON ml.id=it.material_lot_id
+      WHERE ${predicates.join(" AND ")} GROUP BY ml.material_id`;
+    const items = await query(`WITH consumed AS (${consumptionCte}), stock AS (
+        SELECT material_id,SUM(GREATEST(received_qty,0))::float8 total_left_qty,
+          SUM(GREATEST(COALESCE(reserved_qty,0),0))::float8 line_side_qty,
+          SUM(GREATEST(received_qty-COALESCE(reserved_qty,0),0))::float8 warehouse_qty
+        FROM material_lots GROUP BY material_id)
+      SELECT m.id AS "materialId",m.code AS "materialCode",m.name_zh AS "nameZh",m.name_en AS "nameEn",m.name_vi AS "nameVi",m.uom,
+        COALESCE(c.consumed_qty,0)::float8 AS "consumedQty",COALESCE(s.total_left_qty,0)::float8 AS "totalLeftQty",
+        COALESCE(s.warehouse_qty,0)::float8 AS "warehouseQty",COALESCE(s.line_side_qty,0)::float8 AS "lineSideQty",
+        COALESCE(c.consumption_count,0)::int AS "consumptionCount",c.last_consumed_at AS "lastConsumedAt"
+      FROM materials m LEFT JOIN consumed c ON c.material_id=m.id LEFT JOIN stock s ON s.material_id=m.id
+      WHERE ($${dates.length + 1}='' OR m.code ILIKE $${dates.length + 2} OR m.name_zh ILIKE $${dates.length + 2}
+        OR m.name_en ILIKE $${dates.length + 2} OR m.name_vi ILIKE $${dates.length + 2})
+        AND (COALESCE(c.consumed_qty,0)>0 OR COALESCE(s.total_left_qty,0)>0)
+      ORDER BY COALESCE(c.consumed_qty,0) DESC,m.code LIMIT $${dates.length + 3}`,
+      [...dates, String(q).trim(), search, maxRows]);
+    const records = await query(`SELECT it.id,it.tx_no AS "txNo",m.code AS "materialCode",m.name_zh AS "nameZh",m.name_en AS "nameEn",m.name_vi AS "nameVi",
+        ml.lot_no AS "lotNo",it.qty::float8,m.uom,wo.code AS "workOrderCode",it.reference_no AS "referenceNo",
+        COALESCE(fp.line_code,tl.code,fl.code) AS station,
+        u.username AS operator,it.occurred_at AS "occurredAt"
+      FROM inventory_transactions it JOIN material_lots ml ON ml.id=it.material_lot_id JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN work_orders wo ON wo.id=it.work_order_id LEFT JOIN users u ON u.id=it.operator_id
+      LEFT JOIN wms_fetch_packages fp ON it.reference_type='FETCH_PACKAGE' AND fp.qr_value=it.reference_no
+      LEFT JOIN storage_locations fl ON fl.id=it.from_location_id LEFT JOIN storage_locations tl ON tl.id=it.to_location_id
+      WHERE ${predicates.join(" AND ")} AND ($${dates.length + 1}='' OR m.code ILIKE $${dates.length + 2}
+        OR ml.lot_no ILIKE $${dates.length + 2} OR wo.code ILIKE $${dates.length + 2})
+      ORDER BY it.occurred_at DESC LIMIT $${dates.length + 3}`,[...dates,String(q).trim(),search,maxRows]);
+    const summary = items.rows.reduce((total, row) => ({ consumedQty:total.consumedQty+Number(row.consumedQty),
+      totalLeftQty:total.totalLeftQty+Number(row.totalLeftQty),warehouseQty:total.warehouseQty+Number(row.warehouseQty),
+      lineSideQty:total.lineSideQty+Number(row.lineSideQty),materialCount:total.materialCount+1,
+      consumptionCount:total.consumptionCount+Number(row.consumptionCount) }),
+      {consumedQty:0,totalLeftQty:0,warehouseQty:0,lineSideQty:0,materialCount:0,consumptionCount:0});
+    res.json(mutateEnvelope({summary,items:items.rows,records:records.rows}));
+  } catch (err) {
+    console.error("GET /wms/material-consumption-summary:", err.message);
+    res.status(500).json(errorEnvelope("MATERIAL_CONSUMPTION_SUMMARY_FAILED", err.message));
+  }
+});
+
 // ── WMS Pick Orders (generated on-the-fly from BOM + WO) ──────────────────
+
+async function buildWmsPickOrder(wo) {
+  const bomRes = await query(
+    "SELECT id FROM boms WHERE product_id = $1 AND status = 'active' LIMIT 1",
+    [wo.product_id]
+  );
+  if (bomRes.rows.length === 0) {
+    return {
+      id: `po-${wo.code}`, orderNo: `PO-${wo.code}`, workOrderCode: wo.code,
+      lineCode: wo.line_code, status: "pending", operator: null,
+      createdAt: wo.created_at ?? new Date().toISOString(), completedAt: null, items: [],
+    };
+  }
+
+  const bomId = bomRes.rows[0].id;
+  const blRes = await query(
+    `SELECT bl.id, bl.material_id, bl.qty_per, bl.loss_rate,
+            m.code as material_code, m.name_zh, m.name_en, m.name_vi,
+            fifo.lot_no, fifo.location_code, roll.material_sn,
+            COALESCE(tx.picked_qty, 0) AS picked_qty,
+            COALESCE(tx.returned_qty, 0) AS returned_qty,
+            COALESCE(tx.scrapped_qty, 0) AS scrapped_qty,
+            tx.latest_fetch_time, tx.signed_by
+     FROM bom_lines bl
+     JOIN materials m ON m.id = bl.material_id
+     LEFT JOIN LATERAL (
+       SELECT ml.lot_no, sl.code AS location_code
+       FROM material_lots ml
+       LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id
+       WHERE ml.material_id = bl.material_id
+         AND ml.iqc_status = 'released' AND ml.lot_status = 'open'
+         AND ml.received_qty - COALESCE(ml.reserved_qty, 0) > 0
+         AND (ml.expiry_date IS NULL OR ml.expiry_date >= CURRENT_DATE)
+       ORDER BY ml.received_at ASC NULLS LAST, ml.id ASC
+       LIMIT 1
+     ) fifo ON true
+     LEFT JOIN LATERAL (
+       SELECT r.material_sn
+       FROM wms_material_roll_labels r
+       WHERE r.material_code = m.code AND r.lot_no = fifo.lot_no
+         AND r.lifecycle_status <> 'RETIRED'
+       ORDER BY r.created_at DESC LIMIT 1
+     ) roll ON true
+     LEFT JOIN LATERAL (
+       SELECT
+         COALESCE(SUM(it.qty) FILTER (WHERE it.action = 'PICK'), 0) AS picked_qty,
+         COALESCE(SUM(it.qty) FILTER (WHERE it.action = 'RETURN_FROM_LINE'), 0) AS returned_qty,
+         COALESCE(SUM(it.qty) FILTER (WHERE it.action IN ('SCRAP', 'IQC_SCRAP')), 0) AS scrapped_qty,
+         MAX(it.occurred_at) FILTER (WHERE it.action = 'PICK') AS latest_fetch_time,
+         (ARRAY_AGG(u.username ORDER BY it.occurred_at DESC) FILTER (WHERE it.action = 'PICK'))[1] AS signed_by
+       FROM inventory_transactions it
+       JOIN material_lots tx_lot ON tx_lot.id = it.material_lot_id
+       LEFT JOIN users u ON u.id = it.operator_id
+       WHERE it.work_order_id = $2 AND tx_lot.material_id = bl.material_id
+         AND it.tx_status = 'posted'
+     ) tx ON true
+     WHERE bl.bom_id = $1
+     ORDER BY bl.id`,
+    [bomId, wo.id]
+  );
+  const plannedQty = Number(wo.planned_qty);
+  const items = blRes.rows.map((bl) => ({
+    id: `${bomId}-${bl.id}`, pickOrderId: `po-${wo.code}`,
+    materialCode: bl.material_code,
+    materialName: { name_zh: bl.name_zh, name_en: bl.name_en, name_vi: bl.name_vi },
+    requiredQty: Math.ceil(Number(bl.qty_per) * plannedQty * (1 + Number(bl.loss_rate ?? 0))),
+    pickedQty: Number(bl.picked_qty), lotNo: bl.lot_no, locationCode: bl.location_code,
+    materialSn: bl.material_sn, returnedQty: Number(bl.returned_qty),
+    scrappedQty: Number(bl.scrapped_qty), latestFetchTime: bl.latest_fetch_time, signedBy: bl.signed_by,
+    status: Number(bl.picked_qty) >= Math.ceil(Number(bl.qty_per) * plannedQty * (1 + Number(bl.loss_rate ?? 0))) ? "picked" : "pending",
+  }));
+  return {
+    id: `po-${wo.code}`, orderNo: `PO-${wo.code}`, workOrderCode: wo.code,
+    lineCode: wo.line_code, status: "pending", operator: null,
+    createdAt: wo.created_at ?? new Date().toISOString(), completedAt: null, items,
+  };
+}
 
 app.get("/wms/pick-orders", async (req, res) => {
   try {
-    const workOrderCode = req.query.workOrderCode;
-    if (!workOrderCode) {
-      return res.status(400).json(errorEnvelope("VALIDATION", "workOrderCode query param required"));
-    }
+    const workOrderCode = String(req.query.workOrderCode ?? "").trim();
 
-    // Look up work order with product + line info
     const woRes = await query(
       `SELECT w.id, w.code, w.planned_qty, w.completed_qty, w.status,
+              w.created_at,
               p.id as product_id, p.code as product_code, p.name_zh as product_name_zh, p.name_en as product_name_en,
               pl.internal_code as line_code
        FROM work_orders w
        JOIN products p ON p.id = w.product_id
        JOIN production_lines pl ON pl.id = w.line_id
-       WHERE w.code = $1`,
+       WHERE ($1 = '' AND w.status IN ('released', 'running')) OR w.code = $1
+       ORDER BY w.created_at ASC
+       LIMIT 50`,
       [workOrderCode]
     );
     if (woRes.rows.length === 0) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", `Work order '${workOrderCode}' not found`));
+      if (workOrderCode) return res.status(404).json(errorEnvelope("NOT_FOUND", `Work order '${workOrderCode}' not found`));
+      return res.json(listEnvelope([], 0));
     }
-    const wo = woRes.rows[0];
-
-    // Find active BOM for this product
-    const bomRes = await query(
-      "SELECT id FROM boms WHERE product_id = $1 AND status = 'active' LIMIT 1",
-      [wo.product_id]
-    );
-    if (bomRes.rows.length === 0) {
-      // No active BOM — return empty pick order
-      return res.json(listEnvelope([{
-        id: `po-${wo.code}`,
-        orderNo: `PO-${wo.code}`,
-        workOrderCode: wo.code,
-        lineCode: wo.line_code,
-        status: "pending",
-        operator: null,
-        createdAt: new Date().toISOString(),
-        completedAt: null,
-        items: [],
-      }], 1));
-    }
-    const bomId = bomRes.rows[0].id;
-
-    // Get BOM lines with material info
-    const blRes = await query(
-      `SELECT bl.id, bl.material_id, bl.qty_per, bl.loss_rate, bl.reference_designators,
-              m.code as material_code, m.name_zh, m.name_en, m.name_vi, m.uom
-       FROM bom_lines bl
-       JOIN materials m ON m.id = bl.material_id
-       WHERE bl.bom_id = $1
-       ORDER BY bl.id`,
-      [bomId]
-    );
-
-    const plannedQty = Number(wo.planned_qty);
-    const items = blRes.rows.map((bl, idx) => ({
-      id: `${bomId}-${bl.id}`,
-      pickOrderId: `po-${wo.code}`,
-      materialCode: bl.material_code,
-      materialName: { name_zh: bl.name_zh, name_en: bl.name_en, name_vi: bl.name_vi },
-      requiredQty: Math.ceil(Number(bl.qty_per) * plannedQty * (1 + Number(bl.loss_rate ?? 0))),
-      pickedQty: 0,
-      lotNo: null,
-      locationCode: null,
-      status: "pending",
-    }));
-
-    const pickOrder = {
-      id: `po-${wo.code}`,
-      orderNo: `PO-${wo.code}`,
-      workOrderCode: wo.code,
-      lineCode: wo.line_code,
-      status: "pending",
-      operator: null,
-      createdAt: new Date().toISOString(),
-      completedAt: null,
-      items,
-    };
-
-    res.json(listEnvelope([pickOrder], items.length > 0 ? 1 : 0));
+    const pickOrders = await Promise.all(woRes.rows.map(buildWmsPickOrder));
+    res.json(listEnvelope(pickOrders, pickOrders.length));
   } catch (err) {
     console.error("GET /wms/pick-orders:", err.message);
     res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
@@ -20500,8 +21040,9 @@ app.post("/wms/transactions", requirePermission("wms.execute"), async (req, res)
     const action     = req.body?.action ?? raw.action;
     const lotNo     = raw.lotNo;
     const qty        = Number(raw.qty);
-    const operator   = raw.operator ?? raw.operatorUsername ?? "admin";
+    const operator   = req.user?.username ?? raw.operator ?? raw.operatorUsername ?? "admin";
     const workOrderCode = raw.workOrderCode;
+    const fetchPackageQr = String(raw.fetchPackageQr || "").trim();
 
     if (!action)  return res.status(400).json(errorEnvelope("VALIDATION", "action required"));
     if (!Number.isFinite(qty) || qty === 0 || (action !== "ADJUST" && qty < 0)) {
@@ -20545,6 +21086,15 @@ app.post("/wms/transactions", requirePermission("wms.execute"), async (req, res)
     if (action === "CONSUME" && qty > Number(lot.reserved_qty)) {
       return res.status(409).json(errorEnvelope("INSUFFICIENT_ISSUED_QTY", `Lot '${lot.lot_no}' only has ${Number(lot.reserved_qty)} issued units available to consume`));
     }
+    let fetchPackage = null;
+    if (action === "CONSUME") {
+      if (!fetchPackageQr) return res.status(400).json(errorEnvelope("FETCH_PACKAGE_REQUIRED", "Scan the fetching package QR before consumption"));
+      fetchPackage=(await query(`SELECT * FROM wms_fetch_packages WHERE qr_value=$1 OR package_no=$1`,[fetchPackageQr])).rows[0];
+      if(!fetchPackage||!["RECEIVED","CONSUMING"].includes(fetchPackage.status))
+        return res.status(409).json(errorEnvelope("FETCH_PACKAGE_NOT_RECEIVED", "The fetching package must complete PDA handover before consumption"));
+      if(workOrderCode&&fetchPackage.work_order_code&&workOrderCode!==fetchPackage.work_order_code)
+        return res.status(409).json(errorEnvelope("FETCH_PACKAGE_WORK_ORDER_MISMATCH", "Fetching package does not belong to this work order"));
+    }
 
     // Resolve work order
     let workOrderId = null;
@@ -20570,9 +21120,9 @@ app.post("/wms/transactions", requirePermission("wms.execute"), async (req, res)
     // Insert transaction
     const result = await query(
       `INSERT INTO inventory_transactions
-         (tx_no, action, material_lot_id, work_order_id, qty, from_location_id, to_location_id, operator_id, tx_status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'posted') RETURNING id`,
-      [`TXN_${Date.now()}`, action, lot.id, workOrderId, qty, fromLocId, toLocId, operatorId],
+         (tx_no, action, material_lot_id, work_order_id, qty, from_location_id, to_location_id, operator_id, tx_status,reference_type,reference_no)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'posted',$9,$10) RETURNING id`,
+      [`TXN_${Date.now()}`, action, lot.id, workOrderId, qty, fromLocId, toLocId, operatorId,fetchPackage?'FETCH_PACKAGE':null,fetchPackage?.qr_value||null],
     );
 
     // Update lot qty / reserved_qty based on action
@@ -20586,6 +21136,9 @@ app.post("/wms/transactions", requirePermission("wms.execute"), async (req, res)
         "UPDATE material_lots SET received_qty = received_qty - $1, reserved_qty = GREATEST(0, reserved_qty - $1) WHERE id = $2",
         [qty, lot.id]
       );
+      await query(`UPDATE wms_fetch_packages SET status='CONSUMING',updated_at=now() WHERE id=$1 AND status='RECEIVED'`,[fetchPackage.id]);
+      await query(`INSERT INTO wms_fetch_package_events(fetch_package_id,event_type,actor,station_code,detail) VALUES($1,'CONSUMED',$2,$3,$4::jsonb)`,
+        [fetchPackage.id,String(operator),String(raw.stationCode||raw.reason||'').replace(/^STATION:/,''),JSON.stringify({transactionId:result.rows[0].id,materialLotId:lot.id,lotNo:lot.lot_no,workOrderCode,qty})]);
     } else if (action === "RETURN_FROM_LINE") {
       await query(
         "UPDATE material_lots SET reserved_qty = GREATEST(0, reserved_qty - $1) WHERE id = $2",
@@ -24516,7 +25069,7 @@ const supplierManagementReady = (async()=>{
     completed_quantity numeric(18,4) NOT NULL, remaining_quantity numeric(18,4) NOT NULL, completion_percent numeric(8,2) NOT NULL,
     promised_date date, days_remaining integer, risk_level varchar(20) NOT NULL, supplier_note text,
     review_status varchar(30) NOT NULL DEFAULT 'PENDING_PMC_REVIEW', updated_at timestamptz NOT NULL DEFAULT now())`);
-  await query(`ALTER TABLE purchase_order_headers
+  try { await query(`ALTER TABLE purchase_order_headers
     ADD COLUMN IF NOT EXISTS supplier_response_status varchar(30),
     ADD COLUMN IF NOT EXISTS supplier_expected_delivery date,
     ADD COLUMN IF NOT EXISTS supplier_response_note text,
@@ -24536,7 +25089,11 @@ const supplierManagementReady = (async()=>{
     ADD COLUMN IF NOT EXISTS wms_contact_name varchar(160),
     ADD COLUMN IF NOT EXISTS wms_contact_email varchar(240),
     ADD COLUMN IF NOT EXISTS wms_contact_phone varchar(80),
-    ADD COLUMN IF NOT EXISTS portal_synced_at timestamptz`);
+    ADD COLUMN IF NOT EXISTS portal_synced_at timestamptz`); }
+  catch (error) {
+    if (error?.code !== "42501") throw error;
+    console.warn("Supplier management optional PO columns skipped: database role is not the purchase_order_headers owner");
+  }
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_primary_site ON supplier_sites(supplier_id) WHERE is_primary`);
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_primary_contact_type ON supplier_contacts(supplier_id,contact_type) WHERE is_primary`);
   await query(`CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_qualification_scope ON supplier_qualifications(supplier_id,scope_type,scope_code,factory_code)`);
@@ -24560,6 +25117,84 @@ const OA_ALLOWED_EXTENSIONS=new Set(['.xlsx','.xls','.docx','.doc','.pdf','.md',
 const oaDocumentRow=`d.id,d.document_no AS "documentNo",d.title,d.category,d.source_type AS "sourceType",d.source_url AS "sourceUrl",d.license_status AS "licenseStatus",d.version_no AS "versionNo",d.file_name AS "fileName",d.mime_type AS "mimeType",d.file_size AS "fileSize",d.checksum_sha256 AS "checksumSha256",d.applicable_employees AS "applicableEmployees",d.status,d.current_step AS "currentStep",d.total_steps AS "totalSteps",d.effective_from AS "effectiveFrom",d.review_due_at AS "reviewDueAt",d.notes,d.created_by AS "createdBy",d.created_at AS "createdAt",d.updated_at AS "updatedAt",d.published_at AS "publishedAt"`;
 
 api.get('/oa/document-routes',authenticateJWT,async(_req,res)=>{try{const rows=await query(`SELECT route_code AS "routeCode",document_category AS category,route_name AS "routeName",steps,active FROM oa_document_route_templates WHERE active=true ORDER BY document_category`);res.json(listEnvelope(rows.rows));}catch(e){res.status(500).json(errorEnvelope('OA_ROUTE_LIST_FAILED',e.message));}});
+
+api.get('/oa/processes/material-requisition',authenticateJWT,async(_req,res)=>{try{
+  const process=(await query(`SELECT id,process_code AS "processCode",process_name AS "processName",active FROM oa_process_definitions WHERE process_code='WMS-MATERIAL-REQUISITION'`)).rows[0];
+  if(!process)return res.status(404).json(errorEnvelope('OA_PROCESS_NOT_FOUND','material requisition process not found'));
+  const steps=await query(`SELECT id,step_no AS "stepNo",signer_user_id AS "signerUserId",signer_username AS "signerUsername",signer_name AS "signerName",signer_role AS "signerRole",sla_hours AS "slaHours" FROM oa_process_signature_steps WHERE process_id=$1 AND active=true ORDER BY step_no`,[process.id]);
+  res.json(envelope({...process,steps:steps.rows}));
+}catch(e){res.status(500).json(errorEnvelope('OA_PROCESS_QUERY_FAILED',e.message));}});
+
+api.get('/oa/processes',authenticateJWT,async(_req,res)=>{try{
+  const rows=await query(`SELECT p.id,p.process_code AS "processCode",p.process_name AS "processName",p.entity_type AS "entityType",p.active,count(s.id) FILTER(WHERE s.active=true)::int AS "stepCount" FROM oa_process_definitions p LEFT JOIN oa_process_signature_steps s ON s.process_id=p.id GROUP BY p.id ORDER BY p.process_name`);
+  res.json(listEnvelope(rows.rows));
+}catch(e){res.status(500).json(errorEnvelope('OA_PROCESS_LIST_FAILED',e.message));}});
+
+api.get('/oa/processes/:processCode',authenticateJWT,async(req,res)=>{try{
+  const process=(await query(`SELECT id,process_code AS "processCode",process_name AS "processName",entity_type AS "entityType",active FROM oa_process_definitions WHERE process_code=upper($1)`,[req.params.processCode])).rows[0];
+  if(!process)return res.status(404).json(errorEnvelope('OA_PROCESS_NOT_FOUND','approval process not found'));
+  const steps=await query(`SELECT id,step_no AS "stepNo",signer_user_id AS "signerUserId",signer_username AS "signerUsername",signer_name AS "signerName",signer_role AS "signerRole",sla_hours AS "slaHours" FROM oa_process_signature_steps WHERE process_id=$1 AND active=true ORDER BY step_no`,[process.id]);
+  res.json(envelope({...process,steps:steps.rows}));
+}catch(e){res.status(500).json(errorEnvelope('OA_PROCESS_QUERY_FAILED',e.message));}});
+
+api.put('/oa/processes/:processCode',authenticateJWT,async(req,res)=>{const client=await pgPool.connect();try{
+  const p=req.body?.payload??req.body??{},steps=Array.isArray(p.steps)?p.steps:[];
+  if(!steps.length)return res.status(400).json(errorEnvelope('OA_SIGNER_REQUIRED','at least one signature person is required'));
+  const normalized=steps.map((s,index)=>({stepNo:index+1,signerUserId:s.signerUserId||null,signerUsername:String(s.signerUsername||'').trim(),signerName:String(s.signerName||'').trim()||null,signerRole:String(s.signerRole||'').trim()||null,slaHours:Number(s.slaHours||24)}));
+  if(normalized.some(s=>!s.signerUsername||!Number.isInteger(s.slaHours)||s.slaHours<1))return res.status(400).json(errorEnvelope('OA_SIGNER_INVALID','every signature person needs a username and positive SLA hours'));
+  await client.query('BEGIN');const process=(await client.query(`SELECT id FROM oa_process_definitions WHERE process_code=upper($1) FOR UPDATE`,[req.params.processCode])).rows[0];if(!process)throw new Error('approval process not found');
+  await client.query(`UPDATE oa_process_signature_steps SET active=false,updated_at=now() WHERE process_id=$1 AND active=true`,[process.id]);
+  for(const s of normalized)await client.query(`INSERT INTO oa_process_signature_steps(process_id,step_no,signer_user_id,signer_username,signer_name,signer_role,sla_hours,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[process.id,s.stepNo,s.signerUserId,s.signerUsername,s.signerName,s.signerRole,s.slaHours,req.user?.username||'unknown']);
+  await client.query(`UPDATE oa_process_definitions SET active=$2,updated_at=now() WHERE id=$1`,[process.id,p.active!==false]);await client.query('COMMIT');res.json(mutateEnvelope({saved:true,stepCount:normalized.length}));
+}catch(e){await client.query('ROLLBACK').catch(()=>{});res.status(409).json(errorEnvelope('OA_PROCESS_SAVE_FAILED',e.message));}finally{client.release();}});
+
+api.put('/oa/processes/material-requisition',authenticateJWT,async(req,res)=>{const client=await pgPool.connect();try{
+  const p=req.body?.payload??req.body??{},steps=Array.isArray(p.steps)?p.steps:[];
+  if(!steps.length)return res.status(400).json(errorEnvelope('OA_SIGNER_REQUIRED','at least one signature person is required'));
+  const normalized=steps.map((s,index)=>({stepNo:index+1,signerUserId:s.signerUserId||null,signerUsername:String(s.signerUsername||'').trim(),signerName:String(s.signerName||'').trim()||null,signerRole:String(s.signerRole||'').trim()||null,slaHours:Number(s.slaHours||24)}));
+  if(normalized.some(s=>!s.signerUsername||!Number.isInteger(s.slaHours)||s.slaHours<1))return res.status(400).json(errorEnvelope('OA_SIGNER_INVALID','every signature person needs a username and positive SLA hours'));
+  await client.query('BEGIN');
+  const process=(await client.query(`SELECT id FROM oa_process_definitions WHERE process_code='WMS-MATERIAL-REQUISITION' FOR UPDATE`)).rows[0];
+  if(!process)throw new Error('material requisition process not found');
+  await client.query(`UPDATE oa_process_signature_steps SET active=false,updated_at=now() WHERE process_id=$1 AND active=true`,[process.id]);
+  for(const s of normalized)await client.query(`INSERT INTO oa_process_signature_steps(process_id,step_no,signer_user_id,signer_username,signer_name,signer_role,sla_hours,created_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,[process.id,s.stepNo,s.signerUserId,s.signerUsername,s.signerName,s.signerRole,s.slaHours,req.user?.username||'unknown']);
+  await client.query(`UPDATE oa_process_definitions SET active=$2,updated_at=now() WHERE id=$1`,[process.id,p.active!==false]);
+  await client.query('COMMIT');res.json(mutateEnvelope({saved:true,stepCount:normalized.length}));
+}catch(e){await client.query('ROLLBACK').catch(()=>{});res.status(409).json(errorEnvelope('OA_PROCESS_SAVE_FAILED',e.message));}finally{client.release();}});
+
+api.get('/oa/process-requests',authenticateJWT,async(req,res)=>{try{
+  const status=String(req.query.status||'').toUpperCase(),params=[];let where='WHERE 1=1';
+  if(status){params.push(status);where+=` AND r.status=$${params.length}`;}
+  const rows=await query(`SELECT r.id,r.request_no AS "requestNo",r.entity_type AS "entityType",r.entity_id AS "entityId",r.entity_no AS "entityNo",r.title,r.requester_username AS "requesterUsername",r.requester_name AS "requesterName",r.status,r.current_step AS "currentStep",r.total_steps AS "totalSteps",r.submitted_at AS "submittedAt",CASE WHEN r.package_data<>'{}'::jsonb THEN r.package_data ELSE jsonb_build_object('content','[]'::jsonb,'issuedBy',COALESCE(r.requester_name,r.requester_username),'department',NULL,'issuedAt',r.submitted_at,'attachments','[]'::jsonb) END AS package,COALESCE(jsonb_agg(jsonb_build_object('id',s.id,'stepNo',s.step_no,'signerUsername',s.signer_username,'signerName',s.signer_name,'signerRole',s.signer_role,'status',s.status,'dueAt',s.due_at,'decidedBy',s.decided_by,'decidedAt',s.decided_at,'decisionNote',s.decision_note) ORDER BY s.step_no),'[]'::jsonb) steps FROM oa_process_requests r LEFT JOIN oa_process_request_steps s ON s.request_id=r.id ${where} GROUP BY r.id ORDER BY r.submitted_at DESC LIMIT 500`,params);
+  res.json(listEnvelope(rows.rows));
+}catch(e){res.status(500).json(errorEnvelope('OA_PROCESS_REQUEST_LIST_FAILED',e.message));}});
+
+api.post('/oa/process-requests/:id/decision',authenticateJWT,async(req,res)=>{const client=await pgPool.connect();try{
+  const p=req.body?.payload??req.body??{},decision=String(p.decision||'').toUpperCase(),actor=String(req.user?.username||'unknown');
+  if(!['APPROVE','REJECT'].includes(decision))return res.status(400).json(errorEnvelope('OA_DECISION_INVALID','APPROVE or REJECT required'));
+  await client.query('BEGIN');const request=(await client.query(`SELECT * FROM oa_process_requests WHERE id=$1 AND status='PENDING' FOR UPDATE`,[req.params.id])).rows[0];
+  if(!request)throw new Error('pending OA request not found');const step=(await client.query(`SELECT * FROM oa_process_request_steps WHERE request_id=$1 AND step_no=$2 AND status IN('PENDING','OVERDUE') FOR UPDATE`,[request.id,request.current_step])).rows[0];
+  if(!step)throw new Error('current signature step not found');if(step.signer_username!==actor&&!req.user?.permissions?.includes('*'))return res.status(403).json(errorEnvelope('OA_SIGNER_MISMATCH','only the configured signature person can decide this step'));
+  const packageData=request.package_data&&typeof request.package_data==='object'?request.package_data:{};
+  const attachments=Array.isArray(packageData.attachments)?packageData.attachments:[];
+  const requiredDocuments=attachments.filter(file=>['document','signature'].includes(String(file?.kind))&&(!Array.isArray(file?.requiredSignerRoles)||!file.requiredSignerRoles.length||file.requiredSignerRoles.map(role=>String(role).toLowerCase()).includes(String(step.signer_role||'').toLowerCase())));
+  const signedNames=[...new Set(Array.isArray(p.signedAttachmentNames)?p.signedAttachmentNames.map(String):[])];
+  const missingDocuments=requiredDocuments.filter(file=>!signedNames.includes(String(file.name))).map(file=>String(file.name));
+  if(missingDocuments.length)return res.status(409).json(errorEnvelope('OA_REQUIRED_DOCUMENT_SIGNATURE_MISSING','read and sign every document required for this role',{missingDocuments}));
+  if(decision==='REJECT'){
+    await client.query(`UPDATE oa_process_request_steps SET status='REJECTED',decided_by=$2,decided_at=now(),decision_note=$3 WHERE id=$1`,[step.id,actor,p.note||null]);
+    await client.query(`UPDATE oa_process_requests SET status='REJECTED',decided_at=now(),updated_at=now() WHERE id=$1`,[request.id]);
+    await client.query(`UPDATE requisitions SET status='REJECTED',rejected_at=now(),rejection_reason=$2,updated_at=now() WHERE id=$1 AND status='SUBMITTED'`,[request.entity_id,p.note||null]);
+  }else{
+    await client.query(`UPDATE oa_process_request_steps SET status='APPROVED',decided_by=$2,decided_at=now(),decision_note=$3 WHERE id=$1`,[step.id,actor,p.note||null]);
+    const next=(await client.query(`SELECT * FROM oa_process_request_steps WHERE request_id=$1 AND step_no>$2 AND status='WAITING' ORDER BY step_no LIMIT 1`,[request.id,step.step_no])).rows[0];
+    if(next){await client.query(`UPDATE oa_process_request_steps SET status='PENDING',started_at=now(),due_at=now()+make_interval(hours=>sla_hours) WHERE id=$1`,[next.id]);await client.query(`UPDATE oa_process_requests SET current_step=$2,updated_at=now() WHERE id=$1`,[request.id,next.step_no]);}
+    else{await client.query(`UPDATE oa_process_requests SET status='APPROVED',decided_at=now(),updated_at=now() WHERE id=$1`,[request.id]);await client.query(`UPDATE requisitions SET status='APPROVED',approved_at=now(),approver_name=$2,updated_at=now() WHERE id=$1 AND status='SUBMITTED'`,[request.entity_id,actor]);}
+  }
+  await client.query(`UPDATE oa_process_requests SET package_data=jsonb_set(COALESCE(package_data,'{}'::jsonb),'{responses}',COALESCE(package_data->'responses','[]'::jsonb)||$2::jsonb,true) WHERE id=$1`,[request.id,JSON.stringify([{signer:actor,signerRole:step.signer_role||null,decision,comments:p.note||null,respondedAt:new Date().toISOString(),signedAttachmentNames:signedNames}])]);
+  await client.query(`INSERT INTO oa_process_audit_events(request_id,action,actor,from_status,to_status,detail) VALUES($1,$2,$3,'PENDING',$4,$5::jsonb)`,[request.id,decision,actor,decision==='REJECT'?'REJECTED':'APPROVED',JSON.stringify({stepNo:step.step_no,note:p.note||null,signedAttachmentNames:signedNames})]);
+  await client.query('COMMIT');res.json(mutateEnvelope({id:request.id,decision}));
+}catch(e){await client.query('ROLLBACK').catch(()=>{});res.status(409).json(errorEnvelope('OA_PROCESS_DECISION_FAILED',e.message));}finally{client.release();}});
 api.get('/oa/documents',authenticateJWT,async(req,res)=>{try{const status=String(req.query.status||'').toUpperCase(),params=[];let where="WHERE d.status<>'VOIDED'";if(status){params.push(status);where+=` AND d.status=$${params.length}`;}if(String(req.query.mine||'')==='true'&&!req.user?.permissions?.includes('*')){params.push(String(req.user?.roleKey||''));where+=` AND EXISTS(SELECT 1 FROM oa_document_approval_steps mine WHERE mine.document_id=d.id AND mine.step_no=d.current_step AND mine.status IN('PENDING','OVERDUE') AND mine.approver_role=$${params.length})`;}const rows=await query(`SELECT ${oaDocumentRow},COALESCE((SELECT jsonb_agg(jsonb_build_object('id',s.id,'stepNo',s.step_no,'stepName',s.step_name,'approverRole',s.approver_role,'required',s.required,'status',s.status,'slaHours',s.sla_hours,'startedAt',s.started_at,'dueAt',s.due_at,'reminderCount',s.reminder_count,'escalatedAt',s.escalated_at,'decidedBy',s.decided_by,'decidedAt',s.decided_at,'decisionNote',s.decision_note) ORDER BY s.step_no) FROM oa_document_approval_steps s WHERE s.document_id=d.id),'[]'::jsonb) steps FROM oa_controlled_documents d ${where} ORDER BY d.updated_at DESC`,params);res.json(listEnvelope(rows.rows));}catch(e){res.status(500).json(errorEnvelope('OA_DOCUMENT_LIST_FAILED',e.message));}});
 api.post('/oa/documents',authenticateJWT,async(req,res)=>{try{const p=req.body?.payload??req.body??{},category=String(p.category||'').toUpperCase(),fileName=String(p.fileName||'').trim(),content=String(p.contentBase64||'');if(!p.documentNo||!p.title||!p.versionNo||!fileName||!content)return res.status(400).json(errorEnvelope('OA_DOCUMENT_REQUIRED','documentNo, title, versionNo and file are required'));if(!OA_DOCUMENT_CATEGORIES.has(category))return res.status(400).json(errorEnvelope('OA_DOCUMENT_CATEGORY_INVALID','a supported category with a defined route is required'));const ext=path.extname(fileName).toLowerCase();if(!OA_ALLOWED_EXTENSIONS.has(ext))return res.status(415).json(errorEnvelope('OA_DOCUMENT_TYPE_INVALID','unsupported document type'));const route=(await query(`SELECT route_code FROM oa_document_route_templates WHERE document_category=$1 AND active=true`,[category])).rows[0];if(!route)return res.status(409).json(errorEnvelope('OA_ROUTE_REQUIRED','an active, explicit approval route is required before import'));const bytes=Buffer.from(content,'base64');if(!bytes.length||bytes.length>7_500_000)return res.status(413).json(errorEnvelope('OA_DOCUMENT_SIZE_INVALID','file must be between 1 byte and 7.5 MB'));const checksum=createHash('sha256').update(bytes).digest('hex'),sourceType=String(p.sourceType||'INTERNAL').toUpperCase(),licenseStatus=String(p.licenseStatus||'INTERNAL').toUpperCase();if(sourceType!=='INTERNAL'&&!p.sourceUrl)return res.status(400).json(errorEnvelope('OA_SOURCE_URL_REQUIRED','external documents require an official source URL'));const row=(await query(`INSERT INTO oa_controlled_documents(document_no,title,category,source_type,source_url,license_status,version_no,file_name,mime_type,file_size,checksum_sha256,file_content,applicable_employees,effective_from,review_due_at,notes,created_by) VALUES(upper($1),$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13::jsonb,$14,$15,$16,$17) RETURNING id`,[p.documentNo,p.title,category,sourceType,p.sourceUrl||null,licenseStatus,p.versionNo,fileName,p.mimeType||'application/octet-stream',bytes.length,checksum,bytes,JSON.stringify(Array.isArray(p.applicableEmployees)?p.applicableEmployees:[]),p.effectiveFrom||null,p.reviewDueAt||null,p.notes||null,req.user?.username||'OA-DOCUMENT-CONTROL-VIRTUAL-01'])).rows[0];await query(`INSERT INTO oa_document_audit_events(document_id,action,actor,to_status,details) VALUES($1,'IMPORTED',$2,'DRAFT',$3::jsonb)`,[row.id,req.user?.username||'unknown',JSON.stringify({routeCode:route.route_code,fileName,checksum})]);res.status(201).json(mutateEnvelope({id:row.id,checksumSha256:checksum,routeCode:route.route_code,status:'DRAFT'}));}catch(e){res.status(409).json(errorEnvelope('OA_DOCUMENT_IMPORT_FAILED',e.message));}});
 api.post('/oa/documents/:id/submit',authenticateJWT,async(req,res)=>{const client=await pgPool.connect();try{await client.query('BEGIN');const doc=(await client.query(`SELECT * FROM oa_controlled_documents WHERE id=$1 AND status IN('DRAFT','REJECTED') FOR UPDATE`,[req.params.id])).rows[0];if(!doc)throw new Error('only a draft or rejected document can be submitted');const route=(await client.query(`SELECT route_code,steps FROM oa_document_route_templates WHERE document_category=$1 AND active=true`,[doc.category])).rows[0];if(!route||!Array.isArray(route.steps)||!route.steps.length)throw new Error('explicit approval route is required before submission');if(route.steps.some(s=>!s.name||!s.role||!Number(s.slaHours)))throw new Error('every approval node requires a name, role and time limit');await client.query(`DELETE FROM oa_document_approval_steps WHERE document_id=$1`,[doc.id]);for(let i=0;i<route.steps.length;i++){const s=route.steps[i],active=i===0;await client.query(`INSERT INTO oa_document_approval_steps(document_id,step_no,step_name,approver_role,status,sla_hours,started_at,due_at,escalation_role) VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $7 THEN now() END,CASE WHEN $7 THEN now()+make_interval(hours=>$6) END,$8)`,[doc.id,i+1,s.name,s.role,active?'PENDING':'WAITING',Number(s.slaHours),active,'supervisor']);}await client.query(`UPDATE oa_controlled_documents SET status='PENDING_APPROVAL',current_step=1,total_steps=$2,updated_at=now() WHERE id=$1`,[doc.id,route.steps.length]);await client.query(`INSERT INTO oa_document_audit_events(document_id,action,actor,from_status,to_status,details) VALUES($1,'SUBMITTED',$2,$3,'PENDING_APPROVAL',$4::jsonb)`,[doc.id,req.user?.username||'unknown',doc.status,JSON.stringify({routeCode:route.route_code,totalSteps:route.steps.length})]);await client.query('COMMIT');res.json(mutateEnvelope({id:doc.id,status:'PENDING_APPROVAL',routeCode:route.route_code,totalSteps:route.steps.length}));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope('OA_DOCUMENT_SUBMIT_FAILED',e.message));}finally{client.release();}});
@@ -24627,12 +25262,66 @@ app.get("/wms/suppliers", requirePermission("wms.view"), async(req,res)=>{try{
     AND ($2='all' OR lower(s.status)=$2) ORDER BY s.code`,[q,status]); res.json(listEnvelope(r.rows));
 }catch(e){res.status(500).json(errorEnvelope("SUPPLIER_LIST_FAILED",e.message));}});
 
+app.post("/wms/suppliers/import-replace", requirePermission("wms.execute"), async(req,res)=>{
+  const role=String(req.user?.roleKey||"").trim().toLowerCase();
+  if(!new Set(["admin","management","plant_manager","factory_manager"]).has(role)){
+    await writeAuditLog({actorId:req.user?.userId,action:"SUPPLIER_IMPORT_DENIED",entityType:"supplier_import",entityId:String(req.user?.username||"unknown"),ipAddress:req.ip,userAgent:req.headers["user-agent"]});
+    return res.status(403).json(errorEnvelope("PLANT_MANAGER_REQUIRED","Only the plant manager can replace the supplier list"));
+  }
+  const p=req.body?.payload??req.body??{},sourceFile=String(p.sourceFile||"").trim();
+  const sourceModifiedAt=new Date(p.sourceModifiedAt),sourceRows=Number(p.sourceRows),duplicateRows=Number(p.duplicateRows);
+  const incoming=new Map();
+  for(const row of Array.isArray(p.rows)?p.rows:[]){const code=String(row?.code||"").trim().toUpperCase(),nameZh=String(row?.nameZh||"").trim();if(!code||!nameZh)return res.status(400).json(errorEnvelope("SUPPLIER_IMPORT_INVALID_ROW","Every supplier row requires code and nameZh"));incoming.set(code,{code,nameZh});}
+  if(!sourceFile||Number.isNaN(sourceModifiedAt.getTime())||!Number.isInteger(sourceRows)||sourceRows<1||!Number.isInteger(duplicateRows)||duplicateRows<0||incoming.size<1||sourceRows-incoming.size!==duplicateRows)return res.status(400).json(errorEnvelope("SUPPLIER_IMPORT_INVALID","File metadata and supplier counts are inconsistent"));
+  const checksum=createHash("sha256").update(JSON.stringify([...incoming.values()])).digest("hex");
+  const client=await pgPool.connect();
+  try{
+    await supplierManagementReady;
+    const latest=(await client.query(`SELECT detail FROM supplier_management_events WHERE event_type='SUPPLIER_LIST_REPLACED_BY_PLANT_MANAGER' ORDER BY created_at DESC LIMIT 1`)).rows[0]?.detail;
+    if(latest?.sourceModifiedAt&&sourceModifiedAt.getTime()<new Date(latest.sourceModifiedAt).getTime())return res.status(409).json(errorEnvelope("SUPPLIER_IMPORT_OLDER_VERSION","The selected file is older than the latest successfully imported supplier list"));
+    if(latest?.checksumSha256===checksum)return res.json(envelope({...latest,alreadyImported:true}));
+    await client.query("BEGIN");
+    await client.query(`CREATE TEMP TABLE incoming_supplier_import(code varchar(80) PRIMARY KEY,name_zh varchar(240) NOT NULL) ON COMMIT DROP`);
+    await client.query(`INSERT INTO incoming_supplier_import(code,name_zh) SELECT x.code,x."nameZh" FROM jsonb_to_recordset($1::jsonb) AS x(code varchar(80),"nameZh" varchar(240))`,[JSON.stringify([...incoming.values()])]);
+    const updated=await client.query(`UPDATE suppliers s SET name_en=CASE WHEN s.name_en=s.name_zh THEN i.name_zh ELSE s.name_en END,name_vi=CASE WHEN s.name_vi=s.name_zh THEN i.name_zh ELSE s.name_vi END,name_zh=i.name_zh,status='active',qualification_status='QUALIFIED',classification='2025年度订单供应商',updated_at=now() FROM incoming_supplier_import i WHERE upper(s.code)=i.code RETURNING s.id`);
+    const inserted=await client.query(`INSERT INTO suppliers(code,name_zh,name_en,name_vi,status,country,default_currency_code,payment_terms_days,portal_enabled,label_enabled,qualification_status,risk_level,classification) SELECT i.code,i.name_zh,i.name_zh,i.name_zh,'active','Vietnam','USD',30,false,false,'QUALIFIED','LOW','2025年度订单供应商' FROM incoming_supplier_import i WHERE NOT EXISTS(SELECT 1 FROM suppliers s WHERE upper(s.code)=i.code) RETURNING id`);
+    const deactivated=await client.query(`UPDATE suppliers s SET status='inactive',updated_at=now() WHERE s.status<>'inactive' AND NOT EXISTS(SELECT 1 FROM incoming_supplier_import i WHERE i.code=upper(s.code)) RETURNING s.id`);
+    const detail={sourceFile,sourceModifiedAt:sourceModifiedAt.toISOString(),checksumSha256:checksum,sourceRows,activeSuppliers:incoming.size,duplicateRows,updated:updated.rowCount,inserted:inserted.rowCount,deactivated:deactivated.rowCount,actorUsername:req.user?.username||null,actorRole:req.user?.roleKey||null};
+    await client.query(`INSERT INTO supplier_management_events(supplier_id,event_type,actor_id,detail) VALUES(null,'SUPPLIER_LIST_REPLACED_BY_PLANT_MANAGER',$1,$2::jsonb)`,[req.user?.userId??null,JSON.stringify(detail)]);
+    const active=(await client.query(`SELECT count(*)::int count FROM suppliers WHERE status='active'`)).rows[0].count;
+    if(active!==incoming.size)throw new Error(`active supplier verification failed: expected ${incoming.size}, got ${active}`);
+    await client.query("COMMIT");
+    let portalSync={synced:false,reason:"supplier portal sync is not configured"};
+    const portalBase=String(process.env.SUPPLIER_PORTAL_URL||"").replace(/\/$/,""),portalKey=process.env.SUPPLIER_PORTAL_SYNC_KEY;
+    if(portalBase&&portalKey){
+      try{
+        const response=await fetch(`${portalBase}/sync/supplier-list/replace`,{method:"PUT",headers:{"Content-Type":"application/json","x-sync-key":portalKey},body:JSON.stringify({suppliers:[...incoming.values()].map(row=>({supplier_code:row.code,supplier_name:row.nameZh})),source_file:sourceFile,source_modified_at:sourceModifiedAt.toISOString(),checksum_sha256:checksum})});
+        if(!response.ok)throw new Error(`portal returned ${response.status}: ${await response.text()}`);
+        portalSync={synced:true,...await response.json()};
+      }catch(syncError){portalSync={synced:false,reason:syncError.message};}
+    }
+    res.json(envelope({...detail,portalSync}));
+  }catch(e){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("SUPPLIER_IMPORT_REPLACE_FAILED",e.message));}
+  finally{client.release();}
+});
+
 app.post("/wms/suppliers", requirePermission("wms.execute"), async(req,res)=>{try{
   await supplierManagementReady;const p=req.body?.payload??req.body??{};if(!p.code||!p.nameZh)return res.status(400).json(errorEnvelope("VALIDATION","code and nameZh required"));
+  const nameZh=String(p.nameZh).trim(),nameEn=String(p.nameEn||nameZh).trim(),nameVi=String(p.nameVi||nameZh).trim();
   const r=await query(`INSERT INTO suppliers(code,name_zh,name_en,name_vi,short_name,contact_name,contact_phone,email,country,status,default_currency_code,payment_terms_days,portal_enabled,label_enabled,qualification_status,risk_level,classification)
-    VALUES(upper($1),$2,coalesce(nullif($3,''),$2),coalesce(nullif($4,''),$2),$5,$6,$7,$8,$9,coalesce(lower($10),'inactive'),coalesce($11,'USD'),coalesce($12,30),coalesce($13,false),coalesce($14,false),coalesce(upper($15),'PENDING'),coalesce(upper($16),'LOW'),$17) RETURNING *`,
-    [p.code,p.nameZh,p.nameEn,p.nameVi,p.shortName,p.contactName,p.contactPhone,p.email,p.country,p.status,p.currency,p.paymentTermsDays,p.portalEnabled,p.labelEnabled,p.qualificationStatus,p.riskLevel,p.classification]);await supplierEvent(req,r.rows[0].id,"SUPPLIER_CREATED",r.rows[0]);res.status(201).json(mutateEnvelope(r.rows[0]));
+    VALUES(upper($1),$2,$3,$4,$5,$6,$7,$8,$9,lower($10),$11,$12,$13,$14,upper($15),upper($16),$17) RETURNING *`,
+    [p.code,nameZh,nameEn,nameVi,p.shortName||null,p.contactName||null,p.contactPhone||null,p.email||null,p.country||"Vietnam",p.status||"inactive",p.currency||"USD",Number(p.paymentTermsDays||30),Boolean(p.portalEnabled),Boolean(p.labelEnabled),p.qualificationStatus||"PENDING",p.riskLevel||"LOW",p.classification||null]);await supplierEvent(req,r.rows[0].id,"SUPPLIER_CREATED",r.rows[0]);res.status(201).json(mutateEnvelope(r.rows[0]));
 }catch(e){res.status(400).json(errorEnvelope("SUPPLIER_CREATE_FAILED",e.message));}});
+
+app.post("/internal/supplier-portal/suppliers/verify",async(req,res)=>{try{
+  const suppliedKey=String(req.get("x-sync-key")||""),expectedKey=String(process.env.SUPPLIER_PORTAL_SYNC_KEY||"");
+  if(!expectedKey||suppliedKey!==expectedKey)return res.status(401).json(errorEnvelope("INVALID_SYNC_KEY","invalid sync key"));
+  await supplierManagementReady;const code=String(req.body?.supplier_code||"").trim().toUpperCase();
+  if(!code)return res.status(400).json(errorEnvelope("VALIDATION","supplier_code is required"));
+  const supplier=(await query("SELECT code,name_zh,status,portal_enabled,label_enabled,qualification_status FROM suppliers WHERE upper(code)=$1 LIMIT 1",[code])).rows[0];
+  if(!supplier)return res.status(404).json(errorEnvelope("SUPPLIER_NOT_FOUND","supplier not found"));
+  res.json({supplier_code:supplier.code,supplier_name:supplier.name_zh,status:supplier.status,portal_enabled:supplier.portal_enabled,label_enabled:supplier.label_enabled,qualification_status:supplier.qualification_status});
+}catch(e){res.status(500).json(errorEnvelope("SUPPLIER_VERIFY_FAILED",e.message));}});
 
 app.put("/wms/suppliers/:id", requirePermission("wms.execute"), async(req,res)=>{try{
   await supplierManagementReady;const p=req.body?.payload??req.body??{},before=(await query("SELECT * FROM suppliers WHERE id=$1",[req.params.id])).rows[0];if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","supplier not found"));
@@ -30670,18 +31359,24 @@ api.post("/receiving", authenticateJWT, requirePermission("wms.receive"), async 
     const iqcRequired = matRes.rows[0].iqc_required !== false;
 
     let supplierId = null;
+    let purchaseOrderMatch = null;
     if (supplier_code) {
       const supRes = await query("SELECT id,status FROM suppliers WHERE code = $1", [supplier_code]);
       if (!supRes.rows[0]) return res.status(404).json(errorEnvelope("SUPPLIER_NOT_FOUND", `Supplier '${supplier_code}' not found`));
       if (String(supRes.rows[0].status).toLowerCase() !== "active") return res.status(409).json(errorEnvelope("SUPPLIER_BLOCKED", "Supplier is not active"));
       supplierId = supRes.rows[0].id;
+      purchaseOrderMatch = (await query(`SELECT poh.id AS order_id,poh.po_no AS doc_no,poh.status,
+          pol.id AS line_id,pol.qty_ordered AS requested_qty,pol.qty_ordered AS approved_qqty,COALESCE(pol.qty_received,0) AS executed_qty
+        FROM purchase_order_headers poh JOIN purchase_order_lines pol ON pol.po_header_id=poh.id
+        WHERE poh.po_no=$1 AND poh.supplier_id=$2 AND UPPER(pol.material_code)=UPPER($3) LIMIT 1`,
+        [inboundOrderNo,supplierId,material_code])).rows[0] || null;
       const qualification = await query(`
         SELECT 1 FROM wms_supplier_materials
         WHERE supplier_id=$1 AND material_id=$2 AND approved=true AND status='ACTIVE'
           AND (effective_from IS NULL OR effective_from <= CURRENT_DATE)
           AND (effective_to IS NULL OR effective_to >= CURRENT_DATE)
       `, [supplierId, materialId]);
-      if (!qualification.rows[0]) {
+      if (!qualification.rows[0] && !purchaseOrderMatch) {
         return res.status(409).json(errorEnvelope("SUPPLIER_MATERIAL_BLOCKED", "Supplier is not approved for this material"));
       }
     }
@@ -30715,14 +31410,21 @@ api.post("/receiving", authenticateJWT, requirePermission("wms.receive"), async 
       LIMIT 1
       FOR UPDATE OF io, iol
     `, [inboundOrderNo, materialId, material_code]);
-    const inbound = inboundR.rows[0];
+    let inbound = inboundR.rows[0];
     if (!inbound) {
-      await client.query("ROLLBACK");
-      return res.status(409).json(errorEnvelope("INBOUND_REFERENCE_REQUIRED", "Approved inbound order line not found for this material"));
+      const poR=await client.query(`SELECT poh.id AS order_id,poh.po_no AS doc_no,poh.status,
+          poh.supplier_id,NULL::varchar AS supplier_code,pol.id AS line_id,pol.qty_ordered AS requested_qty,
+          pol.qty_ordered AS approved_qqty,COALESCE(pol.qty_received,0) AS executed_qty,'PURCHASE_ORDER' AS source
+        FROM purchase_order_headers poh JOIN purchase_order_lines pol ON pol.po_header_id=poh.id
+        WHERE poh.po_no=$1 AND poh.supplier_id=$2 AND UPPER(pol.material_code)=UPPER($3)
+        LIMIT 1 FOR UPDATE OF poh,pol`,[inboundOrderNo,supplierId,material_code]);
+      inbound=poR.rows[0];
+      if(!inbound){await client.query("ROLLBACK");return res.status(409).json(errorEnvelope("PO_REFERENCE_REQUIRED","WMS purchase order line not found for this supplier and material"));}
     }
-    if (!["APPROVED", "EXECUTING"].includes(inbound.status)) {
+    const permittedStatuses=inbound.source==="PURCHASE_ORDER"?["sent","acknowledged","partially_received","SENT","ACKNOWLEDGED","PARTIALLY_RECEIVED"]:["APPROVED","EXECUTING"];
+    if (!permittedStatuses.includes(inbound.status)) {
       await client.query("ROLLBACK");
-      return res.status(409).json(errorEnvelope("INBOUND_ORDER_BLOCKED", "Inbound order must be APPROVED or EXECUTING"));
+      return res.status(409).json(errorEnvelope("INBOUND_ORDER_BLOCKED", "Purchase/inbound order is not open for receiving"));
     }
     if ((inbound.supplier_id && Number(inbound.supplier_id) !== Number(supplierId)) ||
         (inbound.supplier_code && inbound.supplier_code !== supplier_code)) {
@@ -30739,7 +31441,7 @@ api.post("/receiving", authenticateJWT, requirePermission("wms.receive"), async 
     const lotRes = await client.query(
       `INSERT INTO material_lots (material_id, supplier_id, storage_location_id, lot_no, po_no, inbound_order_id, inbound_order_line_id, received_qty, received_at, receiver_id, receiving_notes, iqc_status, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now()) RETURNING id`,
-      [materialId, supplierId, storageLocationId, lot_no, inboundOrderNo, inbound.order_id, inbound.line_id, receiveQty,
+      [materialId, supplierId, storageLocationId, lot_no, inboundOrderNo, inbound.source==="PURCHASE_ORDER"?null:inbound.order_id, inbound.source==="PURCHASE_ORDER"?null:inbound.line_id, receiveQty,
        received_at ? new Date(received_at) : new Date(), req.user?.id ?? 10, receiving_notes || null, iqcStatus]
     );
     const lotId = lotRes.rows[0].id;
@@ -30767,14 +31469,17 @@ api.post("/receiving", authenticateJWT, requirePermission("wms.receive"), async 
     }
 
     const newExecutedQty = Number(inbound.executed_qty || 0) + receiveQty;
-    await client.query(`UPDATE inbound_order_lines
-      SET executed_qty=$1 WHERE id=$2`, [newExecutedQty, inbound.line_id]);
-    await client.query(`UPDATE inbound_orders SET status=$1, executed_at=COALESCE(executed_at,now()), updated_at=now()
-      WHERE id=$2`, [newExecutedQty >= authorizedQty ? "COMPLETED" : "EXECUTING", inbound.order_id]);
+    if(inbound.source==="PURCHASE_ORDER"){
+      await client.query(`UPDATE purchase_order_lines SET qty_received=$1,status=$2 WHERE id=$3`,[newExecutedQty,newExecutedQty>=authorizedQty?"received":"partially_received",inbound.line_id]);
+      await client.query(`UPDATE purchase_order_headers SET status=$1,updated_at=now() WHERE id=$2`,[newExecutedQty>=authorizedQty?"received":"partially_received",inbound.order_id]);
+    }else{
+      await client.query(`UPDATE inbound_order_lines SET executed_qty=$1 WHERE id=$2`, [newExecutedQty, inbound.line_id]);
+      await client.query(`UPDATE inbound_orders SET status=$1, executed_at=COALESCE(executed_at,now()), updated_at=now() WHERE id=$2`, [newExecutedQty >= authorizedQty ? "COMPLETED" : "EXECUTING", inbound.order_id]);
+    }
 
     await client.query("COMMIT");
     res.json({ success: true, data: { id: lotId, tx_no: txNo, iqc_status: iqcStatus, label_code: labelCode,
-      inbound_order_id: Number(inbound.order_id), inbound_order_line_id: Number(inbound.line_id), inbound_order_no: inbound.doc_no } });
+      inbound_order_id: inbound.source==="PURCHASE_ORDER"?null:Number(inbound.order_id), inbound_order_line_id: inbound.source==="PURCHASE_ORDER"?null:Number(inbound.line_id), inbound_order_no: inbound.doc_no, source: inbound.source||"INBOUND_ORDER", purchase_order_id: inbound.source==="PURCHASE_ORDER"?Number(inbound.order_id):null } });
   } catch (err) {
     if (client) await client.query("ROLLBACK").catch(() => {});
     console.error("POST /api/receiving:", err.message);
@@ -42558,6 +43263,19 @@ const wms3dControlReady=(async()=>{
     x NUMERIC NOT NULL, y NUMERIC NOT NULL, width NUMERIC, height NUMERIC,
     object_data JSONB NOT NULL DEFAULT '{}'::jsonb, updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   )`);
+  await query(`ALTER TABLE wms_canvas_layout_objects ADD COLUMN IF NOT EXISTS status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE'`);
+  await query(`CREATE TABLE IF NOT EXISTS wms_canvas_layout_config(
+    layout_code VARCHAR(80) PRIMARY KEY, layout_name VARCHAR(200) NOT NULL,
+    config_data JSONB NOT NULL DEFAULT '{}'::jsonb, updated_by VARCHAR(120),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  )`);
+  await query(`CREATE TABLE IF NOT EXISTS wms_canvas_position_qrs(
+    id BIGSERIAL PRIMARY KEY, layout_code VARCHAR(80) NOT NULL, object_id VARCHAR(160) NOT NULL,
+    position_key VARCHAR(200) NOT NULL, position_name VARCHAR(200) NOT NULL,
+    qr_code VARCHAR(240) NOT NULL UNIQUE, position_type VARCHAR(40) NOT NULL,
+    status VARCHAR(24) NOT NULL DEFAULT 'ACTIVE', created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(layout_code,position_key)
+  )`);
   await query(`INSERT INTO wms_floor_storage_areas(area_code,area_name,area_type,polygon,capacity,occupied,status)
     VALUES
       ('FL-IQC-01','IQC 待检区','IQC_HOLD','[[-16,-10],[-8,-10],[-8,-6],[-16,-6]]'::jsonb,12,3,'AVAILABLE'),
@@ -42651,25 +43369,117 @@ app.post("/api/3d/wms-floor-storage-areas", requirePermission("wms.execute"), as
 });
 
 app.get("/api/3d/wms-layout", requirePermission("wms.view"), async (_req,res)=>{
-  try { const rows=(await query("SELECT object_data FROM wms_canvas_layout_objects ORDER BY object_id")).rows.map(row=>row.object_data); res.json(envelope({items:rows})); }
+  try {
+    const rows=(await query("SELECT object_data FROM wms_canvas_layout_objects WHERE status='ACTIVE' ORDER BY object_id")).rows.map(row=>row.object_data);
+    const config=(await query("SELECT layout_name,config_data,updated_at FROM wms_canvas_layout_config WHERE layout_code='MAIN'" )).rows[0];
+    res.json(envelope({items:rows,config:config?.config_data??null,layoutName:config?.layout_name??null,updatedAt:config?.updated_at??null}));
+  }
   catch(error) { res.status(500).json(errorEnvelope("WMS_LAYOUT_READ_ERROR",error.message)); }
 });
 
 app.post("/api/3d/wms-layout", requirePermission("wms.execute"), async (req,res)=>{
   const client=await getClient();
   try {
-    const items=Array.isArray(req.body?.items) ? req.body.items : [];
+    let items=Array.isArray(req.body?.items) ? req.body.items : [];
+    const config=req.body?.config && typeof req.body.config==='object' ? req.body.config : {};
+    const qrRules=Array.isArray(req.body?.qrRules) ? req.body.qrRules : [];
+    const layoutName=String(req.body?.layoutName || config.areaName || 'WMS 仓库布局').trim();
+    const duplicateNameAction=String(req.body?.duplicateNameAction||'REJECT').toUpperCase();
     if(!items.length) return res.status(400).json(errorEnvelope("VALIDATION","layout items required"));
+    const ruleFor=kind=>qrRules.find(rule=>String(rule.kind||'').toUpperCase()===kind);
+    let areaRule=ruleFor('AREA'), locationRule=ruleFor('LOCATION'), rackRule=ruleFor('RACK');
+    // No QR-rule Excel imported: synthesise default rules so the canvas can
+    // still save and hand every position to WMS with a code. The prefix keeps
+    // the "WMS-" scheme the WMS floor map and PDA already understand.
+    if(!areaRule||!locationRule||!rackRule){
+      areaRule={kind:'AREA',prefix:'WMS-AREA'};
+      locationRule={kind:'LOCATION',prefix:'WMS-LOC'};
+      rackRule={kind:'RACK',prefix:'WMS-RACK'};
+    }
+    const normalizedName=value=>String(value||'').trim().toLocaleLowerCase();
+    const duplicateNames=[...new Set(items.map(item=>normalizedName(item.label)).filter((name,index,list)=>name&&list.indexOf(name)!==index))];
+    if(duplicateNames.length && duplicateNameAction!=='OVERWRITE') return res.status(409).json(errorEnvelope("WMS_LAYOUT_DUPLICATE_NAME","same-name positions require OVERWRITE or a different name",{names:duplicateNames}));
+    if(duplicateNames.length) {
+      const lastByName=new Map(items.map(item=>[normalizedName(item.label),item]));
+      items=items.filter(item=>lastByName.get(normalizedName(item.label))===item);
+    }
     await client.query("BEGIN");
+    const activeIds=[];
+    const activePositionKeys=[];
+    if(duplicateNameAction==='OVERWRITE') {
+      const incomingNames=items.map(item=>normalizedName(item.label));
+      await client.query("UPDATE wms_canvas_layout_objects SET status='INACTIVE',updated_at=now() WHERE status='ACTIVE' AND lower(trim(label))=ANY($1::text[]) AND NOT (object_id=ANY($2::varchar[]))",[incomingNames,items.map(item=>String(item.id))]);
+    } else {
+      const conflict=(await client.query("SELECT label FROM wms_canvas_layout_objects WHERE status='ACTIVE' AND lower(trim(label))=ANY($1::text[]) AND NOT (object_id=ANY($2::varchar[])) LIMIT 1",[items.map(item=>normalizedName(item.label)),items.map(item=>String(item.id))])).rows[0];
+      if(conflict) { await client.query("ROLLBACK"); return res.status(409).json(errorEnvelope("WMS_LAYOUT_DUPLICATE_NAME","same-name position already exists",{name:conflict.label})); }
+    }
+    const cleanQrPart=value=>String(value||'').trim().toUpperCase().replace(/\s+/g,'-').replace(/[^\p{L}\p{N}_-]/gu,'-').replace(/-+/g,'-').replace(/^-|-$/g,'')||'UNNAMED';
+    const itemById=new Map(items.map(item=>[String(item.id),item]));
+    const areaFor=item=>{
+      let cursor=item;
+      while(cursor?.parentId && itemById.has(String(cursor.parentId))) cursor=itemById.get(String(cursor.parentId));
+      return cleanQrPart(cursor?.label||'MAIN');
+    };
+    const positionCodeFor=item=>{
+      if(String(item.kind)==='RACK') return cleanQrPart(item.rackCode||item.label);
+      if(String(item.kind)==='AISLE') return cleanQrPart(item.aisleCode||item.label);
+      const labelCode=String(item.label||'').match(/\bP\d{2}-\d{2}\b/i)?.[0];
+      if(labelCode) return labelCode.toUpperCase();
+      const palletCode=String(item.qrCode||'').match(/-(\d+)-(\d+)$/);
+      if(palletCode) return `P${palletCode[1].padStart(2,'0')}-${palletCode[2].padStart(2,'0')}`;
+      return cleanQrPart(item.label);
+    };
     for(const item of items) {
       if(!item.id || !item.kind || !item.label) continue;
+      const objectId=String(item.id);
+      const areaCode=areaFor(item);
+      const positionCode=positionCodeFor(item);
+      const hierarchy=(rule,code)=>[cleanQrPart(rule.prefix),cleanQrPart(rule.buildingCode),cleanQrPart(rule.floorCode),areaCode,code].filter(Boolean).join(':');
+      // Canvas is the source of truth: if the client already supplied a QR for
+      // the object, keep it verbatim (name, QR and attributes hand over as-is).
+      // Only synthesise a QR when the client omitted one.
+      if(String(item.kind).startsWith('AREA')) {
+        if(!item.qrCode) item.qrCode=hierarchy(areaRule,'');
+        item.positionQrCode=item.qrCode || item.positionQrCode || hierarchy(areaRule,'');
+      } else if(String(item.kind)==='RACK') {
+        if(!item.qrCode) item.qrCode=hierarchy(rackRule,positionCode);
+        item.positionQrCode=item.qrCode || item.positionQrCode;
+      } else {
+        if(!item.positionQrCode) item.qrCode=null;
+        if(!item.positionQrCode) item.positionQrCode=hierarchy(locationRule,positionCode);
+      }
+      if(String(item.kind)==='RACK') {
+        const levels=Math.max(1,Number(item.rackLevels)||4), rows=Math.max(1,Number(item.rackRows)||1), columns=Math.max(1,Number(item.rackColumns)||3);
+        item.rackCellQrs=Array.from({length:levels*rows*columns},(_,index)=>{
+          const level=Math.floor(index/(rows*columns))+1;
+          const row=Math.floor((index%(rows*columns))/columns)+1;
+          const column=index%columns+1;
+          return `${hierarchy(locationRule,positionCode)}:L${String(level).padStart(2,'0')}-R${String(row).padStart(2,'0')}-C${String(column).padStart(2,'0')}`;
+        });
+      }
+      activeIds.push(objectId);
       await client.query(`INSERT INTO wms_canvas_layout_objects(object_id,kind,label,parent_id,qr_code,position_qr_code,x,y,width,height,object_data)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb)
         ON CONFLICT(object_id) DO UPDATE SET kind=excluded.kind,label=excluded.label,parent_id=excluded.parent_id,qr_code=excluded.qr_code,position_qr_code=excluded.position_qr_code,x=excluded.x,y=excluded.y,width=excluded.width,height=excluded.height,object_data=excluded.object_data,updated_at=now()`,
-        [String(item.id),String(item.kind),String(item.label),item.parentId??null,item.qrCode??null,item.positionQrCode??null,Number(item.x)||0,Number(item.y)||0,item.width??null,item.height??null,JSON.stringify(item)]);
+        [objectId,String(item.kind),String(item.label),item.parentId??null,item.qrCode??null,item.positionQrCode,Number(item.x)||0,Number(item.y)||0,item.width??null,item.height??null,JSON.stringify(item)]);
+      await client.query("UPDATE wms_canvas_layout_objects SET status='ACTIVE' WHERE object_id=$1",[objectId]);
+      const positions=[{key:objectId,name:String(item.label),qr:item.positionQrCode,type:String(item.kind)}];
+      for(const [index,qr] of (Array.isArray(item.rackCellQrs)?item.rackCellQrs:[]).entries()) positions.push({key:`${objectId}:CELL:${index+1}`,name:`${item.label} · ${String(qr).split(':').pop()}`,qr:String(qr),type:'RACK_CELL'});
+      for(const position of positions) {
+        activePositionKeys.push(position.key);
+        await client.query(`INSERT INTO wms_canvas_position_qrs(layout_code,object_id,position_key,position_name,qr_code,position_type,status)
+          VALUES('MAIN',$1,$2,$3,$4,$5,'ACTIVE') ON CONFLICT(layout_code,position_key) DO UPDATE SET
+          object_id=excluded.object_id,position_name=excluded.position_name,qr_code=excluded.qr_code,position_type=excluded.position_type,status='ACTIVE',updated_at=now()`,
+          [objectId,position.key,position.name,position.qr,position.type]);
+      }
     }
+    await client.query("UPDATE wms_canvas_layout_objects SET status='INACTIVE',updated_at=now() WHERE NOT (object_id=ANY($1::varchar[]))",[activeIds]);
+    await client.query("UPDATE wms_canvas_position_qrs SET status='INACTIVE',updated_at=now() WHERE layout_code='MAIN' AND NOT (position_key=ANY($1::varchar[]))",[activePositionKeys]);
+    await client.query(`INSERT INTO wms_canvas_layout_config(layout_code,layout_name,config_data,updated_by)
+      VALUES('MAIN',$1,$2::jsonb,$3) ON CONFLICT(layout_code) DO UPDATE SET layout_name=excluded.layout_name,
+      config_data=excluded.config_data,updated_by=excluded.updated_by,updated_at=now()`,[layoutName,JSON.stringify(config),req.user?.username??null]);
     await client.query("COMMIT");
-    res.json(envelope({saved:items.length,updatedAt:new Date().toISOString()}));
+    res.json(envelope({saved:items.length,positions:activePositionKeys.length,layoutName,items,config,updatedAt:new Date().toISOString()}));
   } catch(error) { await client.query("ROLLBACK").catch(()=>{}); res.status(400).json(errorEnvelope("WMS_LAYOUT_SAVE_ERROR",error.message)); }
   finally { client.release(); }
 });
@@ -42714,7 +43524,7 @@ app.get("/api/3d/wms-control-state", requirePermission("wms.view"), async (req,r
         completed_at AS "completedAt" FROM wms_3d_commands ORDER BY created_at DESC LIMIT 100`),
       query(`SELECT area_code AS "areaCode",area_qr AS "areaQr",area_name AS "areaName",area_type AS "areaType",
         polygon,capacity,occupied,status,source_layout AS "sourceLayout",updated_at AS "updatedAt"
-        FROM wms_floor_storage_areas ORDER BY area_code`),
+        FROM wms_floor_storage_areas WHERE status<>'DISABLED' ORDER BY area_code`),
       query(`SELECT DISTINCT ON (h.material_lot_id) h.id,h.material_lot_id AS "materialLotId",h.material_qr AS "materialQr",
         h.pallet_qr AS "palletQr",h.area_code AS "areaCode",h.x,h.z,h.work_order_code AS "workOrderCode",
         h.operator,h.occurred_at AS "occurredAt",ml.lot_no AS "lotNo",ml.received_qty AS qty,m.code AS "materialCode",

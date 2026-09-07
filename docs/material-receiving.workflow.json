@@ -1,0 +1,76 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "WMS 物料收料闭环工作流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "viewBox": [1180, 680],
+    "views": [
+      {
+        "id": "normal-receiving",
+        "label": "正常收料",
+        "focus": ["supplierPrepare", "pdaCapture", "wmsValidate", "masterEnrich", "printAndBind", "iqcHandoff"],
+        "note": "从供应商标签到库位绑定，最后进入 IQC HOLD 队列。"
+      },
+      {
+        "id": "exception-control",
+        "label": "异常控制",
+        "focus": ["wmsValidate", "varianceGate", "receivingHold", "pdaCapture"],
+        "note": "数量、重复箱码或主数据异常不会直接入库，必须人工处理后重新采集。"
+      },
+      {
+        "id": "hidden-pallet",
+        "label": "隐藏托盘管理",
+        "focus": ["masterEnrich", "hiddenPallet", "printAndBind", "iqcHandoff"],
+        "note": "前端不要求操作托盘；后台保留隐藏托盘关系支持混料识别和追溯。"
+      }
+    ]
+  },
+  "lanes": [
+    { "id": "pda", "label": "供应商到货 / 统一 PDA" },
+    { "id": "wms", "label": "WMS / 收料虚拟员工" },
+    { "id": "human", "label": "主管审批与异常", "variant": "exception" },
+    { "id": "iqc", "label": "IQC / 库存控制" }
+  ],
+  "phases": [
+    { "id": "intake", "label": "预收料与采集", "fromCol": 0, "toCol": 1 },
+    { "id": "validation", "label": "校验与补全", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "commit", "label": "打印、绑定与交接", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "receivingControl", "label": "WMS 受控收料", "lane": "wms", "fromCol": 2, "toCol": 4, "variant": "emphasis" },
+    { "id": "exceptionLoop", "label": "不得自动入库", "lane": "human", "fromCol": 2, "toCol": 4, "variant": "security" }
+  ],
+  "mainPath": ["supplierPrepare", "pdaCapture", "wmsValidate", "masterEnrich", "printAndBind", "iqcHandoff"],
+  "semanticChecks": {
+    "allowedRoots": ["supplierPrepare"],
+    "allowedTerminals": ["iqcHandoff", "receivingHold"],
+    "requiredPaths": [
+      { "from": "supplierPrepare", "to": "iqcHandoff" },
+      { "from": "wmsValidate", "to": "receivingHold" }
+    ]
+  },
+  "nodes": [
+    { "id": "supplierPrepare", "lane": "pda", "col": 0, "type": "external", "label": "准备到货资料", "sublabel": "PO · ASN · 供应商箱标签", "width": 150 },
+    { "id": "pdaCapture", "lane": "pda", "col": 1, "type": "frontend", "label": "采集箱数据", "sublabel": "扫码 / OCR / 数量 / 照片", "tag": "无需选择托盘类型", "width": 158 },
+    { "id": "wmsValidate", "lane": "wms", "col": 2, "type": "backend", "label": "校验收料数据", "sublabel": "PO · 物料 · 数量 · 重复码", "tag": "虚拟员工自动执行", "width": 158 },
+    { "id": "masterEnrich", "lane": "wms", "col": 3, "type": "database", "label": "补全主数据", "sublabel": "供应商 · MSL · 批次规则", "width": 150 },
+    { "id": "printAndBind", "lane": "pda", "col": 4, "type": "frontend", "label": "打印并绑定库位", "sublabel": "箱 QR → 贴标 → 扫库位 QR", "tag": "手持打印机", "width": 166 },
+    { "id": "iqcHandoff", "lane": "iqc", "col": 5, "type": "messagebus", "label": "进入 IQC HOLD", "sublabel": "生成待检任务 · 库存不可用", "tag": "收料完成", "width": 160 },
+    { "id": "varianceGate", "lane": "human", "col": 2, "type": "security", "label": "异常人工复核", "sublabel": "数量差异 · 重码 · 缺少主数据", "width": 158 },
+    { "id": "receivingHold", "lane": "human", "col": 4, "type": "security", "label": "保持 RECEIVING_HOLD", "sublabel": "更正后创建新一轮收料任务", "width": 168 },
+    { "id": "hiddenPallet", "lane": "wms", "col": 4, "type": "database", "label": "后台隐藏托盘关系", "sublabel": "箱 QR 聚合 · 混料识别 · 追溯", "tag": "前端不显示", "width": 172 }
+  ],
+  "edges": [
+    { "id": "supplierToPda", "from": "supplierPrepare", "to": "pdaCapture", "label": "到货与标签", "variant": "emphasis", "role": "main" },
+    { "id": "pdaToValidate", "from": "pdaCapture", "to": "wmsValidate", "label": "实时上传采集结果", "variant": "emphasis", "role": "main" },
+    { "id": "validateToMaster", "from": "wmsValidate", "to": "masterEnrich", "label": "校验通过", "variant": "emphasis", "role": "main" },
+    { "id": "masterToPrint", "from": "masterEnrich", "to": "printAndBind", "label": "生成箱 QR 打印任务", "variant": "emphasis", "role": "main" },
+    { "id": "printToIqc", "from": "printAndBind", "to": "iqcHandoff", "label": "库位绑定完成", "variant": "emphasis", "role": "main" },
+    { "id": "validateException", "from": "wmsValidate", "to": "varianceGate", "label": "发现异常", "variant": "security", "role": "error" },
+    { "id": "gateToHold", "from": "varianceGate", "to": "receivingHold", "label": "拒绝或待补资料", "variant": "security", "role": "branch", "route": "up-channel" },
+    { "id": "masterToPallet", "from": "masterEnrich", "to": "hiddenPallet", "label": "后台自动聚合", "variant": "dashed", "role": "async" },
+    { "id": "palletToIqc", "from": "hiddenPallet", "to": "iqcHandoff", "label": "保存追溯关系与收料证据", "variant": "dashed", "role": "async" }
+  ]
+}

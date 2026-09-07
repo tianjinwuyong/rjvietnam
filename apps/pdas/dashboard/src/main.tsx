@@ -183,6 +183,9 @@ function parseReceivingQr(raw: string): Record<string, string> {
     return { value: text };
   }
 }
+function normalizeMsdLevel(value: unknown): string {
+  return String(value ?? "").trim().replace(/^MSD?[- ]?/i, "");
+}
 const mesHost = () => localStorage.getItem("ruijing.mesHost")?.trim() || window.location.hostname;
 const mesLoadingPage = () => window.location.protocol + "//" + mesHost() + ":5178/?view=mes&mesTab=smtLoading3d";
 const pdaInstallationKey = () => {
@@ -1464,10 +1467,12 @@ function MaterialReceivingPage({ lang, setLang, back }: { lang: Lang; setLang: (
   const [supplier, setSupplier] = useState("");
   const [lotNo, setLotNo] = useState("");
   const [palletQr, setPalletQr] = useState("");
+  const [areaQr, setAreaQr] = useState("");
   const [locationQr, setLocationQr] = useState("");
   const [boxes, setBoxes] = useState<string[]>([]);
   const [iqcResult, setIqcResult] = useState<"PENDING" | "PASS" | "FAIL">("PENDING");
-  const [scanTarget, setScanTarget] = useState<"supplier" | "lot" | "pallet" | "location" | "box" | null>(null);
+  const [msdLevel, setMsdLevel] = useState("");
+  const [scanTarget, setScanTarget] = useState<"area" | "supplier" | "lot" | "pallet" | "location" | "box" | null>(null);
   const [cameraOpen, setCameraOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -1478,15 +1483,18 @@ function MaterialReceivingPage({ lang, setLang, back }: { lang: Lang; setLang: (
   const applyScan = (raw: string) => {
     const parsed = parseReceivingQr(raw); const value = parsed.value || parsed.qr || parsed.code || parsed.id || raw.trim();
     if (!value) return;
+    if (scanTarget === "area") setAreaQr(parsed.areaqr || parsed.receivingarea || parsed.areacode || parsed.area || value);
     if (scanTarget === "supplier") setSupplier(parsed.supplier || parsed.suppliername || value);
     if (scanTarget === "lot") setLotNo(parsed.lot || parsed.lotno || parsed.batch || value);
     if (scanTarget === "pallet") setPalletQr(parsed.palletqr || parsed.pallet || parsed.qr || value);
     if (scanTarget === "location") setLocationQr(parsed.locationqr || parsed.location || parsed.qr || value);
     if (scanTarget === "box") setBoxes((old) => old.includes(value) ? old : [...old, value]);
-    publishPdaLoadingStatus({ phase: "SCANNED", receivingField: scanTarget, supplier, lotNo, palletQr, locationCode: locationQr, boxQr: value, iqcResult, operator: pdaOperator() });
+    if (parsed.msdlevel || parsed.msl || parsed.msd) setMsdLevel(normalizeMsdLevel(parsed.msdlevel || parsed.msl || parsed.msd));
+    publishPdaLoadingStatus({ phase: "SCANNED", receivingField: scanTarget, areaQr: scanTarget === "area" ? value : areaQr, supplier, lotNo, palletQr, locationCode: locationQr, boxQr: value, iqcResult, msdLevel, operator: pdaOperator(), deviceId: pdaDeviceId() });
     closeCamera();
   };
   const openScanner = async (target: typeof scanTarget) => {
+    if (target !== "area" && !areaQr.trim()) { setMessage(t("Scan the loading area QR first.", "请先扫描装载区域 QR。", "Vui lòng quét QR khu vực xếp hàng trước.")); return; }
     setScanTarget(target); setMessage("");
     const bridge = (window as Window & { AndroidCamera?: { startScanner: () => void } }).AndroidCamera;
     if (bridge?.startScanner) { bridge.startScanner(); return; }
@@ -1498,28 +1506,53 @@ function MaterialReceivingPage({ lang, setLang, back }: { lang: Lang; setLang: (
     return () => { delete (window as Window & { receiveNativeScan?: (value: string) => void }).receiveNativeScan; };
   });
   useEffect(() => {
+    // WMS is the source of truth for Excel-mapped fields such as MSD. The PDA
+    // only displays the synchronized draft; it does not manually override it.
+    const applyWmsDraft = (raw: unknown) => {
+      const payload = (raw && typeof raw === "object" && "payload" in raw)
+        ? (raw as { payload?: unknown }).payload
+        : raw;
+      if (!payload || typeof payload !== "object") return;
+      const value = payload as Record<string, unknown>;
+      if (value.supplier !== undefined) setSupplier(String(value.supplier || ""));
+      if (value.lotNo !== undefined || value.lot !== undefined) setLotNo(String(value.lotNo ?? value.lot ?? ""));
+      if (value.palletQr !== undefined) setPalletQr(String(value.palletQr || ""));
+      if (value.areaQr !== undefined || value.receivingArea !== undefined) setAreaQr(String(value.areaQr ?? value.receivingArea ?? ""));
+      if (value.locationCode !== undefined || value.storageLocation !== undefined) setLocationQr(String(value.locationCode ?? value.storageLocation ?? ""));
+      if (value.msdLevel !== undefined || value.msLevel !== undefined) setMsdLevel(normalizeMsdLevel(value.msdLevel ?? value.msLevel));
+      if (value.iqcResult !== undefined) {
+        const result = String(value.iqcResult).toUpperCase();
+        setIqcResult(result === "PASS" || result === "FAIL" ? result : "PENDING");
+      }
+      setMessage(t("WMS draft synchronized.", "已同步 WMS 收料草稿（包括 Excel 映射的 MSD）。", "Đã đồng bộ bản nháp WMS."));
+    };
+    const stream = new EventSource("/api/pda/events?node=unified_pda_receiving&replay=1&types=WMS_RECEIVING_WMS_DRAFT");
+    stream.onmessage = (event) => { try { applyWmsDraft(JSON.parse(event.data)); } catch { /* manual scan remains available */ } };
+    return () => stream.close();
+  }, [lang]);
+  useEffect(() => {
     if (!cameraOpen || !streamRef.current || !videoRef.current) return;
     const reader = new BrowserMultiFormatReader(undefined, { delayBetweenScanAttempts: 120, delayBetweenScanSuccess: 500 }); let stopped = false; let controls: { stop: () => void } | undefined;
     void reader.decodeFromStream(streamRef.current, videoRef.current, (result) => { const value = String(result?.getText() || "").trim(); if (!value || stopped) return; stopped = true; controls?.stop(); applyScan(value); });
     return () => { stopped = true; controls?.stop(); };
   }, [cameraOpen, scanTarget]);
   const submit = async () => {
-    if (!supplier.trim() || !lotNo.trim() || !palletQr.trim() || !locationQr.trim() || !boxes.length) { setMessage(t("Supplier, lot, pallet, location and at least one box are required.", "供应商、批次、托盘、库位和至少一个箱码不能为空。", "Cần nhà cung cấp, lot, pallet, vị trí và ít nhất một box.")); return; }
+    if (!areaQr.trim() || !supplier.trim() || !lotNo.trim() || !palletQr.trim() || !locationQr.trim() || !boxes.length) { setMessage(t("Loading area QR, supplier, lot, pallet, location and at least one box are required.", "装载区域 QR、供应商、批次、托盘、库位和至少一个箱码不能为空。", "Cần QR khu vực, nhà cung cấp, lot, pallet, vị trí và ít nhất một box.")); return; }
     if (iqcResult === "FAIL") { setMessage(t("IQC failed material cannot be received as available stock.", "IQC 不合格物料不能作为可用库存收料。", "Vật liệu IQC lỗi không thể nhập kho khả dụng.")); return; }
-    setSaving(true); setMessage(""); publishPdaLoadingStatus({ phase: "RECEIVING", supplier, lotNo, palletQr, locationCode: locationQr, boxQrs: boxes, iqcResult, operator: pdaOperator() });
+    setSaving(true); setMessage(""); publishPdaLoadingStatus({ phase: "RECEIVING", areaQr, supplier, lotNo, palletQr, locationCode: locationQr, boxQrs: boxes, iqcResult, msdLevel: msdLevel || null, operator: pdaOperator(), deviceId: pdaDeviceId() });
     try {
       const token = await getPdaMesToken();
       for (const boxQr of boxes) {
-        const response = await fetch(`${mesApiBase()}/api/wms/receiving/pallet-box-bindings`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ palletQr, boxQr, lotNo, supplier, locationQr, iqcResult }) });
+        const response = await fetch(`${mesApiBase()}/api/wms/receiving/pallet-box-bindings`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` }, body: JSON.stringify({ areaQr, palletQr, boxQr, lotNo, supplier, locationQr, iqcResult, msdLevel: msdLevel || null, deviceId: pdaDeviceId(), operator: pdaOperator() }) });
         const body = await response.json().catch(() => ({})); if (!response.ok) throw new Error(body?.error?.message || `Box ${boxQr} rejected`);
       }
-      publishPdaLoadingStatus({ phase: "COMPLETED", supplier, lotNo, palletQr, locationCode: locationQr, boxQrs: boxes, iqcResult, operator: pdaOperator() });
+      publishPdaLoadingStatus({ phase: "COMPLETED", areaQr, supplier, lotNo, palletQr, locationCode: locationQr, boxQrs: boxes, iqcResult, msdLevel: msdLevel || null, operator: pdaOperator(), deviceId: pdaDeviceId() });
       setMessage(t(`Received ${boxes.length} box(es).`, `已收料 ${boxes.length} 箱。`, `Đã nhận ${boxes.length} box.`)); setBoxes([]);
-    } catch (error) { publishPdaLoadingStatus({ phase: "FAILED", supplier, lotNo, palletQr, locationCode: locationQr, iqcResult, operator: pdaOperator() }); setMessage(error instanceof Error ? error.message : "WMS receiving failed"); }
+    } catch (error) { publishPdaLoadingStatus({ phase: "FAILED", areaQr, supplier, lotNo, palletQr, locationCode: locationQr, iqcResult, msdLevel: msdLevel || null, operator: pdaOperator(), deviceId: pdaDeviceId() }); setMessage(error instanceof Error ? error.message : "WMS receiving failed"); }
     finally { setSaving(false); }
   };
   const field = (label: string, value: string, setValue: (value: string) => void, target: typeof scanTarget) => <label style={{ display: "block", marginBottom: 12 }}><strong>{label}</strong><div style={{ display: "flex", gap: 8 }}><input value={value} onChange={(e) => setValue(e.target.value)} style={{ flex: 1, minHeight: 44 }} /><button type="button" onClick={() => void openScanner(target)}>📷</button></div></label>;
-  return <><Header lang={lang} setLang={setLang} back={back} t={T[lang]} /><main className="container"><div className="page-title"><div><p className="eyebrow">WMS · MATERIAL RECEIVING</p><h1>{t("Material Receiving", "物料收料", "Nhận vật liệu")}</h1><p className="muted">{t("Scan and bind pallet, boxes, lot and warehouse location.", "扫描并绑定托盘、箱、批次和仓库库位。", "Quét và liên kết pallet, box, lot và vị trí kho.")}</p></div></div><section className="detail" style={{ maxWidth: 720, margin: "0 auto" }}>{field(t("Supplier", "供应商", "Nhà cung cấp"), supplier, setSupplier, "supplier")}{field(t("Lot / batch", "批次 / Lot", "Lot / lô"), lotNo, setLotNo, "lot")}{field(t("Pallet QR", "托盘 QR", "QR pallet"), palletQr, setPalletQr, "pallet")}{field(t("Location QR", "库位 QR", "QR vị trí"), locationQr, setLocationQr, "location")}<label style={{ display: "block", marginBottom: 12 }}><strong>{t("Supplier IQC result", "供应商 IQC 结果", "Kết quả IQC nhà cung cấp")}</strong><select value={iqcResult} onChange={(e) => setIqcResult(e.target.value as typeof iqcResult)} style={{ width: "100%", minHeight: 44 }}><option value="PENDING">PENDING · {t("Uninspected", "待检", "Chờ kiểm tra")}</option><option value="PASS">PASS · {t("Qualified", "合格", "Đạt")}</option><option value="FAIL">FAIL · {t("Rejected", "不合格", "Lỗi")}</option></select></label><div style={{ border: "1px solid #294653", padding: 12, marginBottom: 12 }}><strong>{t("Box QRs on pallet", "托盘上的箱 QR", "QR box trên pallet")}</strong>{boxes.map((box) => <div key={box} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>{box}</span><button type="button" onClick={() => setBoxes((old) => old.filter((item) => item !== box))}>×</button></div>)}<button type="button" onClick={() => void openScanner("box")} style={{ width: "100%", minHeight: 44 }}>📷 {t("Scan box QR", "扫描箱 QR", "Quét QR box")}</button></div>{message && <p role="alert" style={{ color: message.includes("Received") || message.includes("已收料") || message.includes("Đã nhận") ? "#36d399" : "#ff8b8b" }}>{message}</p>}<button className="wo-confirm" disabled={saving} onClick={() => void submit()}>{saving ? t("Submitting...", "提交中...", "Đang gửi...") : t("Receive and bind to WMS", "收料并绑定到 WMS", "Nhận và liên kết WMS")}</button></section></main>{cameraOpen && <div className="camera-overlay"><video ref={videoRef} autoPlay playsInline /><button type="button" onClick={closeCamera}>{t("Close camera", "关闭相机", "Đóng camera")}</button></div>}</>;
+  return <><Header lang={lang} setLang={setLang} back={back} t={T[lang]} /><main className="container"><div className="page-title"><div><p className="eyebrow">WMS · MATERIAL RECEIVING</p><h1>{t("Material Receiving", "物料收料", "Nhận vật liệu")}</h1><p className="muted">{t("Scan the loading area first, then bind pallet, boxes, lot and warehouse location.", "先扫描装载区域 QR，再绑定托盘、箱、批次和仓库库位。", "Quét QR khu vực xếp hàng trước, sau đó liên kết pallet, box, lot và vị trí kho.")}</p></div></div><section className="detail" style={{ maxWidth: 720, margin: "0 auto" }}><label style={{ display: "block", marginBottom: 12, padding: 12, border: areaQr.trim() ? "2px solid #16a34a" : "2px solid #f59e0b", borderRadius: 8, background: areaQr.trim() ? "#f0fdf4" : "#fffbeb" }}><strong>{t("Step 1 · Loading area QR", "第1步·装载区域 QR", "Bước 1 · QR khu vực xếp hàng")}</strong><div style={{ display: "flex", gap: 8, marginTop: 6 }}><input value={areaQr} onChange={(e) => setAreaQr(e.target.value)} placeholder={t("Scan loading area QR", "扫描装载区域 QR", "Quét QR khu vực xếp hàng")} style={{ flex: 1, minHeight: 44 }} /><button type="button" onClick={() => void openScanner("area")}>📷 {t("Scan", "扫描", "Quét")}</button></div><small>{areaQr.trim() ? t("Area confirmed; continue with material receiving.", "区域已确认，可以继续收料。", "Đã xác nhận khu vực; có thể tiếp tục nhận liệu.") : t("Required before scanning pallet or box QR.", "必须先确认区域，才能扫描托盘或箱 QR。", "Bắt buộc xác nhận khu vực trước khi quét pallet hoặc box QR.")}</small></label>{field(t("Supplier", "供应商", "Nhà cung cấp"), supplier, setSupplier, "supplier")}{field(t("Lot / batch", "批次 / Lot", "Lot / lô"), lotNo, setLotNo, "lot")}{field(t("Pallet QR", "托盘 QR", "QR pallet"), palletQr, setPalletQr, "pallet")}{field(t("Location QR", "库位 QR", "QR vị trí"), locationQr, setLocationQr, "location")}<label style={{ display: "block", marginBottom: 12 }}><strong>{t("Supplier IQC result", "供应商 IQC 结果", "Kết quả IQC nhà cung cấp")}</strong><select value={iqcResult} onChange={(e) => setIqcResult(e.target.value as typeof iqcResult)} style={{ width: "100%", minHeight: 44 }}><option value="PENDING">PENDING · {t("Uninspected", "待检", "Chờ kiểm tra")}</option><option value="PASS">PASS · {t("Qualified", "合格", "Đạt")}</option><option value="FAIL">FAIL · {t("Rejected", "不合格", "Lỗi")}</option></select></label><div style={{ border: "1px solid #294653", padding: 12, marginBottom: 12 }}><strong>{t("Box QRs on pallet", "托盘上的箱 QR", "QR box trên pallet")}</strong>{boxes.map((box) => <div key={box} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0" }}><span>{box}</span><button type="button" onClick={() => setBoxes((old) => old.filter((item) => item !== box))}>×</button></div>)}<button type="button" onClick={() => void openScanner("box")} style={{ width: "100%", minHeight: 44 }}>📷 {t("Scan box QR", "扫描箱 QR", "Quét QR box")}</button></div>{message && <p role="alert" style={{ color: message.includes("Received") || message.includes("已收料") || message.includes("Đã nhận") ? "#36d399" : "#ff8b8b" }}>{message}</p>}<button className="wo-confirm" disabled={saving} onClick={() => void submit()}>{saving ? t("Submitting...", "提交中...", "Đang gửi...") : t("Receive and bind to WMS", "收料并绑定到 WMS", "Nhận và liên kết WMS")}</button></section></main>{cameraOpen && <div className="camera-overlay"><video ref={videoRef} autoPlay playsInline /><button type="button" onClick={closeCamera}>{t("Close camera", "关闭相机", "Đóng camera")}</button></div>}</>;
 }
 
 function QrGenerator({ lang, setLang, back }: { lang: Lang; setLang: (l: Lang) => void; back: () => void }) {

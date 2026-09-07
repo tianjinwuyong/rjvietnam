@@ -1,6 +1,7 @@
 import React, { Component, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { Toaster } from "sonner";
 import "./styles.css";
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; errorMessage: string }> {
@@ -44,6 +45,7 @@ createRoot(document.getElementById("root")!).render(
       <Suspense fallback={<div style={{ padding: 32, textAlign: "center" }}>正在加载系统…</div>}>
         <App />
       </Suspense>
+      <Toaster richColors theme="system" position="top-right" closeButton />
     </ErrorBoundary>
   </React.StrictMode>,
 );

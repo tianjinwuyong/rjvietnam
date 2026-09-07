@@ -336,6 +336,31 @@ paths:
           description: Invalid operation or oversized context
         '409':
           description: Hermes supervisor is disabled
+  /factory/virtual-employees/OPS-SUPERVISOR-VIRTUAL-01/run:
+    post:
+      tags: [Admin]
+      summary: Execute a governed Hermes operation using Hy4 with local-model fallback
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                operation:
+                  type: string
+                  enum: [patrol, route, replenish, escalate, approval, handover]
+                context:
+                  type: object
+                  additionalProperties: true
+      responses:
+        '200':
+          description: Hermes model result with the model and provider task used
+        '409':
+          description: Hermes supervisor is disabled
+        '502':
+          description: Hy4 and every configured fallback model failed
   /factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-report/run-now:
     post:
       tags: [WMS]
@@ -405,6 +430,25 @@ paths:
         "200": { description: Current cells, tasks, commands, and floor areas }
         "401": { description: Authentication required }
         "403": { description: wms.view permission required }
+  /wms/floor-storage-areas/all:
+    get:
+      tags: [WMS]
+      summary: List all floor storage areas including disabled ones
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: All floor areas with status }
+        "401": { description: Authentication required }
+        "403": { description: wms.view permission required }
+  /wms/voice/transcribe:
+    post:
+      tags: [WMS]
+      summary: Transcribe a base64 audio data URL with local faster-whisper
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Transcribed text with detected language }
+        "400": { description: Missing or oversized audio }
+        "401": { description: Authentication required }
+        "403": { description: wms.execute permission required }
   /3d/wms-commands:
     post:
       tags: [WMS]
@@ -1181,6 +1225,11 @@ paths:
           in: query
           schema:
             type: string
+        - name: msdOnly
+          in: query
+          description: Return only lots whose material master requires moisture-sensitive-device control
+          schema:
+            type: boolean
         - $ref: "#/components/parameters/QParam"
         - $ref: "#/components/parameters/PageParam"
         - $ref: "#/components/parameters/PageSizeParam"
@@ -1192,6 +1241,100 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ListEnvelope"
+  /wms/pick-orders:
+    get:
+      tags: [WMS]
+      summary: List material fetching requirements for released or running work orders
+      parameters:
+        - name: workOrderCode
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Exact work-order code; omit to return the active fetching queue.
+      responses:
+        "200":
+          description: BOM demand with FIFO lot, location, material SN, and transaction totals
+        "404":
+          description: Specified work order was not found
+  /api/3d/wms-layout:
+    get:
+      tags: [WMS]
+      summary: Load the active WMS warehouse canvas layout and its saved configuration
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Active layout objects, names, generated position QR values, and canvas configuration
+    post:
+      tags: [WMS]
+      summary: Save the WMS warehouse canvas and generate QR values for every position
+      description: Existing objects and position QR records omitted from the payload are retained as inactive history.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items, config]
+              properties:
+                layoutName: { type: string }
+                duplicateNameAction:
+                  type: string
+                  enum: [REJECT, OVERWRITE]
+                  description: REJECT returns 409 for duplicate names; OVERWRITE retains the last same-name object and inactivates the previous record.
+                qrRules:
+                  type: array
+                  minItems: 3
+                  description: Imported AREA, LOCATION, and RACK hierarchy rules used by WMS to generate every QR value.
+                  items: { type: object }
+                config: { type: object }
+                items:
+                  type: array
+                  minItems: 1
+                  items: { type: object }
+      responses:
+        "200":
+          description: Saved object count, generated QR count, and normalized layout objects
+        "400":
+          description: Invalid layout or persistence failure
+        "409":
+          description: A same-name position exists and overwrite was not confirmed
+  /wms/suppliers/import-replace:
+    post:
+      tags: [WMS]
+      summary: Replace the active supplier list from the latest validated spreadsheet
+      description: Plant-manager-only operation. Existing suppliers absent from the file are deactivated and retained for history.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceFile, sourceModifiedAt, sourceRows, duplicateRows, rows]
+              properties:
+                sourceFile: { type: string }
+                sourceModifiedAt: { type: string, format: date-time }
+                sourceRows: { type: integer, minimum: 1 }
+                duplicateRows: { type: integer, minimum: 0 }
+                rows:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [code, nameZh]
+                    properties:
+                      code: { type: string }
+                      nameZh: { type: string }
+      responses:
+        "200": { description: Supplier list replaced and audited }
+        "400": { description: Invalid spreadsheet payload }
+        "403": { description: Plant manager authorization required }
+        "409": { description: Older version or replacement failure }
   /wms/storage-locations:
     get:
       tags: [WMS]
@@ -1306,6 +1449,62 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MutationEnvelope"
+  /wms/material-consumption-summary:
+    get:
+      tags: [WMS]
+      summary: Real-time consumed and remaining quantities by material with immutable consumption events
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: "#/components/parameters/QParam"
+        - $ref: "#/components/parameters/FromDateParam"
+        - $ref: "#/components/parameters/ToDateParam"
+      responses:
+        "200":
+          description: Material consumption control-tower data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MutationEnvelope"
+  /wms/fetch-packages/{qr}:
+    get:
+      tags: [WMS]
+      summary: Resolve a physical material-fetching package QR and its handover events
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: qr
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Fetching package and event history }
+  /wms/fetch-packages/{qr}/handover:
+    post:
+      tags: [WMS]
+      summary: Warehouse PDA confirms handing out a fetching package
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: qr
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Package handed over }
+  /wms/fetch-packages/{qr}/receive:
+    post:
+      tags: [WMS]
+      summary: Line-side PDA confirms receiving a fetching package
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: qr
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Package received by a different person }
   /wms/shelf/status:
     get:
       tags: [WMS]

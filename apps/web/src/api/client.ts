@@ -61,15 +61,19 @@ export class ApiClientError extends Error {
 }
 
 function getToken(): string | null {
-  return sessionStorage.getItem("auth_token");
+  // Keep one login usable across the WMS/QMS modules. Older screens still
+  // write the JWT to localStorage, while the main sign-in flow uses sessionStorage.
+  return sessionStorage.getItem("auth_token") || localStorage.getItem("token");
 }
 
 function setToken(token: string) {
   sessionStorage.setItem("auth_token", token);
+  localStorage.setItem("token", token);
 }
 
 function clearToken() {
   sessionStorage.removeItem("auth_token");
+  localStorage.removeItem("token");
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -97,8 +101,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!contentType.includes("application/json")) {
     throw new ApiClientError("HTTP_NON_JSON", `接口 ${path} 返回了网页 HTML，而不是 JSON。请检查 API 路径或服务是否已注册。`);
   }
-  const json: Envelope<T> = await res.json();
-  return json.data as T;
+  const json = await res.json() as Envelope<T> & T;
+  // Some legacy WMS endpoints return { items, total } directly while newer
+  // endpoints use the standard { data: { items, total } } envelope. Accept
+  // both shapes so one endpoint cannot blank or crash a whole page.
+  return ("data" in json && json.data !== undefined ? json.data : json) as T;
 }
 
 type QueryValue = string | number | boolean | null | undefined;

@@ -1,3 +1,5 @@
+import { apiClient } from "../api/client";
+
 export type OaRequestStatus = "pending" | "approved" | "rejected";
 export type OaRequestType = "leave" | "purchase" | "expense" | "material_receiving";
 
@@ -118,3 +120,80 @@ export function createOaMockRepository(): OaRepository {
 }
 
 export const oaRepository = createOaMockRepository();
+
+export interface OaSignatureStep {
+  id?: number;
+  stepNo: number;
+  signerUserId?: number | null;
+  signerUsername: string;
+  signerName?: string | null;
+  signerRole?: string | null;
+  slaHours: number;
+  status?: string;
+  dueAt?: string | null;
+  decidedBy?: string | null;
+  decidedAt?: string | null;
+  decisionNote?: string | null;
+}
+
+export interface OaProcessRequest {
+  id: number;
+  requestNo: string;
+  entityType: string;
+  entityId: number;
+  entityNo: string;
+  title: string;
+  requesterUsername?: string;
+  requesterName?: string;
+  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
+  currentStep: number;
+  totalSteps: number;
+  submittedAt: string;
+  package: {
+    content: Array<{ materialCode?: string; materialName?: string; quantity?: number; unit?: string; remarks?: string }>;
+    issuedBy?: string;
+    department?: string;
+    issuedAt?: string;
+    approvalDueAt?: string;
+    priority?: "NORMAL" | "URGENT" | "CRITICAL";
+    itemLink?: string;
+    itemLinkDescription?: string;
+    attachments: Array<{
+      name: string;
+      kind: "document" | "photo" | "video" | "audio" | "signature" | "other";
+      url?: string;
+      mimeType?: string;
+      sizeBytes?: number;
+      uploadedBy?: string;
+      uploadedAt?: string;
+      signedBy?: string;
+      checksumSha256?: string;
+      requiredSignerRoles?: string[];
+    }>;
+    summary?: string;
+    responses?: Array<{ signer: string; decision: string; comments?: string; respondedAt?: string; signatureAttachmentName?: string }>;
+  };
+  steps: OaSignatureStep[];
+}
+
+export interface OaMaterialRequisitionProcess {
+  id: number;
+  processCode: string;
+  processName: string;
+  active: boolean;
+  steps: OaSignatureStep[];
+}
+export interface OaProcessSummary { id: number; processCode: string; processName: string; entityType: string; active: boolean; stepCount: number; }
+
+export const oaProcessApi = {
+  listRequests: (status = "PENDING") => apiClient.get<{ items: OaProcessRequest[]; total: number }>(`/api/oa/process-requests?status=${encodeURIComponent(status)}`),
+  decide: (id: number, decision: "APPROVE" | "REJECT", note: string, signedAttachmentNames: string[]) =>
+    apiClient.post(`/api/oa/process-requests/${id}/decision`, { decision, note, signedAttachmentNames }),
+  getMaterialRequisition: () =>
+    apiClient.get<OaMaterialRequisitionProcess>("/api/oa/processes/material-requisition"),
+  saveMaterialRequisition: (steps: OaSignatureStep[], active = true) =>
+    apiClient.put("/api/oa/processes/material-requisition", { active, steps }),
+  listProcesses: () => apiClient.get<{ items: OaProcessSummary[]; total: number }>("/api/oa/processes"),
+  getProcess: (processCode: string) => apiClient.get<OaMaterialRequisitionProcess>(`/api/oa/processes/${encodeURIComponent(processCode)}`),
+  saveProcess: (processCode: string, steps: OaSignatureStep[], active = true) => apiClient.put(`/api/oa/processes/${encodeURIComponent(processCode)}`, { active, steps }),
+};

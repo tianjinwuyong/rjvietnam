@@ -1,0 +1,50 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "WMS 领料状态与流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "docs/wms-fetching-workflow.html"
+  },
+  "lanes": [
+    { "id": "planning", "label": "PMC / MES" },
+    { "id": "warehouse", "label": "仓库" },
+    { "id": "line", "label": "生产线" },
+    { "id": "exception", "label": "异常闭环", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "demand", "label": "需求", "fromCol": 0, "toCol": 1 },
+    { "id": "fetch", "label": "拣选与交接", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "close", "label": "上线与结算", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": ["released", "pending", "fifo", "picked", "handed", "received", "consumed"],
+  "nodes": [
+    { "id": "released", "lane": "planning", "col": 0, "type": "backend", "label": "工单已下达", "width": 140 },
+    { "id": "pending", "lane": "warehouse", "col": 1, "type": "frontend", "label": "待领取", "width": 140 },
+    { "id": "fifo", "lane": "warehouse", "col": 2, "type": "database", "label": "FIFO 推荐", "width": 150 },
+    { "id": "picked", "lane": "warehouse", "col": 3, "type": "backend", "label": "已拣料", "width": 140 },
+    { "id": "handed", "lane": "warehouse", "col": 4, "type": "security", "label": "仓库交出", "width": 140 },
+    { "id": "received", "lane": "line", "col": 4, "type": "security", "label": "产线接收", "width": 140 },
+    { "id": "consumed", "lane": "line", "col": 5, "type": "backend", "label": "上线消耗", "width": 140 },
+    { "id": "shortage", "lane": "exception", "col": 2, "type": "security", "label": "缺料 / 无合格批次", "width": 160 },
+    { "id": "returned", "lane": "exception", "col": 4, "type": "messagebus", "label": "退料", "width": 140 },
+    { "id": "scrapped", "lane": "exception", "col": 5, "type": "security", "label": "报废", "width": 140 }
+  ],
+  "edges": [
+    { "id": "release-demand", "from": "released", "to": "pending", "label": "展开 BOM", "role": "main" },
+    { "id": "demand-fifo", "from": "pending", "to": "fifo", "label": "查询可用库存", "role": "main" },
+    { "id": "fifo-pick", "from": "fifo", "to": "picked", "label": "按先进先出拣选", "role": "main" },
+    { "id": "pick-hand", "from": "picked", "to": "handed", "label": "生成领料包", "role": "main" },
+    { "id": "hand-receive", "from": "handed", "to": "received", "label": "PDA 双方确认", "role": "main" },
+    { "id": "receive-consume", "from": "received", "to": "consumed", "label": "发线并消耗", "role": "main" },
+    { "id": "fifo-shortage", "from": "fifo", "to": "shortage", "label": "库存不足", "variant": "security", "role": "error" },
+    { "id": "return-stock", "from": "received", "to": "returned", "label": "未用物料退回", "variant": "dashed", "role": "branch" },
+    { "id": "return-pending", "from": "returned", "to": "pending", "label": "合格品重新可领", "variant": "dashed", "role": "return" },
+    { "id": "consume-scrap", "from": "consumed", "to": "scrapped", "label": "损耗 / 不合格", "variant": "security", "role": "branch" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "清单状态", "items": ["待领取：需求量大于已拣量", "已拣料：PICK 累计达到需求量", "缺料：没有足量的 IQC released 批次"] },
+    { "dot": "orange", "title": "流水口径", "items": ["最近领料时间取最后一笔 PICK", "退料取 RETURN_FROM_LINE", "报废取审批后的 SCRAP / IQC_SCRAP"] }
+  ]
+}

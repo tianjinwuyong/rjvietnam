@@ -41,6 +41,9 @@ import { appendFileSync } from "fs";
 
 // ── Model routing table ───────────────────────────────────────────────
 const MODEL_FOR_TASK = {
+  // Hermes supervisor (OpenAI-compatible Hy4 endpoint; local models are fallback)
+  hermes:    process.env.HERMES_LLM_MODEL || "tencent/hy4-preview",
+  hermes_local: process.env.HERMES_LOCAL_MODEL || "qwen3.8:latest",
   // Local models
   analysis:  "hf.co/deepreinforce-ai/Ornith-1.0-9B-GGUF:Q5_K_M",
   validator: "phi4:14b",
@@ -52,7 +55,11 @@ const MODEL_FOR_TASK = {
 
   // Ollama cloud models (premium tier)
   premium:   process.env.MINIMAX_MODEL || "MiniMax-M2.7",
+  minimax:   process.env.MINIMAX_MODEL || "MiniMax-M2.7",
   long_doc:  "glm-5.2:cloud",
+
+  // DeepSeek cloud (OpenAI-compatible, needs DEEPSEEK_API_KEY)
+  deepseek:  process.env.DEEPSEEK_MODEL || "deepseek-chat",
 };
 
 const OLLAMA_BASE = "http://localhost:11434";
@@ -60,6 +67,7 @@ const OLLAMA_BASE = "http://localhost:11434";
 // ── Tier definitions (ordered fallback chains) ─────────────────────────
 // Each tier defines which task types to try in order.
 const TIERS = {
+  hermes:  { tasks: ["hermes", "hermes_local", "analysis", "validator", "general"], desc: "Hy4 → qwen3.8 → Ornith → phi4 → qwen2.5" },
   local:   { tasks: ["analysis", "validator", "general"],             desc: "Ornith → phi4 → qwen2.5" },
   premium: { tasks: ["premium", "analysis", "validator", "general"],  desc: "MiniMax-M2.7 → Ornith → phi4 → qwen2.5" },
   cloud:   { tasks: ["openai", "premium", "analysis", "validator"],   desc: "GPT-4o → minimax-m3 → Ornith → phi4" },
@@ -129,6 +137,39 @@ async function openAIComplete(model, prompt, timeoutMs = 120000) {
   }
 }
 
+async function hermesHy4Complete(model, prompt, timeoutMs = 180000) {
+  const apiKey = process.env.HERMES_LLM_API_KEY || process.env.OPENROUTER_API_KEY;
+  if (!apiKey) throw new Error("HERMES_LLM_API_KEY or OPENROUTER_API_KEY not set");
+
+  const baseUrl = (process.env.HERMES_LLM_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/$/, "");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
+        ...(process.env.HERMES_LLM_SITE_URL && { "HTTP-Referer": process.env.HERMES_LLM_SITE_URL }),
+        "X-Title": process.env.HERMES_LLM_APP_NAME || "Ruijing Hermes",
+      },
+      body: JSON.stringify({
+        model: model || "tencent/hy4-preview",
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`Hermes Hy4 ${res.status}: ${res.statusText}`);
+    return (await res.json()).choices?.[0]?.message?.content || "";
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(`Hermes Hy4 timeout (${timeoutMs}ms)`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function minimaxComplete(model, prompt, timeoutMs = 120000) {
   const apiKey = process.env.MINIMAX_API_KEY;
   if (!apiKey) throw new Error("MINIMAX_API_KEY not set");
@@ -152,11 +193,34 @@ async function minimaxComplete(model, prompt, timeoutMs = 120000) {
   }
 }
 
+async function deepseekComplete(model, prompt, timeoutMs = 120000) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY not set");
+  const endpoint = `${process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1"}/chat/completions`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({ model: model || process.env.DEEPSEEK_MODEL || "deepseek-chat", messages: [{ role: "user", content: prompt }], stream: false }),
+      signal: controller.signal,
+    });
+    if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${res.statusText}`);
+    return (await res.json()).choices?.[0]?.message?.content || "";
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(`DeepSeek timeout (${timeoutMs}ms)`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── Route a single LLM call ───────────────────────────────────────────
 /**
  * Call an LLM with the model mapped to the given task type.
  *
- * @param {string} taskType  - analysis|validator|reasoning|premium|openai|quick|sql|vision|general
+ * @param {string} taskType  - analysis|validator|reasoning|premium|minimax|deepseek|openai|quick|sql|vision|general|hermes
  * @param {string} prompt
  * @param {object} [opts]
  * @param {string} [opts.model]       - override model name
@@ -167,16 +231,21 @@ async function minimaxComplete(model, prompt, timeoutMs = 120000) {
  */
 export async function askLLM(taskType, prompt, opts = {}) {
   const model = opts.model || MODEL_FOR_TASK[taskType] || MODEL_FOR_TASK.general;
+  const modelLower = model.toLowerCase();
 
   log("INFO", `Task=${taskType} → Model=${model} chars=${prompt.length}`);
 
   try {
     let response;
-    if (process.env.LLM_ROUTER_PROVIDER === "omniroute") {
+    if (taskType === "hermes") {
+      response = await hermesHy4Complete(model, prompt, opts.timeoutMs || 180000);
+    } else if (process.env.LLM_ROUTER_PROVIDER === "omniroute" && opts.provider !== "ollama") {
       response = await openAIComplete(process.env.OMNIROUTE_MODEL || model || "auto/coding", prompt, opts.timeoutMs || 120000);
-    } else if (taskType === "premium" || taskType === "minimax" || model.startsWith("MiniMax-")) {
+    } else if (taskType === "premium" || taskType === "minimax" || (opts.model && modelLower.startsWith("minimax-"))) {
       response = await minimaxComplete(model, prompt, opts.timeoutMs || 120000);
-    } else if (taskType === "openai" || opts.model?.startsWith("gpt-") || opts.model?.startsWith("o")) {
+    } else if (taskType === "deepseek" || (opts.model && modelLower.startsWith("deepseek-"))) {
+      response = await deepseekComplete(model, prompt, opts.timeoutMs || 120000);
+    } else if (taskType === "openai" || (opts.model && (modelLower.startsWith("gpt-") || modelLower.startsWith("o")))) {
       response = await openAIComplete(model, prompt, opts.timeoutMs || 120000);
     } else {
       const body = {
@@ -210,14 +279,19 @@ export async function askLLM(taskType, prompt, opts = {}) {
  */
 export async function askLLMWithFallback(taskType, prompt, opts = {}) {
   const tier = opts.tier || "local";
-  const chain = opts.fallbackChain || TIERS[tier]?.tasks || TIERS.local.tasks;
+  const baseChain = opts.fallbackChain || TIERS[tier]?.tasks || TIERS.local.tasks;
+  // Keep an explicitly requested task type in the chain (e.g. "deepseek"/"minimax" have no tier).
+  const chain = (MODEL_FOR_TASK[taskType] && !baseChain.includes(taskType))
+    ? [taskType, ...baseChain]
+    : baseChain;
 
   log("INFO", `Tier=${tier} chain=${TIERS[tier]?.desc || chain.join("→")} chars=${prompt.length}`);
 
   let lastError = null;
   for (const t of chain) {
     try {
-      const text = await askLLM(t, prompt, opts);
+      const attemptOpts = tier === "hermes" && t !== "hermes" ? { ...opts, provider: "ollama" } : opts;
+      const text = await askLLM(t, prompt, attemptOpts);
       return { text, model: MODEL_FOR_TASK[t] || t, tier, taskUsed: t };
     } catch (err) {
       lastError = err;

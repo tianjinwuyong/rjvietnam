@@ -1,0 +1,45 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": { "title": "MSD 湿敏物料控制闭环", "locale": "zh-CN", "quality_profile": "showcase", "output": "apps/web/public/architecture/msd-control-virtual-employee-workflow.html" },
+  "lanes": [
+    { "id": "source", "label": "收料 / IQC / 仓库" },
+    { "id": "employee", "label": "MSD-CONTROL-VIRTUAL-01" },
+    { "id": "operator", "label": "仓库与产线人员" },
+    { "id": "control", "label": "锁定 / 烘烤 / 追溯", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "identify", "label": "识别与建档", "fromCol": 0, "toCol": 1 },
+    { "id": "monitor", "label": "暴露监控", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "disposition", "label": "处置与恢复", "fromCol": 4, "toCol": 5, "variant": "security" }
+  ],
+  "mainPath": ["receive", "mslRule", "openScan", "lifeClock", "productionCheck", "useGate", "consume"],
+  "nodes": [
+    { "id": "receive", "lane": "source", "col": 0, "type": "database", "label": "MSD 批次入库", "sublabel": "QR · MSL · Floor Life", "width": 142 },
+    { "id": "mslRule", "lane": "employee", "col": 1, "type": "backend", "label": "绑定受控规则", "sublabel": "批准的 MSL 映射", "width": 142 },
+    { "id": "openScan", "lane": "operator", "col": 2, "type": "frontend", "label": "人工扫码开封", "sublabel": "记录时间与操作员", "width": 142 },
+    { "id": "lifeClock", "lane": "employee", "col": 3, "type": "backend", "label": "Floor Life 计时", "sublabel": "持续计算剩余时限", "width": 142 },
+    { "id": "productionCheck", "lane": "employee", "col": 4, "type": "security", "label": "临产可用性检查", "sublabel": "预警 · 到期 · 烘烤", "width": 142 },
+    { "id": "useGate", "lane": "operator", "col": 5, "type": "security", "label": "上线前人工确认", "sublabel": "批次与剩余寿命", "width": 142 },
+    { "id": "consume", "lane": "source", "col": 5, "type": "database", "label": "受控发料与消耗", "sublabel": "保留完整追溯", "width": 142 },
+    { "id": "lock", "lane": "control", "col": 4, "type": "security", "label": "自动锁定批次", "sublabel": "禁止发料与上线", "width": 142 },
+    { "id": "bake", "lane": "control", "col": 5, "type": "backend", "label": "人工执行烘烤", "sublabel": "温度 · 烘箱 · 结果", "width": 142 },
+    { "id": "release", "lane": "source", "col": 4, "type": "database", "label": "合格后恢复计时", "sublabel": "不覆盖原始记录", "width": 142 }
+  ],
+  "edges": [
+    { "from": "receive", "to": "mslRule", "label": "读取物料主数据" },
+    { "from": "mslRule", "to": "openScan", "label": "生成受控状态", "variant": "emphasis" },
+    { "from": "openScan", "to": "lifeClock", "label": "真实开封事件" },
+    { "from": "lifeClock", "to": "productionCheck", "label": "剩余时限与临产倒计时", "variant": "emphasis" },
+    { "from": "productionCheck", "to": "useGate", "label": "状态有效", "variant": "emphasis" },
+    { "from": "useGate", "to": "consume", "label": "确认可用" },
+    { "from": "productionCheck", "to": "lock", "label": "到期或需烘烤", "variant": "security", "role": "branch" },
+    { "from": "lock", "to": "bake", "label": "人工接收处置", "variant": "security" },
+    { "from": "bake", "to": "release", "label": "烘烤 PASS", "variant": "emphasis" },
+    { "from": "release", "to": "lifeClock", "label": "恢复受控状态", "variant": "dashed", "role": "return" }
+  ],
+  "cards": [
+    { "dot": "orange", "title": "人工输入", "items": ["扫码开封、封箱、烘烤开始与完成", "记录真实温湿度、烘箱、结果和操作员"] },
+    { "dot": "rose", "title": "员工权限边界", "items": ["自动预警与锁定，不覆盖 MSL", "过期或烘烤失败不能自动放行"] }
+  ]
+}

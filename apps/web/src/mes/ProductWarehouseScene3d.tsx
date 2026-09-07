@@ -291,7 +291,7 @@ export function ProductWarehouseScene3d() {
       <button type="button" onClick={() => selectGroup(null)} style={{ position: "absolute", right: 16, top: 60, zIndex: 3, padding: "8px 13px", borderRadius: 8, border: "1px solid #475569", background: "rgba(7,17,31,.92)", color: "white", fontWeight: 800 }}>总览</button>
 
       <div style={{ position: "absolute", left: 16, top: 60, padding: "12px 15px", borderRadius: 12, background: "rgba(7,17,31,.9)", color: "white" }}>
-        <div style={{ fontSize: 17, fontWeight: 800 }}>成品仓库 3D</div>
+        <div style={{ fontSize: 17, fontWeight: 800 }}>良品仓库 3D</div>
         <div style={{ marginTop: 4, fontSize: 12, color: "#cbd5e1" }}>
           {loading ? "加载中…" : `已占用 ${occupied} 件 · ${groups.length} 托盘位`}
         </div>
@@ -350,7 +350,7 @@ export function ProductWarehouseScene3d() {
             <WmsDetail label="箱内绑定" value={lineage?.containers?.map((row: any) => row.containerId).filter(Boolean).join("、") ?? selectedItem?.carton_code} />
             <WmsDetail label="栈板绑定" value={lineage?.pallets?.map((row: any) => row.palletCode).filter(Boolean).join("、") ?? selectedItem?.pallet_code} />
             <WmsDetail label="来源工站" value={lineage?.origin?.stationCode} />
-            <WmsDetail label="当前位置" value={lineage?.currentLocation?.stationCode ?? "成品仓库"} />
+            <WmsDetail label="当前位置" value={lineage?.currentLocation?.stationCode ?? "良品仓库"} />
             <WmsDetail label="下一节点" value={lineage?.nextExpectedStation?.stationCode ?? "出库/交货"} />
             <WmsDetail label="路由记录" value={lineage?.route?.length} />
             <div style={{ marginTop: 8, padding: 7, borderRadius: 6, background: lineage?.provenanceComplete ? "#dcfce7" : "#fef3c7", fontSize: 11 }}>{detailStatus || "点击托盘后同步 WMS 详情"}</div>

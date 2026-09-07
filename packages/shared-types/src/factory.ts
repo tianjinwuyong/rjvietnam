@@ -67,6 +67,10 @@ export interface MaterialLot {
   lifecycleStatus?: string;
   /** PO单号 */
   poNo?: string;
+  msdLevel?: string;
+  shelfLifeDays?: number;
+  openedAt?: string | null;
+  openedShelfLifeDays?: number | null;
 }
 
 export type AlertLevel = "EXPIRED" | "RED_L3" | "BLUE_L2" | "YELLOW_L1" | "NORMAL";
@@ -150,6 +154,11 @@ export interface PickOrderItem {
   pickedQty?: number;
   lotNo?: string;
   locationCode?: string;
+  materialSn?: string;
+  latestFetchTime?: string;
+  signedBy?: string;
+  returnedQty?: number;
+  scrappedQty?: number;
   status?: string;
 }
 

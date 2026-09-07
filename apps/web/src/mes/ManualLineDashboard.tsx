@@ -5371,7 +5371,7 @@ export function ManualLineDashboard() {
           const tabs: { key: ViewMode; label: string }[] = [
             { key: 'full', label: '主厂房' },
             { key: 'material', label: '原材料仓库' },
-            { key: 'product', label: '成品仓库' },
+            { key: 'product', label: '良品仓库' },
             { key: 'quality', label: '质检' },
             { key: 'repair', label: '维修' },
             { key: 'smt', label: 'SMT产线' },
@@ -5529,7 +5529,7 @@ export function ManualLineDashboard() {
         </Warehouse3DErrorBoundary>
       )}
 
-      {/* 成品仓库 */}
+      {/* 良品仓库 */}
       {viewMode === 'product' && (
         <Warehouse3DErrorBoundary>
           <ProductWarehouseScene3d />

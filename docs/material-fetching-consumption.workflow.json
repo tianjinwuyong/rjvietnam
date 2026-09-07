@@ -1,0 +1,54 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "物料取用、消耗与库存平账流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "apps/web/public/architecture/material-fetching-consumption.html"
+  },
+  "lanes": [
+    { "id": "warehouse", "label": "仓库与PDA" },
+    { "id": "production", "label": "产线执行" },
+    { "id": "control", "label": "虚拟库存员工" },
+    { "id": "exception", "label": "异常闭环", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "request", "label": "需求与取料", "fromCol": 0, "toCol": 1 },
+    { "id": "use", "label": "上料与实际使用", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "close", "label": "回仓与平账", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": ["inventory", "fetch", "load", "consume", "settle", "current"],
+  "semanticChecks": {
+    "allowedRoots": ["inventory"],
+    "allowedTerminals": ["current", "investigate"],
+    "requiredPaths": [
+      { "from": "inventory", "to": "current" },
+      { "from": "consume", "to": "investigate" }
+    ]
+  },
+  "nodes": [
+    { "id": "inventory", "lane": "warehouse", "col": 0, "type": "database", "label": "当前可用库存", "sublabel": "物料 + 批次 + 库位", "width": 150 },
+    { "id": "fetch", "lane": "warehouse", "col": 1, "type": "frontend", "label": "PDA扫码取料", "sublabel": "QR + 数量 + 工单", "tag": "保留原始流水", "width": 150 },
+    { "id": "load", "lane": "production", "col": 2, "type": "frontend", "label": "产线上料确认", "sublabel": "产线 + 工位 + 操作员", "width": 150 },
+    { "id": "consume", "lane": "production", "col": 3, "type": "backend", "label": "登记实际消耗", "sublabel": "时间 + 数量 + 来源交易", "width": 150 },
+    { "id": "return", "lane": "warehouse", "col": 4, "type": "messagebus", "label": "退料或报废", "sublabel": "追加流水，不删除原记录", "width": 150 },
+    { "id": "settle", "lane": "control", "col": 4, "type": "backend", "label": "虚拟员工平账", "sublabel": "取料 = 消耗 + 退料 + 报废 + 差异", "width": 168 },
+    { "id": "current", "lane": "control", "col": 5, "type": "database", "label": "刷新当前库存", "sublabel": "由全部流水实时推导", "tag": "唯一当前状态", "width": 150 },
+    { "id": "investigate", "lane": "exception", "col": 5, "type": "security", "label": "异常调查任务", "sublabel": "缺工单 / 超耗 / 未平账", "width": 150 }
+  ],
+  "edges": [
+    { "id": "inventory-fetch", "from": "inventory", "to": "fetch", "label": "冻结可取数量", "role": "main", "variant": "default" },
+    { "id": "fetch-load", "from": "fetch", "to": "load", "label": "ISSUE_TO_LINE", "role": "main", "variant": "emphasis" },
+    { "id": "load-consume", "from": "load", "to": "consume", "label": "绑定批次与工单", "role": "main", "variant": "default" },
+    { "id": "consume-settle", "from": "consume", "to": "settle", "label": "CONSUME流水", "role": "main", "variant": "emphasis" },
+    { "id": "consume-return", "from": "consume", "to": "return", "label": "剩余 / 不良", "role": "branch", "variant": "dashed" },
+    { "id": "return-settle", "from": "return", "to": "settle", "label": "RETURN / SCRAP", "role": "return", "variant": "default" },
+    { "id": "settle-current", "from": "settle", "to": "current", "label": "平账通过", "role": "main", "variant": "emphasis" },
+    { "id": "settle-investigate", "from": "settle", "to": "investigate", "label": "差异未解决", "role": "error", "variant": "security" }
+  ],
+  "cards": [
+    { "dot": "emerald", "title": "当前库存", "items": ["余额只由已过账流水推导", "每次扫码都保留物料、批次、工单和操作人"] },
+    { "dot": "amber", "title": "虚拟员工检查", "items": ["监控全部启用物料", "发现超耗、未消耗、缺少工单和未平账"] }
+  ]
+}

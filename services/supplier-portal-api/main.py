@@ -1,10 +1,14 @@
 import hashlib, hmac, json, math, os, secrets, sqlite3, time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request as UrlRequest, urlopen
 from fastapi import FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
 DB = Path(os.environ.get("SUPPLIER_PORTAL_DB", "/var/lib/ruijing-supplier-portal/portal.db"))
 SESSION_TTL = 12 * 60 * 60
+INITIAL_PASSWORD = os.environ.get("SUPPLIER_INITIAL_PASSWORD", "rj")
+WMS_API_URL = os.environ.get("WMS_API_URL", "http://127.0.0.1:8080").rstrip("/")
 app = FastAPI(title="Ruijing Supplier Portal")
 
 def db():
@@ -21,6 +25,7 @@ def db():
       CREATE TABLE IF NOT EXISTS delivery_tracking(id INTEGER PRIMARY KEY,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,latitude REAL NOT NULL,longitude REAL NOT NULL,accuracy_m REAL,recorded_at INTEGER NOT NULL,reported_by INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS po_adjustment_requests(id INTEGER PRIMARY KEY,request_no TEXT UNIQUE NOT NULL,po_no TEXT NOT NULL,supplier_code TEXT NOT NULL,adjustment_type TEXT NOT NULL,line_no INTEGER,current_value TEXT,proposed_value TEXT NOT NULL,reason TEXT NOT NULL,status TEXT NOT NULL DEFAULT 'PENDING',requested_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS supplier_label_manifests(id INTEGER PRIMARY KEY,manifest_key TEXT UNIQUE NOT NULL,supplier_code TEXT NOT NULL,po_no TEXT,material_code TEXT NOT NULL,lot_no TEXT NOT NULL,total_quantity REAL NOT NULL,unit TEXT NOT NULL,outer_box_count INTEGER NOT NULL,sub_box_count INTEGER NOT NULL,status TEXT NOT NULL DEFAULT 'PRE_RECEIVING_UNCONFIRMED',payload TEXT NOT NULL,created_by INTEGER NOT NULL,created_at INTEGER NOT NULL,updated_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS supplier_label_print_events(id INTEGER PRIMARY KEY,manifest_key TEXT NOT NULL,supplier_code TEXT NOT NULL,po_no TEXT NOT NULL,material_code TEXT NOT NULL,lot_no TEXT NOT NULL,print_type TEXT NOT NULL,label_count INTEGER NOT NULL,reprint_reason TEXT,printed_by INTEGER NOT NULL,printed_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS supplier_mes_api_keys(id INTEGER PRIMARY KEY,key_hash TEXT UNIQUE NOT NULL,key_prefix TEXT NOT NULL,supplier_code TEXT NOT NULL,name TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,last_used_at INTEGER,created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS purchasing_agent_messages(id INTEGER PRIMARY KEY,event_id TEXT UNIQUE NOT NULL,supplier_code TEXT NOT NULL,po_no TEXT,subject TEXT NOT NULL,message TEXT NOT NULL,priority TEXT NOT NULL DEFAULT 'NORMAL',status TEXT NOT NULL DEFAULT 'NEW',created_by TEXT NOT NULL DEFAULT 'PURCHASING-VIRTUAL-01',created_at INTEGER NOT NULL,acknowledged_at INTEGER,response_note TEXT);
     """); return conn
@@ -28,8 +33,11 @@ def db():
 def ensure_schema():
     with db() as c:
       cols={r[1] for r in c.execute("PRAGMA table_info(users)")}
-      for name,definition in (("role","TEXT NOT NULL DEFAULT 'SUPPLIER_ADMIN'"),("email","TEXT"),("updated_at","INTEGER")):
+      for name,definition in (("role","TEXT NOT NULL DEFAULT 'SUPPLIER_ADMIN'"),("email","TEXT"),("updated_at","INTEGER"),("must_change_password","INTEGER NOT NULL DEFAULT 0")):
         if name not in cols: c.execute(f"ALTER TABLE users ADD COLUMN {name} {definition}")
+      session_cols={r[1] for r in c.execute("PRAGMA table_info(sessions)")}
+      for name,definition in (("revoked_at","INTEGER"),("revoke_reason","TEXT")):
+        if name not in session_cols:c.execute(f"ALTER TABLE sessions ADD COLUMN {name} {definition}")
       shipment_cols={r[1] for r in c.execute("PRAGMA table_info(shipments)")}
       if "receiving_payload" not in shipment_cols: c.execute("ALTER TABLE shipments ADD COLUMN receiving_payload TEXT")
       po_cols={r[1] for r in c.execute("PRAGMA table_info(purchase_orders)")}
@@ -43,6 +51,16 @@ ensure_schema()
 
 def password_hash(password, salt): return hashlib.pbkdf2_hmac("sha256", password.encode(), bytes.fromhex(salt), 210000).hex()
 def token_hash(token): return hashlib.sha256(token.encode()).hexdigest()
+
+def wms_supplier(supplier_code):
+    request=UrlRequest(f"{WMS_API_URL}/internal/supplier-portal/suppliers/verify",data=json.dumps({"supplier_code":supplier_code}).encode("utf-8"),headers={"Content-Type":"application/json","x-sync-key":os.environ.get("WMS_SYNC_KEY","")},method="POST")
+    try:
+      with urlopen(request,timeout=5) as response:return json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+      if error.code==404:return None
+      if error.code in {400,401}:raise HTTPException(503,"WMS supplier verification is not configured")
+      raise HTTPException(503,"WMS supplier verification is unavailable")
+    except (URLError,TimeoutError):raise HTTPException(503,"WMS supplier verification is unavailable")
 
 def ensure_test_supplier(c):
     now=int(time.time());supplier_code="SIM-SUP-001";supplier_name="Test Supplier"
@@ -59,8 +77,10 @@ def current_user(request: Request):
     token=request.cookies.get("supplier_session")
     if not token: return None
     with db() as c:
-      row=c.execute("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id JOIN portal_suppliers p ON p.supplier_code=u.supplier_code WHERE s.token_hash=? AND s.expires_at>? AND u.active=1 AND p.registration_status='REGISTERED' AND p.portal_enabled=1",(token_hash(token),int(time.time()))).fetchone()
-      return dict(row) if row else None
+      row=c.execute("SELECT u.*,p.supplier_name AS current_supplier_name FROM sessions s JOIN users u ON u.id=s.user_id JOIN portal_suppliers p ON p.supplier_code=u.supplier_code WHERE s.token_hash=? AND s.expires_at>? AND s.revoked_at IS NULL AND u.active=1 AND p.registration_status='REGISTERED' AND p.portal_enabled=1",(token_hash(token),int(time.time()))).fetchone()
+      if not row:return None
+      user=dict(row);user["supplier_name"]=user["current_supplier_name"]
+      return user
 
 def require_user(request:Request):
     user=current_user(request)
@@ -78,7 +98,11 @@ def audit_event(c,user_id,action,request,detail=""):
 def outbox(c,supplier_code,event_type,entity_type,entity_id,payload):
     c.execute("INSERT INTO sync_outbox(event_id,supplier_code,event_type,entity_type,entity_id,payload,created_at) VALUES(?,?,?,?,?,?,?)",(secrets.token_hex(16),supplier_code,event_type,entity_type,str(entity_id),json.dumps(payload,ensure_ascii=False),int(time.time())))
 
-class Login(BaseModel): username:str; password:str
+class Login(BaseModel): username:str; supplier_name:str=Field(min_length=1,max_length=240); full_name:str=Field(min_length=1,max_length=160); password:str
+class SupplierEntryLogin(BaseModel):
+    supplier_code:str=Field(min_length=1,max_length=120)
+    supplier_name:str=Field(min_length=1,max_length=240)
+    password:str
 class PasswordChange(BaseModel): current_password:str; new_password:str=Field(min_length=10,max_length=128)
 class ProfileChange(BaseModel): username:str=Field(min_length=3,max_length=120); display_name:str=Field(min_length=1,max_length=160); current_password:str
 class PortalUserCreate(BaseModel): username:str=Field(min_length=3,max_length=120); display_name:str=Field(min_length=1,max_length=160); email:str|None=None; role:str="LABEL_OPERATOR"; temporary_password:str=Field(min_length=10,max_length=128)
@@ -88,6 +112,7 @@ class ShipmentCreate(BaseModel):
     carrier_name:str|None=None; vehicle_no:str|None=None; driver_name:str|None=None; driver_phone:str|None=None; tracking_no:str|None=None
     pallet_count:int=Field(default=0,ge=0); total_weight_kg:float=Field(default=0,ge=0); pallets:list[dict]=[]; qr_codes:list[dict]=[]
 class SupplierSync(BaseModel): supplier_name:str; registration_status:str="REGISTERED"; portal_enabled:bool=False; label_enabled:bool=False; qualification_status:str="PENDING"
+class SupplierListReplace(BaseModel): suppliers:list[dict]; source_file:str|None=None; source_modified_at:str|None=None; checksum_sha256:str|None=None
 class PurchaseOrderSync(BaseModel): status:str="OPEN"; requested_delivery_date:str|None=None; buyer_id:str|None=None; buyer_name:str|None=None; buyer_email:str|None=None; buyer_phone:str|None=None; supplier_contact_name:str|None=None; supplier_contact_email:str|None=None; lines:list[dict]=[]; currency:str="USD"; total_amount:float|None=None
 class PurchaseOrderResponse(BaseModel): decision:str; expected_delivery_date:str; response_note:str|None=None; expected_boxes:int=0; expected_pallets:int=0; supplier_contact_name:str|None=None; supplier_contact_email:str|None=None; delivery_status:str="PLANNED"; carrier_name:str|None=None; driver_name:str|None=None; driver_phone:str|None=None; vehicle_no:str|None=None; tracking_no:str|None=None
 class PurchaseOrderProgress(BaseModel): completed_quantity:float=Field(ge=0); note:str|None=None
@@ -95,6 +120,7 @@ class TrackingPoint(BaseModel): latitude:float=Field(ge=-90,le=90); longitude:fl
 class PoAdjustmentCreate(BaseModel): adjustment_type:str; line_no:int|None=None; current_value:str|None=None; proposed_value:str=Field(min_length=1,max_length=2000); reason:str=Field(min_length=3,max_length=2000)
 class PoAdjustmentDecision(BaseModel): status:str; review_note:str|None=None; reviewed_by:str|None=None
 class LabelManifestCreate(BaseModel): manifest_key:str=Field(min_length=6,max_length=500); po_no:str=Field(min_length=1,max_length=120); material_code:str; lot_no:str; total_quantity:float=Field(gt=0); unit:str="PCS"; outer_box_count:int=Field(ge=1); sub_box_count:int=Field(ge=0); pallets:list[str]=[]; labels:list[dict]
+class LabelPrintEventCreate(BaseModel): manifest_key:str=Field(min_length=6,max_length=500); po_no:str=Field(min_length=1,max_length=120); material_code:str; lot_no:str; print_type:str; label_count:int=Field(ge=1); reprint_reason:str|None=Field(default=None,max_length=1000)
 class MesQrManifestCreate(BaseModel): po_no:str; material_code:str; production_date:str; lot_no:str; total_quantity:float=Field(gt=0); outer_box_quantity:float=Field(gt=0); sub_box_quantity:float|None=None; unit:str="PCS"; serial_prefix:str="R"; serial_start:int=Field(default=1,ge=1); outer_boxes_per_pallet:int=Field(default=20,ge=1); pallet_prefix:str="PLT"
 class ReceivingStatusSync(BaseModel): status:str; expected_boxes:int=0; scanned_boxes:int=0; expected_quantity:float=0; received_quantity:float=0; accepted_quantity:float=0; hold_quantity:float=0; rejected_quantity:float=0; passed_sns:list[str]=[]; ng_sns:list[str]=[]; missing_sns:list[str]=[]; unexpected_sns:list[str]=[]; shortage_quantity:float=0; excess_quantity:float=0; discrepancy_code:str|None=None; discrepancy_note:str|None=None; rejection_reason:str|None=None; affected_box_qrs:list[str]=[]; evidence_images:list[str]=[]; inspection_reference:str|None=None; inspector_name:str|None=None; iqc_status:str|None=None; received_at:str|None=None; inspected_at:str|None=None
 class PurchasingAgentMessageSync(BaseModel): supplier_code:str; po_no:str|None=None; subject:str; message:str; priority:str="NORMAL"; created_by:str="PURCHASING-VIRTUAL-01"
@@ -124,20 +150,48 @@ def acknowledge_agent_message(message_id:int,body:PurchasingAgentMessageResponse
 def me(request:Request):
     user=current_user(request)
     if not user: raise HTTPException(401,"Login required")
-    return {k:user[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")}
+    return {**{k:user[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")},"must_change_password":bool(user["must_change_password"])}
 
 @app.post("/login")
 def login(body:Login,request:Request,response:Response):
     with db() as c:
-      row=c.execute("SELECT u.* FROM users u JOIN portal_suppliers p ON p.supplier_code=u.supplier_code WHERE u.username=? AND u.active=1 AND p.registration_status='REGISTERED' AND p.portal_enabled=1",(body.username.strip(),)).fetchone()
-      valid=row and hmac.compare_digest(password_hash(body.password,row["salt"]),row["password_hash"])
+      row=c.execute("SELECT u.*,p.supplier_name AS current_supplier_name FROM users u JOIN portal_suppliers p ON p.supplier_code=u.supplier_code WHERE u.username=? AND u.active=1 AND p.registration_status='REGISTERED' AND p.portal_enabled=1",(body.username.strip(),)).fetchone()
+      submitted_name=" ".join(body.supplier_name.strip().split()).casefold().encode("utf-8")
+      registered_name=(" ".join(str(row["current_supplier_name"]).strip().split()).casefold().encode("utf-8") if row else b"")
+      submitted_full_name=" ".join(body.full_name.strip().split()).casefold().encode("utf-8")
+      registered_full_name=(" ".join(str(row["display_name"]).strip().split()).casefold().encode("utf-8") if row else b"")
+      valid=row and hmac.compare_digest(submitted_name,registered_name) and hmac.compare_digest(submitted_full_name,registered_full_name) and hmac.compare_digest(password_hash(body.password,row["salt"]),row["password_hash"])
       if not valid:
         c.execute("INSERT INTO audit(action,ip,created_at,detail) VALUES(?,?,?,?)",("LOGIN_FAILED",request.client.host if request.client else "",int(time.time()),body.username)); c.commit()
         raise HTTPException(401,"Invalid username or password")
       token=secrets.token_urlsafe(32); now=int(time.time())
-      c.execute("INSERT INTO sessions VALUES(?,?,?,?)",(token_hash(token),row["id"],now+SESSION_TTL,now)); c.execute("INSERT INTO audit(user_id,action,ip,created_at) VALUES(?,?,?,?)",(row["id"],"LOGIN",request.client.host if request.client else "",now)); c.commit()
+      c.execute("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",(token_hash(token),row["id"],now+SESSION_TTL,now)); c.execute("INSERT INTO audit(user_id,action,ip,created_at) VALUES(?,?,?,?)",(row["id"],"LOGIN",request.client.host if request.client else "",now)); c.commit()
     response.set_cookie("supplier_session",token,max_age=SESSION_TTL,httponly=True,samesite="strict",secure=os.environ.get("COOKIE_SECURE","0")=="1",path="/")
-    return {k:row[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")}
+    return {**{k:row[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")},"supplier_name":row["current_supplier_name"],"must_change_password":bool(row["must_change_password"])}
+
+@app.post("/supplier-entry-login")
+def supplier_entry_login(body:SupplierEntryLogin,request:Request,response:Response):
+    supplier_code=body.supplier_code.strip().upper()
+    with db() as c:
+      wms=c.execute("SELECT supplier_code,supplier_name,registration_status AS status,portal_enabled,label_enabled,qualification_status FROM portal_suppliers WHERE supplier_code=?",(supplier_code,)).fetchone()
+      submitted_name=" ".join(body.supplier_name.strip().split()).casefold().encode("utf-8")
+      registered_name=(" ".join(str(wms["supplier_name"]).strip().split()).casefold().encode("utf-8") if wms else b"")
+      enabled=wms and str(wms["status"]).upper()=="REGISTERED" and bool(wms["portal_enabled"]) and hmac.compare_digest(submitted_name,registered_name) and hmac.compare_digest(body.password.encode("utf-8"),INITIAL_PASSWORD.encode("utf-8"))
+      if not enabled:
+        detail=json.dumps({"supplier_code":supplier_code},ensure_ascii=False)
+        c.execute("INSERT INTO audit(action,ip,created_at,detail) VALUES(?,?,?,?)",("SUPPLIER_ENTRY_LOGIN_FAILED",request.client.host if request.client else "",int(time.time()),detail));c.commit()
+        raise HTTPException(401,"Supplier is not in the current WMS supplier list")
+      row=c.execute("SELECT * FROM users WHERE supplier_code=? AND active=1 ORDER BY CASE role WHEN 'SUPPLIER_ADMIN' THEN 0 ELSE 1 END,id LIMIT 1",(supplier_code,)).fetchone()
+      is_first_entry=not row
+      if not row:
+        now=int(time.time());salt=secrets.token_hex(16);username=f"setup-{supplier_code.lower()}-{secrets.token_hex(4)}"
+        cur=c.execute("INSERT INTO users(username,password_hash,salt,supplier_code,supplier_name,display_name,active,role,email,updated_at,must_change_password) VALUES(?,?,?,?,?,?,1,'SUPPLIER_ADMIN',NULL,?,1)",(username,password_hash(INITIAL_PASSWORD,salt),salt,supplier_code,wms["supplier_name"],wms["supplier_name"],now))
+        row=c.execute("SELECT * FROM users WHERE id=?",(cur.lastrowid,)).fetchone()
+      if not is_first_entry and not row["must_change_password"]:raise HTTPException(409,"Supplier account is already initialized")
+      token=secrets.token_urlsafe(32);now=int(time.time())
+      c.execute("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",(token_hash(token),row["id"],now+SESSION_TTL,now));audit_event(c,row["id"],"SUPPLIER_ENTRY_LOGIN",request,json.dumps({"supplier_code":supplier_code},ensure_ascii=False));c.commit()
+    response.set_cookie("supplier_session",token,max_age=SESSION_TTL,httponly=True,samesite="strict",secure=os.environ.get("COOKIE_SECURE","0")=="1",path="/")
+    return {**{k:row[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")},"must_change_password":bool(row["must_change_password"])}
 
 @app.post("/preview-login")
 def preview_login(request:Request,response:Response):
@@ -145,7 +199,7 @@ def preview_login(request:Request,response:Response):
     with db() as c:
       row=c.execute("SELECT * FROM users WHERE role='VIEWER' AND active=1 ORDER BY id LIMIT 1").fetchone()
       if not row: raise HTTPException(503,"Preview user is not configured")
-      token=secrets.token_urlsafe(32);now=int(time.time());c.execute("INSERT INTO sessions VALUES(?,?,?,?)",(token_hash(token),row["id"],now+3600,now));audit_event(c,row["id"],"PREVIEW_LOGIN",request);c.commit()
+      token=secrets.token_urlsafe(32);now=int(time.time());c.execute("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",(token_hash(token),row["id"],now+3600,now));audit_event(c,row["id"],"PREVIEW_LOGIN",request);c.commit()
     response.set_cookie("supplier_session",token,max_age=3600,httponly=True,samesite="strict",secure=os.environ.get("COOKIE_SECURE","0")=="1",path="/")
     return {k:row[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")}
 
@@ -154,7 +208,7 @@ def test_supplier_login(request:Request,response:Response):
     if os.environ.get("ENABLE_TEST_LOGIN","0")!="1": raise HTTPException(404,"Test login disabled")
     with db() as c:
       row=ensure_test_supplier(c)
-      token=secrets.token_urlsafe(32);now=int(time.time());c.execute("INSERT INTO sessions VALUES(?,?,?,?)",(token_hash(token),row["id"],now+SESSION_TTL,now));audit_event(c,row["id"],"TEST_SUPPLIER_QUICK_LOGIN",request);c.commit()
+      token=secrets.token_urlsafe(32);now=int(time.time());c.execute("INSERT INTO sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)",(token_hash(token),row["id"],now+SESSION_TTL,now));audit_event(c,row["id"],"TEST_SUPPLIER_QUICK_LOGIN",request);c.commit()
     response.set_cookie("supplier_session",token,max_age=SESSION_TTL,httponly=True,samesite="strict",secure=os.environ.get("COOKIE_SECURE","0")=="1",path="/")
     return {k:row[k] for k in ("id","username","supplier_code","supplier_name","display_name","role","email")}
 
@@ -162,7 +216,7 @@ def test_supplier_login(request:Request,response:Response):
 def logout(request:Request,response:Response):
     token=request.cookies.get("supplier_session")
     if token:
-      with db() as c: c.execute("DELETE FROM sessions WHERE token_hash=?",(token_hash(token),)); c.commit()
+      with db() as c: c.execute("UPDATE sessions SET revoked_at=?,revoke_reason='LOGOUT' WHERE token_hash=? AND revoked_at IS NULL",(int(time.time()),token_hash(token))); c.commit()
     response.delete_cookie("supplier_session",path="/")
 
 @app.post("/change-password",status_code=204)
@@ -171,8 +225,8 @@ def change_password(body:PasswordChange,request:Request):
     if not hmac.compare_digest(password_hash(body.current_password,user["salt"]),user["password_hash"]): raise HTTPException(400,"Current password is incorrect")
     salt=secrets.token_hex(16)
     with db() as c:
-      c.execute("UPDATE users SET password_hash=?,salt=?,updated_at=? WHERE id=?",(password_hash(body.new_password,salt),salt,int(time.time()),user["id"]))
-      c.execute("DELETE FROM sessions WHERE user_id=? AND token_hash<>?",(user["id"],token_hash(request.cookies.get("supplier_session",""))))
+      c.execute("UPDATE users SET password_hash=?,salt=?,updated_at=?,must_change_password=0 WHERE id=?",(password_hash(body.new_password,salt),salt,int(time.time()),user["id"]))
+      c.execute("UPDATE sessions SET revoked_at=?,revoke_reason='PASSWORD_CHANGED' WHERE user_id=? AND token_hash<>? AND revoked_at IS NULL",(int(time.time()),user["id"],token_hash(request.cookies.get("supplier_session",""))))
       audit_event(c,user["id"],"PASSWORD_CHANGED",request); c.commit()
 
 @app.patch("/me")
@@ -216,7 +270,7 @@ def update_user(user_id:int,body:PortalUserUpdate,request:Request):
       if role not in {"SUPPLIER_ADMIN","PORTAL_SUPER_ADMIN","LABEL_OPERATOR","QUALITY_CONTACT","PROFILE_EDITOR","VIEWER"}: raise HTTPException(400,"Invalid role")
       active=target["active"] if body.active is None else int(body.active)
       c.execute("UPDATE users SET display_name=?,email=?,role=?,active=?,updated_at=? WHERE id=?",(body.display_name or target["display_name"],body.email if body.email is not None else target["email"],role,active,int(time.time()),user_id))
-      if not active:c.execute("DELETE FROM sessions WHERE user_id=?",(user_id,))
+      if not active:c.execute("UPDATE sessions SET revoked_at=?,revoke_reason='USER_SUSPENDED' WHERE user_id=? AND revoked_at IS NULL",(int(time.time()),user_id))
       payload={"id":user_id,"role":role,"active":bool(active)};audit_event(c,admin["id"],"PORTAL_USER_UPDATED",request,json.dumps(payload));outbox(c,admin["supplier_code"],"PORTAL_USER_UPDATED","PORTAL_USER",user_id,payload);c.commit()
     return payload
 
@@ -295,8 +349,9 @@ def register_label_manifest(body:LabelManifestCreate,request:Request):
     if len(body.labels)!=body.outer_box_count+body.sub_box_count: raise HTTPException(400,"Label count does not match outer/sub-box totals")
     if abs(sum(float(x.get("qty",0)) for x in body.labels if x.get("level")=="OUTER")-body.total_quantity)>0.0001: raise HTTPException(400,"Outer-box quantity does not equal total quantity")
     with db() as c:
-      po=c.execute("SELECT payload FROM purchase_orders WHERE po_no=? AND supplier_code=?",(body.po_no,user["supplier_code"])).fetchone()
+      po=c.execute("SELECT payload,status FROM purchase_orders WHERE po_no=? AND supplier_code=?",(body.po_no,user["supplier_code"])).fetchone()
       if not po: raise HTTPException(404,"Purchase order not found for this supplier")
+      if str(po["status"]).upper() in {"CANCELLED","VOIDED","CLOSED","RECEIVED","REJECTED"}:raise HTTPException(409,"Purchase order is not open for label printing")
       purchase_order=json.loads(po["payload"])
       po_materials={str(line.get("material_code","")).strip().upper() for line in purchase_order.get("lines",[])}
       if po_materials and body.material_code.strip().upper() not in po_materials: raise HTTPException(409,"Material is not registered on this purchase order")
@@ -313,6 +368,20 @@ def list_label_manifests(request:Request):
     user=require_user(request)
     with db() as c: rows=c.execute("SELECT id,po_no,material_code,lot_no,total_quantity,unit,outer_box_count,sub_box_count,status,payload,created_at,updated_at FROM supplier_label_manifests WHERE supplier_code=? ORDER BY updated_at DESC",(user["supplier_code"],)).fetchall()
     return [{**dict(r),"payload":json.loads(r["payload"])} for r in rows]
+
+@app.post("/label-print-events",status_code=201)
+def record_label_print(body:LabelPrintEventCreate,request:Request):
+    user=require_write_user(request);kind=body.print_type.upper();now=int(time.time())
+    if kind not in {"ALL","OUTER","SUB_BOX","PALLET"}:raise HTTPException(400,"Invalid print type")
+    with db() as c:
+      if not c.execute("SELECT 1 FROM purchase_orders WHERE po_no=? AND supplier_code=?",(body.po_no,user["supplier_code"])).fetchone():raise HTTPException(404,"Purchase order not found for this supplier")
+      if not c.execute("SELECT 1 FROM supplier_label_manifests WHERE manifest_key=? AND supplier_code=? AND po_no=?",(body.manifest_key,user["supplier_code"],body.po_no)).fetchone():raise HTTPException(409,"Label manifest must be saved before printing")
+      is_reprint=bool(c.execute("SELECT 1 FROM supplier_label_print_events WHERE manifest_key=? AND supplier_code=? LIMIT 1",(body.manifest_key,user["supplier_code"])).fetchone())
+      reason=(body.reprint_reason or "").strip()
+      if is_reprint and not reason:raise HTTPException(409,"Reprint reason required")
+      event_id=c.execute("INSERT INTO supplier_label_print_events(manifest_key,supplier_code,po_no,material_code,lot_no,print_type,label_count,reprint_reason,printed_by,printed_at) VALUES(?,?,?,?,?,?,?,?,?,?)",(body.manifest_key,user["supplier_code"],body.po_no,body.material_code,body.lot_no,kind,body.label_count,reason or None,user["id"],now)).lastrowid
+      payload={"id":event_id,**body.model_dump(),"supplier_code":user["supplier_code"],"print_type":kind,"is_reprint":is_reprint,"reprint_reason":reason or None,"printed_by":user["id"],"printed_at":now};outbox(c,user["supplier_code"],"SUPPLIER_LABEL_PRINTED","PURCHASE_ORDER",body.po_no,payload);audit_event(c,user["id"],"SUPPLIER_LABEL_PRINTED",request,json.dumps(payload,ensure_ascii=False));c.commit()
+    return payload
 
 @app.post("/mes/v1/qr-manifests")
 def mes_generate_qr_manifest(body:MesQrManifestCreate,request:Request):
@@ -387,9 +456,39 @@ def sync_supplier(supplier_code:str,body:SupplierSync,request:Request):
     now=int(time.time())
     with db() as c:
       c.execute("INSERT INTO portal_suppliers VALUES(?,?,?,?,?,?,?) ON CONFLICT(supplier_code) DO UPDATE SET supplier_name=excluded.supplier_name,registration_status=excluded.registration_status,portal_enabled=excluded.portal_enabled,label_enabled=excluded.label_enabled,qualification_status=excluded.qualification_status,updated_at=excluded.updated_at",(supplier_code.upper(),body.supplier_name,body.registration_status.upper(),int(body.portal_enabled),int(body.label_enabled),body.qualification_status.upper(),now))
-      if body.registration_status.upper()!='REGISTERED' or not body.portal_enabled:c.execute("DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE supplier_code=?)",(supplier_code.upper(),))
+      if body.registration_status.upper()!='REGISTERED' or not body.portal_enabled:c.execute("UPDATE sessions SET revoked_at=?,revoke_reason='SUPPLIER_SUSPENDED' WHERE user_id IN (SELECT id FROM users WHERE supplier_code=?) AND revoked_at IS NULL",(int(time.time()),supplier_code.upper()))
       c.commit()
     return {"supplier_code":supplier_code.upper(),**body.model_dump(),"updated_at":now}
+
+@app.put("/sync/supplier-list/replace")
+def replace_supplier_list(body:SupplierListReplace,request:Request):
+    if not secrets.compare_digest(request.headers.get("x-sync-key",""),os.environ.get("WMS_SYNC_KEY","disabled")): raise HTTPException(401,"Invalid sync key")
+    incoming={str(item.get("supplier_code","")).strip().upper():str(item.get("supplier_name","")).strip() for item in body.suppliers if str(item.get("supplier_code","")).strip() and str(item.get("supplier_name","")).strip()}
+    if not incoming: raise HTTPException(400,"Supplier list cannot be empty")
+    now=int(time.time())
+    with db() as c:
+      c.execute("BEGIN")
+      for code,name in incoming.items():
+        c.execute("INSERT INTO portal_suppliers VALUES(?,?,?,?,?,?,?) ON CONFLICT(supplier_code) DO UPDATE SET supplier_name=excluded.supplier_name,registration_status='REGISTERED',portal_enabled=1,label_enabled=1,qualification_status='QUALIFIED',updated_at=excluded.updated_at",(code,name,"REGISTERED",1,1,"QUALIFIED",now))
+      placeholders=",".join("?" for _ in incoming)
+      suspended=c.execute(f"UPDATE portal_suppliers SET registration_status='SUSPENDED',portal_enabled=0,label_enabled=0,updated_at=? WHERE supplier_code NOT IN ({placeholders})",(now,*incoming.keys())).rowcount
+      c.execute(f"UPDATE sessions SET revoked_at=?,revoke_reason='WMS_SUPPLIER_LIST_REPLACED' WHERE revoked_at IS NULL AND user_id IN (SELECT id FROM users WHERE supplier_code NOT IN ({placeholders}))",(now,*incoming.keys()))
+      c.execute("INSERT INTO audit(action,ip,created_at,detail) VALUES(?,?,?,?)",("SUPPLIER_LIST_REPLACED",request.client.host if request.client else "",now,json.dumps({"source_file":body.source_file,"source_modified_at":body.source_modified_at,"checksum_sha256":body.checksum_sha256,"active_suppliers":len(incoming),"suspended":suspended},ensure_ascii=False)))
+      c.commit()
+    return {"active_suppliers":len(incoming),"suspended":suspended,"updated_at":now}
+
+@app.post("/sync/supplier-list/compare")
+def compare_supplier_list(body:SupplierListReplace,request:Request):
+    if not secrets.compare_digest(request.headers.get("x-sync-key",""),os.environ.get("WMS_SYNC_KEY","disabled")): raise HTTPException(401,"Invalid sync key")
+    expected={str(item.get("supplier_code","")).strip().upper():" ".join(str(item.get("supplier_name","")).strip().split()) for item in body.suppliers if str(item.get("supplier_code","")).strip() and str(item.get("supplier_name","")).strip()}
+    with db() as c:
+      actual={row["supplier_code"]:{"name":" ".join(str(row["supplier_name"]).strip().split()),"status":str(row["registration_status"]).upper(),"enabled":bool(row["portal_enabled"])} for row in c.execute("SELECT supplier_code,supplier_name,registration_status,portal_enabled FROM portal_suppliers").fetchall()}
+    active_actual={code:value for code,value in actual.items() if value["status"]=="REGISTERED" and value["enabled"]}
+    missing=sorted(code for code in expected if code not in active_actual)
+    extra=sorted(code for code in active_actual if code not in expected)
+    name_mismatches=[{"supplier_code":code,"wms_name":expected[code],"portal_name":active_actual[code]["name"]} for code in sorted(expected.keys() & active_actual.keys()) if expected[code].casefold()!=active_actual[code]["name"].casefold()]
+    matched=not missing and not extra and not name_mismatches
+    return {"matched":matched,"wms_active":len(expected),"portal_active":len(active_actual),"missing":missing,"extra":extra,"name_mismatches":name_mismatches,"checked_at":int(time.time())}
 
 @app.put("/sync/purchase-orders/{po_no}")
 def sync_purchase_order(po_no:str,body:PurchaseOrderSync,request:Request):

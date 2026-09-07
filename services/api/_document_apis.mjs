@@ -43,22 +43,27 @@ const txActionMap = {
 async function applyInventoryTx(doc, table, lines, operator) {
   const action = txActionMap[table];
   const opId = 1; // system operator — TODO: resolve from req.user
-  for (const line of lines.rows) {
+  for (const line of lines) {
     if (!line.material_id) continue;
+    const materialLotId = line.lot_no
+      ? (await query(`SELECT id FROM material_lots WHERE lot_no=$1`,[line.lot_no])).rows[0]?.id
+      : (await query(`SELECT id FROM material_lots WHERE material_id=$1 AND iqc_status='released' AND lot_status='open'
+          AND received_qty-COALESCE(reserved_qty,0)>0 ORDER BY received_at,id LIMIT 1`,[line.material_id])).rows[0]?.id;
+    if (!materialLotId) throw new Error(`No released material lot is available for ${line.material_code || line.material_id}`);
     const locCode = line.location_code;
     // resolve location id
     let fromId = null, toId = null;
     if (action === "ISSUE_TO_LINE" || action === "PICK" || action === "RETURN") {
-      fromId = locCode ? (await query(`SELECT id FROM storage_locations WHERE location_code = $1`, [locCode])).rows[0]?.id : null;
+      fromId = locCode ? (await query(`SELECT id FROM storage_locations WHERE code = $1`, [locCode])).rows[0]?.id : null;
     } else {
-      toId = locCode ? (await query(`SELECT id FROM storage_locations WHERE location_code = $1`, [locCode])).rows[0]?.id : null;
+      toId = locCode ? (await query(`SELECT id FROM storage_locations WHERE code = $1`, [locCode])).rows[0]?.id : null;
     }
     const qty = line.executed_qty ?? line.requested_qty ?? 0;
     const refNo = `${table.toUpperCase()}-${doc.id}`;
     await query(
       `INSERT INTO inventory_transactions (tx_no, action, material_lot_id, qty, from_location_id, to_location_id, operator_id, reference_no)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [refNo, action, line.material_id, qty, fromId, toId, opId, refNo]
+      [refNo, action, materialLotId, qty, fromId, toId, opId, refNo]
     );
   }
 }
@@ -194,6 +199,21 @@ function makeDocRouter({ table, tableLines, prefix, tableKey, mainFields, lineFi
         const curr = await query(`SELECT * FROM ${table} WHERE ${pk} = $1`, [req.params.id]);
         if (!curr.rows.length) return res.status(404).json(errEnv("NOT_FOUND", "Document not found"));
         const doc = curr.rows[0];
+        if (tableKey === "requisition" && verb === "approve")
+          return res.status(409).json(errEnv("OA_APPROVAL_REQUIRED", "Material requisitions must be approved in the OA approval list"));
+        if (tableKey === "requisition" && verb === "execute") {
+          const approval = await query(`SELECT status FROM oa_process_requests WHERE entity_type='WMS_REQUISITION' AND entity_id=$1 ORDER BY id DESC LIMIT 1`, [doc.id]);
+          if (approval.rows[0]?.status !== "APPROVED")
+            return res.status(409).json(errEnv("OA_APPROVAL_REQUIRED", "OA approval is required before material fetching"));
+        }
+        let requisitionOaProcess = null;
+        let requisitionOaSteps = null;
+        if (tableKey === "requisition" && verb === "submit") {
+          requisitionOaProcess = (await query(`SELECT id FROM oa_process_definitions WHERE process_code='WMS-MATERIAL-REQUISITION' AND active=true`)).rows[0];
+          if (!requisitionOaProcess) return res.status(409).json(errEnv("OA_PROCESS_NOT_CONFIGURED", "Configure and enable the material requisition process in OA management"));
+          requisitionOaSteps = await query(`SELECT * FROM oa_process_signature_steps WHERE process_id=$1 AND active=true ORDER BY step_no`, [requisitionOaProcess.id]);
+          if (!requisitionOaSteps.rows.length) return res.status(409).json(errEnv("OA_SIGNER_REQUIRED", "Add at least one signature person in OA management"));
+        }
         if (!canTransition(tableKey, doc.status, targetStatus))
           return res.status(400).json(errEnv("INVALID_TRANSITION", `Cannot ${verb} from ${doc.status}`));
         const actor = req.user?.id?.toString() ?? "0";
@@ -205,12 +225,36 @@ function makeDocRouter({ table, tableLines, prefix, tableKey, mainFields, lineFi
           v.push(typeof val === "function" ? val(req, doc) : val);
         }
         await query(`UPDATE ${table} SET ${setCols.join(", ")} WHERE ${pk} = $${p}`, [...v, req.params.id]);
+        if (tableKey === "requisition" && verb === "submit") {
+          const requestNo = `OA-MR-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(doc.id).padStart(6,'0')}`;
+          const packageLines = (await query(`SELECT material_code AS "materialCode",material_name_zh AS "materialName",requested_qty::float8 AS quantity,unit,remarks FROM requisition_lines WHERE requisition_id=$1 ORDER BY id`,[doc.id])).rows;
+          const actionPayload=req.body?.payload??req.body??{};
+          const attachments=(Array.isArray(actionPayload.attachments)?actionPayload.attachments:[]).map((file,index)=>({name:String(file?.name||`attachment-${index+1}`),kind:['document','photo','video','audio','signature','other'].includes(String(file?.kind))?String(file.kind):'other',url:file?.url||null,mimeType:file?.mimeType||null,sizeBytes:Number(file?.sizeBytes)||null,uploadedBy:file?.uploadedBy||req.user?.username||null,uploadedAt:file?.uploadedAt||new Date().toISOString(),signedBy:file?.signedBy||null,checksumSha256:file?.checksumSha256||null,requiredSignerRoles:Array.isArray(file?.requiredSignerRoles)?file.requiredSignerRoles.map(String):[]}));
+          const priority=String(actionPayload.priority||actionPayload.urgency||'NORMAL').toUpperCase();
+          const packageData={content:packageLines,issuedBy:doc.requestor_name||req.user?.username||null,department:actionPayload.department||doc.line_code||null,issuedAt:new Date().toISOString(),approvalDueAt:actionPayload.approvalDueAt||null,priority:['NORMAL','URGENT','CRITICAL'].includes(priority)?priority:'NORMAL',itemLink:actionPayload.itemLink||null,itemLinkDescription:actionPayload.itemLinkDescription||null,attachments,summary:doc.notes||null,responses:[]};
+          const oa = (await query(`INSERT INTO oa_process_requests(request_no,process_id,entity_type,entity_id,entity_no,title,requester_username,requester_name,total_steps,package_data) VALUES($1,$2,'WMS_REQUISITION',$3,$4,$5,$6,$7,$8,$9::jsonb) ON CONFLICT(entity_type,entity_id) DO UPDATE SET package_data=EXCLUDED.package_data,updated_at=now() RETURNING *`, [requestNo,requisitionOaProcess.id,doc.id,doc.doc_no,`物料取料申请 ${doc.doc_no}`,req.user?.username||null,doc.requestor_name||req.user?.username||null,requisitionOaSteps.rows.length,JSON.stringify(packageData)])).rows[0];
+          if (!(await query(`SELECT 1 FROM oa_process_request_steps WHERE request_id=$1 LIMIT 1`,[oa.id])).rows.length) {
+            for (const step of requisitionOaSteps.rows) await query(`INSERT INTO oa_process_request_steps(request_id,step_no,signer_user_id,signer_username,signer_name,signer_role,sla_hours,status,started_at,due_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $2=1 THEN now() END,CASE WHEN $2=1 THEN now()+make_interval(hours=>$7) END)`,[oa.id,step.step_no,step.signer_user_id,step.signer_username,step.signer_name,step.signer_role,step.sla_hours,step.step_no===1?'PENDING':'WAITING']);
+            await query(`INSERT INTO oa_process_audit_events(request_id,action,actor,to_status,detail) VALUES($1,'SUBMITTED',$2,'PENDING',$3::jsonb)`,[oa.id,req.user?.username||'unknown',JSON.stringify({requisitionId:doc.id,docNo:doc.doc_no})]);
+          }
+        }
         if (targetStatus === "EXECUTING") {
           const lines = await query(`SELECT * FROM ${tableLines} WHERE ${fk} = $1`, [req.params.id]);
           await applyInventoryTx(doc, tableKey, lines.rows, actor);
+          if (tableKey === "requisition") {
+            const packageNo = `FETCH-${doc.doc_no}`;
+            const qrValue = `WMS-FETCH|${packageNo}|${doc.id}`;
+            await query(`INSERT INTO wms_fetch_packages(package_no,qr_value,requisition_id,work_order_code,line_code,total_qty,contents)
+              VALUES($1,$2,$3,$4,$5,$6,$7::jsonb) ON CONFLICT(requisition_id) DO NOTHING`,
+              [packageNo,qrValue,doc.id,doc.work_order_code,doc.line_code,lines.rows.reduce((sum,line)=>sum+Number(line.executed_qty??line.approved_qty??line.requested_qty??0),0),JSON.stringify(lines.rows)]);
+            const fetchPackage=(await query(`SELECT * FROM wms_fetch_packages WHERE requisition_id=$1`,[doc.id])).rows[0];
+            if (!(await query(`SELECT 1 FROM wms_fetch_package_events WHERE fetch_package_id=$1 AND event_type='PREPARED'`,[fetchPackage.id])).rows.length)
+              await query(`INSERT INTO wms_fetch_package_events(fetch_package_id,event_type,actor,detail) VALUES($1,'PREPARED',$2,$3::jsonb)`,[fetchPackage.id,req.user?.username||'system',JSON.stringify({requisitionNo:doc.doc_no})]);
+          }
         }
         const updated = await query(`SELECT * FROM ${table} WHERE ${pk} = $1`, [req.params.id]);
-        res.json(env(updated.rows[0]));
+        const fetchPackage=tableKey==="requisition"?(await query(`SELECT * FROM wms_fetch_packages WHERE requisition_id=$1`,[doc.id])).rows[0]??null:null;
+        res.json(env({...updated.rows[0],fetchPackage}));
       } catch (err) { next(err); }
     });
   };

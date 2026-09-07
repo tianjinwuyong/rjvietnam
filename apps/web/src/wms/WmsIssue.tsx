@@ -7,6 +7,7 @@ import { wmsApi, type InventoryTransaction } from "../api/wms";
 import { inventoryTransactions as _demoTxs, materialLots as _demoLots } from "../data";
 import { WmsReturnFlow, type ReturnRecord } from "./WmsReturnFlow";
 import { WmsScrapFlow, type ScrapRecord } from "./WmsScrapFlow";
+import { WmsMaterialFetchFlow } from "./WmsMaterialFetchFlow";
 
 interface IssueLineItem extends PickOrderItem {
   issued: boolean;
@@ -202,6 +203,8 @@ export function WmsIssue({ locale }: { locale: Locale }) {
           </div>
         </section>
       )}
+
+      <WmsMaterialFetchFlow locale={locale} workOrderCode={workOrderInput.trim() || undefined} />
 
       {step === "confirm" && selectedWo && (
         <>

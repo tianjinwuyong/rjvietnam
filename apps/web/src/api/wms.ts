@@ -82,6 +82,7 @@ export interface StorageLocation {
   name_en: string;
   name_vi: string;
   warehouseType?: "RAW_MATERIAL" | "FINISHED_GOODS" | "WIP" | "QUARANTINE" | "SCRAP" | null;
+  msdAllowed?: boolean | null;
 }
 
 export interface InventoryTransaction {
@@ -101,6 +102,12 @@ export interface InventoryTransaction {
   referenceNo?: string;
   occurredAt: string;
   lots?: { lotNo: string }[];
+}
+
+export interface MaterialConsumptionSummary {
+  summary: { consumedQty:number; totalLeftQty:number; warehouseQty:number; lineSideQty:number; materialCount:number; consumptionCount:number };
+  items: Array<{ materialId:number; materialCode:string; nameZh:string; nameEn:string; nameVi:string; uom:string; consumedQty:number; totalLeftQty:number; warehouseQty:number; lineSideQty:number; consumptionCount:number; lastConsumedAt?:string }>;
+  records: Array<{ id:number; txNo:string; materialCode:string; nameZh:string; nameEn:string; nameVi:string; lotNo:string; qty:number; uom:string; workOrderCode?:string; referenceNo?:string; station?:string; operator?:string; occurredAt:string }>;
 }
 
 export interface StockRow {
@@ -287,12 +294,13 @@ export const wmsApi: any = {
   },
 
   /** GET /wms/material-lots — PostgreSQL is authoritative; never substitute demo stock. */
-  getMaterialLots(params?: { lotNo?: string; labelId?: string; iqcStatus?: string; q?: string; limit?: number; offset?: number }) {
+  getMaterialLots(params?: { lotNo?: string; labelId?: string; iqcStatus?: string; q?: string; msdOnly?: boolean; limit?: number; offset?: number }) {
     const qs = new URLSearchParams();
     if (params?.lotNo) qs.set("lotNo", params.lotNo);
     if (params?.labelId) qs.set("labelId", params.labelId);
     if (params?.iqcStatus) qs.set("iqcStatus", params.iqcStatus);
     if (params?.q) qs.set("q", params.q);
+    if (params?.msdOnly != null) qs.set("msdOnly", String(params.msdOnly));
     if (params?.limit != null) qs.set("limit", String(params.limit));
     if (params?.offset != null) qs.set("offset", String(params.offset));
     const query = qs.toString();
@@ -330,8 +338,29 @@ export const wmsApi: any = {
   },
 
   /** POST /wms/transactions */
-  postTransaction(action: string, payload: { materialLotId?: number | string; lotNo?: string; qty?: number; operator?: number | string; workOrderCode?: string; fromLocation?: string; toLocation?: string; reason?: string }) {
+  postTransaction(action: string, payload: { materialLotId?: number | string; lotNo?: string; qty?: number; operator?: number | string; workOrderCode?: string; fromLocation?: string; toLocation?: string; reason?: string; stationCode?:string; fetchPackageQr?:string }) {
     return apiClient.post<MutateEnvelope<{ id: number; action: string }>>("/wms/transactions", { action, payload: { ...payload, action } });
+  },
+  getFetchPackage(qr:string) { return apiClient.get<MutateEnvelope<Record<string,unknown>>>(`/wms/fetch-packages/${encodeURIComponent(qr)}`); },
+  listFetchPackages(params?:{status?:string;q?:string;limit?:number}) { const qs=new URLSearchParams();if(params?.status)qs.set("status",params.status);if(params?.q)qs.set("q",params.q);if(params?.limit)qs.set("limit",String(params.limit));return apiClient.get<ListEnvelope<Record<string,unknown>>>(`/wms/fetch-packages?${qs}`); },
+  handoverFetchPackage(qr:string,payload:{actor:string;deviceCode?:string;stationCode?:string}) { return apiClient.post<MutateEnvelope<Record<string,unknown>>>(`/wms/fetch-packages/${encodeURIComponent(qr)}/handover`,{payload}); },
+  receiveFetchPackage(qr:string,payload:{actor:string;deviceCode?:string;stationCode?:string}) { return apiClient.post<MutateEnvelope<Record<string,unknown>>>(`/wms/fetch-packages/${encodeURIComponent(qr)}/receive`,{payload}); },
+  getMaterialConsumption(params?: { q?:string; fromDate?:string; toDate?:string; limit?:number }) {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.set("q", params.q);
+    if (params?.fromDate) qs.set("fromDate", params.fromDate);
+    if (params?.toDate) qs.set("toDate", params.toDate);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return apiClient.get<MutateEnvelope<MaterialConsumptionSummary>>(`/wms/material-consumption-summary?${qs}`);
+  },
+  resolveReceivingMsl(payload: { lotNo: string; materialCode?: string }) {
+    return apiClient.post<MutateEnvelope<{ materialLotId: number; lotNo: string; materialCode: string; msdLevel: string; source: string }>>("/wms/receiving/msl-resolution", payload);
+  },
+  createReceivingQr(payload: { lotNo: string; materialCode: string; quantity: number; sourceType: "PO_RECEIPT" | "LINE_RETURN" | "REWORK_RETURN" | "SUBCONTRACT_RETURN"; warehouse: string; location: string; operator: string; sourcePalletCode?: string }) {
+    return apiClient.post<MutateEnvelope<{ material_lot_id: number; materialCode: string; lotNo: string; msdLevel: string; materialQr: string; pallet_qr: string; document_no: string; qrPayload: Record<string, unknown> }>>("/wms/receiving/qr-bindings", payload);
+  },
+  bindReceivingQrToPallet(payload: { palletQr: string; boxQr: string; lotNo: string; locationQr: string; supplier?: string; gps: { latitude: number; longitude: number; accuracy: number; capturedAt: string } }) {
+    return apiClient.post<{ success: boolean; data: Record<string, unknown> }>("/wms/receiving/pallet-box-bindings", payload);
   },
   getLotRecommendations(workOrderCode: string, materialCode: string) {
     return apiClient.get<{ policy: string; items: FifoLotRecommendation[] }>(`/wms/work-orders/${encodeURIComponent(workOrderCode)}/lot-recommendations/${encodeURIComponent(materialCode)}`);
@@ -380,9 +409,10 @@ export const wmsApi: any = {
     return apiClient.get<WmsDashboardSummary>("/dashboard/summary");
   },
 
-  /** GET /wms/pick-orders?workOrderCode= — get pick lines for a work order */
-  getPickOrders(workOrderCode: string) {
-    return apiClient.get<ListEnvelope<PickOrder>>(`/wms/pick-orders?workOrderCode=${encodeURIComponent(workOrderCode)}`);
+  /** GET /wms/pick-orders — list pending pick lines, optionally for one work order */
+  getPickOrders(workOrderCode?: string) {
+    const query = workOrderCode ? `?workOrderCode=${encodeURIComponent(workOrderCode)}` : "";
+    return apiClient.get<ListEnvelope<PickOrder>>(`/wms/pick-orders${query}`);
   },
 
   /** @deprecated Use getPickOrders() instead */
@@ -1112,6 +1142,9 @@ export const docApi = {
 
   getIncomingRecord: (id: number) =>
     apiClient.get(`/api/wms/incoming/${id}`) as Promise<IncomingRecord>,
+
+  getIqcWaitingQueue: () =>
+    apiClient.get("/wms/receiving/qr-bindings") as Promise<{items: Array<Record<string, any>>; total: number}>,
 
   updateIncomingRecord: (id: number, data: Record<string,unknown>) =>
     apiClient.put(`/api/wms/incoming/${id}`, data),

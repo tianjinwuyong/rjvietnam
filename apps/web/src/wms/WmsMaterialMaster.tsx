@@ -23,6 +23,9 @@ export function WmsMaterialMaster({ locale }: { locale: Locale }) {
   }, []);
 
   const filtered = lots.filter((l) => {
+    // materialMaster shows materials AFTER IQC; items awaiting IQC (pending)
+    // belong to the 前IQC management page (poReceipt), so exclude them here.
+    if (l.iqcStatus === "pending") return false;
     const matchText = !filter
       || (l.materialCode ?? "").toLowerCase().includes(filter.toLowerCase())
       || (l.name_zh ?? "").includes(filter)

@@ -509,7 +509,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
     reports: ["投诉处理报表", "客户挽留成功率", "赔偿分析报告"],
     capabilities: ["投诉处理", "品质申诉", "逻辑推理", "客户挽留"],
     agentName: "RuiJing-Service-Ryan",
-    llm: "gemma4:8b",
+    llm: "qwen3.8:latest",
     api: "/api/agents/service/ryan",
     skills: ["投诉处理", "品质申诉", "逻辑思维", "共情沟通"],
     currentTasks: [

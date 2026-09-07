@@ -45,6 +45,7 @@ type User = {
   display_name: string;
   role?: string;
   email?: string;
+  must_change_password?: boolean;
 };
 type Page =
   | "dashboard"
@@ -146,6 +147,41 @@ const portalAgentText = {
 } as const;
 const pat = (key: keyof typeof portalAgentText) => portalAgentText[key][locale];
 
+const supplierLoginText = {
+  supplierCode: { "zh-CN": "供应商账号（供应商代码）", "en-US": "Supplier account (supplier code)", "vi-VN": "Tài khoản nhà cung cấp (mã nhà cung cấp)" },
+  supplierCodeHint: {
+    "zh-CN": "请输入瑞晶登记的供应商代码",
+    "en-US": "Enter the supplier code registered with Ruijing",
+    "vi-VN": "Nhập mã nhà cung cấp đã đăng ký với Ruijing",
+  },
+  supplierName: { "zh-CN": "供应商全称", "en-US": "Full supplier name", "vi-VN": "Tên đầy đủ của nhà cung cấp" },
+  supplierNameHint: {
+    "zh-CN": "请输入已登记的供应商公司全称",
+    "en-US": "Enter the registered full supplier company name",
+    "vi-VN": "Nhập tên đầy đủ của công ty cung cấp đã đăng ký",
+  },
+  preferredName: { "zh-CN": "自定义登录用户名", "en-US": "Choose a login username", "vi-VN": "Chọn tên đăng nhập" },
+  preferredNameHint: { "zh-CN": "可填写您喜欢的用户名（至少 3 位）", "en-US": "Choose any username you like (at least 3 characters)", "vi-VN": "Chọn tên đăng nhập tùy thích (ít nhất 3 ký tự)" },
+  fullName: { "zh-CN": "登录人全名", "en-US": "Full name", "vi-VN": "Họ và tên" },
+  fullNameHint: {
+    "zh-CN": "请输入供应商账号登记的本人全名",
+    "en-US": "Enter the full name registered for this supplier account",
+    "vi-VN": "Nhập họ tên đã đăng ký cho tài khoản nhà cung cấp này",
+  },
+  invalidCredentials: {
+    "zh-CN": "供应商代码、供应商公司全称或密码不正确，或供应商已被 WMS 暂停",
+    "en-US": "The supplier code, full company name or password is incorrect, or the supplier is suspended by WMS",
+    "vi-VN": "Mã nhà cung cấp, tên đầy đủ công ty hoặc mật khẩu không đúng, hoặc nhà cung cấp đã bị WMS tạm dừng",
+  },
+  login: { "zh-CN": "进入标签门户", "en-US": "Enter label portal", "vi-VN": "Vào cổng nhãn" },
+  password: { "zh-CN": "密码", "en-US": "Password", "vi-VN": "Mật khẩu" },
+  passwordHint: { "zh-CN": "首次登录请输入初始密码", "en-US": "Use the initial password for your first login", "vi-VN": "Dùng mật khẩu ban đầu cho lần đăng nhập đầu tiên" },
+  username: { "zh-CN": "登录用户名", "en-US": "Login username", "vi-VN": "Tên đăng nhập" },
+  firstEntry: { "zh-CN": "供应商首次登录", "en-US": "First supplier login", "vi-VN": "Đăng nhập lần đầu" },
+  accountEntry: { "zh-CN": "已有账号登录", "en-US": "Existing account login", "vi-VN": "Đăng nhập tài khoản hiện có" },
+} as const;
+const slt = (key: keyof typeof supplierLoginText) => supplierLoginText[key][locale];
+
 function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onAction: () => void }) {
   const incomplete = shipments.filter(item => item.status !== "DRAFT" && (!item.eta || !item.pallets?.length || !item.qr_codes?.length));
   const [messages,setMessages]=useState<Array<{id:number;po_no?:string;subject:string;message:string;priority:string;status:string}>>([]);
@@ -171,21 +207,25 @@ function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onActio
 
 function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [credentials, setCredentials] = useState({
-      username: "",
+      supplier_code: "",
+      supplier_name: "",
       password: "",
     }),
+    [account,setAccount]=useState({username:"",supplier_name:"",full_name:"",password:""}),
+    [mode,setMode]=useState<"first"|"account">("first"),
     [error, setError] = useState("");
   const login = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const r = await fetch("/supplier-api/login", {
+    const r = await fetch(mode==="first"?"/supplier-api/supplier-entry-login":"/supplier-api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify(credentials),
+      body: JSON.stringify(mode==="first"?credentials:account),
     });
     if (!r.ok) {
-      setError("账号或密码不正确");
+      if(r.status===409){setMode("account");setError("");return;}
+      setError(slt("invalidCredentials"));
       return;
     }
     onLogin(await r.json());
@@ -223,30 +263,46 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
         </p>
         <form className="supplier-login-form" onSubmit={login}>
           {error && <div className="supplier-login-error">{error}</div>}
-          <label>
-            供应商账号
+          {mode==="first"?<><label>
+            {slt("supplierCode")}
             <input
               autoComplete="username"
-              value={credentials.username}
+              value={credentials.supplier_code}
               onChange={(e) =>
-                setCredentials((c) => ({ ...c, username: e.target.value }))
+                setCredentials((c) => ({ ...c, supplier_code: e.target.value.toUpperCase() }))
               }
+              placeholder={slt("supplierCodeHint")}
+              title={slt("supplierCodeHint")}
+              maxLength={120}
               required
             />
-          </label>
-          <label>
-            密码
+          </label><label>
+            {slt("supplierName")}
+            <input
+              autoComplete="organization"
+              value={credentials.supplier_name}
+              onChange={(e) =>
+                setCredentials((c) => ({ ...c, supplier_name: e.target.value }))
+              }
+              placeholder={slt("supplierNameHint")}
+              title={slt("supplierNameHint")}
+              maxLength={240}
+              required
+            />
+          </label><label>
+            {slt("password")}
             <input
               type="password"
               autoComplete="current-password"
               value={credentials.password}
-              onChange={(e) =>
-                setCredentials((c) => ({ ...c, password: e.target.value }))
-              }
+              onChange={(e) => setCredentials((c) => ({ ...c, password: e.target.value }))}
+              placeholder={slt("passwordHint")}
+              title={slt("passwordHint")}
               required
             />
-          </label>
-          <button>安全登录</button>
+          </label></>:<><label>{slt("username")}<input autoComplete="username" value={account.username} onChange={e=>setAccount(x=>({...x,username:e.target.value}))} title={slt("username")} required/></label><label>{slt("supplierName")}<input autoComplete="organization" value={account.supplier_name} onChange={e=>setAccount(x=>({...x,supplier_name:e.target.value}))} placeholder={slt("supplierNameHint")} title={slt("supplierNameHint")} required/></label><label>{slt("fullName")}<input autoComplete="name" value={account.full_name} onChange={e=>setAccount(x=>({...x,full_name:e.target.value}))} placeholder={slt("fullNameHint")} title={slt("fullNameHint")} required/></label><label>{slt("password")}<input type="password" autoComplete="current-password" value={account.password} onChange={e=>setAccount(x=>({...x,password:e.target.value}))} title={slt("password")} required/></label></>}
+          <button title={slt("login")}>{slt("login")}</button>
+          <button type="button" className="preview-login" onClick={()=>{setMode(mode==="first"?"account":"first");setError("");}}>{mode==="first"?slt("accountEntry"):slt("firstEntry")}</button>
           <button type="button" className="test-login" onClick={() => void testLogin()}>
             测试供应商快速登录（完整权限）
           </button>
@@ -278,6 +334,25 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
       </aside>
     </div>
   );
+}
+
+const firstPasswordText = {
+  title: { "zh-CN": "设置您的登录密码", "en-US": "Set your login password", "vi-VN": "Đặt mật khẩu đăng nhập" },
+  note: { "zh-CN": "首次登录必须更改初始密码后才能进入门户。", "en-US": "Replace the initial password before entering the portal.", "vi-VN": "Đổi mật khẩu ban đầu trước khi vào cổng." },
+  current: { "zh-CN": "初始密码", "en-US": "Initial password", "vi-VN": "Mật khẩu ban đầu" },
+  next: { "zh-CN": "新密码（至少 10 位）", "en-US": "New password (at least 10 characters)", "vi-VN": "Mật khẩu mới (ít nhất 10 ký tự)" },
+  confirm: { "zh-CN": "确认新密码", "en-US": "Confirm new password", "vi-VN": "Xác nhận mật khẩu mới" },
+  mismatch: { "zh-CN": "两次输入的新密码不一致", "en-US": "The new passwords do not match", "vi-VN": "Hai mật khẩu mới không khớp" },
+  failed: { "zh-CN": "密码修改失败，请检查初始密码和新密码长度", "en-US": "Password change failed. Check both passwords.", "vi-VN": "Đổi mật khẩu thất bại. Hãy kiểm tra cả hai mật khẩu." },
+  save: { "zh-CN": "保存并进入门户", "en-US": "Save and enter portal", "vi-VN": "Lưu và vào cổng" },
+} as const;
+
+function FirstPasswordChange({ onComplete }: { onComplete: () => void }) {
+  const t = (key: keyof typeof firstPasswordText) => firstPasswordText[key][locale];
+  const [form,setForm]=useState({current_password:"",new_password:"",confirm_password:""});
+  const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError("");if(form.new_password!==form.confirm_password){setError(t("mismatch"));return;}const r=await fetch("/supplier-api/change-password",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:form.current_password,new_password:form.new_password})});if(!r.ok){setError(t("failed"));return;}onComplete();};
+  return <div className="supplier-login"><section className="supplier-login-panel"><div className="supplier-brand"><span className="supplier-brand-mark"><ShieldCheck size={21}/></span>瑞晶供应商门户</div><h1>{t("title")}</h1><p>{t("note")}</p><form className="supplier-login-form" onSubmit={submit}>{error&&<div className="supplier-login-error">{error}</div>}<label>{t("current")}<input type="password" autoComplete="current-password" value={form.current_password} onChange={e=>setForm(x=>({...x,current_password:e.target.value}))} title={t("current")} required/></label><label>{t("next")}<input type="password" autoComplete="new-password" minLength={10} value={form.new_password} onChange={e=>setForm(x=>({...x,new_password:e.target.value}))} title={t("next")} required/></label><label>{t("confirm")}<input type="password" autoComplete="new-password" minLength={10} value={form.confirm_password} onChange={e=>setForm(x=>({...x,confirm_password:e.target.value}))} title={t("confirm")} required/></label><button title={t("save")}>{t("save")}</button></form></section></div>;
 }
 
 function Dashboard({
@@ -712,7 +787,7 @@ function Shipments({
   );
 }
 
-function OrdersPage({ onShipment }: { onShipment: () => void }) {
+function OrdersPage({ onShipment, onLabels }: { onShipment: () => void; onLabels: (order: any) => void }) {
   const [orders, setOrders] = useState<any[]>([]),
     [dates, setDates] = useState<Record<string, string>>({}),
     [notes, setNotes] = useState<Record<string, string>>({}),
@@ -911,6 +986,7 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
                           查看/处理
                         </button>
                         <button onClick={onShipment}>创建ASN</button>
+                        <button onClick={() => onLabels(o)} disabled={["CLOSED","CANCELLED","VOIDED","RECEIVED","REJECTED"].includes(String(o.status||"").toUpperCase())} title="选择此 PO 并制作绑定的 QR 标签"><Printer size={14}/>制作QR标签</button>
                       </div>
                     </td>
                   </tr>
@@ -1666,8 +1742,14 @@ function Portal() {
     );
     setPage("labels");
   };
+  const useOrder = (order: any) => {
+    const line=order.payload?.lines?.[0]||{};
+    localStorage.setItem("wms:supplier-label-draft",JSON.stringify({po:order.po_no,materialCode:line.material_code||"",materialName:line.description||line.material_name||"",spec:line.specification||"",total:line.qty_ordered==null?"":String(line.qty_ordered),unit:line.unit||line.uom||"PCS"}));
+    setPage("labels");
+  };
   if (loading) return <div className="portal-loading">正在验证登录状态…</div>;
   if (!user) return <Login onLogin={setUser} />;
+  if (user.must_change_password) return <FirstPasswordChange onComplete={() => { setUser({ ...user, must_change_password: false }); setPage("users"); }} />;
   return (
     <div className="supplier-shell portal-layout">
       <aside className={`portal-sidebar ${mobile ? "open" : ""}`}>
@@ -1730,7 +1812,7 @@ function Portal() {
           {page === "dashboard" ? (
             <Dashboard shipments={shipments} setPage={setPage} />
           ) : page === "orders" ? (
-            <OrdersPage onShipment={() => setPage("shipments")} />
+            <OrdersPage onShipment={() => setPage("shipments")} onLabels={useOrder} />
           ) : page === "shipments" ? (
             <Shipments
               items={shipments}

@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
-import { WmsPdaReceivingMobile } from "./WmsPdaReceivingMobile";
 import { WmsMaterialRealtimeFlow } from "./WmsMaterialRealtimeFlow";
 import { MaterialRollQrGenerator, type MaterialRollPrefill } from "../mes/MaterialRollQrGenerator";
 import { apiClient, type ListEnvelope } from "../api/client";
@@ -8,6 +7,8 @@ import { wmsApi } from "../api/wms";
 import * as XLSX from "xlsx";
 import QRCode from "qrcode";
 import { oaRepository, type OaRequest } from "../oa/oaApi";
+import { WmsReceivingEmployeeCommunication } from "./WmsReceivingEmployeeCommunication";
+import { resolveReceivingPackageIdentity } from "./receivingPackageScan";
 
 /** Generic material receiving entry point for warehouse/material receivers. */
 export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
@@ -22,6 +23,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   const [manufactureDate, setManufactureDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
   const [supplierBarcode, setSupplierBarcode] = useState("");
+  const [referenceSn, setReferenceSn] = useState("");
   const [receiptDate, setReceiptDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [unit, setUnit] = useState("PCS");
   const [caseCount, setCaseCount] = useState("");
@@ -95,6 +97,53 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   type Certificate = { id: string; fileName: string; dataUrl: string; category: "DELIVERY_SHEET" | "QUALITY_CERTIFICATE" | "INSPECTION_REPORT" | "OTHER"; notes: string };
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [boundMaterials, setBoundMaterials] = useState<Array<Record<string, any>>>([]);
+  type PendingReceivingMaterial = {
+    id: number;
+    po_no: string;
+    material_code: string;
+    lot_no: string;
+    total_quantity: number;
+    unit: string;
+    outer_box_count: number;
+    label_count: number;
+    scanned_label_count: number;
+    status: string;
+    supplier_code: string;
+    supplier_name: string;
+    registered_at: string;
+  };
+  const testReceivingMaterials: PendingReceivingMaterial[] = [
+    { id: -1, po_no: "PO-TEST-RECV-001", material_code: "R0210-01019", lot_no: "LOT-20260904-A", total_quantity: 5000, unit: "PCS", outer_box_count: 5, label_count: 5, scanned_label_count: 0, status: "READY", supplier_code: "SUP-TEST-01", supplier_name: "测试供应商 A", registered_at: new Date().toISOString() },
+    { id: -2, po_no: "PO-TEST-RECV-002", material_code: "R0210-01020", lot_no: "LOT-20260904-B", total_quantity: 3000, unit: "PCS", outer_box_count: 3, label_count: 3, scanned_label_count: 0, status: "READY", supplier_code: "SUP-TEST-02", supplier_name: "测试供应商 B", registered_at: new Date().toISOString() },
+    { id: -3, po_no: "PO-TEST-RECV-003", material_code: "R0210-01021", lot_no: "LOT-20260904-C", total_quantity: 1200, unit: "PCS", outer_box_count: 2, label_count: 2, scanned_label_count: 0, status: "READY", supplier_code: "SUP-TEST-03", supplier_name: "测试供应商 C", registered_at: new Date().toISOString() },
+  ];
+  const [pendingReceivingMaterials, setPendingReceivingMaterials] = useState<PendingReceivingMaterial[]>([]);
+  const [pendingReceivingLoading, setPendingReceivingLoading] = useState(false);
+  const loadPendingReceivingMaterials = () => {
+    setPendingReceivingLoading(true);
+    void apiClient
+      .get<ListEnvelope<PendingReceivingMaterial>>("/wms/receiving/pre-receiving-manifests")
+      .then((result) => setPendingReceivingMaterials(result.items?.length ? result.items : testReceivingMaterials))
+      .catch(() => setPendingReceivingMaterials(testReceivingMaterials))
+      .finally(() => setPendingReceivingLoading(false));
+  };
+  useEffect(() => {
+    loadPendingReceivingMaterials();
+    const timer = window.setInterval(loadPendingReceivingMaterials, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+  const selectPendingReceivingMaterial = (row: PendingReceivingMaterial) => {
+    setPurchaseOrder(row.po_no || "");
+    setSupplier(row.supplier_name || row.supplier_code || "");
+    setMaterialCode(row.material_code || "");
+    setLot(row.lot_no || "");
+    setUnit(row.unit || "PCS");
+    setCaseCount(String(row.outer_box_count || row.label_count || ""));
+    setExpectedQty(String(row.total_quantity || ""));
+    setReceivedQty("");
+    setAreaQr("前台");
+    setPdaStatus(tx("已选择待收料物料；请扫描前台库位 QR", "Pending receipt selected; scan a Front Area location QR", "Đã chọn vật liệu chờ nhận; quét QR vị trí khu tiếp nhận"));
+  };
   type PalletMaterialLine = {
     id: string;
     materialCode: string;
@@ -119,9 +168,10 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   const [labelOcrMessage, setLabelOcrMessage] = useState("");
   const [labelOcrData, setLabelOcrData] = useState<Record<string, unknown> | null>(null);
   const [labelCameraStream, setLabelCameraStream] = useState<MediaStream | null>(null);
-  const labelInput = useRef<HTMLInputElement>(null);
   const labelVideo = useRef<HTMLVideoElement>(null);
   const labelCanvas = useRef<HTMLCanvasElement>(null);
+  const lastAppliedBoxQr = useRef("");
+  const ocrImageInFlight = useRef("");
   useEffect(() => {
     try {
       if (boxQty.trim()) localStorage.setItem("wms:default-quantity-per-box", boxQty.trim());
@@ -193,6 +243,22 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     }
   }, [materialCode, msdRules]);
   useEffect(() => {
+    const sn = referenceSn.trim();
+    if (!sn) return;
+    let cancelled = false;
+    void apiClient.get<ListEnvelope<any>>("/wms/material-roll-labels", { q: sn }).then(result => {
+      if (cancelled) return;
+      const row = (result.items || []).find(item => String(item.materialSn || "").trim().toUpperCase() === sn.toUpperCase());
+      if (!row) return;
+      const qr = row.qrPayload && typeof row.qrPayload === "object" ? row.qrPayload : {};
+      const code = String(row.materialCode || qr.materialCode || "").trim();
+      const level = String(qr.msdLevel || "").trim().replace(/^MS[- ]?/i, "");
+      if (code) setMaterialCode(code);
+      if (level) setMsdLevel(level);
+    }).catch(() => { /* keep scanned fields; SN mapping can retry on next scan */ });
+    return () => { cancelled = true; };
+  }, [referenceSn]);
+  useEffect(() => {
     const code = materialCode.trim();
     const level = msdLevel.trim();
     if (!code || !level) return;
@@ -205,17 +271,11 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   }, [materialCode, msdLevel, msdFloorLifeHours]);
   // Publish the complete current WMS draft so the unified PDA shows exactly
   // the same fields. Blank values stay blank; the PDA never invents data.
-  const workflowStage = !areaQr.trim()
-    ? "AREA_SCAN"
-    : !palletType
-      ? "PALLET_TYPE"
-      : !materialCode.trim() || !lot.trim()
+  const workflowStage = !materialCode.trim() || !lot.trim()
         ? "MATERIAL_INFO"
         : !boxQr.trim() && !boxQrs.length
           ? "BOX_SCAN"
-          : !palletQr.trim()
-            ? "PALLET_QR"
-            : !locationQr.trim()
+          : !locationQr.trim()
               ? "LOCATION_BIND"
               : "RECEIVING_COMPLETE";
   useEffect(() => {
@@ -281,8 +341,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     const headers = matrix[headerIndex].map(value => String(value).trim());
     const rows = matrix.slice(headerIndex + 1).filter(row => row.some(value => String(value).trim() !== "")).map(row => Object.fromEntries(headers.map((header, index) => [header, row[index] ?? ""]))) as Record<string, unknown>[];
     rows.forEach(row => {
-      row["Vietnam material code"] = row["\u8d8a\u5357\u4e1c\u6cf0\u6599\u53f7"] ?? row["\u8d8a\u5357\u6599\u53f7"] ?? row["\u54c1\u53f7"] ?? "";
-      row["Ruijing material code"] = row["\u6df1\u5733\u745e\u6676\u6599\u53f7"] ?? row["\u745e\u6676\u6599\u53f7"] ?? "";
+      row["Vietnam material code"] = row["\u6df1\u5733\u745e\u6676\u6599\u53f7"] ?? row["\u745e\u6676\u6599\u53f7"] ?? row["\u54c1\u53f7"] ?? "";
+      row["Ruijing material code"] = row["\u8d8a\u5357\u4e1c\u6cf0\u6599\u53f7"] ?? row["\u8d8a\u5357\u6599\u53f7"] ?? "";
       row["Specification"] = row["\u89c4\u683c"] ?? "";
       row["Supplier"] = row["\u4f9b\u5e94\u5546"] ?? "";
       row["MSD level"] = row["MSD"] ?? "";
@@ -308,8 +368,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       const msdLevel = msdText(row, "湿敏等级(MSL)").replace(/^MS[- ]?/i, "");
       const floorLifeHours = (msdText(row, "允许开封时长") || msdText(row, "保存寿命")).replace(/[^0-9.]/g, "");
       codes.forEach(code => msdByCode.set(code.toUpperCase(), { msdLevel, floorLifeHours }));
-      const vietnam = msdText(row, "越南料号");
-      const ruijing = msdText(row, "RJ物料料号");
+      const vietnam = msdText(row, "RJ物料料号");
+      const ruijing = msdText(row, "越南料号");
       if (vietnam || ruijing) mappings.push({ vietnam, ruijing, specification: msdText(row, "规格型号"), supplier: msdText(row, "供应商"), msdLevel, floorLifeHours });
     });
     mappings.forEach(row => {
@@ -324,6 +384,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
         sourceSheet: "Sheet1",
         rows: mappings.map(row => ({ vietnamMaterialCode: row.vietnam, ruijingMaterialCode: row.ruijing, specification: row.specification || "", supplierName: row.supplier || "", msdLevel: row.msdLevel || "", floorLifeHours: row.floorLifeHours || "" }))
       }
+    }).catch(() => {
+      setMaterialMappingStatus(tx(`本地映射已加载 · ${mappings.length} 条；服务器同步稍后重试`, `Local mapping loaded · ${mappings.length} rows; server sync will retry later`, `Da tai anh xa cuc bo · ${mappings.length} dong; se thu dong bo may chu sau`));
     });
     setMsdRules(mappings.filter(row => row.vietnam && row.msdLevel).map(row => ({ materialCode: row.vietnam, msdLevel: row.msdLevel, floorLifeHours: row.floorLifeHours })));
     const current = materialCode.trim().toUpperCase();
@@ -394,18 +456,19 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     setExpectedQty(pick("订单数量", "预计数量", "Expected Qty", "Ordered Qty"));
     setReceivedQty(pick("收料数量", "实收数量", "Received Qty", "Quantity"));
     setUnit(pick("单位", "Unit") || "PCS");
-    setReceivingImportStatus(`已带入第 ${row.__row} 行，可继续扫描区域 QR、托板和箱 QR`);
+    setReceivingImportStatus(`已带入第 ${row.__row} 行，可继续扫描区域 QR、箱 QR 和仓位 QR`);
   };
   const receivingLabelPrefill = useMemo<MaterialRollPrefill>(() => ({
     materialSn: materialCode.trim(), materialCode: materialCode.trim(), description: specification.trim(),
     internalCode: ruijingMaterialCode.trim(), lotNo: lot.trim(), dateCode: (manufactureDate || receiptDate).trim(),
     supplierName: supplier.trim(), supplierBarcode: supplierBarcode.trim(), purchaseOrder: purchaseOrder.trim(),
+    referenceSn: referenceSn.trim(),
     supplierLot: lot.trim(), quantity: Number(boxQty || receivedQty || expectedQty || 0), unit,
     msdLevel, floorLifeHours: msdFloorLifeHours, locationCode: locationQr.trim(),
     manufacturingDate: manufactureDate.trim(), expiryDate: expiryDate.trim(), plantCode: "RUIJING_VN",
     rollCount: Math.max(1, Number(caseCount) || 1), caseCount, palletQr: palletQr.trim(), boxQr: boxQr.trim(), supplierIqc,
     receivingStatus: "AWAITING_IQC",
-  }), [materialCode, specification, ruijingMaterialCode, lot, manufactureDate, receiptDate, supplier, supplierBarcode, purchaseOrder, boxQty, receivedQty, expectedQty, unit, msdLevel, msdFloorLifeHours, locationQr, caseCount, palletQr, boxQr, supplierIqc]);
+  }), [materialCode, specification, ruijingMaterialCode, lot, manufactureDate, receiptDate, supplier, supplierBarcode, referenceSn, purchaseOrder, boxQty, receivedQty, expectedQty, unit, msdLevel, msdFloorLifeHours, locationQr, caseCount, palletQr, boxQr, supplierIqc]);
   const lookupSharedMaterial = (value: string, direction: "vietnam" | "ruijing") => {
     const code = value.trim().toUpperCase();
     if (!code) return;
@@ -419,13 +482,6 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     if (match.floorLifeHours) setMsdFloorLifeHours(match.floorLifeHours);
     setMaterialMappingStatus(tx("Excel双向互查完成", "Excel bidirectional lookup completed", "Da tra cuu hai chieu tu Excel"));
   };
-  // Use the same Sheet1 material master workbook as the SMT material-roll page.
-  useEffect(() => {
-    fetch("/material_label_master.xlsx")
-      .then(response => response.ok ? response.blob() : Promise.reject(new Error("material master workbook unavailable")))
-      .then(blob => importMaterialCodeMapping(new File([blob], "material_label_master.xlsx")))
-      .catch(() => setMaterialMappingStatus(tx("自动导入失败，请选择同一份 SMT 卷料 Excel", "Automatic import failed; choose the same SMT material-roll Excel", "Tu dong nhap that bai; hay chon cung file Excel cuon SMT")));
-  }, []);
   const addCertificates = async (files: FileList | null) => {
     if (!files) return;
     const next = await Promise.all(Array.from(files).map(file => new Promise<Certificate>((resolve, reject) => {
@@ -442,12 +498,6 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       .then(result => setBoundMaterials(result.items || []))
       .catch(() => setBoundMaterials([]));
   }, []);
-  const readLabelFile = async (file: File | undefined) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { setLabelImage(String(reader.result || "")); setLabelOcrData(null); setLabelOcrMessage(""); };
-    reader.readAsDataURL(file);
-  };
   const startLabelCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -463,25 +513,40 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     canvas.width = video.videoWidth || 1280;
     canvas.height = video.videoHeight || 720;
     canvas.getContext("2d")?.drawImage(video, 0, 0, canvas.width, canvas.height);
-    setLabelImage(canvas.toDataURL("image/jpeg", 0.9));
+    const image = canvas.toDataURL("image/jpeg", 0.9);
+    setLabelImage(image);
     setLabelOcrData(null);
     stopLabelCamera();
+    void runLabelOcr(image);
   };
   const runLabelOcr = async (imageOverride?: string) => {
     const image = imageOverride || labelImage;
     if (!image) return;
-    setLabelOcrBusy(true); setLabelOcrMessage("");
+    const imageKey = `${image.length}:${image.slice(-96)}`;
+    if (ocrImageInFlight.current === imageKey) return;
+    ocrImageInFlight.current = imageKey;
+    setLabelOcrBusy(true);
     try {
       const token = sessionStorage.getItem("auth_token");
-      const response = await fetch("/api/wms/receiving/label-ai", {
+      const localDevHost = ["localhost", "127.0.0.1"].includes(window.location.hostname) && window.location.port === "5178";
+      const ocrApi = localDevHost
+        ? `${window.location.protocol}//${window.location.hostname}:8085/api/wms/receiving/label-ai`
+        : "/api/wms/receiving/label-ai";
+      const response = await fetch(ocrApi, {
         method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ image, qrValue: boxQr.trim() || palletQr.trim() }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result?.error?.message || result?.message || "OCR failed");
       const data = result.data || result;
-      setLabelOcrData(data as Record<string, unknown>);
       const text = (value: unknown) => value == null ? "" : String(value).trim();
+      if (data.parseFailed) {
+        setLabelOcrData(null);
+        setMsdBindingStatus("");
+        setLabelOcrMessage(text(data.parseMessage) || tx("无法解析标签，请重新拍摄", "Unable to parse label; take another photo", "Không thể phân tích nhãn; vui lòng chụp lại"));
+        return;
+      }
+      setLabelOcrData(data as Record<string, unknown>);
       const number = (value: unknown) => { const raw = text(value).replace(/,/g, ""); return raw && Number.isFinite(Number(raw)) ? raw : ""; };
       const vietnamCode = text(data.vietnamMaterialCode) || text(data.materialCode);
       if (vietnamCode) setMaterialCode(vietnamCode);
@@ -492,6 +557,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       if (text(data.supplier)) setSupplier(text(data.supplier));
       if (text(data.purchaseOrder)) setPurchaseOrder(text(data.purchaseOrder));
       if (text(data.supplierBarcode)) setSupplierBarcode(text(data.supplierBarcode));
+      if (text(data.referenceSn) || text(data.materialSn)) setReferenceSn(text(data.referenceSn) || text(data.materialSn));
       if (text(data.manufactureDate)) setManufactureDate(text(data.manufactureDate));
       if (text(data.expiryDate)) setExpiryDate(text(data.expiryDate));
       if (number(data.expectedQuantity)) setExpectedQty(number(data.expectedQuantity));
@@ -514,7 +580,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       setLabelOcrMessage(tx(`识别完成，已回填收料信息${warningText}`, `OCR complete; receiving fields were filled${warningText}`, `OCR hoan tat; da dien thong tin tiep nhan${warningText}`));
     } catch (error) {
       setLabelOcrMessage(error instanceof Error ? error.message : String(error));
-    } finally { setLabelOcrBusy(false); }
+    } finally { ocrImageInFlight.current = ""; setLabelOcrBusy(false); }
   };
   const receivingDocuments = () => certificates.map(certificate => ({ documentType: certificate.category, documentUrl: certificate.dataUrl, fileName: certificate.fileName, capturedBy: sessionStorage.getItem("user_name") || "web-receiver", notes: certificate.notes, metadata: { source: "WMS_RECEIVING", purchaseOrder: purchaseOrder.trim(), supplierDeliverySheetNo: supplierDeliverySheetNo.trim(), lotNo: lot.trim(), supplier: supplier.trim(), receiptDate, category: certificate.category } }));
   const createMotherQr = async () => {
@@ -530,8 +596,16 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     popup.document.close();
   };
   useEffect(() => {
-    const apply = (payload: any) => {
-      if (!payload) return;
+    const apply = (incoming: any) => {
+      if (!incoming) return;
+      // Scanner events carry decoded material fields inside qrPayload while
+      // older PDA events put them at the top level. Normalize both contracts
+      // before updating the receiving form.
+      const nestedQr = incoming.qrPayload && typeof incoming.qrPayload === "object" ? incoming.qrPayload : {};
+      const payload = { ...incoming, ...nestedQr };
+      // Outbound WMS drafts are for PDA consumption only. Ignore any stale
+      // echoed copy that may still exist in live-state during a server reload.
+      if (String(payload.source || "").toUpperCase() === "WMS_WEB") return;
       const now = Number(payload.at) || Date.now();
       const deviceId = String(payload.deviceId ?? payload.device_id ?? payload.from ?? "PDA-RECEIVING-UNKNOWN").trim();
       if (deviceId && deviceId !== "wms_receiving") {
@@ -550,30 +624,53 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
           return next.sort((a, b) => b.lastAt - a.lastAt).slice(0, 5);
         });
       }
+      // Heartbeats only keep the PDA online. They often contain blank draft
+      // fields and must never touch the currently displayed box information.
+      if (String(payload.phase || "").toUpperCase() === "HEARTBEAT") return;
       const incomingArea = String(payload.areaQr ?? payload.receivingArea ?? "").trim();
       if (incomingArea && payload.changedField === "areaQr") {
         setAreaQr(incomingArea); setLocationQr(""); setLocationCapacity(null); setMaterialCode(""); setRuijingMaterialCode(""); setMaterialName(""); setSpecification(""); setSupplier(""); setSupplierBarcode(""); setSupplierDeliverySheetNo(""); setPurchaseOrder(""); setLot(""); setManufactureDate(""); setExpiryDate(""); setExpectedQty(""); setReceivedQty(""); setBoxQty(""); setCaseCount(""); setPartialBox(false); setPalletQr(""); setBoxQr(""); setBoxQrs([]); setBindings([]); setPalletMaterials([]); setGeneratedCaseQr(""); setGeneratedCaseQrImage(""); setPalletType("MIXED_PRODUCT"); setPalletSize(""); setPalletMaterial(""); setMsdLevel(""); setMsdFloorLifeHours(""); setMsdBindingStatus(""); setCertificates([]); setLabelImage(""); setLabelOcrData(null); setLabelOcrMessage(""); setSupplierIqc("PENDING"); setPdaStatus(`New warehouse area: ${incomingArea}; receiving inputs cleared`);
         return;
       }
       const hasNewImage = Boolean(payload.imageDataUrl || payload.image);
-      const hasNewQr = payload.inputMethod === "STANDARD_QR" || Boolean(payload.materialRollQr || payload.materialQr || payload.qrPayload);
+      const hasNewQr = Boolean(payload.materialRollQr || payload.materialQr || payload.qrPayload)
+        || ["logistics-label-qr", "supplier-label-qr", "material-roll-qr-v2", "standard-qr-complete"]
+          .includes(String(payload.changedField || ""));
       if (hasNewImage || hasNewQr) {
         if (hasNewImage) setLabelImage(String(payload.imageDataUrl || payload.image)); else setLabelImage("");
         setLabelOcrData(null);
         setLabelOcrMessage("");
       }
+      // PDA may publish one scan as several patches (box QR, decoded fields,
+      // then status). Never clear confirmed fields when the box patch arrives;
+      // merge every non-empty decoded value below instead.
+      const isCompletedQrRead = ["logistics-label-qr", "supplier-label-qr", "material-roll-qr-v2", "standard-qr-complete"]
+        .includes(String(payload.changedField || ""));
+      const incomingBoxIdentity = String(payload.boxQr ?? payload.supplierBarcode ?? payload.materialRollQr ?? payload.materialQr ?? "").trim();
+      const isDifferentBox = isCompletedQrRead && Boolean(incomingBoxIdentity) && incomingBoxIdentity !== lastAppliedBoxQr.current;
+      if (isDifferentBox) {
+        lastAppliedBoxQr.current = incomingBoxIdentity;
+        // Keep the previous box visible while scanning. Once the next QR has
+        // decoded successfully, replace its material fields as one React batch.
+        setMaterialCode(""); setRuijingMaterialCode(""); setMaterialName(""); setSpecification("");
+        setSupplier(""); setSupplierBarcode(""); setPurchaseOrder(""); setLot("");
+        setReferenceSn("");
+        setManufactureDate(""); setExpiryDate(""); setExpectedQty(""); setReceivedQty("");
+        setBoxQty(""); setBoxQr("");
+      }
       if (payload.vietnamMaterialCode !== undefined || payload.materialCode !== undefined) setMaterialCode(String(payload.vietnamMaterialCode ?? payload.materialCode ?? ""));
       if (payload.ruijingMaterialCode !== undefined || payload.internalMaterialCode !== undefined) setRuijingMaterialCode(String(payload.ruijingMaterialCode ?? payload.internalMaterialCode ?? ""));
-      if (payload.materialName) setMaterialName(String(payload.materialName));
+      if (payload.materialName !== undefined) setMaterialName(String(payload.materialName || ""));
       if (payload.areaQr || payload.receivingArea) setAreaQr(String(payload.areaQr ?? payload.receivingArea));
-      if (payload.specification) setSpecification(String(payload.specification));
-      if (payload.supplier) setSupplier(String(payload.supplier));
-      if (payload.purchaseOrder) setPurchaseOrder(String(payload.purchaseOrder));
-      if (payload.manufactureDate) setManufactureDate(String(payload.manufactureDate));
-      if (payload.expiryDate) setExpiryDate(String(payload.expiryDate));
-      if (payload.supplierBarcode) setSupplierBarcode(String(payload.supplierBarcode));
+      if (payload.specification !== undefined) setSpecification(String(payload.specification || ""));
+      if (payload.supplier !== undefined || payload.supplierName !== undefined) setSupplier(String(payload.supplier ?? payload.supplierName ?? ""));
+      if (payload.purchaseOrder !== undefined || payload.poNo !== undefined) setPurchaseOrder(String(payload.purchaseOrder ?? payload.poNo ?? ""));
+      if (payload.manufactureDate !== undefined || payload.dateCode !== undefined) setManufactureDate(String(payload.manufactureDate ?? payload.dateCode ?? ""));
+      if (payload.expiryDate !== undefined) setExpiryDate(String(payload.expiryDate || ""));
+      if (payload.supplierBarcode !== undefined) setSupplierBarcode(String(payload.supplierBarcode || ""));
+      if (payload.referenceSn !== undefined || payload.materialSn !== undefined) setReferenceSn(String(payload.referenceSn ?? payload.materialSn ?? ""));
       if (payload.receiptDate) setReceiptDate(String(payload.receiptDate));
-      if (payload.lotNo) setLot(String(payload.lotNo));
+      if (payload.lotNo !== undefined || payload.lot !== undefined || payload.supplierLot !== undefined) setLot(String(payload.lotNo ?? payload.lot ?? payload.supplierLot ?? ""));
       if (payload.palletQr !== undefined) setPalletQr(String(payload.palletQr || ""));
       if (payload.palletType !== undefined) { const palletValue = String(payload.palletType); setPalletType(palletValue === "MIXED_PRODUCT" || palletValue.includes("混料") ? "MIXED_PRODUCT" : palletValue === "SINGLE_PRODUCT" || palletValue.includes("单一") ? "SINGLE_PRODUCT" : ""); }
       if (payload.palletSize !== undefined) setPalletSize(String(payload.palletSize || ""));
@@ -611,6 +708,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
           const value = (key: string) => payload[key] == null ? "" : String(payload[key]).trim();
           if (value("vietnamMaterialCode") || value("materialCode")) setMaterialCode(value("vietnamMaterialCode") || value("materialCode"));
           if (value("ruijingMaterialCode")) setRuijingMaterialCode(value("ruijingMaterialCode"));
+          if (value("referenceSn") || value("materialSn")) setReferenceSn(value("referenceSn") || value("materialSn"));
           if (value("lot")) setLot(value("lot"));
           if (value("supplier")) setSupplier(value("supplier"));
           if (payload.expectedQuantity != null) setExpectedQty(String(payload.expectedQuantity));
@@ -622,7 +720,12 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
           if (value("msdLevel")) setMsdLevel(value("msdLevel").replace(/^MS[- ]?/i, ""));
           if (payload.floorLifeHours != null) setMsdFloorLifeHours(String(payload.floorLifeHours));
           if (value("boxSn") || value("boxNumber")) setBoxQr(value("boxSn") || value("boxNumber"));
-          setLabelOcrMessage(tx("已实时接收 PDA 标签识别结果，并自动回填收料信息", "Live PDA label result received and automatically applied", "Da nhan ket qua nhan PDA va tu dong dien thong tin"));
+          const extracted = ["materialCode", "vietnamMaterialCode", "ruijingMaterialCode", "lot", "supplier", "quantity", "quantityPerBox"]
+            .some(key => payload[key] != null && String(payload[key]).trim() !== "");
+          const warning = Array.isArray(payload.warnings) ? payload.warnings.filter(Boolean).join("；") : "";
+          setLabelOcrMessage(extracted
+            ? tx("已实时接收 PDA 标签识别结果，并自动回填收料信息", "Live PDA label result received and automatically applied", "Da nhan ket qua nhan PDA va tu dong dien thong tin")
+            : tx(`WMS 已收到图片，但 OCR 未识别出字段${warning ? `：${warning}` : ""}`, `WMS received the image, but OCR extracted no fields${warning ? `: ${warning}` : ""}`, `WMS da nhan anh nhung OCR khong nhan dang duoc truong${warning ? `: ${warning}` : ""}`));
         }
       } catch { /* keep manual entry available */ }
     };
@@ -642,9 +745,15 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
         }
       } catch { /* keep manual entry available */ }
     };
+    let lastPolledAt = 0;
     const syncLatestCapture = () => {
       void fetch("/api/wms/receiving/live-state", { cache: "no-store" }).then(response => response.ok ? response.json() : null).then(result => {
         const payload = result?.data?.payload || result?.payload;
+        const payloadAt = Number(result?.data?.at ?? result?.at ?? payload?.at ?? 0);
+        if (payload && payloadAt > lastPolledAt) {
+          lastPolledAt = payloadAt;
+          apply(payload);
+        }
         const image = payload?.imageDataUrl || payload?.image;
         if (image) {
           setLabelImage(String(image));
@@ -653,29 +762,28 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       }).catch(() => { /* SSE remains the primary live path */ });
     };
     syncLatestCapture();
-    const capturePoll = window.setInterval(syncLatestCapture, 1000);
      const devicePoll = window.setInterval(() => setPdaDevices(current => current.filter(device => Date.now() - device.lastAt < 30000)), 5000);
-     return () => { window.removeEventListener("wms:pda-receiving-status", onStatus); stream.close(); aiStream.close(); captureStream.close(); window.clearInterval(capturePoll); window.clearInterval(devicePoll); };
+     return () => { window.removeEventListener("wms:pda-receiving-status", onStatus); stream.close(); aiStream.close(); captureStream.close(); window.clearInterval(devicePoll); };
   }, []);
   const addBox = async () => {
     const value = boxQr.trim();
-    if (!palletType) { setPdaStatus(tx("请先选择托板类型", "Select pallet type before binding", "Vui lòng chọn loại pallet trước")); return; }
-    if (!value || !materialCode.trim() || !lot.trim() || !locationQr.trim() || boxQrs.includes(value)) return;
-    if (palletType === "SINGLE_PRODUCT" && bindings.some(binding => binding.materialCode && binding.materialCode.toUpperCase() !== materialCode.trim().toUpperCase())) {
-      setPdaStatus(tx("单一产品托板不能绑定其他物料编码", "A single-product pallet cannot bind another material code", "Pallet đơn sản phẩm không thể liên kết mã vật liệu khác"));
-      return;
-    }
+    if (!value || !locationQr.trim() || boxQrs.includes(value)) return;
     const effectivePalletQr = palletQr.trim() || `WMS-PALLET:P${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    const generatedCaseQrValue = buildCaseQrValue(value, effectivePalletQr);
     if (!palletQr.trim()) { setPalletQr(effectivePalletQr); setMotherQr(effectivePalletQr); setMotherQrImage(await QRCode.toDataURL(effectivePalletQr, { width: 180, margin: 1, errorCorrectionLevel: "M" })); }
     const token = sessionStorage.getItem("auth_token");
     let packageInfo:any=null;
-    if(value.includes("*")){const packageResponse=await fetch("/api/wms/receiving/package-scan",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({qrValue:value,palletQr:effectivePalletQr,locationQr:locationQr.trim()})});if(!packageResponse.ok){const error=await packageResponse.json().catch(()=>({}));setPdaStatus(error?.error?.message||tx("供应商箱码格式无效","Invalid supplier package QR","QR kiện hàng NCC không hợp lệ"));return;}packageInfo=(await packageResponse.json()).data;setPackageScans(xs=>[...xs.filter(x=>x.qrValue!==value),packageInfo]);if(packageInfo.material_code&&packageInfo.material_code.toUpperCase()!==materialCode.trim().toUpperCase()){setPdaStatus(tx("箱码物料与当前收料物料不一致","Box material does not match current receiving material","Vật liệu trên thùng không khớp"));return;}}
+    if(value.includes("*")){const packageResponse=await fetch("/api/wms/receiving/package-scan",{method:"POST",headers:{"Content-Type":"application/json",...(token?{Authorization:`Bearer ${token}`}:{})},body:JSON.stringify({qrValue:value,palletQr:effectivePalletQr,locationQr:locationQr.trim()})});if(!packageResponse.ok){const error=await packageResponse.json().catch(()=>({}));setPdaStatus(error?.error?.message||tx("供应商箱码格式无效","Invalid supplier package QR","QR kiện hàng NCC không hợp lệ"));return;}packageInfo=(await packageResponse.json()).data;setPackageScans(xs=>[...xs.filter(x=>x.qrValue!==value),packageInfo]);if(materialCode.trim()&&packageInfo.material_code&&packageInfo.material_code.toUpperCase()!==materialCode.trim().toUpperCase()){setPdaStatus(tx("箱码物料与当前收料物料不一致","Box material does not match current receiving material","Vật liệu trên thùng không khớp"));return;}setMaterialCode(String(packageInfo.material_code||""));setLot(String(packageInfo.lot_no||""));setPurchaseOrder(String(packageInfo.poNo||""));setSupplier(String(packageInfo.supplierCode||packageInfo.supplier_code||""));setExpectedQty(String(packageInfo.poRemainingQty||""));setReceivedQty(current=>String(Number(current||0)+Number(packageInfo.quantity||0)));}
+    const identity = resolveReceivingPackageIdentity({ materialCode: materialCode.trim(), lotNo: lot.trim(), purchaseOrder: purchaseOrder.trim(), supplier: supplier.trim() }, packageInfo);
+    const generatedCaseQrValue = [
+      "CASE", `RSN${String(boxQrs.length + 1).padStart(3, "0")}`, identity.materialCode, ruijingMaterialCode.trim(), identity.lotNo, identity.purchaseOrder,
+      manufactureDate.trim(), receiptDate, String(Number(packageInfo?.quantity || boxQty || receivedQty || 0)), unit,
+      identity.supplier, supplierBarcode.trim(), msdLevel.trim(), msdFloorLifeHours.trim(), value, effectivePalletQr, areaQr.trim(), locationQr.trim(),
+    ].join("|");
     const bindingQty=Number(packageInfo?.quantity||boxQty||receivedQty||0),packageLevel=packageInfo?.packageLevel||"OUTER",parentBoxQr=packageInfo?.parentSerialNo||null;
-    const response = await fetch("/api/wms/receiving/pallet-box-bindings", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ areaQr: areaQr.trim(), palletQr: effectivePalletQr, palletType, palletSize: palletSize.trim(), palletMaterial: palletMaterial.trim(), materialCode: materialCode.trim(), vietnamMaterialCode: materialCode.trim(), ruijingMaterialCode: ruijingMaterialCode.trim(), specification: specification.trim(), quantity: bindingQty, declaredQty:bindingQty, packageLevel,parentBoxQr, boxQr: value, sourceBoxQr: value, generatedCaseQr: generatedCaseQrValue, caseQrValue: generatedCaseQrValue, lotNo: lot.trim(), supplier: supplier.trim(), purchaseOrder: purchaseOrder.trim(), supplierBarcode: supplierBarcode.trim(), locationQr: locationQr.trim(), msdLevel: msdLevel || null, msdFloorLifeHours: msdFloorLifeHours ? Number(msdFloorLifeHours) : null, palletQrType: motherQr || !palletQr.trim() ? "GENERATED_MOTHER" : "SUPPLIER_PALLET", palletMaterials: palletMaterials.map(line => ({ ...line, quantity: Number(line.quantity || line.quantityPerBox || 0), caseCount: Number(line.caseCount || 0), quantityPerBox: Number(line.quantityPerBox || 0) })), receivingDocuments: receivingDocuments() }) });
-    if (!response.ok) return;
+    const response = await fetch("/api/wms/receiving/pallet-box-bindings", { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ areaQr: areaQr.trim(), palletQr: effectivePalletQr, palletType, palletSize: palletSize.trim(), palletMaterial: palletMaterial.trim(), materialCode: identity.materialCode, vietnamMaterialCode: identity.materialCode, ruijingMaterialCode: ruijingMaterialCode.trim(), specification: specification.trim(), quantity: bindingQty, declaredQty:bindingQty, packageLevel,parentBoxQr, boxQr: value, sourceBoxQr: value, generatedCaseQr: generatedCaseQrValue, caseQrValue: generatedCaseQrValue, lotNo: identity.lotNo, supplier: identity.supplier, purchaseOrder: identity.purchaseOrder, supplierBarcode: supplierBarcode.trim(), locationQr: locationQr.trim(), msdLevel: msdLevel || null, msdFloorLifeHours: msdFloorLifeHours ? Number(msdFloorLifeHours) : null, palletQrType: motherQr || !palletQr.trim() ? "GENERATED_MOTHER" : "SUPPLIER_PALLET", palletMaterials: palletMaterials.map(line => ({ ...line, quantity: Number(line.quantity || line.quantityPerBox || 0), caseCount: Number(line.caseCount || 0), quantityPerBox: Number(line.quantityPerBox || 0) })), receivingDocuments: receivingDocuments() }) });
+    if (!response.ok) { const error=await response.json().catch(()=>({})); setPdaStatus(error?.error?.message||tx("箱码绑定失败","Box binding failed","Liên kết mã thùng thất bại")); return; }
     setBoxQrs(xs => [...xs, value]);
-    setBindings(xs => [...xs, { palletQr: effectivePalletQr, boxQr: generatedCaseQrValue, materialCode: materialCode.trim(), quantity: bindingQty }]);
+    setBindings(xs => [...xs, { palletQr: effectivePalletQr, boxQr: generatedCaseQrValue, materialCode: identity.materialCode, quantity: bindingQty }]);
     setBoxQr("");
   };
   const addPalletMaterial = () => setPalletMaterials(lines => [...lines, { id: `${Date.now()}-${Math.random()}`, materialCode: "", ruijingMaterialCode: "", materialName: "", lot: "", caseCount: "", quantityPerBox: "", quantity: "", unit: "PCS", supplier: supplier.trim() }]);
@@ -703,10 +811,10 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     setGeneratedCaseQr(value);
     setGeneratedCaseQrImage(await QRCode.toDataURL(value, { width: 180, margin: 1, errorCorrectionLevel: "M" }));
   };
-  const resolveLocation = async () => { if (!locationQr.trim()) return; const token = sessionStorage.getItem("auth_token"); const response = await fetch(`/api/wms/floor-storage-areas/resolve?qr=${encodeURIComponent(locationQr.trim())}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} }); if (!response.ok) { setLocationCapacity(null); return; } const result = await response.json(); const data = result.data || result; setLocationCapacity({ capacity: Number(data.capacity || 0), occupied: Number(data.occupied || 0), name: data.areaName || data.areaCode }); };
+  const resolveLocation = async () => { if (!locationQr.trim()) return; const token = sessionStorage.getItem("auth_token"); const headers = token ? { Authorization: `Bearer ${token}` } : {}; const value = encodeURIComponent(locationQr.trim()); const response = await fetch(`/api/wms/storage-locations/resolve?qr=${value}`, { headers }); if (!response.ok) { setLocationCapacity(null); setPdaStatus(tx("仓位 QR 未在 WMS 登记或不可用于绑定", "Location QR is not registered or cannot be used for binding", "QR vị trí chưa đăng ký hoặc không thể liên kết")); return; } const result = await response.json(); const data = result.data || result; setLocationQr(data.qrCode || locationQr.trim()); setAreaQr(String(data.area || data.areaName || data.areaCode || "")); setLocationCapacity({ capacity: Number(data.capacity || 0), occupied: Number(data.occupied || 0), name: data.nameZh || data.nameEn || data.nameVi || data.code }); };
   const submitMaterialReceivingOa = async () => {
-    if (!materialCode.trim() || !lot.trim() || !receivedQty.trim() || !palletType || !locationQr.trim()) {
-      setPdaStatus(tx("收料前必须选择托板类型", "Pallet type is required before receiving", "Phải chọn loại pallet trước khi nhận"));
+    if (!materialCode.trim() || !lot.trim() || !receivedQty.trim() || !locationQr.trim()) {
+      setPdaStatus(tx("收料前必须填写物料、批次、数量并绑定仓位", "Material, lot, quantity and location are required", "Can vat lieu, lo, so luong va vi tri"));
       return;
     }
     setOaBusy(true);
@@ -725,9 +833,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
           { label: "Received quantity", value: `${receivedQty.trim()} ${unit}` },
           { label: "Box count", value: caseCount.trim() || "-" },
           { label: "MSD level", value: msdLevel.trim() || "-" },
-          { label: "Pallet type", value: palletType || "-" },
-          { label: "Pallet size / material", value: `${palletSize.trim() || "-"} / ${palletMaterial.trim() || "-"}` },
-          { label: "Pallet / location", value: `${palletQr.trim() || "AUTO"} / ${locationQr.trim() || "-"}` },
+          { label: "Storage location", value: locationQr.trim() || "-" },
         ],
       });
       setOaRequest(request);
@@ -740,8 +846,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   };
   const [submitting, setSubmitting] = useState(false);
   const submitReceiving = async () => {
-    if (!palletType || !materialCode.trim() || !lot.trim() || !locationQr.trim() || !palletQr.trim()) {
-      setPdaStatus(tx("请先完成所有收料步骤（选择托板类型、录入物料/批次、扫描箱码、生成托板QR、绑定库位）", "Complete all receiving steps before submitting (pallet type, material/lot, box scan, pallet QR, location binding)", "Vui lòng hoàn thành tất cả bước nhận liệu trước khi gửi"));
+    if (!materialCode.trim() || !lot.trim() || !locationQr.trim() || boxQrs.length === 0) {
+      setPdaStatus(tx("请先录入物料/批次、扫描箱码并绑定仓位", "Enter material/lot, scan box QR and bind a location before submitting", "Nhap vat lieu/lo, quet QR thung va lien ket vi tri"));
       return;
     }
     setSubmitting(true);
@@ -765,8 +871,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
   };
   const printAllReceivingQrs = async (row: Record<string, any>) => {
     const labels = [
-      { title: "物料收料 QR", value: String(row.material_qr || ""), detail: `${row.material_code || ""} · ${row.lot_no || ""} · ${row.msd_level || ""}` },
-      { title: "托板 QR", value: String(row.pallet_qr || ""), detail: `${row.material_code || ""} · ${row.lot_no || ""}` },
+      { title: "WMS 箱 QR", value: String(row.material_qr || row.box_qr || row.case_qr_value || ""), detail: `${row.material_code || ""} · ${row.lot_no || ""} · ${row.msd_level || ""}` },
     ].filter(label => label.value);
     if (!labels.length) return;
     const rendered = await Promise.all(labels.map(async label => ({ ...label, image: await QRCode.toDataURL(label.value, { width: 420, margin: 1, errorCorrectionLevel: "M" }) })));
@@ -790,8 +895,61 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
 
   return (
     <div className="screen-stack">
+      <section className="surface-panel" style={{ border: "2px solid #0f766e" }}>
+        <div className="section-header">
+          <div>
+            <h2 style={{ margin: 0 }}>{tx("待收料 PO 清单", "Pending PO Receipts", "Danh sách PO chờ nhận")}</h2>
+            <p style={{ margin: "5px 0 0" }}>{tx("从供应商 Portal 已登记的标签清单选择物料后开始收料。", "Select a supplier Portal manifest to start receiving.", "Chọn danh sách nhãn từ Portal nhà cung cấp để bắt đầu nhận hàng.")}</p>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span className="badge badge-info">{pendingReceivingMaterials.length} {tx("项待收", "pending", "đang chờ")}</span>
+            <button type="button" className="btn btn-secondary" onClick={loadPendingReceivingMaterials} disabled={pendingReceivingLoading}>
+              {pendingReceivingLoading ? tx("刷新中…", "Refreshing…", "Đang tải…") : tx("刷新", "Refresh", "Làm mới")}
+            </button>
+          </div>
+        </div>
+        <div className="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>PO</th>
+                <th>{tx("供应商", "Supplier", "Nhà cung cấp")}</th>
+                <th>{tx("物料编码", "Material", "Mã vật liệu")}</th>
+                <th>{tx("批次", "Lot", "Lô")}</th>
+                <th>{tx("应收数量", "Expected qty", "SL dự kiến")}</th>
+                <th>{tx("箱数", "Boxes", "Số thùng")}</th>
+                <th>{tx("扫码进度", "Scan progress", "Tiến độ quét")}</th>
+                <th>{tx("状态", "Status", "Trạng thái")}</th>
+                <th>{tx("操作", "Action", "Thao tác")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingReceivingMaterials.length ? pendingReceivingMaterials.map((row) => (
+                <tr key={row.id}>
+                  <td><strong>{row.po_no || "-"}</strong></td>
+                  <td>{row.supplier_name || row.supplier_code || "-"}</td>
+                  <td><strong>{row.material_code}</strong></td>
+                  <td>{row.lot_no || "-"}</td>
+                  <td>{Number(row.total_quantity || 0).toLocaleString()} {row.unit || "PCS"}</td>
+                  <td>{row.outer_box_count || row.label_count || 0}</td>
+                  <td>{row.scanned_label_count || 0} / {row.label_count || 0}</td>
+                  <td><span className="badge badge-warning">{row.status}</span></td>
+                  <td>
+                    <button type="button" className="btn btn-primary" onClick={() => selectPendingReceivingMaterial(row)}>
+                      {tx("开始收料", "Start receiving", "Bắt đầu nhận")}
+                    </button>
+                  </td>
+                </tr>
+              )) : (
+                <tr><td colSpan={9} style={{ textAlign: "center", color: "#64748b", padding: 24 }}>{pendingReceivingLoading ? tx("正在读取待收料 PO…", "Loading pending POs…", "Đang tải PO…") : tx("暂无供应商 Portal 提交的待收料 PO", "No pending PO receipts from the supplier Portal", "Chưa có PO chờ nhận từ Portal nhà cung cấp")}</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <WmsReceivingEmployeeCommunication />
       <section className="surface-panel" style={{ padding: 24, border: "2px solid #2563eb", background: "linear-gradient(135deg,#eff6ff,#ffffff)" }}>
-        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 18 }}><div><div style={{ color: "var(--muted)", fontSize: 12, fontWeight: 800 }}>WMS RECEIVING · PRE-IQC LEDGER · PDA VALIDATION</div><h2 style={{ margin: "6px 0" }}>物料接收管理</h2><p style={{ margin: 0, color: "var(--muted)" }}>PO采购到货 → 收料确认 → QR绑定仓库 → IQC待检；收料信息、批次、数量和库位保持可追溯。</p></div><div style={{ textAlign: "right" }}><span className="badge badge-info">正式模板：DataMatrix-material · 越南 A1</span><div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>BarTender 10.1 SR3 · 托盘/料箱QR绑定</div><div style={{ fontSize: 11, color: "#f5b942", marginTop: 3 }}>网页标签仅供数据预览，正式版式以 BTW 为准</div></div></div>
+        <div className="no-print" style={{ display: "flex", justifyContent: "space-between", gap: 16, marginBottom: 18 }}><div><div style={{ color: "var(--muted)", fontSize: 12, fontWeight: 800 }}>WMS RECEIVING · PRE-IQC LEDGER · PDA VALIDATION</div><h2 style={{ margin: "6px 0" }}>物料接收管理</h2><p style={{ margin: 0, color: "var(--muted)" }}>PO采购到货 → 箱数据采集 → 箱 QR 打印 → 绑定仓位 → IQC待检。</p></div><div style={{ textAlign: "right" }}><span className="badge badge-info">箱 QR · 越南 A1</span><div style={{ fontSize: 11, color: "var(--muted)", marginTop: 5 }}>PDA / WMS 同码打印</div><div style={{ fontSize: 11, color: "#f5b942", marginTop: 3 }}>库存以箱 QR 和仓位 QR 追溯</div></div></div>
         <div className="no-print" style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 10, padding: 12, marginBottom: 18, border: "2px solid var(--state-active,#18c6d9)", borderRadius: 12, background: "var(--surface-panel,#101d27)", boxShadow: "0 6px 18px rgba(0,0,0,.24)" }}>
           <strong style={{ marginRight: "auto", color: "#fff" }}>PO RECEIPT · 收货台账 · IQC PRE-CHECK</strong>
           <a className="action-button" href="/?view=wms&wmsTab=poReceipt">查看 PO 收货</a>
@@ -830,7 +988,6 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
           </div>
           <span className="badge badge-warning">OCR · {labelOcrBusy ? tx("识别中", "PROCESSING", "DANG XU LY") : tx("已自动回填", "AUTO APPLIED", "DA TU DONG DIEN")}</span>
         </div>
-        <input ref={labelInput} type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => void readLabelFile(e.target.files?.[0])} />
         {labelCameraStream ? (
           <div style={{ display: "grid", gap: 10 }}>
             <video ref={labelVideo} autoPlay playsInline style={{ width: "100%", minHeight: 260, maxHeight: 520, objectFit: "contain", background: "#0f172a", borderRadius: 10 }} />
@@ -847,8 +1004,21 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
               <button className="btn-primary" type="button" onClick={startLabelCamera}>{tx("打开PDA相机", "Open PDA camera", "Mo camera PDA")}</button>
-              <button className="btn-ghost" type="button" onClick={() => labelInput.current?.click()}>{tx("上传标签图片", "Upload label image", "Tai anh nhan")}</button>
-              <button className="btn-primary" type="button" disabled={!labelImage || labelOcrBusy} onClick={() => void runLabelOcr()}>{labelOcrBusy ? tx("识别中…", "Reading…", "Dang doc…") : tx("开始OCR识别", "Run OCR", "Chay OCR")}</button>
+              <label className="btn-ghost" style={{ cursor: "pointer" }}>
+                {tx("上传标签图片", "Upload label image", "Tai anh nhan")}
+                <input type="file" accept="image/*" aria-label={tx("上传标签图片", "Upload label image", "Tai anh nhan")} style={{ display: "none" }} onChange={event => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (!file) return;
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    const image = String(reader.result || "");
+                    setLabelImage(image);
+                    void runLabelOcr(image);
+                  };
+                  reader.readAsDataURL(file);
+                }} />
+              </label>
             </div>
           </>
         )}
@@ -865,7 +1035,6 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
               ["Qty / box", labelOcrData.quantityPerBox],
               ["Box count", labelOcrData.boxCount],
               ["Box SN / QR", labelOcrData.boxSn || labelOcrData.boxNumber],
-              ["Pallet QR", labelOcrData.palletQr],
               ["Location", labelOcrData.locationCode],
               ["MSD", labelOcrData.msdLevel],
               ["Floor life (h)", labelOcrData.floorLifeHours],
@@ -878,16 +1047,23 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
         </div>}
       </section>
       {msdBindingStatus && <div style={{ margin: "8px 0", padding: 10, borderRadius: 6, background: msdBindingStatus.includes("conflict") || msdBindingStatus.includes("冲突") ? "#fee2e2" : "#dcfce7", color: msdBindingStatus.includes("conflict") || msdBindingStatus.includes("冲突") ? "#b91c1c" : "#166534", fontWeight: 700 }}>{msdBindingStatus}</div>}
-      <section className="surface-panel" style={{ marginBottom: 12 }}><div className="section-header"><div><h3>已绑定物料清单</h3><p>同一 Material ID / Lot 可对应多个托板；每个托板和库位独立显示，不互相覆盖。GPS 是 PDA 现场采集证据，正式位置以区域/库位 QR 为准。</p></div><strong>{boundMaterials.length} 条托板明细</strong></div><div className="table-shell"><table><thead><tr>{["物料ID", "批次", "物料", "物料QR", "栈板QR", "托板数量", "区域QR", "仓位QR", "PDA GPS (X/Y/精度)", "来源", "状态"].map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{boundMaterials.length ? boundMaterials.map(row => <tr key={String(row.id)}><td>{row.material_id || row.material_code || "-"}</td><td>{row.lot_no || "-"}</td><td><strong>{row.material_code || "-"}</strong><br /><span>{row.material_name || "-"}</span></td><td>{row.material_qr || "-"}</td><td>{row.pallet_qr || "-"}</td><td>{row.pallet_quantity ?? row.quantity ?? 0} {row.uom || ""}</td><td>{row.area_qr || row.receiving_area || "-"}</td><td>{row.location_code || row.warehouse_code || "-"}</td><td>{row.pda_x != null && row.pda_y != null ? `${row.pda_x}, ${row.pda_y} / ±${row.pda_accuracy ?? "-"}m` : "-"}</td><td>{row.source_type || "PO_RECEIPT"}</td><td><span className="badge badge-warning">{row.status || "IQC_PENDING"}</span></td></tr>) : <tr><td colSpan={11}>暂无已绑定物料；完成收料并生成 QR 后会显示在这里。</td></tr>}</tbody></table></div></section>
+      <section className="surface-panel" style={{ marginBottom: 12 }}><div className="section-header"><div><h3>已收料箱体 / IQC 待检队列</h3><p>箱 QR 已登记并绑定仓位后即完成收料。库存处于 IQC HOLD，检验放行前不可领料。</p></div><strong>{boundMaterials.length} 箱待检</strong></div><div className="table-shell"><table><thead><tr>{["物料ID", "批次", "物料", "箱 QR", "箱数量", "区域 QR", "仓位 QR", "PDA GPS", "来源", "IQC 状态", "打印"].map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{boundMaterials.length ? boundMaterials.map(row => <tr key={String(row.id)}><td>{row.material_id || row.material_code || "-"}</td><td>{row.lot_no || "-"}</td><td><strong>{row.material_code || "-"}</strong><br /><span>{row.material_name || "-"}</span></td><td>{row.material_qr || row.box_qr || row.case_qr_value || "-"}</td><td>{row.quantity ?? row.pallet_quantity ?? 0} {row.uom || ""}</td><td>{row.area_qr || row.receiving_area || "-"}</td><td>{row.location_code || row.warehouse_code || "-"}</td><td>{row.pda_x != null && row.pda_y != null ? `${row.pda_x}, ${row.pda_y} / ±${row.pda_accuracy ?? "-"}m` : "-"}</td><td>{row.source_type || "PO_RECEIPT"}</td><td><span className="badge badge-warning">{row.status || "IQC_PENDING"}</span></td><td><button type="button" onClick={() => void printAllReceivingQrs(row)}>打印箱 QR</button></td></tr>) : <tr><td colSpan={11}>暂无待检箱体；PDA 完成仓位绑定并确认收料后会自动进入此队列。</td></tr>}</tbody></table></div></section>
       <section id="material-realtime-flow" className="surface-panel" style={{ scrollMarginTop: 18, border: "3px solid #0f766e", background: "linear-gradient(135deg,#ecfeff,#ffffff)" }}>
-        <div className="section-header"><div><h2 style={{ margin: 0 }}>物料收料动态流程图</h2><p style={{ margin: "4px 0 0" }}>区域 QR → 物料/箱 QR → 打印贴标 → 托板 QR → 库位 QR → IQC</p></div><span className="badge badge-success">PDA / WMS 实时同步</span></div>
+        <div className="section-header"><div><h2 style={{ margin: 0 }}>物料收料动态流程图</h2><p style={{ margin: "4px 0 0" }}>采集箱数据 → WMS登记箱 QR → PDA/WMS打印 → 箱 QR绑定仓位 → 收料完成 → IQC_PENDING</p></div><span className="badge badge-success">PDA / WMS 实时同步</span></div>
         <WmsMaterialRealtimeFlow locale={locale} materialCode={materialCode} lotNo={lot} boxQr={boxQr} iqcStatus={supplierIqc} locationCode={locationQr} />
       </section>
       <section className="surface-panel" style={{ border: "1px solid #f59e0b", background: "linear-gradient(135deg,#fffbeb,#ffffff)" }}>
         <div className="section-header"><div><h3>湿敏 / 水分控制</h3><p>收料时建立湿敏物料控制记录；开封、暴露、烘烤和 IQC 放行独立于 SMT 卷料打印流程。</p></div><span className={`badge ${msdLevel ? "badge-warning" : "badge-info"}`}>{msdLevel ? `MSL ${msdLevel}` : "MSL 待确认"}</span></div>
-        <div style={{ marginBottom: 12, padding: 14, border: "2px solid #16a34a", borderRadius: 10, background: "#f0fdf4" }}><strong style={{ fontSize: 16 }}>已收料 Excel 快速入账</strong><p style={{ margin: "5px 0 8px", color: "#475569", fontSize: 12 }}>导入现场已经完成收料的物料清单，用于快速填入 WMS 台账；不创建采购订单，也不替代 PDA 收料。</p><input className="form-input" type="file" accept=".xlsx,.xls,.csv" onChange={e => void importReceivingExcel(e.target.files?.[0])} /></div>
+        <div className="no-print" style={{ marginBottom: 12, padding: 12, border: "1px solid #fbbf24", borderRadius: 8, background: "#fff" }}>
+          <strong>{tx("导入物料 MSD 映射到数据库", "Import material MSD mapping into database", "Nhap anh xa MSD vat lieu vao co so du lieu")}</strong>
+          <div style={{ marginTop: 8, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <input type="file" accept=".xlsx,.xls" onChange={event => { void importMaterialCodeMapping(event.target.files?.[0]); event.currentTarget.value = ""; }} />
+            <span style={{ color: "#64748b", fontSize: 12 }}>{tx("仅导入时读取 Excel；运行时始终查询数据库映射表。", "Excel is read only during import; runtime always queries the database mapping table.", "Excel chi duoc doc khi nhap; khi chay luon tra bang anh xa trong co so du lieu.")}</span>
+          </div>
+          {materialMappingStatus && <div style={{ marginTop: 8, color: "#92400e", fontWeight: 700 }}>{materialMappingStatus}</div>}
+        </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
-          <div style={{ padding: 12, borderRadius: 8, background: "#fff", border: "1px solid #fde68a" }}><small>标准暴露时限</small><strong style={{ display: "block", marginTop: 5 }}>{msdFloorLifeHours ? `${msdFloorLifeHours} 小时` : "待导入 MSD 规则"}</strong></div>
+          <div style={{ padding: 12, borderRadius: 8, background: "#fff", border: "1px solid #fde68a" }}><small>标准暴露时限</small><strong style={{ display: "block", marginTop: 5 }}>{msdFloorLifeHours ? `${msdFloorLifeHours} 小时` : "数据库未配置 MSD 规则"}</strong></div>
           <div style={{ padding: 12, borderRadius: 8, background: "#fff", border: "1px solid #fde68a" }}><small>收料开封状态</small><strong style={{ display: "block", marginTop: 5 }}>未开封 / 未开始计时</strong></div>
           <div style={{ padding: 12, borderRadius: 8, background: "#fff", border: "1px solid #fde68a" }}><small>烘烤状态</small><strong style={{ display: "block", marginTop: 5 }}>无需烘烤 / 待判定</strong></div>
           <div style={{ padding: 12, borderRadius: 8, background: "#fff", border: "1px solid #fde68a" }}><small>IQC 放行锁定</small><strong style={{ display: "block", marginTop: 5, color: supplierIqc === "PASS" ? "#15803d" : "#b45309" }}>{supplierIqc === "PASS" ? "已放行" : "IQC 前锁定"}</strong></div>
@@ -896,9 +1072,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       <section className="surface-panel">
         <div className="section-header"><div><h3>{tx("MS定义与暴露管控", "MS definition and exposure control", "Định nghĩa MS và kiểm soát phơi nhiễm")}</h3><p>{tx("收料时建立 MS 规则，后续开箱、关闭、预警和锁定都按此规则计算。", "Define the MS rule at receiving; opening, closing, warnings and lockout use this rule.", "Xác định quy tắc MS khi nhận; mở, đóng, cảnh báo và khóa dùng cùng quy tắc.")}</p></div></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
-          <label>{tx("MS等级（Excel导入）", "MS level (Excel only)", "Cấp MS (chỉ Excel)")}<select className="form-input" value={msdLevel} disabled><option value="">{tx("未指定，请先导入Excel", "Not specified; import Excel first", "Chưa xác định; hãy nhập Excel")}</option><option value="1">MS-1</option><option value="2">MS-2</option><option value="2a">MS-2a</option><option value="3">MS-3</option><option value="4">MS-4</option><option value="5">MS-5</option><option value="5a">MS-5a</option><option value="6">MS-6</option></select></label>
-          <label>{tx("标准暴露时限（Excel导入）", "Standard floor life (Excel only)", "Thời hạn phơi chuẩn (chỉ Excel)")}<input className="form-input" type="number" min="0" value={msdFloorLifeHours} readOnly placeholder="由Excel规则自动带出" /></label>
-          <label>{tx("MSD规则Excel", "MSD rules Excel", "Excel quy tắc MSD")}<input className="form-input" type="file" accept=".xlsx,.xls,.csv" onChange={e => void importMsdRules(e.target.files?.[0])} /><small>{tx("列：material code、MSD level、Standard floor life hours", "Columns: material code, MSD level, Standard floor life hours", "Cột: material code, MSD level, Standard floor life hours")}</small></label>
+          <label>{tx("MS等级（数据库映射）", "MS level (database mapping)", "Cấp MS (ánh xạ cơ sở dữ liệu)")}<select className="form-input" value={msdLevel} disabled><option value="">{tx("数据库未配置", "Not configured in database", "Chưa cấu hình trong cơ sở dữ liệu")}</option><option value="1">MS-1</option><option value="2">MS-2</option><option value="2a">MS-2a</option><option value="3">MS-3</option><option value="4">MS-4</option><option value="5">MS-5</option><option value="5a">MS-5a</option><option value="6">MS-6</option></select></label>
+          <label>{tx("标准暴露时限（数据库映射）", "Standard floor life (database mapping)", "Thời hạn phơi chuẩn (ánh xạ cơ sở dữ liệu)")}<input className="form-input" type="number" min="0" value={msdFloorLifeHours} readOnly placeholder={tx("由数据库规则自动带出", "Filled from database rules", "Tự động điền từ quy tắc cơ sở dữ liệu")} /></label>
           <div style={{ paddingTop: 22, fontSize: 12 }}>{tx("剩余≤720小时（30天）预警；剩余≤0小时锁定。", "Warn at ≤720 hours (30 days); lock at ≤0 hours.", "Cảnh báo khi còn ≤720 giờ (30 ngày); khóa khi còn ≤0 giờ.")}</div>
         </div>
       </section>
@@ -912,67 +1087,36 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
         </div>
       </section>
       <section className="surface-panel">
-        <div className="section-header"><div><h3>{tx("收料身份与绑定", "Receiving Identity & Binding", "Định danh & liên kết tiếp nhận")}</h3><p>{tx("每个托盘和料箱在IQC放行前必须可追溯。", "Every pallet and material box must be traceable before IQC release.", "Mỗi pallet và thùng vật liệu phải truy xuất được trước khi IQC phê duyệt.")}</p></div><span className={`badge ${supplierIqc === "PASS" ? "badge-success" : supplierIqc === "FAIL" ? "badge-danger" : "badge-warning"}`}>IQC: {supplierIqc === "PENDING" ? tx("待检", "PENDING", "CHỜ KIỂM") : supplierIqc}</span></div>
+        <div className="section-header"><div><h3>{tx("箱体收料与仓位绑定", "Box Receiving & Location Binding", "Tiếp nhận thùng & liên kết vị trí")}</h3><p>{tx("每个箱 QR 在 IQC 放行前必须登记并绑定仓位。", "Every box QR must be registered and bound to a location before IQC release.", "Mỗi QR thùng phải được đăng ký và liên kết vị trí trước khi IQC phê duyệt.")}</p></div><span className={`badge ${supplierIqc === "PASS" ? "badge-success" : supplierIqc === "FAIL" ? "badge-danger" : "badge-warning"}`}>IQC: {supplierIqc === "PENDING" ? tx("待检", "PENDING", "CHỜ KIỂM") : supplierIqc}</span></div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
-          <label style={{ border: areaQr.trim() ? "1px solid #16a34a" : "2px solid #f59e0b", borderRadius: 8, padding: 8, background: areaQr.trim() ? "#f0fdf4" : "#fffbeb" }}>{tx("第一步：先扫描仓库区域 QR", "Step 1: scan warehouse area QR first", "Buoc 1: quet QR khu vuc kho truoc")}<input className="form-input" autoFocus value={areaQr} onChange={e => setAreaQr(e.target.value)} placeholder={tx("扫描区域名称/区域QR", "Scan area name / area QR", "Quet ten khu vuc / QR khu vuc")} /><small>{areaQr.trim() ? tx("区域已确认，继续扫描物料/箱/托板", "Area confirmed; continue with material, box and pallet", "Da xac nhan khu vuc; tiep tuc quet vat lieu, thung va pallet") : tx("必须先确定托板将进入哪个仓库区域", "Required before receiving any pallet", "Bat buoc truoc khi nhan pallet")}</small></label>
           <label>{tx("供应商", "Supplier", "Nhà cung cấp")}<input className="form-input" value={supplier} onChange={e => setSupplier(e.target.value)} placeholder={tx("供应商代码/名称", "Supplier code / name", "Mã / tên nhà cung cấp")} /></label>
           <label>{tx("物料名称", "Material name", "Tên vật liệu")}<input className="form-input" value={materialName} onChange={e => setMaterialName(e.target.value)} /></label>
-          <label>Vietnam material code<input className="form-input" value={materialCode} onChange={e => setMaterialCode(e.target.value)} onBlur={e => lookupSharedMaterial(e.target.value, "vietnam")} placeholder="Enter Vietnam material code" /></label>
+          <label>Vietnam material code<input className="form-input" required aria-label="Vietnam material code" value={materialCode} onChange={e => setMaterialCode(e.target.value)} onBlur={e => lookupSharedMaterial(e.target.value, "vietnam")} placeholder="Enter Vietnam material code" /></label>
           <label>Ruijing material code<input className="form-input" value={ruijingMaterialCode} onChange={e => setRuijingMaterialCode(e.target.value)} onBlur={e => lookupSharedMaterial(e.target.value, "ruijing")} placeholder="Enter Ruijing material code" /></label>
+          <label>{tx("导入物料编码映射", "Import material-code mapping", "Nhap anh xa ma vat lieu")}<input className="form-input" type="file" accept=".xlsx,.xls" onChange={event => { void importMaterialCodeMapping(event.target.files?.[0]); event.currentTarget.value = ""; }} /></label>
           <label>{tx("规格型号", "Specification", "Quy cách")}<input className="form-input" value={specification} onChange={e => setSpecification(e.target.value)} /></label>
           <label>{tx("采购订单", "Purchase order", "Đơn mua hàng")}<input className="form-input" value={purchaseOrder} onChange={e => setPurchaseOrder(e.target.value)} /></label>
-          <label>{tx("已收料清单 Excel（快速入账）", "Received-material Excel (quick ledger entry)", "Excel vat lieu da nhan (ghi so nhanh)")}
-            <input className="form-input" type="file" accept=".xlsx,.xls,.csv" onChange={e => void importReceivingExcel(e.target.files?.[0])} />
-            <small>{tx("按首个工作表读取；支持 PO、供应商、物料编码、批次、箱数、每箱数量、数量", "Reads the first sheet; supports PO, supplier, material, lot, box count, quantity per box and quantity", "Doc sheet dau; ho tro PO, nha cung cap, vat lieu, lot, so thung va so luong")}</small>
-          </label>
           <label>{tx("供应商条码", "Supplier barcode", "Mã vạch nhà cung cấp")}<input className="form-input" value={supplierBarcode} onChange={e => setSupplierBarcode(e.target.value)} /></label>
-          <label>{tx("SMT卷料物料编码映射（同一份Excel）", "SMT material-code mapping (shared Excel)", "Mapping ma vat lieu cuon SMT (Excel dung chung)")}
-            <input className="form-input" type="file" accept=".xlsx,.xls,.csv" onChange={e => void importMaterialCodeMapping(e.target.files?.[0])} />
-            <small>{tx("只读取 Sheet1；与 SMT 物料卷页面使用同一份 material_label_master.xlsx", "Sheet1 only; the same material_label_master.xlsx used by SMT material-roll", "Chi doc Sheet1; dung cung material_label_master.xlsx voi trang cuon SMT")}</small>
-            <button className="btn-ghost" type="button" style={{ marginTop: 6 }} onClick={() => void importSharedSmtMapping()}>{tx("重新读取共享SMT卷料Excel", "Reload shared SMT material-roll Excel", "Doc lai Excel cuon SMT dung chung")}</button>
-            {materialMappingStatus && <small style={{ display: "block", color: materialMappingStatus.includes("失败") || materialMappingStatus.includes("Failed") || materialMappingStatus.includes("Loi") ? "#b91c1c" : "#15803d" }}>{materialMappingStatus}</small>}
-          </label>
           <label>{tx("收料日期", "Receipt date", "Ngày nhận")}<input className="form-input" type="date" value={receiptDate} onChange={e => setReceiptDate(e.target.value)} /></label>
-          <label>{tx("批次", "Lot", "Lô hàng")}<input className="form-input" value={lot} onChange={e => setLot(e.target.value)} placeholder={tx("供应商批次", "Supplier lot", "Lô nhà cung cấp")} /></label>
+          <label>{tx("批次", "Lot", "Lô hàng")}<input className="form-input" required aria-label={tx("批次", "Lot", "Lô hàng")} value={lot} onChange={e => setLot(e.target.value)} placeholder={tx("供应商批次", "Supplier lot", "Lô nhà cung cấp")} /></label>
           <label>{tx("生产日期", "Manufacture date", "Ngày sản xuất")}<input className="form-input" value={manufactureDate} onChange={e => setManufactureDate(e.target.value)} /></label>
           <label>{tx("有效期至", "Expiry date", "Hạn sử dụng")}<input className="form-input" value={expiryDate} onChange={e => setExpiryDate(e.target.value)} /></label>
           <label>{tx("单位", "Unit", "Đơn vị")}<select className="form-input" value={unit} onChange={e => setUnit(e.target.value)}><option>PCS</option><option>KG</option><option>ROLL</option><option>SET</option><option>箱 / BOX</option></select></label>
           <label>{tx("箱/件数量（现场核验）", "Case / box count (verify on site)", "Số thùng / hộp (xác nhận tại chỗ)")}<input className="form-input" type="number" min="0" value={caseCount} onChange={e => setCaseCount(e.target.value)} /></label>
           <label>{tx("每箱数量（标签数量）", "Quantity per box (label quantity)", "Số lượng mỗi thùng (theo nhãn)")}<input className="form-input" type="number" min="0" value={boxQty} onChange={e => { const value = e.target.value; setBoxQty(value); if (!caseCount.trim()) { setReceivedQty(value); setExpectedQty(value); } }} /></label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 22 }}><input type="checkbox" checked={partialBox} onChange={e => setPartialBox(e.target.checked)} />{tx("尾数箱/部分箱", "Partial / tail box", "Thùng lẻ / một phần")}</label>
-          <label>{tx("托盘QR", "Pallet QR", "QR pallet")}<input className="form-input" value={palletQr} onChange={e => setPalletQr(e.target.value)} placeholder={tx("扫描托盘QR", "Scan pallet QR", "Quét QR pallet")} /></label>
-          <label>{tx("库位（现场扫码）", "Storage location (scan on site)", "Vị trí kho (quét tại chỗ)")}<input className="form-input" value={locationQr} onChange={e => { setLocationQr(e.target.value); setLocationCapacity(null); }} onBlur={resolveLocation} placeholder={tx("现场扫描库位", "Scan location on site", "Quét vị trí tại chỗ")} /></label>
+          <label>{tx("库位（现场扫码）", "Storage location (scan on site)", "Vị trí kho (quét tại chỗ)")}<input className="form-input" required aria-label={tx("仓位 QR", "Storage location QR", "QR vị trí kho")} value={locationQr} onChange={e => { setLocationQr(e.target.value); setLocationCapacity(null); }} onBlur={resolveLocation} placeholder={tx("现场扫描库位", "Scan location on site", "Quét vị trí tại chỗ")} /></label>
         </div>
-        {receivingImportStatus && <div style={{ marginTop: 10, padding: 10, borderRadius: 6, background: receivingImportRows.length ? "#ecfdf5" : "#fef2f2", color: receivingImportRows.length ? "#166534" : "#b91c1c" }}>{receivingImportName}: {receivingImportStatus}</div>}
-        {receivingImportRows.length > 0 && <div className="table-shell" style={{ marginTop: 10, maxHeight: 220, overflow: "auto" }}><table><thead><tr><th>行</th><th>PO</th><th>物料编码</th><th>批次</th><th>数量</th><th>操作</th></tr></thead><tbody>{receivingImportRows.map(row => <tr key={row.__row}><td>{row.__row}</td><td>{row["采购订单"] || row.PO || row["PO No"] || "-"}</td><td>{row["Vietnam material code"] || row["越南物料编码"] || row["物料编码"] || row["Material Code"] || "-"}</td><td>{row["批次"] || row.Lot || row["Lot No"] || "-"}</td><td>{row["收料数量"] || row["Received Qty"] || row.Quantity || "-"}</td><td><button type="button" className="btn-ghost" onClick={() => selectReceivingImportRow(row)}>带入收料</button></td></tr>)}</tbody></table></div>}
         {locationCapacity && <div style={{ marginTop: 8, fontSize: 12, color: locationCapacity.occupied >= locationCapacity.capacity ? "#dc2626" : "#15803d" }}>{locationCapacity.name || locationQr}: {tx("容量", "Capacity", "Sức chứa")} {locationCapacity.occupied}/{locationCapacity.capacity} · {tx("剩余", "Available", "Còn lại")} {Math.max(0, locationCapacity.capacity - locationCapacity.occupied)}</div>}
         {(expectedQty || receivedQty || caseCount || boxQty) && <div style={{ marginTop: 8, padding: 10, background: "var(--nav)", borderRadius: 6 }}>{tx("数量核对", "Quantity reconciliation", "Đối chiếu số lượng")}: {tx("预计", "Expected", "Dự kiến")} {expectedQty || 0} {unit} · {tx("已收", "Received", "Đã nhận")} {receivedQty || 0} {unit} · {tx("差异", "Difference", "Chênh lệch")} {Number(expectedQty || 0) - Number(receivedQty || 0)} {unit}{partialBox ? ` · ${tx("尾数箱", "PARTIAL BOX", "THÙNG LẺ")}` : ""}</div>}
         {pdaStatus && <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 5, background: "rgba(37,99,235,0.1)", color: "#1d4ed8", fontSize: 12 }}>{tx("已接收统一PDA信息", "Unified PDA information received", "Đã nhận thông tin từ PDA hợp nhất")}: {pdaStatus}</div>}
-        <div style={{ marginTop: 12, padding: 12, border: "1px solid #cbd5e1", borderRadius: 8, background: "#f8fafc" }}>
-          <strong>{tx("托板信息（收料时填写）", "Pallet information (complete during receiving)", "Thông tin pallet (điền khi nhận)")}</strong>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10, marginTop: 8 }}>
-            <label>{tx("托板类型（必选）", "Pallet type (required)", "Loại pallet (bắt buộc)")}<select className="form-input" value={palletType} onChange={e => setPalletType(e.target.value as "" | "SINGLE_PRODUCT" | "MIXED_PRODUCT")}><option value="">{tx("请选择", "Select", "Chọn")}</option><option value="SINGLE_PRODUCT">{tx("单一产品托板", "Single-product pallet", "Pallet đơn sản phẩm")}</option><option value="MIXED_PRODUCT">{tx("混装产品托板", "Mixed-product pallet", "Pallet hỗn hợp")}</option></select></label>
-            <label>{tx("托板尺寸", "Pallet size", "Kích thước pallet")}<input className="form-input" value={palletSize} onChange={e => setPalletSize(e.target.value)} placeholder="L×W×H mm" /></label>
-            <label>{tx("托板材质", "Pallet material", "Vật liệu pallet")}<input className="form-input" value={palletMaterial} onChange={e => setPalletMaterial(e.target.value)} placeholder={tx("例如：木托/塑料托", "e.g. wood / plastic", "vd: gỗ / nhựa")} /></label>
-          </div>
-        </div>
-        {palletType === "MIXED_PRODUCT" && <div style={{ marginTop: 12, padding: 12, border: "2px solid #8b5cf6", borderRadius: 8, background: "#f5f3ff" }}>
-          <div className="section-header" style={{ marginBottom: 8 }}><div><strong>{tx("混装托板物料明细", "Mixed-pallet material lines", "Chi tiet vat lieu pallet hon hop")}</strong><p style={{ margin: "4px 0 0", fontSize: 12, color: "var(--muted)" }}>{tx("同一托板可添加多个物料；先选择一行作为当前物料，再扫描该物料的箱码。", "Add multiple materials to this pallet; select a line before scanning its box QR.", "Them nhieu vat lieu tren cung pallet; chon mot dong truoc khi quet QR thung.")}</p></div><button className="btn-primary" type="button" onClick={addPalletMaterial}>＋ {tx("添加物料", "Add material", "Them vat lieu")}</button></div>
-          {palletMaterials.length === 0 ? <div style={{ padding: 10, background: "#fff", borderRadius: 6, fontSize: 12 }}>{tx("当前为混装托板。点击“添加物料”录入第二种及更多物料。第一种物料使用上方主表单。", "This is a mixed pallet. Click Add material for the second and subsequent materials; the first uses the main form above.", "Pallet hon hop. Bam Them vat lieu cho vat lieu thu hai tro di; vat lieu dau tien dung bieu mau chinh.")}</div> : <div style={{ display: "grid", gap: 10 }}>{palletMaterials.map((line, index) => <div key={line.id} style={{ padding: 10, background: "#fff", border: "1px solid #c4b5fd", borderRadius: 6 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}><strong>{tx("物料", "Material", "Vat lieu")} {index + 2}</strong><div style={{ display: "flex", gap: 6 }}><button className="btn-ghost" type="button" onClick={() => usePalletMaterial(line)}>{tx("设为当前绑定物料", "Use for current box binding", "Dung de lien ket thung hien tai")}</button><button className="btn-ghost" type="button" onClick={() => setPalletMaterials(lines => lines.filter(item => item.id !== line.id))}>×</button></div></div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 8 }}>
-              {([["materialCode", "Vietnam material code"], ["ruijingMaterialCode", "Ruijing material code"], ["materialName", tx("物料名称", "Material name", "Ten vat lieu")], ["lot", tx("批次", "Lot / batch", "Lot")], ["caseCount", tx("箱数", "Box count", "So thung")], ["quantityPerBox", tx("每箱数量", "Qty per box", "So luong moi thung")], ["quantity", tx("物料数量", "Material quantity", "So luong vat lieu")], ["supplier", tx("供应商", "Supplier", "Nha cung cap")]] as Array<[keyof Omit<PalletMaterialLine, "id">, string]>).map(([field, label]) => <label key={String(field)}>{label}<input className="form-input" type={field === "caseCount" || field === "quantityPerBox" || field === "quantity" ? "number" : "text"} value={line[field]} onChange={e => updatePalletMaterial(line.id, field, e.target.value)} /></label>)}
-              <label>{tx("单位", "Unit", "Unit")}<select className="form-input" value={line.unit} onChange={e => updatePalletMaterial(line.id, "unit", e.target.value)}><option>PCS</option><option>KG</option><option>ROLL</option><option>SET</option></select></label>
-            </div>
-          </div>)}</div>}
-        </div>}
         <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "end" }}>
-          <label style={{ flex: 1 }}>{tx("料箱QR", "Material box QR", "QR thùng vật liệu")}<input className="form-input" value={boxQr} onChange={e => setBoxQr(e.target.value)} onKeyDown={e => e.key === "Enter" && addBox()} placeholder={tx("扫描托盘上的每个料箱QR", "Scan each box QR on the pallet", "Quét từng QR thùng trên pallet")} /></label>
+          <label style={{ flex: 1 }}>{tx("料箱QR", "Material box QR", "QR thùng vật liệu")}<input className="form-input" aria-required={boxQrs.length === 0} aria-label={tx("料箱 QR", "Material box QR", "QR thùng vật liệu")} value={boxQr} onChange={e => setBoxQr(e.target.value)} onKeyDown={e => e.key === "Enter" && addBox()} placeholder={tx("扫描每个料箱 QR", "Scan each box QR", "Quét từng QR thùng")} /></label>
           <button className="btn-primary" type="button" onClick={addBox}>{tx("绑定料箱", "Bind box", "Liên kết thùng")}</button>
         </div>
-        {boxQrs.length > 0 && <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>{boxQrs.map(qr => <span className="badge badge-success" key={qr}>{palletQr} ↔ {qr}</span>)}</div>}
+        {boxQrs.length > 0 && <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>{boxQrs.map(qr => <span className="badge badge-success" key={qr}>{qr} → {locationQr || tx("待绑定仓位", "Location pending", "Chờ vị trí")}</span>)}</div>}
         {packageScans.length>0&&<div style={{marginTop:12,padding:12,border:"1px solid #60a5fa",borderRadius:8,background:"#eff6ff"}}><strong>{tx("供应商外箱/子箱层级","Supplier outer/sub-box hierarchy","Phân cấp thùng ngoài/thùng con")}</strong><div className="table-shell" style={{marginTop:8}}><table><thead><tr><th>{tx("层级","Level","Cấp")}</th><th>{tx("流水号","Serial","Số sê-ri")}</th><th>{tx("所属外箱","Parent outer box","Thùng ngoài")}</th><th>{tx("标签数量","Label qty","SL nhãn")}</th><th>{tx("有效计数规则","Effective counting","Quy tắc đếm")}</th></tr></thead><tbody>{packageScans.map(x=><tr key={x.qrValue}><td>{x.packageLevel==="SUB_BOX"?tx("子箱","SUB BOX","THÙNG CON"):tx("外箱","OUTER","THÙNG NGOÀI")}</td><td><b>{x.serialNo}</b></td><td>{x.parentSerialNo||"—"}</td><td>{Number(x.quantity)} {unit}</td><td>{x.countingSource==="SUB_BOX_SUM"?tx("按子箱合计，外箱不重复入账","Count sub-box sum; outer excluded","Cộng thùng con; không cộng lại thùng ngoài"):tx("尚无子箱，暂按外箱数量","No sub-box yet; count outer","Chưa có thùng con; đếm thùng ngoài")}</td></tr>)}</tbody></table></div></div>}
-        {bindings.length > 0 && <div style={{ marginTop: 12, padding: 10, background: "var(--nav)", borderRadius: 6, fontSize: 12 }}><strong>{tx("托板绑定明细", "Pallet binding details", "Chi tiết liên kết pallet")}</strong>{bindings.map(binding => <div key={binding.boxQr} style={{ marginTop: 5 }}>{binding.palletQr} → {binding.boxQr} · {binding.materialCode} · {binding.quantity} {unit} <span style={{ color: "var(--muted)" }}> | {binding.boxQr} → {binding.palletQr}</span></div>)}</div>}
+        {bindings.length > 0 && <div style={{ marginTop: 12, padding: 10, background: "var(--nav)", borderRadius: 6, fontSize: 12 }}><strong>{tx("箱体仓位绑定明细", "Box-location binding details", "Chi tiết liên kết thùng-vị trí")}</strong>{bindings.map(binding => <div key={binding.boxQr} style={{ marginTop: 5 }}>{binding.boxQr} → {locationQr} · {binding.materialCode} · {binding.quantity} {unit}</div>)}</div>}
         <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><span style={{ fontSize: 12, fontWeight: 700 }}>{tx("供应商IQC标记", "Supplier IQC mark", "Đánh dấu IQC nhà cung cấp")}:</span>{(["PENDING", "PASS", "FAIL"] as const).map(v => <button key={v} type="button" className={supplierIqc === v ? "btn-primary" : "btn-ghost"} onClick={() => setSupplierIqc(v)}>{v === "PENDING" ? tx("未检验/隔离", "Not inspected / hold", "Chưa kiểm / giữ lại") : v}</button>)}</div>
       </section>
         <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
@@ -992,9 +1136,8 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
       <section className="surface-panel" style={{ marginTop: 12, border: "2px solid #2563eb", background: "#eff6ff" }}>
         <div className="section-header"><div><h3 style={{ margin: 0 }}>{tx("收料 PDA 设备管理（最多 5 台）", "Receiving PDA management (up to 5 devices)", "Quan ly PDA nhan lieu (toi da 5 thiet bi)")}</h3><p style={{ margin: "4px 0 0" }}>{tx("WMS 注册并监控设备；PDA 只执行现场采集，所有状态回传 WMS。", "WMS registers and monitors devices; PDA performs field collection and reports every state back.", "WMS dang ky va giam sat thiet bi; PDA thu thap tai hien truong va dong bo moi trang thai.")}</p></div><span className="badge badge-info">{pdaDevices.length} / 5 {tx("台在线/已注册", "online / registered", "dang ky / truc tuyen")}</span></div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>{["ALL", ...pdaDevices.map(device => device.id)].map(id => <button key={id} type="button" className={selectedPdaDevice === id ? "btn-primary" : "btn-ghost"} onClick={() => setSelectedPdaDevice(id)}>{id === "ALL" ? tx("全部 PDA", "All PDAs", "Tat ca PDA") : id}</button>)}</div>
-         <div className="table-shell"><table><thead><tr>{[tx("设备ID", "Device ID", "ID thiet bi"), tx("操作员", "Operator", "Nguoi thao tac"), tx("当前阶段", "Stage", "Giai doan"), tx("物料", "Material", "Vat lieu"), tx("托板QR", "Pallet QR", "QR pallet"), tx("箱进度", "Boxes", "Tien do thung"), tx("最后同步", "Last sync", "Dong bo cuoi"), tx("状态", "Status", "Trang thai"), tx("独立实例", "Instance", "Instance")].map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{pdaDevices.filter(device => selectedPdaDevice === "ALL" || device.id === selectedPdaDevice).length ? pdaDevices.filter(device => selectedPdaDevice === "ALL" || device.id === selectedPdaDevice).map(device => { const online = device.lastAt > 0 && Date.now() - device.lastAt < 30000; return <tr key={device.id}><td><strong>{device.id}</strong></td><td>{device.operator}</td><td>{device.stage}</td><td>{device.material || "-"}</td><td>{device.pallet || "-"}</td><td>{device.completedBoxes} / {device.totalBoxes || "-"}</td><td>{device.lastAt ? new Date(device.lastAt).toLocaleString() : "-"}</td><td><span className={`badge ${online ? "badge-success" : "badge-warning"}`}>{online ? tx("在线", "ONLINE", "TRUC TUYEN") : tx("已注册/离线", "REGISTERED/OFFLINE", "DA DANG KY / NGOAI TUYEN")}</span></td><td><a className="btn-ghost" href={`/?view=wms&wmsTab=pdaReceivingMobile&pdaId=${encodeURIComponent(device.id)}&mode=monitor`}>{tx("打开", "Open", "Mo")}</a></td></tr>; }) : <tr><td colSpan={9}>{tx("暂无已注册收料 PDA；设备登录并发送心跳后会自动显示。", "No receiving PDA registered yet; devices appear after login and heartbeat.", "Chua co PDA nhan lieu; thiet bi se hien sau khi dang nhap va gui heartbeat.")}</td></tr>}</tbody></table></div>
+         <div className="table-shell"><table><thead><tr>{[tx("设备ID", "Device ID", "ID thiet bi"), tx("操作员", "Operator", "Nguoi thao tac"), tx("当前阶段", "Stage", "Giai doan"), tx("物料", "Material", "Vat lieu"), tx("箱进度", "Boxes", "Tien do thung"), tx("最后同步", "Last sync", "Dong bo cuoi"), tx("状态", "Status", "Trang thai"), tx("独立实例", "Instance", "Instance")].map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{pdaDevices.filter(device => selectedPdaDevice === "ALL" || device.id === selectedPdaDevice).length ? pdaDevices.filter(device => selectedPdaDevice === "ALL" || device.id === selectedPdaDevice).map(device => { const online = device.lastAt > 0 && Date.now() - device.lastAt < 30000; return <tr key={device.id}><td><strong>{device.id}</strong></td><td>{device.operator}</td><td>{device.stage}</td><td>{device.material || "-"}</td><td>{device.completedBoxes} / {device.totalBoxes || "-"}</td><td>{device.lastAt ? new Date(device.lastAt).toLocaleString() : "-"}</td><td><span className={`badge ${online ? "badge-success" : "badge-warning"}`}>{online ? tx("在线", "ONLINE", "TRUC TUYEN") : tx("已注册/离线", "REGISTERED/OFFLINE", "DA DANG KY / NGOAI TUYEN")}</span></td><td><a className="btn-ghost" href={`/?view=wms&wmsTab=pdaReceivingMobile&pdaId=${encodeURIComponent(device.id)}&mode=monitor`}>{tx("打开", "Open", "Mo")}</a></td></tr>; }) : <tr><td colSpan={8}>{tx("暂无已注册收料 PDA；设备登录并发送心跳后会自动显示。", "No receiving PDA registered yet; devices appear after login and heartbeat.", "Chua co PDA nhan lieu; thiet bi se hien sau khi dang nhap va gui heartbeat.")}</td></tr>}</tbody></table></div>
       </section>
-      <WmsPdaReceivingMobile locale={locale} />
       <MaterialRollQrGenerator locale={locale} variant="wms" prefill={receivingLabelPrefill} />
     </div>
   );

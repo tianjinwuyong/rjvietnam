@@ -4,14 +4,17 @@
  */
 import { useState, useEffect, useCallback } from "react";
 import { Trash2, CheckCircle, XCircle, Play, CheckSquare } from "lucide-react";
+import QRCode from "qrcode";
 import { docApi, type DocListItem } from "../api/wms";
+import type { Locale } from "../../../../packages/shared-types/src/factory";
+import { t } from "../i18n";
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: "#95a5a6", SUBMITTED: "#3498db", APPROVED: "#27ae60",
   EXECUTING: "#f39c12", COMPLETED: "#2ecc71", REJECTED: "#e74c3c", CANCELLED: "#7f8c8d",
 };
 
-export function WmsRequisitions() {
+export function WmsRequisitions({locale="zh-CN"}:{locale?:Locale}) {
   const [items, setItems] = useState<DocListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,12 +39,23 @@ export function WmsRequisitions() {
         case "submit":   await docApi.requisition.submit(id); break;
         case "approve":  await docApi.requisition.approve(id); break;
         case "reject":   await docApi.requisition.reject(id); break;
-        case "execute":  await docApi.requisition.execute(id); break;
+        case "execute":  {
+          const result=await docApi.requisition.execute(id) as {fetchPackage?:{package_no:string;qr_value:string;work_order_code?:string;line_code?:string;total_qty:number}};
+          if(result.fetchPackage) await printFetchPackage(result.fetchPackage);
+          break;
+        }
         case "complete": await docApi.requisition.complete(id); break;
         case "cancel":   await docApi.requisition.cancel(id); break;
       }
       setRefreshKey(k => k + 1);
     } catch (e) { alert(`${verb} failed: ${e instanceof Error ? e.message : e}`); }
+  };
+
+  const printFetchPackage=async(pkg:{package_no:string;qr_value:string;work_order_code?:string;line_code?:string;total_qty:number})=>{
+    const image=await QRCode.toDataURL(pkg.qr_value,{width:360,margin:2,errorCorrectionLevel:"M"});
+    const popup=window.open("","_blank","width=520,height=700"); if(!popup)return;
+    popup.document.write(`<html><head><title>${pkg.package_no}</title><style>@page{size:75mm 50mm;margin:0}body{font-family:Arial;margin:0}.label{box-sizing:border-box;width:75mm;height:50mm;padding:3mm;display:grid;grid-template-columns:31mm 1fr;gap:3mm;align-items:center}img{width:30mm;height:30mm}strong,small,code{display:block;word-break:break-all}strong{font-size:15px}small{font-size:10px;margin-top:3px}code{font-size:8px;margin-top:4px}</style></head><body><div class="label"><img src="${image}"/><div><strong>${pkg.package_no}</strong><small>${t("wms.fetchPackage.label",locale)}</small><small>WO: ${pkg.work_order_code||"—"}</small><small>${t("wms.fetchPackage.line",locale)}: ${pkg.line_code||"—"}</small><small>${t("common.qty",locale)}: ${pkg.total_qty}</small><code>${pkg.qr_value}</code></div></div><script>window.onload=()=>window.print()</script></body></html>`);
+    popup.document.close();
   };
 
   const doDelete = async (id: number) => {

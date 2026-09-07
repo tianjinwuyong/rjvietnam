@@ -34,6 +34,8 @@ type LabelItem = {
   subIndex?: number;
   palletQr?: string;
 };
+type PortalPoLine = { material_code?: string; description?: string; material_name?: string; specification?: string; qty_ordered?: number; unit?: string; uom?: string };
+type PortalOrder = { po_no: string; status?: string; payload?: { lines?: PortalPoLine[] } };
 const empty: Form = {
   customer: "深圳市瑞晶实业有限公司",
   supplierCode: "",
@@ -88,6 +90,7 @@ export function WmsSupplierLabel({
   const [qr, setQr] = useState("");
   const [message, setMessage] = useState("");
   const [printQrs, setPrintQrs] = useState<Record<string, string>>({});
+  const [orders,setOrders]=useState<PortalOrder[]>([]);
   const printPage =
     new URLSearchParams(window.location.search).get("labelMode") === "print";
   useEffect(() => {
@@ -96,8 +99,20 @@ export function WmsSupplierLabel({
         ...current,
         supplierCode: supplierIdentity.code,
         supplierName: supplierIdentity.name,
+        ...(current.supplierCode && current.supplierCode !== supplierIdentity.code ? { po:"",materialCode:"",materialName:"",spec:"",total:"" } : {}),
       }));
   }, [supplierIdentity]);
+  useEffect(() => {
+    if (!supplierIdentity) return;
+    void fetch("/supplier-api/orders", { credentials: "include" })
+      .then((response) => response.ok ? response.json() : [])
+      .then((rows: PortalOrder[]) => setOrders(rows.filter((row) => !["CANCELLED", "VOIDED", "CLOSED", "RECEIVED", "REJECTED"].includes(String(row.status || "").toUpperCase()))))
+      .catch(() => setOrders([]));
+  }, [supplierIdentity]);
+  const selectedOrder=orders.find(order=>order.po_no===form.po);
+  const poLines=selectedOrder?.payload?.lines||[];
+  const choosePo=(poNo:string)=>{const order=orders.find(item=>item.po_no===poNo),line=order?.payload?.lines?.[0];setForm(current=>({...current,po:poNo,materialCode:line?.material_code||"",materialName:line?.description||line?.material_name||"",spec:line?.specification||"",total:line?.qty_ordered==null?"":String(line.qty_ordered),unit:line?.unit||line?.uom||current.unit}));};
+  const chooseMaterial=(code:string)=>{const line=poLines.find(item=>item.material_code===code);setForm(current=>({...current,materialCode:code,materialName:line?.description||line?.material_name||"",spec:line?.specification||"",total:line?.qty_ordered==null?current.total:String(line.qty_ordered),unit:line?.unit||line?.uom||current.unit}));};
   const boxes = useMemo<LabelItem[]>(() => {
     const total = +form.total,
       per = +form.perBox,
@@ -162,6 +177,7 @@ export function WmsSupplierLabel({
     subBoxes = boxes.filter((x) => x.level === "SUB_BOX");
   const pallets = [...new Set(outerBoxes.map((x) => x.palletQr).filter(Boolean))] as string[];
   const missing = [
+    [form.po, "瑞晶订单号"],
     [form.supplierCode, "供应商代码"],
     [form.materialCode, "物料代码"],
     [form.date, "生产日期"],
@@ -208,9 +224,10 @@ export function WmsSupplierLabel({
   }, [printPage, boxes, missing.length]);
   const set = (key: keyof Form, value: string) =>
     setForm((f) => ({ ...f, [key]: value }));
+  const getManifestKey = () => [form.supplierCode, form.po, form.materialCode, form.lot, form.date, form.total, form.perBox, form.packagingMode, form.subBoxQty, form.palletBinding, form.outerBoxesPerPallet, form.palletPrefix, form.prefix, form.start].join("|");
   const registerManifest = async () => {
     if (!supplierIdentity) return true;
-    const manifestKey = [form.supplierCode, form.po, form.materialCode, form.lot, form.date, form.total, form.perBox, form.packagingMode, form.subBoxQty, form.palletBinding, form.outerBoxesPerPallet, form.palletPrefix, form.prefix, form.start].join("|");
+    const manifestKey = getManifestKey();
     const response = await fetch("/supplier-api/label-manifests", {
       method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include",
       body: JSON.stringify({ manifest_key: manifestKey, po_no: form.po || null, material_code: form.materialCode, lot_no: form.lot, total_quantity: Number(form.total), unit: form.unit, outer_box_count: outerBoxes.length, sub_box_count: subBoxes.length, pallets, labels: boxes.map((x) => ({ qr: x.value, serial: x.serial, qty: x.qty, level: x.level, parent_serial: x.parentSerial || null, pallet_qr: x.palletQr || null })) }),
@@ -219,12 +236,20 @@ export function WmsSupplierLabel({
     setMessage(`已保存为预收货/未确认：托板 ${pallets.length}，外箱 ${outerBoxes.length}，子箱 ${subBoxes.length}，总数量 ${form.total} ${form.unit}`);
     return true;
   };
+  const recordPrint = async (printType: "ALL" | "OUTER" | "SUB_BOX" | "PALLET", labelCount: number, reprintReason?: string): Promise<boolean> => {
+    if (!supplierIdentity) return true;
+    const response = await fetch("/supplier-api/label-print-events", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ manifest_key: getManifestKey(), po_no: form.po, material_code: form.materialCode, lot_no: form.lot, print_type: printType, label_count: labelCount, reprint_reason: reprintReason || null }) });
+    if (response.status === 409 && !reprintReason) { const reason = window.prompt(tx("这是重复打印，请填写重打原因","This is a reprint. Enter the reason.","Đây là lần in lại. Hãy nhập lý do.")); return reason?.trim() ? recordPrint(printType, labelCount, reason.trim()) : false; }
+    if (!response.ok) { setMessage(tx("打印记录保存失败，已阻止打印","The print record could not be saved; printing was blocked.","Không thể lưu lịch sử in; thao tác in đã bị chặn.")); return false; }
+    return true;
+  };
   const print = async (items: typeof boxes) => {
     if (missing.length) {
       setMessage(`请填写：${missing.join("、")}`);
       return;
     }
     if (!(await registerManifest())) return;
+    if (!(await recordPrint(items === outerBoxes ? "OUTER" : items === subBoxes ? "SUB_BOX" : "ALL", items.length))) return;
     const win = window.open("", "_blank", "width=900,height=760");
     if (!win) {
       setMessage("浏览器阻止了打印窗口，请允许弹出窗口");
@@ -248,18 +273,19 @@ export function WmsSupplierLabel({
   };
   const printPallets = async () => {
     if (!(await registerManifest()) || !pallets.length) return;
+    if (!(await recordPrint("PALLET", pallets.length))) return;
     const win = window.open("", "_blank", "width=900,height=760"); if (!win) return;
     const rows = await Promise.all(pallets.map(async (value) => ({ value, img: await QRCode.toDataURL(value, { width: 420, margin: 1, errorCorrectionLevel: "M" }), boxes: outerBoxes.filter((x) => x.palletQr === value) })));
     win.document.write(`<html><head><style>@page{size:100mm 70mm;margin:0}body{margin:0;font-family:Arial,"Microsoft YaHei"}.p{width:100mm;height:70mm;padding:5mm;display:grid;grid-template-columns:1fr 36mm;page-break-after:always}.p img{width:34mm}.p code{word-break:break-all;font-size:8pt}.bar{position:fixed;right:8px;top:8px}@media print{.bar{display:none}}</style></head><body><button class="bar" onclick="window.print()">打印托板标签</button>${rows.map((x, i) => `<section class="p"><div><h2>供应商预收货托板 ${i + 1}/${rows.length}</h2><p><b>PO：</b>${html(form.po)}</p><p><b>物料/批次：</b>${html(form.materialCode)} / ${html(form.lot)}</p><p><b>绑定外箱：</b>${x.boxes.map((b) => html(b.serial)).join("、")}</p><p><b>托板数量：</b>${x.boxes.reduce((n,b)=>n+b.qty,0)} ${html(form.unit)}</p><code>${html(x.value)}</code></div><img src="${x.img}"></section>`).join("")}</body></html>`);win.document.close();
   };
   const fields: Array<[keyof Form, string, string, string?]> = [
+    ["po", "瑞晶订单号 *", "PO..."],
     ["customer", "客户名称", "深圳市瑞晶实业有限公司"],
     ["supplierCode", "供应商代码 *", "A.001"],
     ["supplierName", "供应商全名", "供应商名称"],
     ["materialCode", "瑞晶物料代码 *", "0.00.00.00.0108L-HF"],
     ["materialName", "物料名称", "贴片电阻"],
     ["spec", "规格型号", "20K ±1% SCR0805..."],
-    ["po", "瑞晶订单号", "PO..."],
     ["date", "生产日期 *", "", "date"],
     ["lot", "批次号 *", "建议使用瑞晶订单号"],
     ["unit", "单位", "PCS"],
@@ -298,7 +324,7 @@ export function WmsSupplierLabel({
             flexWrap: "wrap",
           }}
         >
-          <button className="btn-primary" onClick={() => window.print()}>
+          <button className="btn-primary" onClick={() => void recordPrint("ALL", boxes.length).then(ok => { if (ok) window.print(); })}>
             <Printer size={14} />
             打印全部 {boxes.length} 张
           </button>
@@ -462,7 +488,7 @@ export function WmsSupplierLabel({
             >
               保存草稿
             </button>
-            <button className="btn-primary" onClick={openPrintPage}>
+            <button className="btn-primary" onClick={openPrintPage} disabled={!form.po} title={form.po ? tx("打开已绑定 PO 的打印预览","Open the PO-bound print preview","Mở bản xem trước in đã liên kết PO") : tx("请先选择 PO","Select a PO first","Chọn PO trước")}>
               <Printer size={14} />
               打开打印预览页面
             </button>
@@ -527,8 +553,10 @@ export function WmsSupplierLabel({
             <label>每托板外箱数 *<input className="form-input" type="number" min="1" value={form.outerBoxesPerPallet} onChange={(e) => set("outerBoxesPerPallet", e.target.value)} /></label>
             <label>托板流水号前缀<input className="form-input" value={form.palletPrefix} onChange={(e) => set("palletPrefix", e.target.value)} /></label>
           </>}
-          {fields.map(([k, l, p, t]) => (
-            <label key={k}>
+          {fields.map(([k, l, p, t]) => {
+            if(supplierIdentity&&k==="po")return <label key={k}>{tx("瑞晶订单号 *","Ruijing PO *","PO Ruijing *")}<select className="form-input" value={form.po} onChange={e=>choosePo(e.target.value)} title={tx("选择当前供应商的有效采购订单","Select an active purchase order for this supplier","Chọn đơn mua hàng hiện hành của nhà cung cấp này")} required><option value="">{tx("请选择 PO","Select a PO","Chọn PO")}</option>{orders.map(order=><option key={order.po_no} value={order.po_no}>{order.po_no} · {order.status||"OPEN"}</option>)}</select></label>;
+            if(supplierIdentity&&k==="materialCode")return <label key={k}>{tx("瑞晶物料代码 *","Ruijing material code *","Mã vật liệu Ruijing *")}<select className="form-input" value={form.materialCode} onChange={e=>chooseMaterial(e.target.value)} disabled={!form.po} title={form.po?tx("选择该 PO 中的物料","Select a material from this PO","Chọn vật liệu trong PO này"):tx("请先选择 PO","Select a PO first","Chọn PO trước")} required><option value="">{tx("请选择物料","Select material","Chọn vật liệu")}</option>{poLines.map(line=><option key={line.material_code} value={line.material_code}>{line.material_code} · {line.description||line.material_name||""}</option>)}</select></label>;
+            return <label key={k}>
               {l}
               <input
                 className="form-input"
@@ -541,8 +569,8 @@ export function WmsSupplierLabel({
                 }
                 onChange={(e) => set(k, e.target.value)}
               />
-            </label>
-          ))}
+            </label>;
+          })}
         </div>
         {form.packagingMode === "OUTER_WITH_SUB" && (
           <div
@@ -591,7 +619,7 @@ export function WmsSupplierLabel({
                 </button>
               )}
               {pallets.length > 0 && <button className="btn-ghost" onClick={() => void printPallets()}>打印托板 QR</button>}
-              <button className="btn-primary" onClick={openPrintPage}>
+              <button className="btn-primary" onClick={openPrintPage} disabled={!form.po} title={form.po ? tx("查看已绑定 PO 的全部标签","View all labels bound to this PO","Xem tất cả nhãn liên kết với PO này") : tx("请先选择 PO","Select a PO first","Chọn PO trước")}>
                 <Printer size={14} />
                 查看全部打印版
               </button>

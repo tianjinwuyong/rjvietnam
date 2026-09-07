@@ -4,9 +4,10 @@ import { apiClient } from "../api/client";
 type MaterialBinding = {
   id:number; workOrderCode:string; lineCode:string; machineCode:string;
   channelCode:string; feederCode:string; materialCode:string; materialName?:string;
-  materialSn:string; quantityPerRoll:number; rollCount:number; operator?:string;
+  materialSn:string; quantityPerRoll?:number; qtyPerRoll?:number; quantity?:number; receivedQty?:number; originalQty?:number; rollCount?:number; operator?:string;
   status:string; boundAt:string; feederChanged?:boolean; previousFeederCode?:string;
 };
+type MaterialMaster = { vietnamMaterialCode: string; ruijingMaterialCode: string; specification?: string; supplierName?: string; msdLevel?: string };
 
 export function SmtMaterialBindingTable() {
   const [items,setItems]=useState<MaterialBinding[]>([]);
@@ -16,11 +17,14 @@ export function SmtMaterialBindingTable() {
   const [realtimeConnected,setRealtimeConnected]=useState(false);
   const [liveScan,setLiveScan]=useState<{materialSn:string;step:string;result:string;scannedValue:string;expectedValue?:string;at:Date}>();
   const [pdaActivity,setPdaActivity]=useState<{activityType:string;workOrderCode:string;machineCode?:string;channelCode?:string;feederCode?:string;materialSn?:string;result:string;at:Date}>();
+  const [materialMaster,setMaterialMaster]=useState<MaterialMaster[]>([]);
 
   const refresh=async()=>{
     try {
       const response=await apiClient.get<{items?:MaterialBinding[]} | MaterialBinding[]>("/mes/material-roll-bindings",{limit:500});
       setItems(Array.isArray(response)?response:response.items||[]);
+      const master = await apiClient.get<{items?:MaterialMaster[]}>('/wms/material-label-master',{limit:500});
+      setMaterialMaster(master.items||[]);
       setUpdatedAt(new Date());
     } finally { setLoading(false); }
   };
@@ -32,6 +36,10 @@ export function SmtMaterialBindingTable() {
     if(!needle)return items;
     return items.filter(item=>[item.workOrderCode,item.lineCode,item.machineCode,item.channelCode,item.feederCode,item.materialCode,item.materialName,item.materialSn,item.operator].some(v=>String(v||"").toLowerCase().includes(needle)));
   },[items,query]);
+  const mappedCode = (code:string) => {
+    const match = materialMaster.find(row => row.vietnamMaterialCode?.toUpperCase() === code.toUpperCase() || row.ruijingMaterialCode?.toUpperCase() === code.toUpperCase());
+    return match ? `${match.vietnamMaterialCode} ↔ ${match.ruijingMaterialCode}` : code;
+  };
 
   return <div className="smt-binding-page">
     <header className="smt-binding-header"><div><p>MES · SMT MATERIAL TRACEABILITY <i className={realtimeConnected?"smt-live-dot":"smt-live-dot offline"}>{realtimeConnected?"LIVE · PDA CONNECTED":"RECONNECTING"}</i></p><h2>SMT 物料绑定表</h2><small>PDA 与 MES 实时事件通讯 · 10 秒查询仅用于断线恢复</small></div><div className="smt-binding-metrics"><span>当前有效绑定<strong>{items.length}</strong></span><span>实机<strong>{new Set(items.map(i=>i.machineCode)).size}</strong></span><span>最近同步<strong>{updatedAt?updatedAt.toLocaleTimeString():"—"}</strong></span></div></header>
@@ -39,7 +47,7 @@ export function SmtMaterialBindingTable() {
     {pdaActivity&&<div className={`smt-current-scan ${pdaActivity.result==="PASS"?"pass":"reject"}`}><b>{pdaActivity.activityType==="MACHINE_SELECTED"?"✓ PDA 已选择机位":pdaActivity.activityType==="CHANNEL_SELECTED"?"✓ PDA 已选择通道":pdaActivity.activityType==="FEEDER_SELECTED"?"✓ PDA 已选择 Feeder":"✓ PDA 已扫描料卷"}</b><span>工单 {pdaActivity.workOrderCode} · 机位 {pdaActivity.machineCode||"—"}{pdaActivity.channelCode&&<> · 通道 {pdaActivity.channelCode}</>}{pdaActivity.feederCode&&<> · Feeder {pdaActivity.feederCode}</>}{pdaActivity.materialSn&&<> · 料卷 {pdaActivity.materialSn}</>}</span><time>{pdaActivity.at.toLocaleTimeString()}</time></div>}
     <div className="smt-binding-toolbar"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder="搜索工单 / 机台 / L-R站位 / 飞达 / 物料 / 料卷SN"/><button onClick={()=>void refresh()}>立即刷新</button></div>
     <div className="table-wrap smt-binding-table"><table><thead><tr><th>#</th><th>工单</th><th>产线</th><th>实机</th><th>左右站位</th><th>飞达</th><th>物料编码</th><th>料卷 SN</th><th>单卷数量</th><th>卷数</th><th>操作员</th><th>绑定时间</th><th>状态</th></tr></thead><tbody>
-      {filtered.map((item,index)=>{const scanning=liveScan?.materialSn.toUpperCase()===item.materialSn?.toUpperCase();return <tr key={item.id} className={[item.feederChanged?"feeder-changed":"",index<10?"recent-binding":"",scanning?(liveScan?.result==="PASS"?"pda-scan-pass":"pda-scan-reject"):""].filter(Boolean).join(" ")}><td>{index+1}</td><td><b>{item.workOrderCode}</b></td><td>{item.lineCode||"—"}</td><td><span className="machine-pill">{item.machineCode}</span></td><td><span className={item.channelCode?.startsWith("R")?"side-pill right":"side-pill left"}>{item.channelCode||"—"}</span></td><td><b className={item.feederChanged?"changed-feeder-code":""}>{item.feederCode||"—"}</b>{item.feederChanged&&<small>原飞达：{item.previousFeederCode||"—"}</small>}</td><td><b>{item.materialCode||"—"}</b>{item.materialName&&<small>{item.materialName}</small>}</td><td className="mono">{item.materialSn}</td><td>{Number(item.quantityPerRoll||0).toLocaleString()}</td><td>{item.rollCount||1}</td><td>{item.operator||"—"}</td><td>{item.boundAt?new Date(item.boundAt).toLocaleString():"—"}</td><td>{item.feederChanged?<span className="changed-pill">✓ 已更换飞达</span>:<span className="active-pill">{item.status}</span>}</td></tr>})}
+      {filtered.map((item,index)=>{const scanning=liveScan?.materialSn.toUpperCase()===item.materialSn?.toUpperCase();const qty=item.quantityPerRoll??item.qtyPerRoll??item.quantity??item.receivedQty??item.originalQty??0;return <tr key={item.id} className={[item.feederChanged?"feeder-changed":"",index<10?"recent-binding":"",scanning?(liveScan?.result==="PASS"?"pda-scan-pass":"pda-scan-reject"):""].filter(Boolean).join(" ")}><td>{index+1}</td><td><b>{item.workOrderCode}</b></td><td>{item.lineCode||"—"}</td><td><span className="machine-pill">{item.machineCode}</span></td><td><span className={item.channelCode?.startsWith("R")?"side-pill right":"side-pill left"}>{item.channelCode||"—"}</span></td><td><b className={item.feederChanged?"changed-feeder-code":""}>{item.feederCode||"—"}</b>{item.feederChanged&&<small>原飞达：{item.previousFeederCode||"—"}</small>}</td><td><b>{mappedCode(item.materialCode||"—")}</b>{item.materialName&&<small>{item.materialName}</small>}</td><td className="mono">{item.materialSn}</td><td>{Number(qty).toLocaleString()}</td><td>{item.rollCount||1}</td><td>{item.operator||"—"}</td><td>{item.boundAt?new Date(item.boundAt).toLocaleString():"—"}</td><td>{item.feederChanged?<span className="changed-pill">✓ 已更换飞达</span>:<span className="active-pill">{item.status}</span>}</td></tr>})}
       {!loading&&filtered.length===0&&<tr><td colSpan={13}>暂无有效绑定记录。PDA 完成绑定后会自动出现在这里。</td></tr>}
       {loading&&<tr><td colSpan={13}>正在读取物料绑定表…</td></tr>}
     </tbody></table></div>
