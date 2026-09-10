@@ -2845,3 +2845,13 @@ td span {
   padding: 0 !important;
   box-shadow: none !important;
 }
+
+@keyframes wms-low-stock-blink {
+  0%, 100% { background-color: transparent; }
+  50% { background-color: rgba(220, 38, 38, .25); }
+}
+.wms-low-stock-blink {
+  color: #dc2626 !important;
+  font-weight: 800;
+  animation: wms-low-stock-blink 1s step-start infinite;
+}

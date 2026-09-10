@@ -143,3 +143,6 @@ harness/.results/
 *.pem
 secrets.json
 credentials.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/

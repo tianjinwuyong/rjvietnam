@@ -429,6 +429,7 @@ export const pmcApi = {
   async getWorkOrderRequirements(workOrderCode: string): Promise<{
     items: Array<{
       id: string; pickOrderId: string; materialCode: string;
+      ruijingCode: string | null;
       materialName: { name_zh: string; name_en: string; name_vi: string };
       requiredQty: number; pickedQty: number; lotNo: string | null;
       locationCode: string | null; status: string;

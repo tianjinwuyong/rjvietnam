@@ -77,6 +77,8 @@ import { customerPos, demoDirectory, feederBindings, lines, materialLots, metric
 import { AdminLineManagement } from "./admin/AdminLineManagement";
 import { UserAuthorizationManager } from "./admin/UserAuthorizationManager";
 import { PdaAccessConfiguration } from "./admin/PdaAccessConfiguration";
+import { PdaAppCatalogManager } from "./admin/PdaAppCatalogManager";
+import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
 import type { WmsTabKey } from "./wms";
 import { QmsApp } from "./qms";
@@ -89,7 +91,7 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
 import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
@@ -1800,6 +1802,8 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
       case "inventory": return <WmsInventory locale={locale} />;
       case "picking": return <WmsPicking locale={locale} />;
       case "issue": return <WmsIssue locale={locale} />;
+      case "woHandover": return <WmsWoHandover locale={locale} />;
+      case "slips": return <WmsSlips locale={locale} />;
       case "cycleCount": return <WmsCycleCount locale={locale} />;
       case "transferAdjust": return <WmsTransferAdjust locale={locale} />;
       case "expiryControl": return <WmsExpiryControl locale={locale} />;
@@ -2629,7 +2633,7 @@ function Trace({ locale }: { locale: Locale }) {
 }
 
 function Admin({ locale }: { locale: Locale }) {
-  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "lines" | "services" | "databases">("overview");
+  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "pdaAppAssignment" | "pdaCatalog" | "lines" | "services" | "databases">("overview");
   const dependencyItems = [
     { label: "admin.dep.auth", detail: "admin.dep.authDetail" },
     { label: "admin.dep.live", detail: "admin.dep.liveDetail" },
@@ -2661,6 +2665,8 @@ function Admin({ locale }: { locale: Locale }) {
           <div className="toolbar">
             <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
             <button type="button" className="active">用户授权</button>
+            <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+            <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
             <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
@@ -2668,6 +2674,46 @@ function Admin({ locale }: { locale: Locale }) {
         </SurfacePanel>
         <UserAuthorizationManager />
         <PdaAccessConfiguration />
+      </div>
+    );
+  }
+
+  if (adminTab === "pdaAppAssignment") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title="PDA用户权限" subtitle="为用户分配PDA应用菜单 — 蒙营和莫立斌可操作" />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+            <button type="button" className="active">PDA用户权限</button>
+            <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+          </div>
+        </SurfacePanel>
+        <UserPdaAppAssignment />
+      </div>
+    );
+  }
+
+  if (adminTab === "pdaCatalog") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title="PDA应用目录" subtitle="管理PDA应用角色定义 — 添加、编辑、启用/停用" />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+            <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+            <button type="button" className="active">PDA应用目录</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+          </div>
+        </SurfacePanel>
+        <PdaAppCatalogManager />
       </div>
     );
   }
@@ -2713,6 +2759,8 @@ function Admin({ locale }: { locale: Locale }) {
         <div className="toolbar">
           <button type="button" className="active" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
           <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+          <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+          <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
           <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
           <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
           <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>

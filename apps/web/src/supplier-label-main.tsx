@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -18,8 +19,10 @@ import {
   Printer,
   Send,
   ShieldCheck,
+  Star,
   Truck,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 import type { Locale } from "../../../packages/shared-types/src/factory";
@@ -57,7 +60,10 @@ type Page =
   | "quality"
   | "messages"
   | "profile"
-  | "users";
+  | "users"
+  | "returns"
+  | "reviews"
+  | "improvements";
 type ShipmentLine = {
   id: string;
   materialCode: string;
@@ -1326,11 +1332,29 @@ const staticPages: Record<
       ["quality-contact", "质量联系人", "INVITED"],
     ],
   },
+  returns: {
+    title: "退返物料",
+    eyebrow: "RETURN MATERIALS",
+    description: "查看退货/拒收记录，提交退返申请。",
+    cards: [],
+  },
+  reviews: {
+    title: "评审结果",
+    eyebrow: "EVALUATION RESULTS",
+    description: "查看瑞晶对贵司的定期评审分数与等级。",
+    cards: [],
+  },
+  improvements: {
+    title: "改进内容",
+    eyebrow: "IMPROVEMENT ACTIONS",
+    description: "查看 CAPA 整改通知，提交遏制措施、根因分析和纠正计划。",
+    cards: [],
+  },
 };
 function StaticPage({
   page,
 }: {
-  page: Exclude<Page, "dashboard" | "shipments" | "labels">;
+  page: Exclude<Page, "dashboard" | "shipments" | "labels" | "returns" | "reviews" | "improvements">;
 }) {
   const p = staticPages[page];
   return (
@@ -1672,6 +1696,167 @@ function AccountPage({
   );
 }
 
+// ── 退返物料页面 ────────────────────────────────────────────────────────────
+function ReturnsPage({ user }: { user: User }) {
+  const [returns, setReturns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/supplier-api/returns", { credentials: "include" })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => { setReturns(d.items ?? d ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  return (
+    <div className="portal-page">
+      <div className="portal-heading">
+        <div>
+          <p className="eyebrow">RETURN MATERIALS</p>
+          <h1>退返物料</h1>
+          <p>查看退货/拒收记录，提交退返申请。</p>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>加载中…</div>
+      ) : returns.length === 0 ? (
+        <div className="portal-empty"><Truck /><b>暂无退返记录</b></div>
+      ) : (
+        <section className="portal-card">
+          <div className="table-shell">
+            <table>
+              <thead><tr><th>批次号</th><th>物料</th><th>数量</th><th>供应商</th><th>状态</th><th>原因</th></tr></thead>
+              <tbody>
+                {returns.map(r => (
+                  <tr key={r.id ?? r.lot_no}>
+                    <td><code>{r.lot_no ?? r.lotNo}</code></td>
+                    <td>{r.material_code ?? r.materialCode}</td>
+                    <td>{Number(r.qty ?? r.return_qty ?? 0).toLocaleString()}</td>
+                    <td>{r.supplier_code ?? user.supplier_code}</td>
+                    <td><span className={`badge badge-${(r.status ?? "").toLowerCase().includes("return") ? "warning" : "danger"}`}>{r.status ?? "PENDING"}</span></td>
+                    <td>{r.reason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── 评审结果页面 ────────────────────────────────────────────────────────────
+function ReviewsPage({ user }: { user: User }) {
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/supplier-api/reviews", { credentials: "include" })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => { setReviews(d.items ?? d ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  const gradeColor = (g: string) =>
+    g === "A" ? "var(--ok)" : g === "B" ? "#22c55e" : g === "C" ? "#f59e0b" : "var(--danger)";
+  return (
+    <div className="portal-page">
+      <div className="portal-heading">
+        <div>
+          <p className="eyebrow">EVALUATION RESULTS</p>
+          <h1>评审结果</h1>
+          <p>查看瑞晶对贵司的定期评审分数与等级。</p>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>加载中…</div>
+      ) : reviews.length === 0 ? (
+        <div className="portal-empty"><Star /><b>暂无评审记录</b></div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {reviews.map(r => (
+            <section key={r.id} className="portal-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h3>{r.eval_period ?? r.period}</h3>
+                  <small style={{ color: "var(--muted)" }}>评分周期</small>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: gradeColor(r.grade) }}>{r.grade ?? "—"}</div>
+                  <small>等级</small>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 16 }}>
+                {[["iqc_pass_rate","IQC合格率"],["oqc_reject_rate","OQC拒收率"],["delivery_rate","准时交付率"],["complaint_count","投诉次数"],["eight_d_count","8D次数"],["total_score","综合评分"]].map(([k,l]) => (
+                  <div key={k} style={{ background: "var(--surface-2)", borderRadius: 8, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{r[k] ?? "—"}</div>
+                    <small style={{ color: "var(--muted)" }}>{l}</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 改进内容页面 ────────────────────────────────────────────────────────────
+function ImprovementsPage({ user }: { user: User }) {
+  const [capa, setCapa] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/supplier-api/capas", { credentials: "include" })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => { setCapa(d.items ?? d ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  const statusBadge = (s: string) => {
+    if (s === "CLOSED") return "badge-ok";
+    if (s === "IN_PROGRESS" || s === "IN_PROGRESS") return "badge-info";
+    if (s === "NOTIFIED" || s === "PENDING") return "badge-warning";
+    return "badge-muted";
+  };
+  return (
+    <div className="portal-page">
+      <div className="portal-heading">
+        <div>
+          <p className="eyebrow">IMPROVEMENT ACTIONS</p>
+          <h1>改进内容</h1>
+          <p>查看 CAPA 整改通知，提交遏制措施、根因分析和纠正计划。</p>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>加载中…</div>
+      ) : capa.length === 0 ? (
+        <div className="portal-empty"><Wrench /><b>暂无 CAPA 记录</b></div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {capa.map(c => (
+            <section key={c.id} className="portal-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <h3><code>{c.capa_no ?? c.capaNo}</code></h3>
+                  <p style={{ margin: "4px 0", color: "var(--muted)", fontSize: 13 }}>
+                    供应商：{c.supplier_code ?? user.supplier_code} · 严重程度：{c.severity}
+                  </p>
+                </div>
+                <span className={`badge ${statusBadge(c.status)}`}>{c.status}</span>
+              </div>
+              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+                {[["containment","遏制措施"],["root_cause","根因分析"],["corrective_action","纠正措施"],["effectiveness_result","效果验证"]].map(([k,l]) => (
+                  <div key={k}>
+                    <b>{l}：</b>
+                    <span style={{ color: "var(--muted)" }}>{c[k] ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Portal() {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
@@ -1722,6 +1907,9 @@ function Portal() {
         ["messages", "消息中心", MessageSquareText],
         ["profile", "公司资料", Building2],
         ["users", "用户与权限", Users],
+        ["returns", "退返物料", Truck],
+        ["reviews", "评审结果", Star],
+        ["improvements", "改进内容", Wrench],
       ] as Array<[Page, string, typeof Truck]>,
     [],
   );
@@ -1840,6 +2028,12 @@ function Portal() {
             />
           ) : page === "users" ? (
             <AccountPage user={user} onUser={setUser} />
+          ) : page === "returns" ? (
+            <ReturnsPage user={user} />
+          ) : page === "reviews" ? (
+            <ReviewsPage user={user} />
+          ) : page === "improvements" ? (
+            <ImprovementsPage user={user} />
           ) : (
             <StaticPage page={page} />
           )}

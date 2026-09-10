@@ -113,23 +113,23 @@ interface WarehouseLayoutItem {
   aisleDepthM?: number;
 }
 
-const areaQrFor = (label: string, currentValue = "") => {
+const areaQrFor = (label: string, _currentValue = "") => {
+  // Area QR is canonical "WMS-AREA:<sanitized-uppercase-label>" — never appends
+  // a position code. Position codes (P##-##) belong to PALLET items inside the
+  // area and are computed separately by `palletQrFor(item, areaCode)`. The
+  // `WMS-AREA:` prefix MUST match what the floor areas endpoint returns so the
+  // popup's target lookup `item.qrCode === area.areaQr` resolves.
   const areaName =
     label
       .trim()
       .replace(/\s+(R\d+-C\d+|P\d{2}-\d{2})$/i, "")
       .replace(/\s+/g, "-") || "AREA";
-  // Position code is "P<row>-<col>" with both parts zero-padded. Extract from
-  // either an existing P/r-c code or fall back to row 1 / col 1.
-  const rcMatch = currentValue.match(/R(\d+)-C(\d+)/i);
-  const pcMatch = currentValue.match(/P(\d{1,4})-(\d{1,4})/i);
-  const suffix = pcMatch
-    ? `P${String(Number(pcMatch[1])).padStart(2, "0")}-${String(Number(pcMatch[2])).padStart(2, "0")}`
-    : rcMatch
-      ? `P${String(Number(rcMatch[1])).padStart(2, "0")}-${String(Number(rcMatch[2])).padStart(2, "0")}`
-      : "P01-01";
-  return `${areaName} ${suffix}`;
+  return `WMS-AREA:${areaName.toUpperCase()}`;
 };
+
+// Exported for unit tests — DO NOT call from production code; use the inner
+// `areaQrFor` so the format stays coupled to the area popup's lookup logic.
+export const __test_only_areaQrFor = areaQrFor;
 
 const LAYOUT_TOOLBOX = [
   { kind: "PENCIL", label: "铅笔自由绘制", color: "#0f766e" },
@@ -289,6 +289,7 @@ const DEFAULT_WAREHOUSE_LAYOUT: WarehouseLayoutItem[] = [
 ];
 
 export function WmsLocationManagement({ locale }: { locale: Locale }) {
+  // (declared above)
   const [locations, setLocations] = useState<StorageLocation[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
@@ -297,6 +298,11 @@ export function WmsLocationManagement({ locale }: { locale: Locale }) {
   const [showDisabledAreas, setShowDisabledAreas] = useState(false);
   const [disabledAreas, setDisabledAreas] = useState<FloorStorageArea[]>([]);
   const [positionStock, setPositionStock] = useState<PositionStock[]>([]);
+  // location_qr -> bound box count (wms_receiving_pallet_box_bindings). This is
+  // the authoritative occupancy for canvas pallet positions bound via PDA.
+  const [positionBoxCounts, setPositionBoxCounts] = useState<
+    Record<string, number>
+  >({});
   const [editing, setEditing] = useState<StorageLocation | null>(null);
   const [showForm, setShowForm] = useState(false);
   const locationEditorRef = useRef<HTMLElement | null>(null);
@@ -321,6 +327,16 @@ export function WmsLocationManagement({ locale }: { locale: Locale }) {
           (response as any).config || (response as any).data?.config;
         if (savedConfig && typeof savedConfig === "object")
           setLayoutConfig((current) => ({ ...current, ...savedConfig }));
+        // Hydrate the canvas from the saved DB layout so the area popup uses
+        // the real pallet children (e.g. TEST14 4×2 P01-P04) instead of
+        // falling back to generated 6-column placeholders.
+        const savedItems =
+          (response as any).items || (response as any).data?.items;
+        if (Array.isArray(savedItems) && savedItems.length) {
+          setLayoutItems((current) =>
+            current.length ? current : (savedItems as WarehouseLayoutItem[]),
+          );
+        }
       })
       .catch(() => undefined);
   }, []);
@@ -1493,6 +1509,16 @@ export function WmsLocationManagement({ locale }: { locale: Locale }) {
         ),
       )
       .catch(() => setPositionStock([]));
+    apiClient
+      .get<{ counts?: Record<string, number> }>(
+        "/wms/receiving/pallet-box-bindings/box-counts",
+      )
+      .then((response) =>
+        setPositionBoxCounts(
+          (response as any).counts || (response as any).data?.counts || {},
+        ),
+      )
+      .catch(() => setPositionBoxCounts({}));
   }, []);
 
   const deleteFloorArea = async (area: FloorStorageArea) => {
@@ -5356,29 +5382,33 @@ export function WmsLocationManagement({ locale }: { locale: Locale }) {
                 qrCode: location.qrCode,
               }) as WarehouseLayoutItem,
           );
-          const generatedItems = Array.from(
-            { length: Math.max(0, area.capacity || 0) },
-            (_, index) => {
-              const row = String(Math.floor(index / 6) + 1).padStart(2, "0");
-              const col = String((index % 6) + 1).padStart(2, "0");
-              return {
-                id: `generated-${area.areaCode}-${index + 1}`,
-                kind: "PALLET",
-                label: `P${row}-${col}`,
-                x: 8 + (index % 6) * 15,
-                y: 15 + Math.floor(index / 6) * 18,
-                width: 11,
-                height: 12,
-                color: "#0891b2",
-                positionQrCode: `${area.areaName} P${row}-${col}`,
-              } as WarehouseLayoutItem;
-            },
-          );
+          // Canvas children first; then registered storage locations; finally
+          // capacity-driven auto layout. The auto path only fires when there
+          // is a meaningful capacity (> 0) — otherwise the popup shows an
+          // explicit empty hint instead of inventing positions.
+          const autoLayout =
+            children.length || registeredItems.length || (area.capacity ?? 0) > 0
+              ? Array.from({ length: Math.max(0, area.capacity ?? 0) }, (_, index) => {
+                  const row = String(Math.floor(index / 6) + 1).padStart(2, "0");
+                  const col = String((index % 6) + 1).padStart(2, "0");
+                  return {
+                    id: `generated-${area.areaCode}-${index + 1}`,
+                    kind: "PALLET",
+                    label: `P${row}-${col}`,
+                    x: 8 + (index % 6) * 15,
+                    y: 15 + Math.floor(index / 6) * 18,
+                    width: 11,
+                    height: 12,
+                    color: "#0891b2",
+                    positionQrCode: `${area.areaCode} P${row}-${col}`,
+                  } as WarehouseLayoutItem;
+                })
+              : [];
           const svgItems = children.length
             ? children
             : registeredItems.length
               ? registeredItems
-              : generatedItems;
+              : autoLayout;
           const positionState = (item: WarehouseLayoutItem, index: number) => {
             const qr = String(
               item.positionQrCode || item.qrCode || "",
@@ -5388,6 +5418,37 @@ export function WmsLocationManagement({ locale }: { locale: Locale }) {
               qr.split(":").pop() || "",
               item.id,
             ].map((value) => String(value).toUpperCase());
+            // Pallet-box bindings are authoritative: a position whose QR (or
+            // bare code) has bound boxes is OCCUPIED regardless of stock rows.
+            // Keys may be bare canvas QRs ("TEST14 P04-01") or WMS-LOC: standard
+            // ("WMS-LOC:TEST14-P04-01") — normalize both sides before comparing.
+            const normPos = (value: string) =>
+              String(value || "")
+                .toUpperCase()
+                .replace(/^WMS-(LOC|AREA):/, "")
+                .replace(/[\s\-_]/g, "");
+            const qrN = normPos(item.positionQrCode || item.qrCode || "");
+            const candidatesN = [
+              item.label,
+              item.positionQrCode || item.qrCode || "",
+              item.id,
+            ].map(normPos);
+            const boundCount = Object.entries(positionBoxCounts).reduce(
+              (sum, [key, count]) => {
+                const k = normPos(key);
+                return candidatesN.includes(k) || k === qrN
+                  ? sum + Number(count || 0)
+                  : sum;
+              },
+              0,
+            );
+            if (boundCount > 0)
+              return {
+                status: "OCCUPIED",
+                color: "#f97316",
+                qty: boundCount,
+                exact: true,
+              };
             const stock = positionStock.filter((row) =>
               candidates.includes(String(row.locationCode || "").toUpperCase()),
             );
@@ -5555,6 +5616,28 @@ export function WmsLocationManagement({ locale }: { locale: Locale }) {
                   <text x="56" y="94" fontSize="12" fill="#475569">
                     {area.areaCode} · {area.areaType} · {area.status}
                   </text>
+                  {!svgItems.length && (
+                    <g>
+                      <text
+                        x="400"
+                        y="280"
+                        textAnchor="middle"
+                        fontSize="14"
+                        fill="#94a3b8"
+                      >
+                        画布上还没有位置 — 在右侧画布用"托盘"工具拖放添加，或从已注册的 storage_locations 同步
+                      </text>
+                      <text
+                        x="400"
+                        y="304"
+                        textAnchor="middle"
+                        fontSize="12"
+                        fill="#94a3b8"
+                      >
+                        The popup reflects only what was drawn on the canvas — no placeholder grid.
+                      </text>
+                    </g>
+                  )}
                   <g clipPath="url(#wms-area-content-clip)">
                     {svgItems.map((item, index) => {
                       const state = states[index];

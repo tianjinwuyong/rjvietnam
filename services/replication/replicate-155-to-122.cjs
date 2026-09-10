@@ -300,23 +300,30 @@ async function copyBatch(spec, rows) {
   }
   if (!toInsert.length) return;
   const { columns } = spec;
-  const placeholders = toInsert.map((_, i) =>
-    `(${columns.map((_, j) => `$${i * columns.length + j + 1}`).join(', ')})`).join(', ');
-  const flat = toInsert.flatMap((row) => columns.map((c) => serialize(row[c])));
-  let sql = `INSERT INTO ${spec.name} (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${placeholders}`;
-  if (spec.mode === 'upsert' && spec.conflict && spec.pkClause) {
-    const setCols = spec.columns
-      .filter((c) => !spec.precheck.some((p) => p.label === c))
-      .map((c) => `"${c}" = EXCLUDED."${c}"`).join(', ');
-    sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO UPDATE SET ${setCols}
-             WHERE ${spec.newerExpr(spec.name)}`;
-  } else if (spec.conflict) {
-    sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO NOTHING`;
-  }
-  const r = await dst.query(sql, flat);
-  stat.inserted += toInsert.length;
-  if (spec.mode === 'upsert' && r.rowCount !== null) {
-    stat.updated += Math.max(0, r.rowCount - toInsert.length);
+  // PostgreSQL's wire protocol caps bind parameters at 32767. Full-table reads
+  // (cursorCol === null, e.g. station_sn_route_progress) can exceed that in a
+  // single statement — chunk the insert so each statement stays under the cap.
+  const maxRowsPerStatement = Math.max(1, Math.floor(30000 / columns.length));
+  for (let offset = 0; offset < toInsert.length; offset += maxRowsPerStatement) {
+    const chunk = toInsert.slice(offset, offset + maxRowsPerStatement);
+    const placeholders = chunk.map((_, i) =>
+      `(${columns.map((_, j) => `$${i * columns.length + j + 1}`).join(', ')})`).join(', ');
+    const flat = chunk.flatMap((row) => columns.map((c) => serialize(row[c])));
+    let sql = `INSERT INTO ${spec.name} (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${placeholders}`;
+    if (spec.mode === 'upsert' && spec.conflict && spec.pkClause) {
+      const setCols = spec.columns
+        .filter((c) => !spec.precheck.some((p) => p.label === c))
+        .map((c) => `"${c}" = EXCLUDED."${c}"`).join(', ');
+      sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO UPDATE SET ${setCols}
+               WHERE ${spec.newerExpr(spec.name)}`;
+    } else if (spec.conflict) {
+      sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO NOTHING`;
+    }
+    const r = await dst.query(sql, flat);
+    stat.inserted += chunk.length;
+    if (spec.mode === 'upsert' && r.rowCount !== null) {
+      stat.updated += Math.max(0, r.rowCount - chunk.length);
+    }
   }
 }
 
@@ -473,6 +480,12 @@ async function main() {
     } catch (e) {
       log(`✗ cycle error: ${e.message}`);
       await updateHealth(src, { last_error: e.message, backup_reachable: false }).catch(() => {});
+      // node-postgres cannot reuse a client that hit a fatal error (timeout,
+      // connection loss) — rebuild the destination client so the next cycle
+      // starts from a clean connection instead of erroring forever.
+      try { await dst.end(); } catch (_) {}
+      dst = new Client(DEST_DB);
+      first = true;
     }
     await new Promise((r) => setTimeout(r, LOOP_MS));
   }

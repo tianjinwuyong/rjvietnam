@@ -34,10 +34,10 @@ export function WmsMaterialFetchFlow({ locale, workOrderCode }: { locale: Locale
     { id: "writeoff", tab: "materialConsumption", x: 970, y: 210, w: 150, label: { z: "消耗冲销", v: "Trừ tiêu hao", e: "Write-off" }, sub: "bom-writeoffs", kind: "branch" },
   ];
 
-  const edges: Array<{ from: NodeId; to: NodeId; color: string; w: number; dash?: string; label?: string }> = [
-    { from: "create_wo", to: "freeze_bom", color: "#64748b", w: 2, label: text("BOM 绑定", "Gắn BOM", "BOM bind") },
+  const edges: Array<{ from: NodeId; to: NodeId; color: string; w: number; dash?: string; label?: string; lx?: number; ly?: number }> = [
+    { from: "create_wo", to: "freeze_bom", color: "#64748b", w: 2, label: text("BOM 绑定", "Gắn BOM", "BOM bind"), lx: 95, ly: 10 },
     { from: "freeze_bom", to: "fetch_queue", color: "#64748b", w: 2, label: text("需求生成", "Sinh nhu cầu", "Generate") },
-    { from: "iqc_pass", to: "fetch_queue", color: "#16a34a", w: 3, dash: "5,4", label: text("released 可领", "released sẵn sàng", "released ready") },
+    { from: "iqc_pass", to: "fetch_queue", color: "#16a34a", w: 3, dash: "5,4", label: text("released 可领", "released sẵn sàng", "released ready"), ly: 16 },
     { from: "fetch_queue", to: "pick", color: "#0891b2", w: 3, label: text("FIFO 匹配", "Khớp FIFO", "FIFO") },
     { from: "pick", to: "handover", color: "#64748b", w: 2, label: text("出库", "Xuất kho", "Ship") },
     { from: "handover", to: "receive", color: "#dc2626", w: 3, label: text("交接", "Bàn giao", "Handoff") },
@@ -69,13 +69,13 @@ export function WmsMaterialFetchFlow({ locale, workOrderCode }: { locale: Locale
           {edges.map((e, i) => <line key={i} x1={cx(nodes.find(n => n.id === e.from)!)} y1={cy(nodes.find(n => n.id === e.from)!)} x2={cx(nodes.find(n => n.id === e.to)!)} y2={cy(nodes.find(n => n.id === e.to)!)} stroke={e.color} strokeWidth={e.w} strokeDasharray={e.dash} markerEnd={`url(#mf-arrow-${e.color === "#0891b2" ? "ct" : e.color === "#dc2626" ? "rd" : e.color === "#7c3aed" ? "vt" : e.color === "#16a34a" ? "gn" : "arrow"})`} />)}
         </g>
         <g fontFamily="Arial, Microsoft YaHei, sans-serif" fontSize="12" textAnchor="middle" fill="#334155">
-          {edges.filter(e => e.label).map((e, i) => <text key={i} x={(cx(nodes.find(n => n.id === e.from)!) + cx(nodes.find(n => n.id === e.to)!)) / 2} y={(cy(nodes.find(n => n.id === e.from)!) + cy(nodes.find(n => n.id === e.to)!)) / 2 - 6} fill={e.color}>{e.label}</text>)}
+          {edges.filter(e => e.label).map((e, i) => <text key={i} x={(cx(nodes.find(n => n.id === e.from)!) + cx(nodes.find(n => n.id === e.to)!)) / 2 + (e.lx ?? 0)} y={(cy(nodes.find(n => n.id === e.from)!) + cy(nodes.find(n => n.id === e.to)!)) / 2 - 10 + (e.ly ?? 0)} fill={e.color} stroke="#f8fafc" strokeWidth={3} paintOrder="stroke">{e.label}</text>)}
         </g>
-        <g>
+        <g fontFamily="Arial, Microsoft YaHei, sans-serif" textAnchor="middle">
           {nodes.map((n) => <a key={n.id} href={wms(n.tab)} onClick={(e) => { e.preventDefault(); go(n.tab); }} aria-label={n.label.e} style={{ cursor: "pointer", textDecoration: "none" }}>
             <rect x={n.x} y={n.y} width={n.w} height="52" rx="10" fill={n.kind === "main" ? "#dbeafe" : "#fef3c7"} stroke={n.kind === "main" ? "#2563eb" : "#d97706"} strokeWidth="2" />
-            <text x={cx(n)} y={n.y + 22} fontSize="14" fontWeight="700" fill="#0f172a">{n.label.z}</text>
-            <text x={cx(n)} y={n.y + 38} fontSize="10" fill="#64748b">{n.sub}</text>
+            <text x={cx(n)} y={n.y + 22} fontSize="14" fontWeight="700" fill="#0f172a" textAnchor="middle">{n.label.z}</text>
+            <text x={cx(n)} y={n.y + 38} fontSize={n.sub.length > 24 ? 8 : 10} fill="#64748b" textAnchor="middle">{n.sub}</text>
           </a>)}
         </g>
       </svg>

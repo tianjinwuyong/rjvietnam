@@ -103,7 +103,8 @@ const ROLE_DEFAULT_PERMISSIONS: Record<string, string[]> = {
   management: [
     "dashboard.view", "wms.view", "wms.issue", "traceability.view",
     "mes.view", "quality.view", "pmc.view", "reports.view",
-    "hr.employee.view", "hr.attendance.view", "hr.leave.view",
+    "hr.department.manage", "hr.employee.view", "hr.attendance.edit",
+    "hr.attendance.view", "hr.leave.view", "hr.leave.approve",
     "maintenance.view",
   ],
   engineer: [

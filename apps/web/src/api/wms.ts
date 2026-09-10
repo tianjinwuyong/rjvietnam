@@ -7,6 +7,50 @@ export const api = apiClient;
 // Re-export for consumers
 export type { MaterialLot, IqcStatus, InventoryAction };
 
+/** Material collect order header (warehouse collection list for one WO). */
+export interface CollectOrder {
+  id: number;
+  collectNo: string;
+  workOrderCode: string;
+  lineCode?: string | null;
+  status: "OPEN" | "PARTIAL" | "COLLECTED" | "ISSUED" | "CANCELLED";
+  collector?: string | null;
+  collectedAt?: string | null;
+  createdAt: string;
+}
+
+/** One material line to collect: where to pick (location) + what + lot. */
+export interface CollectOrderLine {
+  id: number;
+  lineNo: number;
+  materialCode: string;
+  materialName?: Record<string, string> | null;
+  ruijingCode?: string | null;
+  lotNo?: string | null;
+  materialSn?: string | null;
+  locationCode?: string | null;
+  locationQr?: string | null;
+  requiredQty: number;
+  status: "PENDING" | "COLLECTED" | "ISSUED";
+  processStage?: string | null;
+  processDomain?: string | null;
+  scannedQr?: string | null;
+  collectedBy?: string | null;
+  collectedAt?: string | null;
+  assignedTo?: string | null;
+  assignedAt?: string | null;
+}
+
+/** Per-domain summary returned when GET filters by domain. */
+export interface CollectDomainSummary {
+  domain: string;
+  visible: number;
+  collected: number;
+  pending: number;
+  total: number;
+}
+
+
 
 export interface IncomingRecord {
   id:number; lot_no:string; material_code:string; material_name:string;
@@ -116,6 +160,7 @@ export interface StockRow {
   lotNo?: string;
   locationCode?: string;
   availableQty: number;
+  onHand?: number;
   reservedQty?: number;
   uom?: string;
   iqcStatus?: string;
@@ -307,6 +352,11 @@ export const wmsApi: any = {
     return apiClient.get<ListEnvelope<MaterialLot>>(`/wms/material-lots${query ? `?${query}` : ""}`);
   },
 
+  /** PATCH /wms/material-lots/:id/low-stock-level — per-lot low-stock warning threshold. */
+  setLowStockLevel(id: number | string, lowStockLevel: number) {
+    return apiClient.patch(`/wms/material-lots/${id}/low-stock-level`, { lowStockLevel });
+  },
+
   /** GET /wms/storage-locations */
   getStorageLocations(params?: { status?: string; q?: string; limit?: number; offset?: number }) {
     const qs = new URLSearchParams();
@@ -418,6 +468,192 @@ export const wmsApi: any = {
   /** @deprecated Use getPickOrders() instead */
   getPickOrdersByWorkOrder(workOrderCode: string) {
     return this.getPickOrders(workOrderCode);
+  },
+
+  /** POST /wms/collect-orders/generate — material collector list for a WO */
+  generateCollectOrder(workOrderCode: string) {
+    return apiClient.post<{
+      order: CollectOrder;
+      items: CollectOrderLine[];
+      reused?: boolean;
+    }>("/wms/collect-orders/generate", { workOrderCode });
+  },
+
+  /** GET /wms/collect-orders?workOrderCode= — active collect list (order + lines) */
+  getCollectOrder(workOrderCode: string, domain?: string) {
+    const q = `workOrderCode=${encodeURIComponent(workOrderCode)}${domain ? `&domain=${encodeURIComponent(domain)}` : ""}`;
+    return apiClient.get<{
+      order: CollectOrder | null;
+      items: CollectOrderLine[];
+      summary?: CollectDomainSummary;
+    }>(`/wms/collect-orders?${q}`);
+  },
+
+  /** POST /wms/collect-orders/:id/confirm — collector scanned one line */
+  confirmCollectLine(
+    orderId: number,
+    payload: { lineId?: number; locationQr: string; scannedQr?: string; lotNo?: string },
+  ) {
+    return apiClient.post<{
+      orderId: number;
+      status: string;
+      line: CollectOrderLine;
+      remaining: number;
+    }>(`/wms/collect-orders/${orderId}/confirm`, payload);
+  },
+
+  /** GET /wms/collectors — warehouse collectors eligible for line allocation */
+  getCollectors() {
+    return apiClient.get<{
+      items: Array<{ username: string; displayName?: string | null; roleCode: string; pendingAssigned: number; domain: string }>;
+    }>("/wms/collectors");
+  },
+
+  /** POST /wms/collect-orders/:id/assign — allocate lines to employees */
+  assignCollectLines(
+    orderId: number,
+    payload: { assignments?: Array<{ lineId: number; assignee: string }>; assignees?: string[] },
+  ) {
+    return apiClient.post<{
+      orderId: number;
+      assigned: Array<{ id: number; lineNo: number; assignedTo: string }>;
+      assignedBy: string;
+    }>(`/wms/collect-orders/${orderId}/assign`, payload);
+  },
+
+  /** GET /wms/slips — material-issue ledger: collect orders + line acceptances */
+  getSlips(workOrderCode?: string) {
+    const q = workOrderCode ? `?workOrderCode=${encodeURIComponent(workOrderCode)}` : "";
+    return apiClient.get<{
+      collectOrders: Array<{
+        id: number;
+        slipNo: string;
+        workOrderCode: string;
+        lineCode?: string | null;
+        status: string;
+        domain?: string | null;
+        raisedBy?: string | null;
+        raisedAt: string;
+        collectedBy?: string | null;
+        collectedAt?: string | null;
+        acceptedBy?: string | null;
+        acceptedAt?: string | null;
+        pickers?: string | null;
+        lineCount: number;
+        doneLines: number;
+        issuedLines: number;
+      }>;
+      acceptances: Array<{
+        id: number;
+        slipNo: string;
+        workOrderCode: string;
+        receivedBy?: string | null;
+        itemCount: number;
+        receivedAt: string;
+        notes?: string | null;
+        lineSummary?: string | null;
+        items?: Array<{ materialCode?: string | null; qty?: number; lotNo?: string | null }>;
+        collectNo?: string | null;
+      }>;
+      ledger: Array<Record<string, unknown>>;
+    }>(`/wms/slips${q}`);
+  },
+
+  /** GET /wms/picking-status — line pick-PDA progress per WO collect order */
+  getPickingStatus(workOrderCode?: string) {
+    const q = workOrderCode ? `?workOrderCode=${encodeURIComponent(workOrderCode)}` : "";
+    return apiClient.get<{
+      items: Array<{
+        id: number;
+        collectNo: string;
+        workOrderCode: string;
+        lineCode?: string | null;
+        collectStatus: string;
+        collector?: string | null;
+        totalLines: number;
+        readyToPick: number;
+        acceptedLines: number;
+        lastPickingBy?: string | null;
+        lastPickingAt?: string | null;
+        acceptCount: number;
+        readyNotices: number;
+        pickingStatus: "COLLECTING" | "IN_PROGRESS" | "DONE";
+      }>;
+    }>(`/wms/picking-status${q}`);
+  },
+
+  /** POST /wms/collect-orders/:id/accept — WMS confirms acceptance, finishes the WO flow */
+  acceptCollectOrder(id: number) {
+    return apiClient.post<{
+      id: number;
+      collectNo: string;
+      workOrderCode: string;
+      status: string;
+      acceptedBy?: string | null;
+      acceptedAt?: string | null;
+      already?: boolean;
+    }>(`/wms/collect-orders/${id}/accept`, {});
+  },
+
+  /** GET /wms/shortages — open 缺料 lines for emergency handling */
+  getShortages() {
+    return apiClient.get<{
+      items: Array<{
+        lineId: number;
+        lineNo: number;
+        materialCode: string;
+        qty?: number | string | null;
+        lotNo?: string | null;
+        locationCode?: string | null;
+        locationQr?: string | null;
+        markedBy?: string | null;
+        markedAt?: string | null;
+        workOrderCode: string;
+        slipNo: string;
+        taskStatus?: string | null;
+      }>;
+    }>("/wms/shortages");
+  },
+
+  /** POST /wms/shortages/:lineId/resolve — handled, line back to PENDING */
+  resolveShortage(lineId: number) {
+    return apiClient.post<{
+      id: number;
+      lineNo: number;
+      materialCode: string;
+      status: string;
+      workOrderCode: string;
+      slipNo: string;
+      resolvedBy?: string | null;
+    }>(`/wms/shortages/${lineId}/resolve`, {});
+  },
+
+  /** GET /wms/collect-activity — live PDA collection feed + active orders */
+  getCollectActivity(limit = 30) {
+    return apiClient.get<{
+      feed: Array<{
+        at?: string | null;
+        by?: string | null;
+        status: string;
+        slipNo: string;
+        workOrderCode: string;
+        materialCode: string;
+        qty?: number | string | null;
+        lotNo?: string | null;
+        locationQr?: string | null;
+      }>;
+      active: Array<{
+        id: number;
+        slipNo: string;
+        workOrderCode: string;
+        status: string;
+        collector?: string | null;
+        totalLines: number;
+        doneLines: number;
+        lastAt?: string | null;
+        pickers?: string | null;
+      }>;
+    }>(`/wms/collect-activity?limit=${limit}`);
   },
 
   // ── PDA Inspection Records ───────────────────────────────────────────────────

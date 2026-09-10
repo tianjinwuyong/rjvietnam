@@ -3,7 +3,7 @@ import { ArrowRight, Barcode, CheckCircle, Package, XCircle, RotateCcw, Trash2, 
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import type { PickOrder, PickOrderItem } from "../../../../packages/shared-types/src/factory";
-import { wmsApi, type InventoryTransaction } from "../api/wms";
+import { wmsApi, type InventoryTransaction, type CollectOrder, type CollectOrderLine } from "../api/wms";
 import { inventoryTransactions as _demoTxs, materialLots as _demoLots } from "../data";
 import { WmsReturnFlow, type ReturnRecord } from "./WmsReturnFlow";
 import { WmsScrapFlow, type ScrapRecord } from "./WmsScrapFlow";
@@ -23,6 +23,71 @@ export function WmsIssue({ locale }: { locale: Locale }) {
   const [workOrders, setWorkOrders] = useState<PickOrder[]>([]);
   const [selectedWo, setSelectedWo] = useState<string | null>(null);
   const [lineItems, setLineItems] = useState<IssueLineItem[]>([]);
+  const [collectOrder, setCollectOrder] = useState<CollectOrder | null>(null);
+  const [collectLines, setCollectLines] = useState<CollectOrderLine[]>([]);
+  const [collectBusy, setCollectBusy] = useState(false);
+  const [collectDomain, setCollectDomain] = useState<string>("ALL");
+  const [collectors, setCollectors] = useState<Array<{ username: string; displayName?: string | null; roleCode: string; pendingAssigned: number; domain: string }>>([]);
+  const [assignBusy, setAssignBusy] = useState(false);
+
+  const refreshCollectLines = useCallback(async (woCode: string) => {
+    try {
+      const res = await wmsApi.getCollectOrder(woCode);
+      setCollectOrder(res.order ?? null);
+      setCollectLines(res.items ?? []);
+    } catch {
+      setCollectOrder(null);
+      setCollectLines([]);
+    }
+  }, []);
+
+  const refreshCollectors = useCallback(async () => {
+    try {
+      const res = await wmsApi.getCollectors();
+      setCollectors(res.items ?? []);
+    } catch {
+      setCollectors([]);
+    }
+  }, []);
+
+  const autoAllocate = useCallback(
+    async (woCode: string, orderId: number) => {
+      setAssignBusy(true);
+      try {
+        // Warehouse-wide + all three line-role collectors share the work.
+        const names = collectors.length
+          ? collectors.map((c) => c.username)
+          : ["VN_WH_001", "VN_WC_SMT", "VN_WC_AUTO", "VN_WC_MAN"];
+        const res = await wmsApi.assignCollectLines(orderId, { assignees: names });
+        setFeedback({
+          ok: true,
+          msg: `${woCode}: 已自动分配 ${res.assigned.length} 行给 ${names.length} 人`,
+        });
+        await refreshCollectLines(woCode);
+        await refreshCollectors();
+      } catch (err: any) {
+        setFeedback({ ok: false, msg: err?.message || String(t("common.error", locale)) });
+      } finally {
+        setAssignBusy(false);
+      }
+    },
+    [collectors, locale, refreshCollectLines, refreshCollectors],
+  );
+
+  const assignOneLine = useCallback(
+    async (woCode: string, orderId: number, lineId: number, assignee: string) => {
+      if (!assignee) return;
+      try {
+        await wmsApi.assignCollectLines(orderId, {
+          assignments: [{ lineId, assignee }],
+        });
+        await refreshCollectLines(woCode);
+      } catch (err: any) {
+        setFeedback({ ok: false, msg: err?.message || String(t("common.error", locale)) });
+      }
+    },
+    [locale, refreshCollectLines],
+  );
   const [scanInput, setScanInput] = useState("");
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -34,6 +99,14 @@ export function WmsIssue({ locale }: { locale: Locale }) {
   useEffect(() => {
     scanRef.current?.focus();
   }, [step]);
+
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get("workOrderCode");
+    if (fromUrl?.trim()) {
+      setWorkOrderInput(fromUrl.trim().toUpperCase());
+      void loadWorkOrder(fromUrl.trim().toUpperCase());
+    }
+  }, []);
 
   const loadWorkOrder = useCallback(async (woCode: string) => {
     setBusy(true);
@@ -53,6 +126,7 @@ export function WmsIssue({ locale }: { locale: Locale }) {
           .map((it) => ({ ...it, issued: false })),
       );
       setStep("confirm");
+      void loadCollectOrder(woCode);
     } catch {
       setFeedback({ ok: false, msg: String(t("common.error", locale)) });
     } finally {
@@ -143,6 +217,68 @@ export function WmsIssue({ locale }: { locale: Locale }) {
   const allIssued = lineItems.length > 0 && lineItems.every((it) => it.issued);
   const pendingCount = lineItems.filter((it) => !it.issued).length;
 
+  // Material collect list: after the WO is picked, the warehouse collector
+  // walks the locations on this list and scans each roll/lot. This page shows
+  // where to pick (location) and what is already collected.
+  const loadCollectOrder = useCallback(async (woCode: string) => {
+    try {
+      const res = await wmsApi.getCollectOrder(woCode);
+      setCollectOrder(res.order ?? null);
+      setCollectLines(res.items ?? []);
+    } catch {
+      setCollectOrder(null);
+      setCollectLines([]);
+    }
+    void refreshCollectors();
+  }, [refreshCollectors]);
+
+  const generateCollectOrder = useCallback(
+    async (woCode: string) => {
+      setCollectBusy(true);
+      setFeedback(null);
+      try {
+        const res = await wmsApi.generateCollectOrder(woCode);
+        setCollectOrder(res.order ?? null);
+        setCollectLines(res.items ?? []);
+        setFeedback({
+          ok: true,
+          msg: res.reused
+            ? `${woCode}: 领料单已存在 (${res.order?.collectNo ?? ""})`
+            : `${woCode}: 领料单已生成 (${res.order?.collectNo ?? ""})`,
+        });
+      } catch (err: any) {
+        setFeedback({
+          ok: false,
+          msg: err?.message || String(t("common.error", locale)),
+        });
+      } finally {
+        setCollectBusy(false);
+      }
+    },
+    [locale],
+  );
+
+  const collectedCount = collectLines.filter((l) => l.status === "COLLECTED").length;
+  const issuedCount = collectLines.filter((l) => l.status === "ISSUED").length;
+  const doneCount = collectedCount + issuedCount;
+  const collectPendingCount = collectLines.length - doneCount;
+
+  const domainGroups: Array<{ domain: string; label: string; lines: CollectOrderLine[] }> = [
+    { domain: "SMT", label: "SMT线", lines: [] },
+    { domain: "AUTO", label: "自动线", lines: [] },
+    { domain: "MANUAL", label: "手动线", lines: [] },
+  ];
+  for (const l of collectLines) {
+    const d = String(l.processDomain ?? "").toUpperCase();
+    const grp = domainGroups.find((g) => g.domain === d);
+    if (grp) grp.lines.push(l);
+  }
+  const visibleDomainGroups = domainGroups.filter((g) => g.lines.length > 0);
+  const filteredCollectLines =
+    collectDomain === "ALL"
+      ? collectLines
+      : collectLines.filter((l) => String(l.processDomain ?? "").toUpperCase() === collectDomain);
+
   const selectedWoLine = workOrders.find((wo) => wo.workOrderCode === selectedWo)?.lineCode;
 
   return (
@@ -219,7 +355,7 @@ export function WmsIssue({ locale }: { locale: Locale }) {
                   type="button"
                   className="action-button"
                   style={{ background: "var(--muted)" }}
-                  onClick={() => { setStep("select"); setSelectedWo(null); setLineItems([]); }}
+                  onClick={() => { setStep("select"); setSelectedWo(null); setLineItems([]); setCollectOrder(null); setCollectLines([]); }}
                 >
                   {t("common.back", locale) ?? "Back"}
                 </button>
@@ -235,6 +371,178 @@ export function WmsIssue({ locale }: { locale: Locale }) {
                 </button>
               </div>
             </div>
+
+            {selectedWo && (
+              <section
+                className="surface-panel"
+                style={{
+                  marginBottom: 16,
+                  border: "1px solid rgba(8,145,178,.35)",
+                  background: "rgba(8,145,178,.06)",
+                }}
+              >
+                <div className="section-header">
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: 15 }}>
+                      {t("wms.collectListTitle", locale)}
+                    </h3>
+                    <p style={{ margin: "3px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                      {collectOrder
+                        ? `${collectOrder.collectNo} · ${collectOrder.status === "ISSUED" ? `${t("wms.collectIssued", locale)} ✓` : collectOrder.status === "COLLECTED" ? t("wms.collectCollected", locale) : t("wms.collectProgress", locale).replace("{done}", String(doneCount)).replace("{total}", String(collectLines.length))} · ${t("wms.collectScanHint", locale)}`
+                        : t("wms.collectHintOpen", locale)}
+                    </p>
+                  </div>
+                  {!collectOrder && (
+                    <button
+                      type="button"
+                      className="action-button"
+                      disabled={collectBusy}
+                      style={{ background: "var(--ok)" }}
+                      onClick={() => void generateCollectOrder(selectedWo)}
+                    >
+                      {collectBusy ? t("wms.collectGenerating", locale) : t("wms.collectGenerate", locale)}
+                    </button>
+                  )}
+                </div>
+
+                {collectLines.length > 0 && (
+                  <>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", margin: "8px 0", alignItems: "center" }}>
+                      <button
+                        type="button"
+                        className="action-button"
+                        style={{
+                          fontSize: 12,
+                          background: collectDomain === "ALL" ? "var(--nav)" : "transparent",
+                          border: "1px solid var(--border)",
+                        }}
+                        onClick={() => setCollectDomain("ALL")}
+                      >
+                        全部 ({collectLines.length})
+                      </button>
+                      {visibleDomainGroups.map((g) => {
+                        const doneG = g.lines.filter((l) => l.status !== "PENDING").length;
+                        const active = collectDomain === g.domain;
+                        const color = g.domain === "SMT" ? "#2563eb" : g.domain === "AUTO" ? "#7c3aed" : "#16a34a";
+                        return (
+                          <button
+                            key={g.domain}
+                            type="button"
+                            className="action-button"
+                            style={{
+                              fontSize: 12,
+                              color: active ? "#fff" : color,
+                              background: active ? color : "transparent",
+                              border: `1px solid ${color}`,
+                            }}
+                            onClick={() => setCollectDomain(g.domain)}
+                            title={`${g.label} · ${g.domain}`}
+                          >
+                            {g.label} ({doneG}/{g.lines.length})
+                          </button>
+                        );
+                      })}
+                      {collectOrder && (
+                        <button
+                          type="button"
+                          className="action-button"
+                          style={{
+                            fontSize: 12,
+                            background: "var(--ok)",
+                            color: "#fff",
+                            marginLeft: "auto",
+                          }}
+                          disabled={assignBusy}
+                          onClick={() => void autoAllocate(selectedWo ?? "", collectOrder.id)}
+                          title="按库位连续性把待领行自动分给发料员（同域优先）"
+                        >
+                          {assignBusy ? "分配中…" : "自动分配给发料员"}
+                        </button>
+                      )}
+                    </div>
+                    <div className="table-shell" style={{ marginTop: 8 }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th title={t("common.status", locale)}>✓</th>
+                          <th>PO</th>
+                          <th>{t("common.material", locale)}</th>
+                          <th>{t("common.lot", locale)}</th>
+                          <th>{t("wms.collectLocationCol", locale)}</th>
+                          <th>{t("wms.collectNeedQty", locale)}</th>
+                          <th>分配给</th>
+                          <th>{t("wms.collectScanConfirm", locale)}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCollectLines.map((cl) => (
+                          <tr key={cl.id} style={{ opacity: cl.status === "PENDING" ? 1 : 0.55 }}>
+                            <td>
+                              {cl.status === "ISSUED" ? (
+                                <CheckCircle size={16} color="var(--ok)" />
+                              ) : cl.status === "COLLECTED" ? (
+                                <CheckCircle size={16} color="var(--warn)" />
+                              ) : (
+                                <Clock size={16} color="var(--warn)" />
+                              )}
+                            </td>
+                            <td>
+                              <span style={{ fontSize: 12 }}>{collectOrder?.workOrderCode ?? "—"}</span>
+                            </td>
+                            <td>
+                              <strong>{cl.materialCode}</strong>
+                              <span style={{ color: "var(--muted)", fontSize: 12, display: "block" }}>
+                                {(cl.materialName && (cl.materialName.zh || cl.materialName.en || cl.materialName.vi)) || "—"}
+                              </span>
+                            </td>
+                            <td>{cl.lotNo ?? "—"}</td>
+                            <td>
+                              <code style={{ fontSize: 12, color: "var(--info)" }}>
+                                {cl.locationQr || cl.locationCode || "—"}
+                              </code>
+                            </td>
+                            <td>{Number(cl.requiredQty).toLocaleString()}</td>
+                            <td>
+                              {cl.status === "PENDING" && collectOrder ? (
+                                <select
+                                  value={cl.assignedTo ?? ""}
+                                  onChange={(e) => void assignOneLine(selectedWo ?? "", collectOrder.id, cl.id, e.target.value)}
+                                  style={{ fontSize: 12, maxWidth: 130 }}
+                                  title="指定该行由哪位发料员领取"
+                                >
+                                  <option value="">未分配</option>
+                                  {collectors.map((c) => (
+                                    <option key={c.username} value={c.username}>
+                                      {c.username}
+                                      {c.domain && c.domain !== "ALL" ? `·${c.domain}` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span style={{ fontSize: 12 }}>{cl.assignedTo ?? "—"}</span>
+                              )}
+                            </td>
+                            <td>
+                              {cl.status === "ISSUED"
+                                ? `${t("wms.collectIssued", locale)} ✓ · ${cl.collectedBy ?? ""}`
+                                : cl.status === "COLLECTED"
+                                  ? `${t("wms.collectReadyToIssue", locale)} · ${cl.collectedBy ?? ""}`
+                                  : t("wms.collectPendingPda", locale)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    </div>
+                  </>
+                )}
+                {!collectOrder && !collectBusy && (
+                  <p style={{ margin: "8px 0 0", fontSize: 12, color: "var(--muted)" }}>
+                    {t("wms.collectHintPending", locale)}
+                  </p>
+                )}
+              </section>
+            )}
 
             <div className="scan-input" style={{ maxWidth: 520, marginBottom: 16 }} >
               <Barcode size={24} />
@@ -282,6 +590,7 @@ export function WmsIssue({ locale }: { locale: Locale }) {
                         <span style={{ color: "var(--muted)", fontSize: 12, display: "block" }}>
                           {String(it.materialName ?? "—")}
                         </span>
+                        {it.ruijingCode ? <span style={{ color: "var(--muted)", fontSize: 12, display: "block" }}>{it.ruijingCode}</span> : <span style={{ color: "var(--muted)", fontSize: 12, display: "block" }}>—</span>}
                       </td>
                       <td>{it.lotNo ?? "—"}</td>
                       <td>{it.locationCode ?? "—"}</td>

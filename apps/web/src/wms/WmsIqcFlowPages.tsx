@@ -46,6 +46,11 @@ export function WmsIqcFlowPages({ page, locale: _locale }: { page: IqcFlowPageKe
   const info = pageInfo[page];
   const [rows, setRows] = useState<Row[]>([]);
   const [preIqcRows, setPreIqcRows] = useState<Row[]>([]);
+  const [iqcDecisions, setIqcDecisions] = useState<Record<string, string>>({});
+  const [preIqcTab, setPreIqcTab] = useState<"pending" | "last">("pending");
+  const [lastBatch, setLastBatch] = useState<Array<{ lot: string; result: string; historyId?: number; at: string; by: string }>>(() => {
+    try { return JSON.parse(sessionStorage.getItem("preIqc_lastBatch") || "[]"); } catch { return []; }
+  });
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [guidanceName, setGuidanceName] = useState(() => savedIqcGuidance().fileName || "");
@@ -94,6 +99,52 @@ export function WmsIqcFlowPages({ page, locale: _locale }: { page: IqcFlowPageKe
     catch (err) { setError(err instanceof Error ? err.message : String(err)); }
   };
   const field = (key: keyof typeof form, placeholder: string) => <input className="form-input" value={form[key]} placeholder={placeholder} onChange={event => update(key, event.target.value)} />;
+  const preIqcDecisionOf = (row: Row) => {
+    const key = String(row.lot);
+    if (iqcDecisions[key]) return iqcDecisions[key];
+    const s = String(row.iqcStatus || "pending").toLowerCase();
+    if (s === "released") return "PASS";
+    if (s === "rejected") return "FAIL";
+    return "PENDING";
+  };
+  const submitPreIqcDecisions = async () => {
+    if (!preIqcRows.length) { setMessage("没有待提交的IQC判定"); return; }
+    // All visible rows must be judged — no PENDING allowed at submit.
+    const pendingLeft = preIqcRows.filter(row => preIqcDecisionOf(row) === "PENDING");
+    if (pendingLeft.length) { setMessage(`还有 ${pendingLeft.length} 项未判定（已标黄），请全部判定为PASS/FAIL后再提交`); return; }
+    const decided = preIqcRows;
+    setError(""); setMessage("");
+    try {
+      const traced: Array<{ lot: string; result: string; historyId?: number }> = [];
+      for (const row of decided) {
+        const resp: any = await apiClient.put(`/wms/receiving/pre-iqc/${encodeURIComponent(String(row.lot))}/result`, {
+          result: iqcDecisions[String(row.lot)],
+          operator: form.operator || "pre-iqc-web",
+          materialSn: row.materialSn ?? null,
+          vietnamCode: row.vietnamCode ?? null,
+          supplierCode: row.supplierCode ?? null,
+          supplierName: row.supplierName ?? null,
+          totalQty: row.totalQty ?? null,
+        });
+        traced.push({ lot: String(row.lot), result: iqcDecisions[String(row.lot)], historyId: resp?.historyId ?? resp?.data?.historyId });
+      }
+      setIqcDecisions({});
+      setMessage(`已提交 ${decided.length} 条IQC判定到WMS`);
+      // Virtual employee trace: keep a permanent visible trail of who decided what.
+      const stamp = new Date().toLocaleString("zh-CN");
+      const who = form.operator || "pre-iqc-web";
+      const batch = traced.map(t => ({ ...t, at: stamp, by: who }));
+      setLastBatch(batch);
+      try { sessionStorage.setItem("preIqc_lastBatch", JSON.stringify(batch)); } catch { /* private mode */ }
+      setVirtualMessages(items => [...items, {
+        role: "assistant",
+        text: `WMS IQC判定已提交（${stamp}，操作员 ${who}）：${traced.map(t => `${t.lot}→${t.result}${t.historyId ? `（历史#${t.historyId}）` : ""}`).join("；")}。已记入检验历史，待检表已清理。`,
+      }]);
+      setVirtualMonitorStatus(`SUBMITTED_${decided.length}`);
+      const refreshed: any = await apiClient.get("/wms/receiving/pre-iqc");
+      setPreIqcRows(refreshed.items ?? []);
+    } catch (err) { setError(err instanceof Error ? err.message : String(err)); }
+  };
   const importIqcGuidance = async (file?: File) => {
     if (!file) return;
     try {
@@ -150,7 +201,7 @@ export function WmsIqcFlowPages({ page, locale: _locale }: { page: IqcFlowPageKe
     {page === "reworkComplete" && <div className="toolbar" style={{ flexWrap: "wrap" }}>{field("defectId", "不良档案ID")}{field("lotNo", "批次")}{field("quantity", "数量")}{field("location", "复检仓位")}{field("operator", "操作员")}<button className="btn btn-primary" onClick={() => void submit(`/quality/iqc-defect-cases/${form.defectId}/rework-complete`, { operator: form.operator })}>确认返工完成</button><button className="btn btn-secondary" onClick={() => void submit("/wms/receiving/qr-bindings", { lotNo: form.lotNo, quantity: Number(form.quantity), location: form.location, warehouse: form.warehouse, sourceType: "REWORK_RETURN", operator: form.operator })}>生成新QR并进入复检</button></div>}
     {page === "iqcReinspection" && <div className="toolbar" style={{ flexWrap: "wrap" }}>{field("defectId", "不良档案ID")}{field("qrDocumentNo", "返工QR单据号")}{field("operator", "复检员")}<button className="btn btn-primary" onClick={() => void submit("/quality/iqc-reinspections", { caseId: Number(form.defectId), qrDocumentNo: form.qrDocumentNo, operator: form.operator })}>建立复检档案</button></div>}
     {page !== "poReceipt" && <div className="table-shell" style={{ marginTop: 16 }}><table><thead><tr>{["ID", "单据/档案", "批次", "状态/来源", "数量/金额", "操作"].map(header => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.length === 0 ? <tr><td colSpan={6}>暂无记录</td></tr> : rows.map(row => <tr key={row.id}><td>{value(row, "id", "material_lot_id")}</td><td>{value(row, "document_no", "approval_no", "case_no", "task_no", "reinspection_no")}</td><td>{value(row, "lot_no")}</td><td>{value(row, "status", "source_type", "decision")}</td><td>{page === "scrapFinanceApproval" ? `${value(row, "scrap_qty")} / ${value(row, "scrap_amount")} ${value(row, "currency")}` : value(row, "quantity", "defective_qty")}</td><td>{page === "scrapFinanceApproval" && row.status === "PENDING_FINANCE_APPROVAL" && <><button onClick={() => void submit(`/quality/iqc-scrap-finance-approvals/${row.id}/decision`, { decision: "APPROVED", approver: form.operator })}>财务批准</button><button onClick={() => void submit(`/quality/iqc-scrap-finance-approvals/${row.id}/decision`, { decision: "REJECTED", approver: form.operator })}>拒绝</button></>}{page === "scrapFinanceApproval" && row.status === "FINANCE_APPROVED" && <button onClick={() => void submit(`/quality/iqc-scrap-finance-approvals/${row.id}/execute`, { operator: form.operator })}>执行报废</button>}{page === "iqcReinspection" && ["OPEN", "PENDING"].includes(String(row.status)) && <><button onClick={() => void submit(`/quality/iqc-reinspections/${row.id}/complete`, { result: "PASS", operator: form.operator })}>PASS</button><button onClick={() => void submit(`/quality/iqc-reinspections/${row.id}/complete`, { result: "FAIL", operator: form.operator })}>FAIL</button></>}{page === "defectArchive" && row.status === "PALLET_REMOVAL_PENDING" && <button onClick={() => void submit(`/quality/iqc-defect-cases/${row.id}/pallet-removal`, { operator: form.operator })}>从栈板移除</button>}</td></tr>)}</tbody></table></div>}
-    {page === "poReceipt" && <section style={{ marginTop: 16, padding: 14, border: "1px solid #fde68a", borderRadius: 8, background: "#fffbeb" }}><h3 style={{ margin: "0 0 8px", color: "#92400e" }}>前IQC管理 · 收料绑定待检</h3><p style={{ margin: "0 0 10px", fontSize: 12, color: "#92400e" }}>PDA 收料绑定成功并等待 IQC 检验的材料。</p><div className="table-shell"><table><thead><tr><th>Material SN</th><th>Supplier Code</th><th>Supplier Name</th><th>数量(合并)</th><th>生产日期</th><th>Lot</th><th>库位 QR</th><th>IQC 状态</th></tr></thead><tbody>{preIqcRows.length === 0 ? <tr><td colSpan={8}>暂无待检材料</td></tr> : preIqcRows.map((row: any, i) => { const iqc = String(row.iqcStatus || "pending").toLowerCase(); return <tr key={i}><td><code>{row.materialSn}</code></td><td><code>{row.supplierCode}</code></td><td>{row.supplierName}</td><td>{row.totalQty}</td><td>{row.productionDate ? new Date(row.productionDate).toLocaleDateString("zh-CN") : ""}</td><td><code>{row.lot}</code></td><td><code style={{ fontSize: 10 }}>{row.locationQrs}</code></td><td>{iqc.startsWith("pending") ? <select defaultValue="PASS" onChange={e => void apiClient.put(`/wms/receiving/pre-iqc/${encodeURIComponent(String(row.lot))}/result`, { result: e.target.value }).then(() => window.location.reload())}><option value="PASS">PASS</option><option value="FAIL">FAIL</option></select> : <span style={{ fontWeight: 700, color: iqc === "released" ? "var(--ok)" : "var(--danger)" }}>{iqc.toUpperCase()}</span>}</td></tr>; })}</tbody></table></div></section>}
+    {page === "poReceipt" && <section style={{ marginTop: 16, padding: 14, border: "1px solid #fde68a", borderRadius: 8, background: "#fffbeb" }}><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "0 0 8px" }}><h3 style={{ margin: 0, color: "#92400e" }}>前IQC管理 · 收料绑定待检</h3><button type="button" className="btn btn-primary" onClick={() => void submitPreIqcDecisions()}>提交到WMS</button></div><p style={{ margin: "0 0 10px", fontSize: 12, color: "#92400e" }}>PDA 收料绑定成功并等待 IQC 检验的材料。提交前须全部判定，无PENDING。</p><div style={{ display: "flex", gap: 8, margin: "0 0 10px" }}><button type="button" className={preIqcTab === "pending" ? "btn btn-primary" : "btn btn-secondary"} onClick={() => setPreIqcTab("pending")}>待检（{preIqcRows.length}）</button><button type="button" className={preIqcTab === "last" ? "btn btn-primary" : "btn btn-secondary"} onClick={() => setPreIqcTab("last")}>上次提交（{lastBatch.length}）</button></div>{preIqcTab === "last" ? (<div className="table-shell"><table><thead><tr><th>Lot</th><th>判定</th><th>历史#</th><th>操作员</th><th>时间</th></tr></thead><tbody>{lastBatch.length === 0 ? <tr><td colSpan={5}>暂无上次提交记录</td></tr> : lastBatch.map((b, i) => <tr key={i}><td><code>{b.lot}</code></td><td style={{ fontWeight: 700, color: b.result === "PASS" ? "var(--ok)" : "var(--danger)" }}>{b.result}</td><td>{b.historyId ? `#${b.historyId}` : "-"}</td><td>{b.by}</td><td>{b.at}</td></tr>)}</tbody></table></div>) : (<div className="table-shell"><table><thead><tr><th>标记</th><th>Material SN</th><th>越南料号</th><th>Supplier Code</th><th>Supplier Name</th><th>数量(合并)</th><th>生产日期</th><th>Lot</th><th>库位 QR</th><th>IQC 状态</th></tr></thead><tbody>{preIqcRows.length === 0 ? <tr><td colSpan={10}>暂无待检材料</td></tr> : preIqcRows.map((row: any, i) => { const iqc = String(row.iqcStatus || "pending").toLowerCase(); const isTest = /^TST-/i.test(String(row.lot || "")) || /TEST14/i.test(String(row.locationQrs || "")); const undecided = preIqcDecisionOf(row) === "PENDING"; return <tr key={i} style={isTest ? { background: "rgba(244, 114, 182, .14)" } : undecided ? { background: "rgba(245, 158, 11, .18)" } : undefined}><td>{isTest ? <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 999, background: "#f472b6", color: "#fff", fontSize: 11, fontWeight: 700, letterSpacing: ".5px" }}>TEST</span> : <span style={{ color: "var(--muted)", fontSize: 11 }}>—</span>}</td><td><code>{row.materialSn}</code></td><td><code>{row.vietnamCode || "-"}</code></td><td><code>{row.supplierCode}</code></td><td>{row.supplierName}</td><td>{row.totalQty}</td><td>{row.productionDate ? new Date(row.productionDate).toLocaleDateString("zh-CN") : ""}</td><td><code>{row.lot}</code></td><td><code style={{ fontSize: 10 }}>{row.locationQrs}</code></td><td>{iqc.startsWith("pending") ? <select value={preIqcDecisionOf(row)} onChange={e => setIqcDecisions(prev => ({ ...prev, [String(row.lot)]: e.target.value }))} style={preIqcDecisionOf(row) === "PENDING" ? { border: "2px solid #f59e0b", background: "#fef3c7", fontWeight: 700 } : undefined} title={preIqcDecisionOf(row) === "PENDING" ? "待判定：提交前必须选PASS/FAIL" : undefined}><option value="PENDING">PENDING 待判定</option><option value="PASS">PASS</option><option value="FAIL">FAIL</option></select> : <span style={{ fontWeight: 700, color: iqc === "released" ? "var(--ok)" : "var(--danger)" }}>{iqc.toUpperCase()}</span>}</td></tr>; })}</tbody></table></div>)}</section>}
     <div style={{ position: "fixed", right: 18, bottom: 18, zIndex: 30 }}><button type="button" className="btn btn-primary" onClick={() => setVirtualOpen(value => !value)}>IQC-VIRTUAL-01</button>{virtualOpen && <div style={{ position: "absolute", right: 0, bottom: 48, width: 360, maxWidth: "calc(100vw - 36px)", background: "#fff", border: "1px solid #c7d2fe", borderRadius: 12, boxShadow: "0 12px 35px rgba(15,23,42,.25)" }}><div style={{ padding: "10px 12px", background: "#312e81", color: "#fff", borderRadius: "12px 12px 0 0", display: "flex", justifyContent: "space-between" }}><strong>IQC-VIRTUAL-01</strong><button type="button" onClick={() => setVirtualOpen(false)}>×</button></div><div style={{ padding: 10, maxHeight: 220, overflow: "auto" }}>{virtualMessages.length === 0 && <div style={{ color: "#64748b", fontSize: 12 }}>可询问当前 Excel 指导、批次和下一步 IQC 操作。</div>}{virtualMessages.map((message, index) => <div key={index} style={{ textAlign: message.role === "user" ? "right" : "left", margin: "6px 0" }}><span style={{ display: "inline-block", padding: "6px 8px", borderRadius: 8, background: message.role === "user" ? "#dbeafe" : "#f1f5f9", fontSize: 12 }}>{message.text}</span></div>)}{virtualBusy && <div style={{ color: "#64748b", fontSize: 12 }}>IQC-VIRTUAL-01 正在读取指导文件和批次历史…</div>}</div><div style={{ display: "flex", gap: 6, padding: 10, borderTop: "1px solid #e2e8f0", flexWrap: "wrap" }}><button type="button" className="btn btn-secondary" onClick={() => { setVirtualWatching(value => !value); setVirtualOpen(true); }}>{virtualWatching ? "停止监控表格" : "开始监控表格"}</button><span style={{ fontSize: 11, color: "#64748b", alignSelf: "center" }}>{virtualMonitorStatus}</span><input value={virtualInput} onChange={event => setVirtualInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter") void askVirtualEmployee(); }} placeholder="给 IQC 员工指令" style={{ flex: 1, minWidth: 180 }} /><button type="button" className="btn btn-primary" onClick={() => void askVirtualEmployee()} disabled={virtualBusy}>发送</button></div></div>}</div>
   </section></div>;
 }

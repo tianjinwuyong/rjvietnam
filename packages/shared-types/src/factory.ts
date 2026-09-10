@@ -47,9 +47,20 @@ export interface MaterialLot {
   receivedQty?: number;
   qty?: number;
   availableQty?: number;
+  /** 在库数量（由 inventory_transactions 派生） */
+  onHand?: number;
+  /** 预警线：在库低于此值红色闪烁报警（material_lots.low_stock_level） */
+  lowStockLevel?: number;
   iqcStatus: IqcStatus;
   reservedQty?: number;
   locationCode?: string | null;
+  /** 仓库库位 QR（storage_locations.qr_code） */
+  locationQr?: string | null;
+  /** 越南料号（materials.vietnam_code / label master 回落） */
+  vietnamCode?: string | null;
+  /** 收料托板/箱 QR（wms_receiving_pallet_box_bindings 最新一条） */
+  palletQr?: string | null;
+  boxQr?: string | null;
   name_zh?: string;
   name_en?: string;
   name_vi?: string;
@@ -149,6 +160,7 @@ export interface PickOrderItem {
   id: number | string;
   pickOrderId?: number | string;
   materialCode: string;
+  ruijingCode?: string;
   materialName?: MultilingualText | string;
   requiredQty: number;
   pickedQty?: number;
