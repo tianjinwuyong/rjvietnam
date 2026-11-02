@@ -1,0 +1,77 @@
+# Ruijing Crew Tasks Configuration
+
+plan_sprint:
+  description: |
+    Analyze the Ruijing SMT factory MES system and create a sprint plan.
+    Review:
+    1. smt-factory-system/AGENTS.md - System overview
+    2. 瑞晶越南工位-正式命名/002-自动线/STATION_CORE_ARCHITECTURE.md - Station architecture
+    3. Current project structure and any pending issues
+
+    Output a sprint plan with:
+    - Priority tasks for Backend, Frontend, Python Dev, and QA
+    - Estimated effort for each task
+    - Dependencies between tasks
+  expected_output: |
+    A detailed sprint plan document with tasks, priorities, effort estimates, and dependencies.
+  agent: tech_lead
+
+analyze_backend:
+  description: |
+    Analyze the Express.js backend at smt-factory-system/services/api/server.js
+    Review:
+    - API routes and endpoints
+    - Database schema and migrations
+    - Authentication/authorization
+    - Known issues (hardcoded password, etc.)
+  expected_output: |
+    Backend analysis report with architecture diagram, key endpoints, and recommended improvements.
+  agent: backend_dev
+
+analyze_frontend:
+  description: |
+    Analyze the React frontend at smt-factory-system/apps/web/src/
+    Review:
+    - Component structure and state management
+    - i18n implementation
+    - Module organization (Dashboard, WMS, PMC, MES, HR, etc.)
+    - Known issues (React hook call bug)
+  expected_output: |
+    Frontend analysis report with component architecture, i18n status, and recommended improvements.
+  agent: frontend_dev
+
+analyze_python_agents:
+  description: |
+    Analyze the Python station agents in 瑞晶越南工位-正式命名/
+    Review:
+    - Station core architecture (Core/2D/3D pattern)
+    - Heartbeat implementation
+    - MES outbox synchronization
+    - SQLite database schema
+  expected_output: |
+    Python agents analysis report with architecture validation and recommended improvements.
+  agent: python_dev
+
+setup_ci_cd:
+  description: |
+    Set up CI/CD pipeline for the project.
+    Create:
+    - GitHub Actions workflow for test automation
+    - Migration validation scripts
+    - Deployment scripts for Windows
+    - Docker configuration if needed
+  expected_output: |
+    CI/CD pipeline configuration with test, migration, and deployment workflows.
+  agent: qa_devops
+
+review_and_merge:
+  description: |
+    Review all deliverables from the development team.
+    Validate:
+    - Code quality and adherence to project standards
+    - Test coverage
+    - Documentation completeness
+    - Migration safety
+  expected_output: |
+    Review report with approval status for each deliverable and any required changes.
+  agent: tech_lead

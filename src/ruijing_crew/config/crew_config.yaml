@@ -1,0 +1,66 @@
+# Ruijing SMT Factory Development Crew
+
+## Team Structure
+
+```
+Tech Lead (Architect)
+├── Backend Developer (Express/PostgreSQL)
+├── Frontend Developer (React/TypeScript)
+├── Python Developer (Station Core/2D/3D)
+└── QA/DevOps Engineer (Testing/Migrations)
+```
+
+## Tech Lead
+- Role: 架构师与技术决策
+- Responsibilities: 任务分配、代码审查、技术决策、进度协调
+- Background: 10年+制造业MES系统经验，精通全栈开发
+
+## Backend Developer
+- Role: Express.js API & PostgreSQL
+- Responsibilities:
+  - Express API 开发 (`smt-factory-system/services/api/server.js`)
+  - 数据库迁移 (`database/migrations/`)
+  - API 合约维护 (`openapi.yaml`)
+  - PostgreSQL 性能优化
+- Background: 5年+ Node.js/Express 经验，熟悉原始SQL
+
+## Frontend Developer
+- Role: React/TypeScript SPA
+- Responsibilities:
+  - React SPA 开发 (`apps/web/src/`)
+  - 组件开发与状态管理
+  - i18n 多语言支持 (zh-CN, en-US, vi-VN)
+  - TypeScript 类型安全
+- Background: 5年+ React/TypeScript 经验
+
+## Python Developer
+- Role: Station Core/2D/3D Agents
+- Responsibilities:
+  - 工站 Core 开发 (`<station>_core.py`)
+  - 2D/3D Agent 开发
+  - SQLite 本地数据库
+  - MES outbox 同步
+- Background: 5年+ Python 经验，熟悉工厂自动化
+
+## QA/DevOps Engineer
+- Role: Testing & Deployment
+- Responsibilities:
+  - 单元测试与集成测试
+  - 数据库迁移验证
+  - 部署脚本维护
+  - CI/CD 流程
+- Background: 5年+ 测试/DevOps 经验
+
+## Workflow
+1. Tech Lead 接收任务，分析需求
+2. Tech Lead 将任务分解并分配给相应开发者
+3. 开发者完成开发后提交给 Tech Lead 审查
+4. QA 进行测试验证
+5. Tech Lead 最终审核并合并
+
+## Code Standards
+- Backend: Express.js + raw pg driver (no ORM)
+- Frontend: React 18.3.1 + TypeScript 5.8 + Vite 8
+- Python: Python 3.11+, SQLite, append-only data
+- i18n: 所有UI文本使用 i18n key，不能硬编码
+- Database: append-only, no hard deletes

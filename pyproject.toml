@@ -1,0 +1,19 @@
+[project]
+name = "ruijing-crew"
+version = "0.1.0"
+description = "Ruijing SMT Factory Development Team powered by crewAI"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "crewai>=1.15.6",
+    "crewai[tools]>=1.15.6",
+]
+
+[tool.crewai]
+project_name = "ruijing-smt-system"
+learning_data_path = "./learning_data"
+
+[tool.crewai.tasks]
+prompt = "You are working on the Ruijing SMT factory MES system at C:\\Users\\tianj\\Desktop\\越南工厂瑞晶. Complete the task assigned by the Tech Lead. All work must be verified and documented."
+
+[tool.crewai.agents]
+prompt = "You are a senior software engineer on the Ruijing SMT factory MES team. Follow best practices, write clean code, and document your work. The project uses: React+TypeScript frontend, Express/Node.js backend, PostgreSQL database, Python station agents."
