@@ -1,0 +1,386 @@
+[
+  {
+    "group": "menu.workbench",
+    "icon": "Odometer",
+    "single": "/",
+    "items": [
+      {
+        "path": "/",
+        "icon": "HomeFilled",
+        "title": "menu.home"
+      }
+    ]
+  },
+  {
+    "group": "menu.docSystem",
+    "icon": "Document",
+    "home": "/docs",
+    "hidden": [
+      "/doc-ledger",
+      "/docs/new"
+    ],
+    "items": [
+      {
+        "path": "/doc-issue-record",
+        "icon": "Promotion",
+        "title": "menu.docIssueRecord"
+      },
+      {
+        "path": "/doc-obsolete",
+        "icon": "CircleClose",
+        "title": "menu.docObsolete"
+      },
+      {
+        "path": "/doc-external",
+        "icon": "DocumentCopy",
+        "title": "menu.docExternal"
+      }
+    ]
+  },
+  {
+    "group": "menu.drive",
+    "icon": "FolderOpened",
+    "single": "/drive",
+    "items": [
+      {
+        "path": "/drive",
+        "icon": "FolderOpened",
+        "title": "menu.drive"
+      }
+    ]
+  },
+  {
+    "group": "menu.knowledge",
+    "icon": "Collection",
+    "single": "/knowledge",
+    "items": [
+      {
+        "path": "/knowledge",
+        "icon": "Reading",
+        "title": "menu.knowledge"
+      }
+    ]
+  },
+  {
+    "group": "menu.qualityMgr",
+    "icon": "Aim",
+    "home": "/quality",
+    "sections": [
+      {
+        "title": "menu.iqcGroup",
+        "items": [
+          {
+            "path": "/quality/iqc",
+            "icon": "Search",
+            "title": "menu.iqcInspect"
+          }
+        ]
+      },
+      {
+        "title": "menu.mrbGroup",
+        "items": [
+          {
+            "path": "/quality/mrb",
+            "icon": "Warning",
+            "title": "menu.mrbReview"
+          }
+        ]
+      },
+      {
+        "title": "menu.qcIpqc",
+        "items": [
+          {
+            "path": "/ipqc/fill",
+            "icon": "EditPen",
+            "title": "ipqcMod.fillTitle"
+          },
+          {
+            "path": "/ipqc/records",
+            "icon": "Tickets",
+            "title": "ipqcMod.recordsTitle"
+          },
+          {
+            "path": "/fai/fill",
+            "icon": "EditPen",
+            "title": "faiMod.fillTitle"
+          },
+          {
+            "path": "/fai/records",
+            "icon": "Tickets",
+            "title": "faiMod.recordsTitle"
+          },
+          {
+            "path": "/equipment/inspect-fill",
+            "icon": "EditPen",
+            "title": "inspectRt.fillTitle"
+          },
+          {
+            "path": "/equipment/inspect-records",
+            "icon": "Tickets",
+            "title": "inspectRt.recordsTitle"
+          }
+        ]
+      },
+      {
+        "title": "menu.qcOqc",
+        "items": [
+          {
+            "path": "/quality/oqc",
+            "icon": "Box",
+            "title": "menu.oqcInspect"
+          }
+        ]
+      },
+      {
+        "title": "menu.qualityTemplates",
+        "items": [
+          {
+            "path": "/quality/templates/iqc",
+            "icon": "SetUp",
+            "title": "menu.modelIqc",
+            "admin": true
+          },
+          {
+            "path": "/quality/templates/ipqc",
+            "icon": "SetUp",
+            "title": "menu.modelIpqc",
+            "admin": true
+          },
+          {
+            "path": "/quality/templates/oqc",
+            "icon": "SetUp",
+            "title": "menu.modelOqc",
+            "admin": true
+          },
+          {
+            "path": "/quality/templates/fai",
+            "icon": "SetUp",
+            "title": "menu.modelFai",
+            "admin": true
+          },
+          {
+            "path": "/quality/templates/inspect",
+            "icon": "SetUp",
+            "title": "menu.modelInspect",
+            "admin": true
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "group": "menu.equipmentMgr",
+    "icon": "SetUp",
+    "home": "/equipment/stats",
+    "items": [
+      {
+        "path": "/equipment",
+        "icon": "Monitor",
+        "title": "menu.equipment"
+      },
+      {
+        "path": "/equipment/stocktakes",
+        "icon": "Files",
+        "title": "menu.equipStocktake"
+      },
+      {
+        "path": "/equipment/tasks",
+        "icon": "Checked",
+        "title": "menu.equipTasks"
+      },
+      {
+        "path": "/equipment/calibrations",
+        "icon": "Timer",
+        "title": "menu.equipCalib"
+      },
+      {
+        "path": "/equipment/alerts",
+        "icon": "Bell",
+        "title": "menu.equipAlerts"
+      }
+    ]
+  },
+  {
+    "group": "menu.hr",
+    "icon": "User",
+    "home": "/stats",
+    "sections": [
+      {
+        "title": "menu.hrOrg",
+        "items": [
+          {
+            "path": "/org",
+            "icon": "OfficeBuilding",
+            "title": "menu.org",
+            "perm": "org:manage"
+          },
+          {
+            "path": "/org-import",
+            "icon": "UploadFilled",
+            "title": "menu.orgImport",
+            "perm": "org:manage"
+          }
+        ]
+      },
+      {
+        "title": "menu.hrAttendance",
+        "items": [
+          {
+            "path": "/attendance",
+            "icon": "Clock",
+            "title": "menu.attendance"
+          },
+          {
+            "path": "/attendance/rules",
+            "icon": "SetUp",
+            "title": "menu.cardRule",
+            "perm": "attend:manage"
+          },
+          {
+            "path": "/attendance/calendar",
+            "icon": "Calendar",
+            "title": "menu.workCalendar",
+            "perm": "attend:manage"
+          },
+          {
+            "path": "/schedule",
+            "icon": "Calendar",
+            "title": "menu.schedule",
+            "perm": "attend:schedule"
+          }
+        ]
+      },
+      {
+        "title": "menu.hrSalary",
+        "items": [
+          {
+            "path": "/salary",
+            "icon": "Money",
+            "title": "menu.salary"
+          },
+          {
+            "path": "/salary/template",
+            "icon": "Collection",
+            "title": "menu.salaryTemplate",
+            "perm": "salary:manage"
+          },
+          {
+            "path": "/salary/performance",
+            "icon": "Histogram",
+            "title": "menu.perfFlow",
+            "perm": "salary:manage"
+          }
+        ]
+      },
+      {
+        "title": "menu.hrTraining",
+        "items": [
+          {
+            "path": "/training",
+            "icon": "Reading",
+            "title": "menu.training"
+          },
+          {
+            "path": "/exam",
+            "icon": "Tickets",
+            "title": "exam.myExams"
+          },
+          {
+            "path": "/handover",
+            "icon": "Switch",
+            "title": "menu.handover"
+          }
+        ]
+      },
+      {
+        "title": "menu.hrDocs",
+        "items": [
+          {
+            "path": "/apply/leave",
+            "icon": "Calendar",
+            "title": "flowDef.leave"
+          },
+          {
+            "path": "/apply/miss_card",
+            "icon": "Timer",
+            "title": "flowDef.miss_card"
+          },
+          {
+            "path": "/apply/comp_day",
+            "icon": "Checked",
+            "title": "flowDef.comp_day"
+          },
+          {
+            "path": "/apply/headcount",
+            "icon": "User",
+            "title": "flowDef.headcount"
+          }
+        ]
+      },
+      {
+        "title": "menu.hrMeeting",
+        "items": [
+          {
+            "path": "/meeting",
+            "icon": "Calendar",
+            "title": "menu.meetingList"
+          },
+          {
+            "path": "/meeting/create",
+            "icon": "CirclePlus",
+            "title": "menu.meetingCreate"
+          },
+          {
+            "path": "/meeting/series",
+            "icon": "Collection",
+            "title": "menu.meetingSeries"
+          },
+          {
+            "path": "/meeting/actions",
+            "icon": "List",
+            "title": "menu.meetingActions"
+          },
+          {
+            "path": "/meeting/minutes",
+            "icon": "Notebook",
+            "title": "menu.meetingMinutes"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "group": "menu.sysMgr",
+    "icon": "Setting",
+    "items": [
+      {
+        "path": "/ledger",
+        "icon": "Download",
+        "title": "menu.ledger"
+      },
+      {
+        "path": "/flow-versions",
+        "icon": "CopyDocument",
+        "title": "menu.flowVersions"
+      },
+      {
+        "path": "/template-fields",
+        "icon": "SetUp",
+        "title": "customField.manageTitle",
+        "perm": "template:field"
+      },
+      {
+        "path": "/flow-design",
+        "icon": "Connection",
+        "title": "menu.flowDesign",
+        "admin": true
+      },
+      {
+        "path": "/system",
+        "icon": "Setting",
+        "title": "menu.system",
+        "admin": true
+      }
+    ]
+  }
+]
