@@ -1,0 +1,21 @@
+{
+  "note": "补充 SQL 执行顺序（与 server/scripts/init-db.ts 的 SUPPLEMENTAL_SQL_FILES 保持一致，顺序敏感）",
+  "files": [
+    "sync-schema-20261016.sql",
+    "supplier_debt_tables.sql",
+    "mrb_disposition_tables.sql",
+    "production_return_tables.sql",
+    "iqc_strictness_count_table.sql",
+    "fix-constraints-20261008.sql",
+    "fix-qr-content-unique-20261008.sql",
+    "fix-iqc-lot-dedup-20261008.sql",
+    "fix-iqc-pending-isolation-20261017.sql",
+    "fix-material-grade-20261018.sql",
+    "fix-mrb-reviewer-20261018.sql",
+    "mrb-v2-20261018.sql",
+    "mrb-v2.1-20261018.sql",
+    "mrb-v2.2-20261018.sql",
+    "rename-spc-to-spec-20261022.sql",
+    "provision-deploy-config-20261016.sql"
+  ]
+}

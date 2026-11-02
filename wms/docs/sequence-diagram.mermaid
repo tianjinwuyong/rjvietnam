@@ -1,0 +1,73 @@
+%% F-11 IQC 待检隔离 —— 关键时序图（Mermaid）
+%% 参与者用简化名，对应代码：
+%%   PDA        -> client（扫码收货页 / 批量收货）
+%%   ReceiptSvc -> server/modules/receipt/receipt.service.ts (scanReceipt / batchReceipt / submitIqc)
+%%   DB         -> PostgreSQL 18 (inventory / iqc_lot / iqc_lot_receipt / receipt_order)
+%%   IqcSvc     -> server/modules/iqc/iqc.service.ts (finalizeLotInventory / reviewReport)
+%%   PickSvc    -> server/modules/workorder/workorder.service.ts（领料可用量）
+
+sequenceDiagram
+    autonumber
+    actor WH as 仓管员(PDA)
+    participant ReceiptSvc
+    participant DB
+    actor IQC as IQC检验员
+    participant IqcSvc
+    participant PickSvc
+
+    rect rgb(235,245,255)
+    Note over WH,DB: ① 收货：待检桶独立存在（与已放行行互不合并）
+    WH->>ReceiptSvc: scanReceipt(qr, location, qty)
+    ReceiptSvc->>DB: INSERT receipt_order (qr_content 唯一兜底)
+    ReceiptSvc->>DB: INSERT inventory(stock_status='pending_qc', locked=true, reason='IQC待检')\nON CONFLICT (material,location,batch,stock_status) DO UPDATE qty+=excluded.qty
+    Note right of DB: 冲突键含 'pending_qc' → 只会合并进待检桶<br/>已放行行(good)数量不变，天然隔离
+    DB-->>ReceiptSvc: ok
+    ReceiptSvc-->>WH: 收货单(received)
+    end
+
+    rect rgb(240,255,240)
+    Note over ReceiptSvc,DB: ② 提交报检：同物理批次只允许一个 active 检验单号（F-10 修复点）
+    WH->>ReceiptSvc: submitIqc()
+    ReceiptSvc->>DB: pg_advisory_xact_lock(hash(4列分组键))   -- 排序后逐个加锁
+    ReceiptSvc->>DB: SELECT receipt_order WHERE status='received' AND 无 lot 关联 FOR UPDATE
+    ReceiptSvc->>DB: SELECT iqc_lot WHERE 4列键 AND status IN(active) FOR UPDATE
+    alt 存在 active 批次（合并成一个检验单号）
+        ReceiptSvc->>DB: UPDATE iqc_lot SET total_qty+=qty, last_receipt_date=max(...)
+    else 不存在
+        ReceiptSvc->>DB: INSERT iqc_lot(...) ON CONFLICT(4列) WHERE status IN(active) DO NOTHING
+        Note right of DB: 仲裁索引唯一 → 只有 iqc_lot_active_dedup_uniq<br/>(4列 + NULLS NOT DISTINCT)，不再被无条件UNIQUE索引静默吞掉
+        alt DO NOTHING 命中（真并发）
+            ReceiptSvc->>DB: 重读 active 批次 FOR UPDATE 并累加 total_qty
+        end
+    end
+    ReceiptSvc->>DB: INSERT iqc_lot_receipt (lot_id, receipt_id) ON CONFLICT DO NOTHING
+    ReceiptSvc->>DB: UPDATE receipt_order SET status='pending_iqc'
+    ReceiptSvc-->>WH: {createdLotCount, lotNos}
+    end
+
+    rect rgb(255,250,235)
+    Note over IQC,PickSvc: ③ 放行：按「报检数量」守恒迁移（不是整行搬迁）
+    IQC->>IqcSvc: reviewReport(reportId, pass)
+    IqcSvc->>DB: UPDATE iqc_report SET review_status='approved' WHERE IS DISTINCT FROM 'approved'
+    Note right of DB: 影响 0 行 → 409（审批幂等 CAS）
+    IqcSvc->>DB: UPDATE iqc_lot SET status='pass' WHERE id=:lot AND status IN(active)
+    IqcSvc->>DB: SELECT inventory WHERE material,batch,stock_status='pending_qc' ORDER BY location_id,id FOR UPDATE
+    IqcSvc->>IqcSvc: 守恒校验：SUM(qty) >= lot.total_qty ? 否则 409
+    loop 每行 take = LEAST(row.qty, remaining)
+        alt take == row.qty
+            IqcSvc->>DB: DELETE inventory WHERE id=row.id
+        else take < row.qty
+            IqcSvc->>DB: UPDATE inventory SET quantity=qty-take WHERE id=row.id
+            Note right of DB: 剩余仍为 pending_qc/locked=true → 留给下一张检验单
+        end
+        IqcSvc->>DB: INSERT inventory(good, locked=false, qty=take)\nON CONFLICT (4列) DO UPDATE qty+=take
+    end
+    IqcSvc->>DB: UPDATE receipt_order SET status='iqc_pass' (按 iqc_lot_receipt 精确范围)
+    IqcSvc-->>IQC: 审批成功
+    end
+
+    rect rgb(250,240,250)
+    Note over PickSvc,DB: ④ 领料只认 good 且未锁（pending_qc 永远不会被领走）
+    PickSvc->>DB: SELECT inventory WHERE material AND stock_status='good' AND locked=false
+    DB-->>PickSvc: 可用量（不含待检）
+    end

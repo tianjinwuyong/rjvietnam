@@ -1,0 +1,88 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Production builds
+dist/
+*/dist/
+build/
+*/build/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+/logs/
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary folders
+tmp/
+temp/
+.playwright-cli/
+
+# Lock files (keep package-lock.json for consistent installs)
+yarn.lock
+pnpm-lock.yaml
+
+# Cache files
+.eslintcache
+*.tsbuildinfo
+
+# swc wasm
+.swc
+
+# Agent files
+.agent/
+.npm_cache
+
+# 数据库备份（本地运维产物，不入库）
+backups/
+*.dump
+
+# ---- 本地部署产物 / 环境数据（2026-11-02 入库时补充，勿删）----
+installer/
+backups/
+db-backup/
+logs/
+ssl/
+test_data/
+deploy-linux/out/
+.env.bak*
+.tmp-*
+
+# 仓库根 .gitignore 有 `*.sql`（防数据库 dump 入库），这里只放行迁移/建表脚本
+!db_migration_*.sql
+!server/database/*.sql
+!drizzle/*.sql
+!deploy-linux/assets/schema.sql

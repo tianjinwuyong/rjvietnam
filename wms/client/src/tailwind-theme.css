@@ -1,0 +1,233 @@
+:root {
+  --background: #f2f2f7;
+  --foreground: #1c1c1e;
+  --muted-foreground: #8e8e93;
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --popover: #ffffff;
+  --popover-foreground: #1c1c1e;
+  --primary: #007aff;
+  --primary-hover: #0066d6;
+  --primary-foreground: #ffffff;
+  --primary-soft: #e5f0ff;
+  --secondary: #f2f2f7;
+  --secondary-foreground: #1c1c1e;
+  --muted: #f2f2f7;
+  --accent: #ff9500;
+  --accent-hover: #e68600;
+  --accent-foreground: #ffffff;
+  --accent-soft: #fff4e5;
+  --destructive: #ff3b30;
+  --destructive-hover: #d70015;
+  --destructive-foreground: #ffffff;
+  --destructive-soft: #ffebe9;
+  --border: #e5e5ea;
+  --input: #c7c7cc;
+  --input-bg: #f2f2f7;
+  --ring: #007aff;
+  --success: #34c759;
+  --success-foreground: #ffffff;
+  --success-soft: #e8faec;
+  --warning: #ff9500;
+  --warning-foreground: #ffffff;
+  --warning-soft: #fff4e5;
+  --info: #007aff;
+  --info-foreground: #ffffff;
+  --info-soft: #e5f0ff;
+  --chart-1: #007aff;
+  --chart-2: #ff9500;
+  --chart-3: #34c759;
+  --chart-4: #ff3b30;
+  --chart-5: #8e8e93;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #1c1c1e;
+  --sidebar-primary: #007aff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e5f0ff;
+  --sidebar-accent-foreground: #007aff;
+  --sidebar-border: #e5e5ea;
+  --sidebar-ring: #007aff;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text",
+    "PingFang SC", "Helvetica Neue", "Microsoft YaHei", sans-serif;
+  --font-mono: "Consolas", "Monaco", "Courier New", monospace;
+  --font-serif: Georgia, "Times New Roman", serif;
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.10), 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.12);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-soft: var(--accent-soft);
+  --color-destructive: var(--destructive);
+  --color-destructive-hover: var(--destructive-hover);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-input-bg: var(--input-bg);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-soft: var(--warning-soft);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-soft: var(--info-soft);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+
+  --shadow-sm: var(--shadow-sm);
+  --shadow: var(--shadow);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-xl: var(--shadow-xl);
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+/* ===== 全局基准：根字号 16px（2.1 字号 A1）=====
+   此前这里写 13.2px（= 16 × 82.5%），把 Tailwind 的 text-xs 压到 9.9px、
+   text-sm 压到 11.55px，正文小到需要放大镜。根字号回到 16px 后：
+   · text-xs = 12px、text-sm = 14px、text-base = 16px（Tailwind 原生阶梯）；
+   · antd 侧由 index.tsx 的 ConfigProvider 同步回 14/12/16/20、控件高 32。
+   回滚方式：把下面 16px 改回 13.2px，同时把 index.tsx 的 token 改回
+   11.55 / 9.9 / 13.2 / 16.5 / 26 即可（两处必须同改，否则两库不同尺度）。 */
+html {
+  font-size: 16px;
+}
+
+/* 侧边栏保持原尺寸：字号本来就是 px 定义不受根字号影响，
+   这里把间距变量恢复为原值（0.25rem × 16px 根字号 = 4px） */
+aside[data-sidebar] {
+  --spacing: 4px;
+}
+
+/* 2.3：原 `html[data-input="coarse"] { font-size: 16px }` 已删除。
+   根字号本来就是 16px 了，这条规则不再改变任何结果，留着只会让人以为
+   "触屏还有一套字号" —— 多端尺寸差异现在只体现在控件高度（44px）上，
+   由 pda.css 的 html[data-input="coarse"] 规则负责。 */
+
+/* PDA 移动端界面：根字号与主界面一致（16px），保留此条是为了表达"PDA 永不参与缩放"的意图 */
+html:has(.pda-shell) {
+  font-size: 16px;
+}
+
+/* 打印输出（IQC 检验报告等）保持原尺寸 */
+@media print {
+  html {
+    font-size: 16px;
+  }
+}
+
+/* 2.5 焦点环：原来全站没有 :focus-visible 规则，个别组件用 20% 透明度的光环
+   （约 1.30:1，远低于 3:1），键盘用户在大表格里基本看不出焦点在哪。
+   统一改为 2px 实色环，对比度 5.74:1。 */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+body {
+  font-family: var(--font-sans);
+  /* 原来是 15.4px 这个孤儿值（既不是 14 也不是 16，无人能解释来源）。
+     改为 rem 表达 = 14px，与 antd 的 fontSize 和 Tailwind 的 text-sm 同档。 */
+  font-size: 0.875rem;
+  line-height: 1.5;
+  background-color: var(--background);
+  color: var(--foreground);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================================
+   「纸」作用域：IQC 检验报告页（.iqc-inspect-page）
+   ----------------------------------------------------------------------------
+   这个页面是**可打印的报表**：容器写死 bg-white，但内部文字用的是主题 token。
+   深色主题下 --foreground 变成浅色 → 白纸写浅字，标题和按钮文字直接看不见
+   （用户截图里的"黑块按钮"就是 bg-secondary 深底 + secondary-foreground 深字）。
+
+   不能简单把它改成 bg-card：打印时浏览器默认不输出背景色，
+   深色文字若变成浅色，纸上就是一片空白。
+
+   正确做法：在白纸范围内**把主题 token 重置为浅色取值**，
+   这样白底始终配深字，浅色主题下行为不变，打印也安全。
+   ============================================================================ */
+:is(.iqc-inspect-page, .iqc-paper) {
+  --background: #ffffff;
+  --foreground: #1c1c1e;
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --popover: #ffffff;
+  --popover-foreground: #1c1c1e;
+  --muted: #f2f2f7;
+  --muted-foreground: #6d6d72;
+  --border: #e5e5ea;
+  --input: #c7c7cc;
+  --input-bg: #ffffff;
+  --secondary: #f2f2f7;
+  --secondary-foreground: #1c1c1e;
+  background: #ffffff;
+  color: #1c1c1e;
+}
+
+/* 打印兜底：即使将来有人给这个页面加了深色样式，纸上也必须只有深字白底 */
+@media print {
+  :is(.iqc-inspect-page, .iqc-paper) {
+    --foreground: #000000;
+    --muted-foreground: #444444;
+    --card: #ffffff;
+    --card-foreground: #000000;
+    background: #ffffff;
+    color: #000000;
+  }
+}
