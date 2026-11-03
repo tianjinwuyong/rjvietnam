@@ -95,3 +95,9 @@ tests/auth.test.ts
 
 # WorkBuddy local project data (memory, config, logs) — never commit
 .workbuddy/
+
+# ---- 来自 feature/oa-workspace 的忽略项（合并保留） ----
+tmp/
+out/
+.DS_Store
+Thumbs.db
