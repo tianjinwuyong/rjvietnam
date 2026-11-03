@@ -11984,7 +11984,7 @@ app.put('/api/factory/virtual-employees/:id/config', async (req,res) => {
     const preferredLanguage=String(p.preferredLanguage||p.preferred_language||'zh-CN');
     const communicationTone=String(p.communicationTone||p.communication_tone||'professional').trim().slice(0,40);
     const personality=String(p.personality||'').trim().slice(0,2000);
-    if(!['minimax','openai-compatible','ollama','hermes','rules'].includes(provider))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_PROVIDER_INVALID','unsupported provider'));
+    if(!['minimax','openai-compatible','ollama','hermes','rules','deepseek'].includes(provider))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_PROVIDER_INVALID','unsupported provider'));
     if(!model)return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_MODEL_REQUIRED','model is required'));
     if(baseUrl&&!/^https?:\/\/[^\s]+$/i.test(baseUrl))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_BASE_URL_INVALID','baseUrl must be an http(s) URL'));
     if(credentialEnv&&!/^[A-Z][A-Z0-9_]{2,119}$/.test(credentialEnv))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_CREDENTIAL_ENV_INVALID','credentialEnv must be an environment variable name'));
@@ -12178,6 +12178,7 @@ const IQC_LLM_PROVIDER_OPTIONS = Object.freeze([
   { value:'minimax',label:'MiniMax',defaultModel:'MiniMax-M2.7',credentialEnv:'MINIMAX_API_KEY' },
   { value:'ollama',label:'Ollama (local)',defaultModel:'qwen2.5:7b',credentialEnv:null },
   { value:'openai-compatible',label:'OpenAI-compatible',defaultModel:'gpt-4o-mini',credentialEnv:'OPENAI_API_KEY' },
+  { value:'deepseek',label:'DeepSeek',defaultModel:'deepseek-chat',credentialEnv:'DEEPSEEK_API_KEY' },
   { value:'hermes',label:'Hermes CLI',defaultModel:'configured-default',credentialEnv:null },
   { value:'opencode',label:'OpenCode CLI',defaultModel:'configured-default',credentialEnv:null },
   { value:'pi',label:'Pi CLI',defaultModel:'configured-default',credentialEnv:null },

@@ -53,6 +53,9 @@ const MODEL_FOR_TASK = {
   // Ollama cloud models (premium tier)
   premium:   process.env.MINIMAX_MODEL || "MiniMax-M2.7",
   long_doc:  "glm-5.2:cloud",
+
+  // DeepSeek cloud (OpenAI-compatible, needs DEEPSEEK_API_KEY)
+  deepseek:  process.env.DEEPSEEK_MODEL || "deepseek-chat",
 };
 
 const OLLAMA_BASE = "http://localhost:11434";
@@ -63,6 +66,7 @@ const TIERS = {
   local:   { tasks: ["analysis", "validator", "general"],             desc: "Ornith → phi4 → qwen2.5" },
   premium: { tasks: ["premium", "analysis", "validator", "general"],  desc: "MiniMax-M2.7 → Ornith → phi4 → qwen2.5" },
   cloud:   { tasks: ["openai", "premium", "analysis", "validator"],   desc: "GPT-4o → minimax-m3 → Ornith → phi4" },
+  deepseek:{ tasks: ["deepseek", "premium", "analysis", "validator"], desc: "DeepSeek → MiniMax → Ornith → phi4" },
 };
 
 // ── Logging ───────────────────────────────────────────────────────────
@@ -152,6 +156,46 @@ async function minimaxComplete(model, prompt, timeoutMs = 120000) {
   }
 }
 
+/**
+ * DeepSeek cloud call (OpenAI-compatible API).
+ *
+ * DeepSeek 官方 API 就是 OpenAI 兼容协议，所以这里复用同一套 fetch 逻辑，
+ * 只换环境变量名与默认 base url。
+ *   DEEPSEEK_API_KEY   —— 必填（https://platform.deepseek.com/api_keys 申请）
+ *   DEEPSEEK_BASE_URL  —— 可选，默认 https://api.deepseek.com/v1
+ *   DEEPSEEK_MODEL     —— 可选，默认 deepseek-chat
+ */
+async function deepseekComplete(model, prompt, timeoutMs = 120000) {
+  const apiKey = process.env.DEEPSEEK_API_KEY;
+  if (!apiKey) throw new Error("DEEPSEEK_API_KEY not set");
+  const endpoint = `${process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com/v1"}/chat/completions`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: model || process.env.DEEPSEEK_MODEL || "deepseek-chat",
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`DeepSeek ${res.status}: ${res.statusText}${body ? ` | ${body.slice(0, 300)}` : ""}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(`DeepSeek timeout (${timeoutMs}ms)`);
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ── Route a single LLM call ───────────────────────────────────────────
 /**
  * Call an LLM with the model mapped to the given task type.
@@ -176,6 +220,8 @@ export async function askLLM(taskType, prompt, opts = {}) {
       response = await openAIComplete(process.env.OMNIROUTE_MODEL || model || "auto/coding", prompt, opts.timeoutMs || 120000);
     } else if (taskType === "premium" || taskType === "minimax" || model.startsWith("MiniMax-")) {
       response = await minimaxComplete(model, prompt, opts.timeoutMs || 120000);
+    } else if (taskType === "deepseek" || model.startsWith("deepseek-")) {
+      response = await deepseekComplete(model, prompt, opts.timeoutMs || 120000);
     } else if (taskType === "openai" || opts.model?.startsWith("gpt-") || opts.model?.startsWith("o")) {
       response = await openAIComplete(model, prompt, opts.timeoutMs || 120000);
     } else {

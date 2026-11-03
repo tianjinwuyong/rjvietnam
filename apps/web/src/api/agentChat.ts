@@ -36,6 +36,14 @@ const counterpartStore: Map<string, Counterpart> = new Map();
 // Demo counterpart for each agent (from agentData.counterpartName)
 const DEMO_COUNTERPARTS: Array<{ agentId: string; cp: Omit<Counterpart, "authenticated" | "lastLoginAt"> }> = [
   {
+    agentId: "super-001",
+    cp: {
+      id: "cp-super-001", name_zh: "超级智能体", name_en: "Super Agent", name_vi: "Siêu Agent",
+      employeeId: "EMP-000", department: "AI决策中心", phone: "AI", email: "super@ruijing.vn",
+      permissions: ["chat", "task.assign", "task.view", "task.update", "report.view", "report.export", "admin"],
+    },
+  },
+  {
     agentId: "ceo-001",
     cp: {
       id: "cp-ceo-001", name_zh: "张厂长", name_en: "Zhang Director", name_vi: "Giám đốc Trương",
@@ -303,6 +311,12 @@ const AI_RESPONSES: Record<string, string[]> = {
     "了解，我会跟进这个事项。",
     "明白，稍后给您反馈。",
     "收到请求，正在分析处理中……",
+  ],
+  "super-001": [
+    "DeepSeek 超级智能体：我已完成跨域数据汇总，正在做深度推理。",
+    "全局 KPI 诊断：当前七大域整体健康度 87.3%，MES 域换线时间异常为首要风险点。",
+    "跨域协同决策：建议 WMS 与 PMC 联动调整补货窗口，可缓解 32% 的欠料风险。",
+    "风险评估结论：当前决策风险等级「中」，主要不确定性来自 SMT-2 线设备 OEE 波动。",
   ],
   "dir-mes-001": [
     "MES 调度主管：我已收到工单请求，正在分析产线状态。",
