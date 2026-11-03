@@ -1,0 +1,28 @@
+{
+  "name": "combinedwithwms",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "瑞晶 WMS 综合前端（Vue 3 + Vite），与 wms 独立服务对接",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.13",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vue-tsc": "^2.1.10"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
