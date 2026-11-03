@@ -92,3 +92,6 @@ scripts/generate-all-stations.py
 scripts/pmc-status-check.ps1
 scripts/wo-simulation.ps1
 tests/auth.test.ts
+
+# WorkBuddy local project data (memory, config, logs) — never commit
+.workbuddy/
