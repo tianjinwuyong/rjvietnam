@@ -1,7 +1,7 @@
 ﻿import { Controller, Get, Post, Put, Delete, Param, Query, Body, Req, BadRequestException } from '@nestjs/common';
 import type { Request } from 'express';
 import { NeedLogin } from '../../common/auth/need-login.decorator';
-import { NeedRoles } from '../../common/auth/auth.decorator';
+import { NeedRoles, NeedAgentScope } from '../../common/auth/auth.decorator';
 
 import { MaterialService } from './material.service';
 import {
@@ -44,6 +44,7 @@ export class MaterialController {
    * 身份取登录态，服务层重验密码哈希；被外键引用时中止并列出阻挡表。
    */
   @NeedRoles('admin')
+  @NeedAgentScope('material:write')
   @Post('clear-materials')
   async clearMaterials(
     @Req() req: Request,
@@ -57,6 +58,7 @@ export class MaterialController {
   }
 
   @NeedRoles('admin')
+  @NeedAgentScope('material:write')
   @Post('clear-suppliers')
   async clearSuppliers(
     @Req() req: Request,
@@ -70,6 +72,7 @@ export class MaterialController {
   }
 
   @NeedRoles('admin')
+  @NeedAgentScope('material:write')
   @Post('clear-substitutions')
   async clearSubstitutions(
     @Req() req: Request,
