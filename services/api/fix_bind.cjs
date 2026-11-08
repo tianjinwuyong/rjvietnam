@@ -1,5 +1,5 @@
 const pg = require('pg');
-const pool = new pg.Pool({ host: '127.0.0.1', port: 5432, database: 'smt_factory', user: 'postgres', password: 'postgres' });
+const pool = new pg.Pool({ host: '127.0.0.1', port: 5432, database: 'factory', options: "-c search_path=rjvn,public", user: 'postgres', password: 'postgres' });
 async function main() {
   // Set label_id on a valid lot so bind API can find it
   const r1 = await pool.query("UPDATE material_lots SET label_id = 'LOT-26071020017' WHERE lot_no = 'LOT-26071020017' RETURNING lot_no, label_id, material_id");
