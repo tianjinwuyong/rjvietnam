@@ -38,7 +38,7 @@ const block = [
   '# ===== WMS 只读集成（同机同库实例，2026-10-25 自动补充）=====',
   `WMS_DB_HOST=${host}`,
   `WMS_DB_PORT=${port}`,
-  'WMS_DB_NAME=wms',
+  'WMS_DB_NAME=factory',
   `WMS_DB_USER=${user}`,
   `WMS_DB_PASSWORD=${quote}`,
   '',
@@ -48,6 +48,6 @@ fs.writeFileSync(ENV, txt.replace(/\s*$/, '') + '\n' + block, 'utf8')
 console.log('已写入 WMS_DB_* 配置（密码复用 DB_PASSWORD，未回显）')
 console.log(`  WMS_DB_HOST=${host}`)
 console.log(`  WMS_DB_PORT=${port}`)
-console.log('  WMS_DB_NAME=wms')
+console.log('  WMS_DB_NAME=factory')
 console.log(`  WMS_DB_USER=${user}`)
 console.log('  WMS_DB_PASSWORD=******')

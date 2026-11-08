@@ -20,7 +20,7 @@ for (const line of envTxt.split(/\r?\n/)) {
 const client = new Client({
   host: env.WMS_DB_HOST || env.DB_HOST || 'localhost',
   port: Number(env.WMS_DB_PORT || env.DB_PORT || 5432),
-  database: env.WMS_DB_NAME || 'wms',
+  database: env.WMS_DB_NAME || 'factory', options: "-c search_path=rjvn,public",
   user: env.WMS_DB_USER || env.DB_USER || 'postgres',
   password: env.WMS_DB_PASSWORD || env.DB_PASSWORD || '',
 })

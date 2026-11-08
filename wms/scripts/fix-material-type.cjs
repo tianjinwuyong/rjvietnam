@@ -9,7 +9,7 @@ require('dotenv').config();
 const sql = postgres({
   host: process.env.DB_HOST || 'localhost',
   port: Number(process.env.DB_PORT || 5432),
-  database: process.env.DB_NAME || 'wms',
+  database: process.env.DB_NAME || 'factory', options: "-c search_path=rjvn,public",
   username: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
   onnotice: () => {},
