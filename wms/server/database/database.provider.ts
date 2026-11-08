@@ -50,7 +50,7 @@ export const databaseProvider: Provider = {
   useFactory: () => {
     const baseConnectionString =
       process.env.DATABASE_URL ||
-      `postgresql://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'wms'}`;
+      `postgresql://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'factory'}`;
 
     const connectionString = withSearchPath(baseConnectionString, DB_SCHEMA);
 
