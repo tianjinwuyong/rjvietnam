@@ -45,9 +45,63 @@ function withSearchPath(connectionString: string, schemaName: string): string {
   return url.toString();
 }
 
+/**
+ * 启动断言：连接必须落在整合库 + 单一业务 schema，否则立刻失败。
+ *
+ * 2026-11-09：单 schema 合并后旧库（wms / smt_factory / oa_system / rjvn_mgmt）仍留在实例上，
+ * 而**写错库不会报错**：READ 200 / WRITE 201 都过，数据只是静默写进旧库。
+ * 因此建连时立刻核对 current_database() / current_schema() / search_path：
+ * 不符合预期就 fail fast，绝不带病启动。
+ *
+ * 逃生口：`ALLOW_DB_MISMATCH=1` 时只打 warn 不抛（仅供一次性排查或临时本地库）。
+ */
+const EXPECTED_DATABASE = process.env.EXPECT_DB_NAME || 'factory';
+
+function parseSearchPath(searchPath: string | null | undefined): string[] {
+  return (searchPath || '')
+    .split(',')
+    .map((part) => part.trim().replace(/^"(.*)"$/, '$1'))
+    .filter(Boolean);
+}
+
+async function assertConsolidatedDatabase(queryClient: postgres.Sql): Promise<void> {
+  const rows = await queryClient<{ database: string; schema: string | null; search_path: string }[]>`
+    select current_database() as database,
+           current_schema() as schema,
+           current_setting('search_path') as search_path
+  `;
+  const row = rows[0];
+  const searchPath = parseSearchPath(row?.search_path);
+  const problems: string[] = [];
+
+  if (row?.database !== EXPECTED_DATABASE) {
+    problems.push(`current_database()=${row?.database ?? '(未知)'}，期望 ${EXPECTED_DATABASE}`);
+  }
+  if (!searchPath.includes(DB_SCHEMA)) {
+    problems.push(`search_path=${row?.search_path ?? '(未知)'}，未包含 ${DB_SCHEMA}`);
+  }
+
+  if (problems.length === 0) {
+    return;
+  }
+
+  const detail = problems.join('；');
+  if (process.env.ALLOW_DB_MISMATCH === '1') {
+    console.warn(`[db] 启动断言未通过但已放行（ALLOW_DB_MISMATCH=1）：${detail}`);
+    return;
+  }
+
+  throw new Error(
+    `[db] 启动断言失败：${detail}。` +
+      `应用必须连接整合库 ${EXPECTED_DATABASE} 且 search_path 包含 ${DB_SCHEMA}；` +
+      `写错库不会报错，只会静默把数据写进旧库。` +
+      `（确需临时指向别的库时设置 ALLOW_DB_MISMATCH=1，仅打警告不阻断。）`,
+  );
+}
+
 export const databaseProvider: Provider = {
   provide: DRIZZLE_DATABASE,
-  useFactory: () => {
+  useFactory: async () => {
     const baseConnectionString =
       process.env.DATABASE_URL ||
       `postgresql://${process.env.DB_USER || 'postgres'}:${process.env.DB_PASSWORD || 'postgres'}@${process.env.DB_HOST || 'localhost'}:${process.env.DB_PORT || '5432'}/${process.env.DB_NAME || 'factory'}`;
@@ -55,6 +109,7 @@ export const databaseProvider: Provider = {
     const connectionString = withSearchPath(baseConnectionString, DB_SCHEMA);
 
     const queryClient = postgres(connectionString, { max: 10 });
+    await assertConsolidatedDatabase(queryClient);
     const db = drizzle(queryClient, { schema });
     return db;
   },
