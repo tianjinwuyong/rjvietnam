@@ -142,7 +142,7 @@ if !errorlevel! neq 0 (
     echo     1. PostgreSQL 服务是否已启动
     echo     2. .env 中的数据库地址/端口/用户名/密码是否正确
     echo     3. 数据库是否已创建
-    echo        可在 PostgreSQL 中执行: CREATE DATABASE wms;
+    echo        可在 PostgreSQL 中执行: CREATE DATABASE factory;
     echo     4. 目标机器防火墙是否放行 5432 端口
     echo.
     echo   修改 .env 后重新双击本脚本即可。
@@ -215,9 +215,9 @@ set DBU=postgres
 set /p DBU="  3/6 数据库用户名 [postgres]: "
 if "!DBU!"=="" set DBU=postgres
 
-set DBN=wms
-set /p DBN="  4/6 数据库名 [wms]: "
-if "!DBN!"=="" set DBN=wms
+set DBN=factory
+set /p DBN="  4/6 数据库名 [factory]: "
+if "!DBN!"=="" set DBN=factory
 
 set SRVPORT=3000
 set /p SRVPORT="  5/6 服务端口 [3000]: "
@@ -271,7 +271,7 @@ REM ==========================================
 REM  子过程：生成模板（供记事本编辑）
 REM ==========================================
 :WriteTemplate
-node -e "const c=require('crypto'),f=require('fs');const k=c.randomBytes(48).toString('hex');const L=['# WMS 免安装版配置','# 请修改 DB_PASSWORD 后保存','','NODE_ENV=production','SERVER_HOST=0.0.0.0','SERVER_PORT=3000','','DB_HOST=localhost','DB_PORT=5432','DB_USER=postgres','DB_PASSWORD=请填写数据库密码','DB_NAME=wms','','JWT_SECRET='+k,'','VITE_API_BASE_URL=/','','LOG_DIR=./logs','LOG_REQUEST_BODY=false','LOG_RESPONSE_BODY=false',''];f.writeFileSync('.env','\uFEFF'+L.join('\n'),'utf8');console.log('    模板已生成');"
+node -e "const c=require('crypto'),f=require('fs');const k=c.randomBytes(48).toString('hex');const L=['# WMS 免安装版配置','# 请修改 DB_PASSWORD 后保存','','NODE_ENV=production','SERVER_HOST=0.0.0.0','SERVER_PORT=3000','','DB_HOST=localhost','DB_PORT=5432','DB_USER=postgres','DB_PASSWORD=请填写数据库密码','DB_NAME=factory','','JWT_SECRET='+k,'','VITE_API_BASE_URL=/','','LOG_DIR=./logs','LOG_REQUEST_BODY=false','LOG_RESPONSE_BODY=false',''];f.writeFileSync('.env','\uFEFF'+L.join('\n'),'utf8');console.log('    模板已生成');"
 exit /b 0
 
 REM ==========================================

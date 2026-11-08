@@ -82,7 +82,7 @@ HTTPS_PORT=3443
 # 数据库
 DB_USER=postgres
 DB_PASSWORD=${DB_PASSWORD}
-DB_NAME=wms
+DB_NAME=factory
 
 # 登录令牌密钥（改动后所有人需要重新登录）
 JWT_SECRET=${JWT_SECRET}
@@ -102,7 +102,7 @@ fi
 
 HTTP_PORT="${HTTP_PORT:-3000}"
 HTTPS_PORT="${HTTPS_PORT:-3443}"
-DB_NAME="${DB_NAME:-wms}"
+DB_NAME="${DB_NAME:-factory}"
 DB_USER="${DB_USER:-postgres}"
 
 # ------------------------------------------------------------------ 端口

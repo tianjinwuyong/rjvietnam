@@ -22,7 +22,7 @@ OUT="$BACKUP_DIR/wms-${TS}.dump"
 if docker compose version >/dev/null 2>&1; then DC="docker compose"; else DC="docker-compose"; fi
 
 echo "  正在备份数据库 ${DB_NAME} ..."
-$DC exec -T db pg_dump -U "${DB_USER:-postgres}" -d "${DB_NAME:-wms}" -Fc > "$OUT"
+$DC exec -T db pg_dump -U "${DB_USER:-postgres}" -d "${DB_NAME:-factory}" -Fc > "$OUT"
 
 SIZE="$(du -h "$OUT" | awk '{print $1}')"
 echo "  完成：$OUT （$SIZE）"

@@ -28,7 +28,7 @@ echo "  停止应用..."
 $DC stop wms || true
 
 echo "  还原中..."
-$DC exec -T db pg_restore -U "${DB_USER:-postgres}" -d "${DB_NAME:-wms}" \
+$DC exec -T db pg_restore -U "${DB_USER:-postgres}" -d "${DB_NAME:-factory}" \
   --clean --if-exists --no-owner --no-privileges < "$FILE" || true
 
 # 补充脚本是幂等的，重跑一遍把还原时缺失的对象补齐
