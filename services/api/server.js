@@ -17,7 +17,7 @@ import { query as postgresQuery, getClient } from "./src/db.js";
 
 // Resolve configuration relative to this API file, not the process launch
 // directory. This keeps login and all database-backed routes on the intended
-// smt_factory database when the service is started by a desktop shortcut,
+// factory database when the service is started by a desktop shortcut,
 // supervisor, or another working directory.
 dotenv.config({ path: path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".env") });
 
@@ -853,14 +853,14 @@ process.on("unhandledRejection", (reason) => {
   console.error("[UNHANDLED]", String(reason));
 });
 
-// PostgreSQL pool for lifecycle management (smt_factory DB on port 5432)
+// PostgreSQL pool for lifecycle management (factory DB on port 5432)
 const pgPool = new pg.Pool({
   host: process.env.PGHOST ?? "127.0.0.1",
   port: Number(process.env.PGPORT ?? 5432),
   user: process.env.PGUSER ?? "postgres",
   password: process.env.PGPASSWORD ?? "postgres",
-  database: process.env.PGDATABASE ?? "smt_factory",
-  options: "-c search_path=public",
+  database: process.env.PGDATABASE ?? "factory",
+  options: "-c search_path=rjvn,public",
   // Keep authentication and station snapshot polling from starving each other.
   // The API serves multiple 3D dashboards concurrently; 20 connections was
   // exhausted by snapshot reads and made /auth/login time out.
@@ -878,8 +878,8 @@ const authPool = new pg.Pool({
   port: Number(process.env.PGPORT ?? 5432),
   user: process.env.PGUSER ?? "postgres",
   password: process.env.PGPASSWORD ?? "postgres",
-  database: process.env.PGDATABASE ?? "smt_factory",
-  options: "-c search_path=public",
+  database: process.env.PGDATABASE ?? "factory",
+  options: "-c search_path=rjvn,public",
   max: 10,
   idleTimeoutMillis: 60000,
   connectionTimeoutMillis: 15000,

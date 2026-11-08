@@ -28,9 +28,10 @@ const PGHOST      = process.env.PGHOST ?? '127.0.0.1';
 const PGPORT      = Number(process.env.PGPORT ?? 5432);
 const PGUSER      = process.env.PGUSER ?? 'postgres';
 const PGPASSWORD  = process.env.PGPASSWORD ?? 'postgres';
-const PGDATABASE  = process.env.PGDATABASE ?? 'smt_factory';
+const PGDATABASE  = process.env.PGDATABASE ?? 'factory';
 
-const pgPool = new Pool({ host: PGHOST, port: PGPORT, user: PGUSER, password: PGPASSWORD, database: PGDATABASE, max: 5 });
+const pgPool = new Pool({ host: PGHOST, port: PGPORT, user: PGUSER, password: PGPASSWORD, database: PGDATABASE,
+options: "-c search_path=rjvn,public", max: 5 });
 
 const DEV = process.argv.includes('--dev');
 const log = (level, msg, meta = {}) => {
