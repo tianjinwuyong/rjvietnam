@@ -1,5 +1,6 @@
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { apiClient, authStorage } from "./client";
+import { clearAgentProvenance } from "./agentProvenance";
 
 export interface LoginResult {
   token: string;
@@ -31,6 +32,7 @@ export const authApi = {
       await apiClient.post("/auth/logout");
     } finally {
       authStorage.clearToken();
+      clearAgentProvenance();
     }
   },
 

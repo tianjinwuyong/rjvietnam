@@ -1,3 +1,5 @@
+import { getAgentProvenance } from "./agentProvenance";
+
 // NOTE: backend routes are split:
 //   - auth: mounted on `api` router at /api (needs /api prefix)
 //   - wms/pmc/mes/boms/hr: mounted on `app` router at / (no /api prefix)
@@ -46,6 +48,9 @@ export interface ListEnvelope<T> {
 export interface MutateEnvelope<T> {
   item: T;
   auditEventId?: number;
+  /** Optional mutation state, e.g. AGENT_PROCESSING / PENDING_HUMAN_APPROVAL. */
+  status?: string;
+  approvalState?: string;
   meta?: { serverTime: string; [key: string]: unknown };
 }
 
@@ -80,6 +85,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  // Agent provenance headers are opt-in. When no context is set this block is a
+  // no-op, so existing callers emit byte-identical headers. Header names match
+  // wms/server/common/auth/agent-scope.constants.ts:17-22 (lowercase on purpose).
+  const provenance = getAgentProvenance();
+  if (provenance) {
+    if (provenance.agentKey) headers["x-agent-key"] = provenance.agentKey;
+    if (provenance.agentScope) headers["x-agent-scope"] = provenance.agentScope;
+    if (provenance.createdByType) headers["x-created-by-type"] = provenance.createdByType;
+    if (provenance.createdById) headers["x-created-by-id"] = provenance.createdById;
   }
 
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
@@ -162,3 +178,17 @@ export const authStorage = {
 };
 
 export { API_BASE };
+
+// Keep the provenance API next to the code that consumes it. The public barrel
+// (`./index.ts`) re-exports the same helpers from `./agentProvenance` directly.
+export {
+  setAgentProvenance,
+  getAgentProvenance,
+  clearAgentProvenance,
+  isPendingHumanApproval,
+  isAgentProcessing,
+  approvalBadgeClass,
+  AGENT_PROCESSING,
+  PENDING_HUMAN_APPROVAL,
+} from "./agentProvenance";
+export type { AgentProvenance } from "./agentProvenance";

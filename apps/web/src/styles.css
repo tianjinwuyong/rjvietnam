@@ -2794,3 +2794,80 @@ td span {
   .brand{font-size:15px}
   .module-nav button{padding-inline:9px;font-size:11px}
 }
+
+/* ── W-G4 D0 design tokens: agent-initiated mutation states ──────────────
+   Additive only. Ink/background pairs are copied from the existing theme
+   (--info / --info-bg / --warn / --warn-bg) so new states stay consistent
+   with .badge-info / .badge-warning. Unknown statuses never receive any of
+   these classes; they keep the legacy .badge.badge-info appearance.
+   See NODE4-WG4-DESIGN-SPEC-001.md sections 2-3.                          */
+:root {
+  --agent-state-processing-ink: #245f92;
+  --agent-state-processing-bg: #e4eff8;
+  --agent-state-approval-ink: #916400;
+  --agent-state-approval-bg: #fff1cc;
+  --agent-state-neutral-ink: #245f92;
+  --agent-state-neutral-bg: #e4eff8;
+}
+
+.badge.agent-state-processing {
+  color: var(--agent-state-processing-ink);
+  background: var(--agent-state-processing-bg);
+}
+
+.badge.agent-state-approval {
+  color: var(--agent-state-approval-ink);
+  background: var(--agent-state-approval-bg);
+  box-shadow: inset 0 0 0 1px rgba(145, 100, 0, .28);
+}
+
+.badge.agent-state-processing svg,
+.badge.agent-state-approval svg {
+  flex: none;
+  margin-right: 4px;
+}
+
+.badge.agent-state-processing svg {
+  animation: agent-state-pulse 1.6s ease-in-out infinite;
+}
+
+.badge.agent-state-sm {
+  min-height: 20px;
+  padding: 2px 7px;
+  font-size: 11px;
+}
+
+@keyframes agent-state-pulse {
+  0%, 100% { opacity: .45; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .badge.agent-state-processing svg { animation: none; }
+}
+
+/* W-G4 D0 section 9.7: approved / rejected tokens. These are modifiers on the
+   existing WMS `.badge` / `.badge-ok` / `.badge-danger` classes, not a new
+   design language (user directive 18:08 GMT+7).                              */
+:root {
+  --agent-state-approved-ink: #0b7a53;
+  --agent-state-approved-bg: #def4ea;
+  --agent-state-rejected-ink: #b12f28;
+  --agent-state-rejected-bg: #fbe1dd;
+}
+
+.badge.agent-state-approved {
+  color: var(--agent-state-approved-ink);
+  background: var(--agent-state-approved-bg);
+}
+
+.badge.agent-state-rejected {
+  color: var(--agent-state-rejected-ink);
+  background: var(--agent-state-rejected-bg);
+}
+
+.badge.agent-state-approved svg,
+.badge.agent-state-rejected svg {
+  flex: none;
+  margin-right: 4px;
+}
