@@ -1,0 +1,31 @@
+{
+  "_comment": "WMS 自启动值守配置。修改后需重启 WMS-Health 服务生效。路径使用双反斜杠转义。",
+  "pg": {
+    "serviceName": "WMS-PostgreSQL",
+    "displayName": "WMS 数据库 (PostgreSQL 18)",
+    "binDir": "C:\\Program Files\\PostgreSQL\\18\\bin",
+    "dataDir": "D:\\WMS-PG18-DATA",
+    "port": 5433,
+    "account": "NT AUTHORITY\\NetworkService",
+    "enabled": true
+  },
+  "app": {
+    "serviceName": "WMS-App",
+    "displayName": "WMS 应用服务",
+    "nodeExe": "E:\\WorkBuddy 工作站\\WMS开发\\runtime\\node\\node.exe",
+    "workDir": "E:\\WorkBuddy 工作站\\WMS开发",
+    "script": "dist/main.js",
+    "port": 3000,
+    "httpsPort": 3443,
+    "enabled": true
+  },
+  "health": {
+    "serviceName": "WMS-Health",
+    "displayName": "WMS 健康值守",
+    "intervalSec": 20,
+    "failureThreshold": 3,
+    "restartCooldownSec": 120,
+    "httpProbe": true
+  },
+  "logDir": "E:\\WorkBuddy 工作站\\WMS开发\\runtime\\logs"
+}

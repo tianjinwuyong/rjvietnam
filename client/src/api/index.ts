@@ -1,0 +1,13 @@
+export * as warehouse from './warehouse';
+export * as material from './material';
+export * as receipt from './receipt';
+export * as iqc from './iqc';
+export * as inventory from './inventory';
+export * as bom from './bom';
+export * as workorder from './workorder';
+export * as mrb from './mrb';
+export * as system from './system';
+export * as dashboard from './dashboard';
+export * as overPicking from './overPicking';
+export * as stockTake from './stockTake';
+export * as mesSync from './mes-sync';

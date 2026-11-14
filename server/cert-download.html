@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>证书下载 - 深圳市瑞晶实验有限公司 WMS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'PingFang SC', 'Helvetica Neue', sans-serif;
+    background: linear-gradient(180deg, #f2f2f7 0%, #e8e8ed 100%);
+    min-height: 100vh;
+    color: #1c1c1e;
+    padding: 20px;
+  }
+  .container { max-width: 480px; margin: 0 auto; }
+  .header {
+    text-align: center;
+    padding: 32px 0 24px;
+  }
+  .logo {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #EF5350, #C62828);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    box-shadow: 0 4px 16px rgba(229,57,53,0.3);
+    color: #fff;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -1px;
+  }
+  .header h1 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+  .header p { font-size: 14px; color: #8e8e93; }
+
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  .card-title {
+    font-size: 15px;
+    font-weight: 600;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .icon {
+    width: 24px; height: 24px;
+    border-radius: 6px;
+    background: #007aff;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+
+  .download-btn {
+    display: block;
+    width: 100%;
+    padding: 16px;
+    background: linear-gradient(135deg, #007aff, #0051d5);
+    color: #fff;
+    border: none;
+    border-radius: 14px;
+    font-size: 17px;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,122,255,0.3);
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+  .download-btn:active { transform: scale(0.98); box-shadow: 0 2px 8px rgba(0,122,255,0.25); }
+  .download-btn .sub { font-size: 12px; font-weight: 400; opacity: 0.85; margin-top: 2px; }
+
+  .cert-info {
+    background: #f2f2f7;
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin-top: 14px;
+    font-size: 12px;
+    color: #636366;
+    line-height: 1.6;
+  }
+  .cert-info .row { display: flex; justify-content: space-between; }
+  .cert-info .label { color: #8e8e93; }
+
+  .step {
+    display: flex;
+    gap: 12px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f2f2f7;
+  }
+  .step:last-child { border-bottom: none; }
+  .step-num {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: #007aff;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .step-content { flex: 1; font-size: 14px; line-height: 1.5; }
+  .step-content strong { color: #1c1c1e; }
+  .step-content .path {
+    display: inline-block;
+    background: #f2f2f7;
+    padding: 2px 8px;
+    border-radius: 5px;
+    font-size: 12px;
+    color: #007aff;
+    margin: 2px 0;
+  }
+
+  .warning {
+    background: #fff8e6;
+    border-left: 3px solid #ff9500;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #8a6d00;
+    line-height: 1.5;
+    margin-top: 12px;
+  }
+  .warning strong { color: #6b5400; }
+
+  .tip {
+    background: #e8f5e9;
+    border-left: 3px solid #34c759;
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #1b5e20;
+    line-height: 1.5;
+    margin-top: 12px;
+  }
+
+  .footer {
+    text-align: center;
+    padding: 20px 0;
+    font-size: 12px;
+    color: #8e8e93;
+  }
+  .back-link {
+    display: inline-block;
+    margin-top: 8px;
+    color: #007aff;
+    text-decoration: none;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="logo">RJ</div>
+    <h1>深圳市瑞晶实验有限公司</h1>
+    <p>仓库管理系统 · SSL 证书安装</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">1</span>下载证书</div>
+    <a href="/cert/download" class="download-btn" id="downloadBtn">
+      下载并安装证书
+      <div class="sub">WMS HTTPS 证书 · 有效期 5 年</div>
+    </a>
+    <div class="cert-info">
+      <div class="row"><span class="label">证书名称</span><span>WMS HTTPS Cert</span></div>
+      <div class="row"><span class="label">颁发者</span><span id="certIssuer">__WMS_CERT_ISSUER__</span></div>
+      <div class="row"><span class="label">适用地址</span><span id="certHost">__WMS_HOST__</span></div>
+      <div class="row"><span class="label">有效期至</span><span id="certNotAfter">__WMS_CERT_NOT_AFTER__</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">2</span>安装描述文件</div>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        点击上方<strong>"下载并安装证书"</strong>按钮，Safari 会提示<strong>"此网站正尝试下载一个配置描述文件"</strong>，点<strong>"允许"</strong>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        下载完成后会提示<strong>"已下载描述文件"</strong>，点<strong>"关闭"</strong>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        打开 iPhone <span class="path">设置</span> → 顶部会出现<strong>"已下载描述文件"</strong>，点进去
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        点右上角<strong>"安装"</strong>，输入锁屏密码，再次点<strong>"安装"</strong>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">5</div>
+      <div class="step-content">
+        安装完成后点<strong>"完成"</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">3</span>开启完全信任（关键步骤）</div>
+    <div class="step">
+      <div class="step-num">1</div>
+      <div class="step-content">
+        打开 <span class="path">设置</span> → <span class="path">通用</span> → <span class="path">关于本机</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">2</div>
+      <div class="step-content">
+        滑到最底部，点<strong>"证书信任设置"</strong>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">3</div>
+      <div class="step-content">
+        找到 <strong>"WMS HTTPS Cert"</strong>，打开右侧开关
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">4</div>
+      <div class="step-content">
+        弹出警告框点<strong>"继续"</strong>
+      </div>
+    </div>
+    <div class="warning">
+      <strong>⚠️ 注意：</strong>只安装描述文件还不够，必须在"证书信任设置"里开启完全信任，否则 Safari 仍然会提示证书不受信任。
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="icon">✓</span>完成后访问系统</div>
+    <div class="tip">
+      证书安装并信任完成后，用 Safari 打开：<br>
+      <strong style="font-size:16px;" id="wmsHttpsUrl">__WMS_HTTPS_URL__</strong><br>
+      即可正常登录并使用摄像头扫码功能。
+    </div>
+    <a href="__WMS_HTTPS_URL__" id="wmsOpenBtn" class="download-btn" style="margin-top:14px; background: linear-gradient(135deg, #34c759, #28a745); box-shadow: 0 4px 14px rgba(52,199,89,0.3);">
+      前往 WMS 系统
+      <div class="sub" id="wmsOpenBtnSub">__WMS_HTTPS_URL__</div>
+    </a>
+  </div>
+
+  <div class="footer">
+    深圳市瑞晶实验有限公司 · 仓库管理系统 V1.0<br>
+    <a href="/" class="back-link">← 返回系统首页</a>
+  </div>
+</div>
+
+<script>
+  // 检测是否在 iPhone/Safari 上
+  var isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  var isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+  if (!isIOS) {
+    var btn = document.getElementById('downloadBtn');
+    if (btn) {
+      btn.insertAdjacentHTML('afterend',
+        '<div class="warning" style="margin-top:12px;"><strong>提示：</strong>证书安装说明针对 iPhone Safari。当前设备不是 iPhone，下载后请根据系统自行安装证书。</div>'
+      );
+    }
+  }
+
+  // 兜底：若服务端未替换占位符（例如直接以文件方式打开本页），
+  // 则按当前浏览器地址栏的主机名与 HTTPS 端口动态填充，
+  // 保证页面显示的地址始终与证书覆盖的地址一致。
+  (function () {
+    var HTTPS_PORT = (document.body && document.body.dataset.httpsPort) || '3443';
+    var host = location.hostname;
+    if (!host || host === 'localhost') {
+      return;
+    }
+    var httpsUrl = 'https://' + host + ':' + HTTPS_PORT;
+    var nodes = {
+      certHost: host,
+      wmsHttpsUrl: httpsUrl,
+      wmsOpenBtnSub: httpsUrl,
+    };
+    Object.keys(nodes).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && /__WMS_/.test(el.textContent || '')) {
+        el.textContent = nodes[id];
+      }
+    });
+    var openBtn = document.getElementById('wmsOpenBtn');
+    if (openBtn && /__WMS_/.test(openBtn.getAttribute('href') || '')) {
+      openBtn.setAttribute('href', httpsUrl);
+    }
+  })();
+</script>
+</body>
+</html>

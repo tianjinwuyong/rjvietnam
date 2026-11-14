@@ -1,0 +1,52 @@
+%% F-11 并发时序：① 并发送货　② 放行 vs 新到货（两种交错）　③ 并发 submit-iqc / review
+%% 结论依据：_qa/_arch_q2.cjs 实验（EXP1/EXP2/EXP3/EXP4 已在 PG18 实测通过）
+
+sequenceDiagram
+    autonumber
+    participant TX1 as 事务A（放行）
+    participant TX2 as 事务B（收货）
+    participant DB as PostgreSQL(inventory)
+
+    rect rgb(235,245,255)
+    Note over TX1,DB: 交错A：放行先取走待检行（未提交），收货阻塞后再插入新待检行 —— 已验证安全
+    TX1->>DB: BEGIN
+    TX1->>DB: DELETE FROM inventory WHERE stock_status='pending_qc' AND 该批次 RETURNING qty
+    Note right of DB: 持行锁；qty=50 已取出但未提交
+    TX2->>DB: BEGIN
+    TX2->>DB: INSERT ('pending_qc', 30) ON CONFLICT DO UPDATE qty+=30
+    Note right of DB: 阻塞在 A 的行锁（待检桶键）
+    TX1->>DB: INSERT ('good', 50) ON CONFLICT DO UPDATE qty+=50
+    TX1->>DB: COMMIT
+    DB-->>TX2: 解除阻塞 → 冲突行已消失 → 走 INSERT 分支
+    TX2->>DB: COMMIT（新落一行 pending_qc=30）
+    Note over DB: 结果 good=150 / pending_qc=30 ✅ 新货独立待检
+    end
+
+    rect rgb(255,245,235)
+    Note over TX1,DB: 交错B：收货先提交，放行后执行 —— 必须靠"数量守恒"，否则绕过检验
+    TX2->>DB: INSERT ('pending_qc',30) ON CONFLICT DO UPDATE → 待检桶 50→80; COMMIT
+    TX1->>DB: BEGIN; SELECT ... 'pending_qc' FOR UPDATE
+    TX1->>DB: 守恒校验：迁移量 = lot.total_qty(50)，不是行数量(80)
+    TX1->>DB: UPDATE inventory SET quantity=80-50=30（仍 pending_qc）
+    TX1->>DB: INSERT ('good', 50) ON CONFLICT DO UPDATE; COMMIT
+    Note over DB: 结果 good=150 / pending_qc=30 ✅<br/>反例：整行搬迁 → 80 全放行 ❌ 新货绕过检验
+    end
+
+    rect rgb(240,250,240)
+    Note over TX1,DB: 并发 submit-iqc（同一物理批次）
+    TX1->>DB: pg_advisory_xact_lock(hash(sorted 4列键))
+    TX2->>DB: pg_advisory_xact_lock(同键) → 排队
+    TX1->>DB: SELECT receipt FOR UPDATE + INSERT iqc_lot ON CONFLICT(4列) WHERE active DO NOTHING
+    TX1->>DB: COMMIT（1 张批次，total_qty=100）
+    TX2->>DB: 加锁后重读 → 无可提交收货单 → createdLotCount=0
+    Note over DB: 不变量：createdLotCount ≤ 1，total_qty 不虚增
+    end
+
+    rect rgb(250,240,250)
+    Note over TX1,DB: 并发 review（同一报告）
+    TX1->>DB: UPDATE iqc_report SET review_status='approved' WHERE IS DISTINCT FROM 'approved'
+    TX2->>DB: 同语句 → 影响 0 行 → 409
+    TX1->>DB: UPDATE iqc_lot SET status='pass' WHERE id AND status IN(active)
+    TX1->>DB: finalizeLotInventory（守恒迁移，只执行一次）
+    Note over DB: 库存迁移 1 次、欠料冲减 1 次；重复请求 409 而非 500
+    end

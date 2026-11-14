@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#f2f2f7">
+  <title>WMS 仓库管理系统</title>
+  <script>
+    /* 首屏底色兜底：主题变量要等 JS 加载后才写入，这里先按上次选择的深浅模式铺底色，
+       避免深色主题用户在刷新时先看到一屏白。 */
+    (function () {
+      try {
+        var dark = localStorage.getItem('wms-theme-mode') === 'dark';
+        var bg = dark ? '#0b0e12' : '#f2f2f7';
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', bg);
+        document.documentElement.style.backgroundColor = bg;
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    body { margin: 0; padding: 0; background: var(--background, #f2f2f7); }
+    #root { min-height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/client/src/index.tsx"></script>
+</body>
+</html>
