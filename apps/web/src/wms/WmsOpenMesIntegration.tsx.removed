@@ -1,0 +1,36 @@
+import { useEffect, useState } from "react";
+import type { Locale } from "../../../packages/shared-types/src/factory";
+
+type Props = { locale: Locale };
+
+export function WmsOpenMesIntegration({ locale }: Props) {
+  const en = locale === "en-US";
+  const [status, setStatus] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const load = async () => {
+    try { setStatus(await (await fetch("http://127.0.0.1:8092/status")).json()); }
+    catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+  };
+  useEffect(() => { void load(); }, []);
+  const sync = async (path: string) => {
+    setBusy(true); setMessage("");
+    try {
+      const response = await fetch(`http://127.0.0.1:8092${path}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ dryRun: false }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "OpenMES sync failed");
+      setMessage(en ? "Synchronization completed" : "同步完成");
+      await load();
+    } catch (error) { setMessage(error instanceof Error ? error.message : String(error)); }
+    finally { setBusy(false); }
+  };
+  return <div className="screen-stack">
+    <section className="surface-panel">
+      <div className="section-header"><div><h2>{en ? "OpenMES integration" : "OpenMES 集成中心"}</h2><p>{en ? "Unified production execution integration for the existing SMT management system" : "在现有 SMT 管理系统中统一查看和同步 OpenMES 生产执行数据"}</p></div><span className={`badge badge-${status?.configured ? "success" : "warning"}`}>{status?.configured ? "CONNECTED" : "API KEY REQUIRED"}</span></div>
+      <div className="toolbar"><button className="action-button" disabled={busy} onClick={() => void sync("/sync/master-data")}>{en ? "Sync materials & lots" : "同步物料和批次"}</button><button className="action-button" disabled={busy} onClick={() => void sync("/sync/work-orders")}>{en ? "Sync work orders" : "同步工单"}</button><button className="action-button" disabled={busy} onClick={() => void sync("/sync/all")}>{en ? "Sync all" : "全部同步"}</button><button className="action-button" onClick={() => void load()}>{en ? "Refresh" : "刷新"}</button></div>
+      {message && <p className="form-message">{message}</p>}
+    </section>
+    <section className="surface-panel"><div className="section-header"><div><h3>{en ? "Integration status" : "集成状态"}</h3><p>{status?.openMesBase || "http://127.0.0.1:8000"}</p></div></div><div className="table-shell"><table><thead><tr><th>{en ? "Entity" : "对象"}</th><th>{en ? "State" : "状态"}</th><th>{en ? "Count" : "数量"}</th></tr></thead><tbody>{(status?.objects ?? []).map((item: any) => <tr key={`${item.entity_type}-${item.status}`}><td>{item.entity_type}</td><td>{item.status}</td><td>{item.count}</td></tr>)}{!status?.objects?.length && <tr><td colSpan={3}>{en ? "No sync records yet" : "尚无同步记录"}</td></tr>}</tbody></table></div></section>
+    <section className="surface-panel"><h3>{en ? "System boundary" : "系统边界"}</h3><p>{en ? "Existing SMT MES remains authoritative for station execution, IQC/MRB/NG and traceability. OpenMES provides normalized production planning and execution. Odoo remains ERP/WMS." : "现有 SMT MES 继续负责工位执行、IQC/MRB/NG 和追溯；OpenMES 负责标准化生产计划和执行；Odoo 负责 ERP/WMS。"}</p></section>
+  </div>;
+}

@@ -1,0 +1,1326 @@
+{
+  "productCode": "UNKNOWN",
+  "productName": "B2672111-001",
+  "lines": [
+    {
+      "seq": 1,
+      "materialCode": "2.02.00.21.0139",
+      "name": "成品",
+      "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) SKU：B2672111-001 Vietnam版",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 2,
+      "materialCode": "0.14.00.00.0614",
+      "name": "外箱",
+      "spec": "51001001447 V1 尺寸：L417*W305*H176mm T=6.0mm 材质K=K（BC坑）1/30PCS RoHS REACH 品牌：和通",
+      "unit": "PCS",
+      "qty": 0.03333,
+      "position": "30PCS/箱",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 3,
+      "materialCode": "0.14.02.00.0498",
+      "name": "隔卡",
+      "spec": "51003003970 V1 尺寸：L400*W288mm T=3.0mm 材质:A3A（B坑）1/1PCS RoHS REACH 品牌：和通",
+      "unit": "PCS",
+      "qty": 0.03333,
+      "position": "1PCS/隔卡",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 4,
+      "materialCode": "0.14.01.01.0245",
+      "name": "CPE袋",
+      "spec": "L100+35*107mm 材质CPE 厚度0.03mm 符合环保要求 “丝印增加意大利回收标PE-C7+实心三角形版本”",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 5,
+      "materialCode": "0.14.06.02.0830",
+      "name": "封口贴",
+      "spec": "51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 6,
+      "materialCode": "0.14.06.02.0864",
+      "name": "底部封口贴纸",
+      "spec": "51004002207 V4 A2033H21底部封口贴纸 50# 油胶透明PET 局部胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 7,
+      "materialCode": "0.14.05.00.0249",
+      "name": "吸塑",
+      "spec": "51011001039 V1 B2672111 吸塑/A2672/0.8mm 白色消光PP/铝模，拉手材料标/150*95*39mm",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 8,
+      "materialCode": "0.14.04.00.0052",
+      "name": "珍珠棉",
+      "spec": "尺寸400*288mm T=5.0mm 材质:珍珠棉 白色 1/1PCS",
+      "unit": "PCS",
+      "qty": 0.03333,
+      "position": "1PCS/珍珠棉",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 9,
+      "materialCode": "0.14.00.02.0787",
+      "name": "外盒",
+      "spec": "51002006410 V1 B2672111&B2672121(新)_外盒/350g单粉（FSC认证）/4C+Anker Blue 印刷+大豆油墨+面过PP哑胶/展开：280.5*253mm 成型：150*95*39mm",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 10,
+      "materialCode": "0.14.06.00.0624",
+      "name": "说明书",
+      "spec": "51005005073 V1 A2672_26L_说明书(新)/70g书咭/单黑印刷/成型尺寸：90*62mm 展开尺寸：90*496mm/16p/风琴褶",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 11,
+      "materialCode": "0.08.02.00.0139",
+      "name": "C-C配线",
+      "spec": "B2672配线 C-C 1.5M 黑色 阻燃PVC 20V5A E-Mark Cable 半雾面 OD:4.2mm 带anker logo 魔术贴 品牌：宽途",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 12,
+      "materialCode": "1.02.00.02.0287",
+      "name": "装配件",
+      "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) SKU：B2672111-001 Vietnam版",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 13,
+      "materialCode": "0.11.00.00.0048",
+      "name": "十字沉头螺丝",
+      "spec": "KB2.0*6.0mm 十字槽 自攻牙 加硬处理 镀镍(RoHS)",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 14,
+      "materialCode": "0.11.02.00.0315",
+      "name": "散热片",
+      "spec": "尺寸：L65.17*W50.8*H23.71mm T=0.5mm 材质：铝 (RoHS REACH CP65) 引脚镀镍可焊锡 U型 品牌：春科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "HS2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 15,
+      "materialCode": "0.11.02.00.0316",
+      "name": "散热片",
+      "spec": "尺寸：L55.4*W53.32*H6.66mm T=0.5mm 材质：铜 (RoHS REACH CP65) 酸洗去污 品牌：春科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "HS3,PCB底部",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 16,
+      "materialCode": "0.11.06.00.0136",
+      "name": "弹片",
+      "spec": "锰钢镀镍/银白色 18.2*4.4*7.5mm T=0.25mm (RoHS REACH CP65) 品牌：骏裕",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 17,
+      "materialCode": "0.11.06.01.0148",
+      "name": "美日规插脚",
+      "spec": "25.25*16.4*7mm 黑色 LG 铜喷砂镀金刚镍+PC 晒纹 素材：要加抗紫外线、抗黄添加剂、抗脆化 100%原料 模内注塑 PIN距:12.7mm (RoHS REACH CP65) 品牌：久照",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 18,
+      "materialCode": "0.12.00.00.0868",
+      "name": "主体壳",
+      "spec": "70*34*60mm PC UL94-0 原材料：黑色 哑面 24号晒纹 局部光面（参考色板） LOGO：ANKER 光面效果 IQ3丝印：pantone 2995C 接口C：PT 2995C (RoHS REACH CP65) 品牌：绿科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 19,
+      "materialCode": "0.12.01.00.0943",
+      "name": "下盖",
+      "spec": "67.3*31.3*10.95mm PC UL94-0 原材料：黑色 表面哑面 24号晒纹(参考色板) (RoHS REACH CP65) 品牌：绿科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 20,
+      "materialCode": "0.12.03.00.0242",
+      "name": "绝缘片",
+      "spec": "18*14mm T=0.2mm PC 黑色 含背胶 ( RoHS REACH ) 品牌：汉联",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "贴插脚盖板",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 21,
+      "materialCode": "0.12.05.00.0344",
+      "name": "麦拉片",
+      "spec": "58.8*50.97 T=0.4 材质：麦拉片+单面背胶 品牌：汉联",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "贴HS3,PCB底部",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 22,
+      "materialCode": "0.12.05.00.0358",
+      "name": "麦拉片",
+      "spec": "成型尺寸：L27.57*W16.35*H25mm T=0.43±0.03mm 材质：PC麦拉片 94V-0 (RoHS REACH CP65) 品牌：汉联",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 23,
+      "materialCode": "0.12.99.00.0060",
+      "name": "插脚压紧支架",
+      "spec": "19.8*19.4*8.69mm PC UL94-0 原材料：黑色 (RoHS REACH CP65) 品牌：绿科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 24,
+      "materialCode": "0.13.01.04.0384",
+      "name": "导热硅胶",
+      "spec": "尺寸：L58.94*W51.6 T=2.2 导热系数2.0W 灰色 品牌：零度",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "贴HS3,PCB底部",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 25,
+      "materialCode": "0.13.01.05.0129",
+      "name": "高温金手指胶带",
+      "spec": "W53*T0.05mm 三层 咖啡色 品牌：嘉泰欣",
+      "unit": "M",
+      "qty": 0.058,
+      "position": "FOR HS2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 26,
+      "materialCode": "0.15.99.00.0059",
+      "name": "硅胶线",
+      "spec": "UL3239 22# 17*0.16 L=27mm 黑色线 一头剥皮扭线浸锡2.5mm 一头剥皮扭线浸锡3.5mm（含锡头）RoHS 亚太",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "N",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 27,
+      "materialCode": "0.15.99.00.0060",
+      "name": "硅胶线",
+      "spec": "UL3239 22# 17*0.16 L=25mm 红色线 一头剥皮扭线浸锡2.5mm 一头剥皮扭线浸锡3.5mm（含锡头）RoHS 亚太",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "L",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 28,
+      "materialCode": "0.11.02.99.0021",
+      "name": "散热铜箔",
+      "spec": "65*50mm T=0.35mm 单面背胶 周圈包边 黑色+黄色 品牌：零度",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "FOR HS2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 29,
+      "materialCode": "1.01.00.02.0289",
+      "name": "初级插件件",
+      "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) Vietnam版",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 30,
+      "materialCode": "0.00.04.01.0171R",
+      "name": "热敏电阻",
+      "spec": "HNP2X5MIBC35Q 2.5Ω 5A 内弯脚 F5.0*0.8mm L：3.5±0.5mm 绿色 品牌:至敏",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "NTC1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 31,
+      "materialCode": "0.01.01.01.0185A",
+      "name": "电解电容",
+      "spec": "10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max）长脚 寿命2000H GF系列 品牌:新中元",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "CE7",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 32,
+      "materialCode": "0.01.01.03.0150A",
+      "name": "电解电容",
+      "spec": "12uF 400V ±20% 105℃ 6.3*19mm 2000H 脚距:2.5±0.5mm 脚长:2.5±0.3mm 品牌：中元",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "CE1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 33,
+      "materialCode": "0.01.01.12.0003B",
+      "name": "电解电容",
+      "spec": "180uF 400V ±20% 105℃ 22*27mmMax 2000H 脚距:10±0.5mm 长脚 泰威",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "EC2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 34,
+      "materialCode": "0.01.04.01.0110B",
+      "name": "X2电容",
+      "spec": "DGCX X2 0.33uF±10% 275VAC P7.5（W10×H16×T6 黄壳）脚长:2.5±0.3mm 品牌:成希",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "CX1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 35,
+      "materialCode": "0.02.01.01.0064",
+      "name": "整流桥堆",
+      "spec": "Fast Recovery Bridge Rectifiers RD8UB100 D3K 品牌:扬杰",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "BD1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 36,
+      "materialCode": "0.03.01.00.0202E",
+      "name": "共模电感",
+      "spec": "HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) 三层绝缘F级 加套管 品牌:泓泰",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "LF2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 37,
+      "materialCode": "0.03.01.00.0203E",
+      "name": "共模电感",
+      "spec": "HT9-5-3-350uH Min (A2672) 三层绝缘F级 包胶带 品牌:泓泰",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "LF1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 38,
+      "materialCode": "0.03.01.01.0092E",
+      "name": "差模电感",
+      "spec": "T6852A-45.0uH±15%  φ0.8*28.5TS(A2672) 品牌:泓泰",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "L1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 39,
+      "materialCode": "0.06.00.00.0177",
+      "name": "保险管",
+      "spec": "31TC T5A250V 3.6*10mm 陶瓷慢断双帽保险丝,立式套管,脚长3.0±0.5mm,脚距7±2mm 防爆 品牌:泓达",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "F1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 40,
+      "materialCode": "0.09.00.00.0769",
+      "name": "变压器",
+      "spec": "A2672 6个绕组；磁芯:ATQ28/18.4 HC96 AE;154mm²",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "T1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 41,
+      "materialCode": "0.11.00.01.0000",
+      "name": "平头螺丝",
+      "spec": "3*5mm 扁头厚度0.9mm 十字槽 机丝牙 镀镍",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "FOR BD1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 42,
+      "materialCode": "0.11.02.00.0314",
+      "name": "散热片",
+      "spec": "尺寸：L44.1*W25.15*H10.0mm T=1.5mm 材质：铝 (RoHS REACH CP65) 引脚镀镍可焊锡 品牌：春科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "FOR BD1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 43,
+      "materialCode": "0.13.01.05.0130",
+      "name": "高温金手指胶带",
+      "spec": "W36*T0.05mm 三层 咖啡色 品牌：嘉泰欣",
+      "unit": "M",
+      "qty": 0.035,
+      "position": "FOR HS1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 44,
+      "materialCode": "0.12.09.00.0017",
+      "name": "铁氟龙套管",
+      "spec": "Φ1.0 125℃ 无色透明 管壁厚=0.1mm",
+      "unit": "M",
+      "qty": 0.04,
+      "position": "FOR EC2正负极",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 45,
+      "materialCode": "0.12.07.00.0112",
+      "name": "热缩套管",
+      "spec": "Φ8mm,125℃,黑色,热缩套管,管壁厚=0.1mm",
+      "unit": "M",
+      "qty": 0.018,
+      "position": "套NTC1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 46,
+      "materialCode": "1.00.00.02.0236",
+      "name": "初级贴片件",
+      "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) Vietnam版",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 47,
+      "materialCode": "0.00.00.00.0470B-HF",
+      "name": "贴片电阻",
+      "spec": "200KΩ ±1% 0805 1/8W 0805W8F2003T5E 无卤 品牌:厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R36A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 48,
+      "materialCode": "0.00.00.01.0073A-HF",
+      "name": "贴片电阻",
+      "spec": "5.1KΩ ±1% 1206 1/4W 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "R31,R32",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 49,
+      "materialCode": "0.00.00.01.0176A-HF",
+      "name": "贴片电阻",
+      "spec": "200Ω ±5% 1206 1/4W RC1206JR-07200RL 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 4.0,
+      "position": "R12,R13,R12A,R13A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 50,
+      "materialCode": "0.00.00.01.0448A-HF",
+      "name": "贴片电阻",
+      "spec": "620KΩ ±5% 1206 1/4W 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 4.0,
+      "position": "R7A,R7B,R8,R8A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 51,
+      "materialCode": "0.00.00.01.0504B-HF",
+      "name": "贴片电阻",
+      "spec": "0.68Ω ±1% 1206 1/4W 1206W4F680LT5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 8.0,
+      "position": "R48,R49,R50,R51\r\nR48A,R49A,R50A,R51A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 52,
+      "materialCode": "0.00.00.01.0562A-HF",
+      "name": "贴片电阻",
+      "spec": "2.7KΩ ±5% 1206 1/4W 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 53,
+      "materialCode": "0.00.00.02.0097B-HF",
+      "name": "贴片电阻",
+      "spec": "10Ω ±5% 0603 1/10W 0603WAJ0100T5E 无卤 品牌:厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R1A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 54,
+      "materialCode": "0.00.00.02.0188B-HF",
+      "name": "贴片电阻",
+      "spec": "3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R43",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 55,
+      "materialCode": "0.00.00.02.0355A-HF",
+      "name": "贴片电阻",
+      "spec": "7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R40",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 56,
+      "materialCode": "0.00.00.02.0076B-HF",
+      "name": "贴片电阻",
+      "spec": "100KΩ ±1% 0603 1/10W 0603WAF1003T5E  无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R25",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 57,
+      "materialCode": "0.01.00.00.4022A-HF",
+      "name": "贴片电容",
+      "spec": "1nF ±10％ 50V X7R 0603 102K CC0603KRX7R9BB102 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C17A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 58,
+      "materialCode": "0.01.00.00.4022G-HF",
+      "name": "贴片电容",
+      "spec": "1nF ±10％ 50V X7R 0603 102K CL10B102KB8NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C17A替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 59,
+      "materialCode": "0.01.00.00.4193A-HF",
+      "name": "贴片电容",
+      "spec": "4.7pF ±0.25pF 50V NPO 0603 CC0603CRNPO9BN4R7 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "C19A,C21A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 60,
+      "materialCode": "0.01.00.01.4155A-HF",
+      "name": "贴片电容",
+      "spec": "100nF ±10％ 100V X7R 0805 104K 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C16A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 61,
+      "materialCode": "0.01.00.01.4231A-HF",
+      "name": "贴片电容",
+      "spec": "33pF ±5％ 500V NPO 0805 330J CC0805JRNPOBBN330 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "C15A,C30A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 62,
+      "materialCode": "0.01.00.02.4087A-HF",
+      "name": "贴片电容",
+      "spec": "1nF ±10％ 1KV X7R 1206 102K CC1206KKX7RCBB102 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 63,
+      "materialCode": "0.01.00.02.4087G-HF",
+      "name": "贴片电容",
+      "spec": "1nF ±10％ 1KV X7R 1206 102K CL31B102KIFNNNE 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C2替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 64,
+      "materialCode": "0.01.00.02.4091A-HF",
+      "name": "贴片电容",
+      "spec": "10nF ±10％ 1KV X7R 1206 103K CC1206KKX7RCBB103 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C2A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 65,
+      "materialCode": "0.01.05.00.0190",
+      "name": "贴片Y电容",
+      "spec": "Y1-Y5P-221K/500V（SMD-1Y1X1Y5P221K500VAC2PH）品牌：精勤",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "CY2,CY3",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 66,
+      "materialCode": "0.01.05.00.0189T",
+      "name": "贴片Y电容",
+      "spec": "SMD Y1 331/400V SMD-Y1 331M/AC400V 品牌：特锐祥",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "CY1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 67,
+      "materialCode": "0.02.05.00.0269C",
+      "name": "贴片二极管",
+      "spec": "二极管/贴片二极管 1N4148 0.3A 75V SOD-323FL 编带盘装(RoHS2.0) 品牌：南京中宝",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "D1,D2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 68,
+      "materialCode": "0.02.00.00.0042C",
+      "name": "整流二极管",
+      "spec": "F7 1A 1KV SOD-123FL 品牌：南京中宝",
+      "unit": "PCS",
+      "qty": 3.0,
+      "position": "D5,D6,D7",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 69,
+      "materialCode": "0.02.02.00.0185C",
+      "name": "贴片稳压管",
+      "spec": "BZT52C6V2S 6.2V 200mW SOD-323 品牌：南京中宝",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "ZD1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 70,
+      "materialCode": "0.02.03.00.0464B",
+      "name": "贴片二极管",
+      "spec": "RS3MBF 3A 1KV SMB-FL 品牌：平伟",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "D3",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 71,
+      "materialCode": "0.03.04.00.0069",
+      "name": "贴片磁珠",
+      "spec": "HCB3216KF-121T60e：120Ω 1206 品牌:台庆",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "FB3,FB4",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 72,
+      "materialCode": "0.03.04.00.0082",
+      "name": "贴片磁珠",
+      "spec": "2500Ω ±25% 600mA 0805 (CBW201209U252T) 品牌:风华高科",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R34A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 73,
+      "materialCode": "0.07.00.00.1229",
+      "name": "贴片IC",
+      "spec": "JW1565J 700V (Rds-on:165-240mΩ) VDFN6X8-8L 品牌:杰华特",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "U4",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 74,
+      "materialCode": "0.07.03.00.0012",
+      "name": "贴片光耦",
+      "spec": "OR-1008-TP-G-（GK）SO-4 无卤 品牌：奥伦德",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "U3",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 75,
+      "materialCode": "0.10.00.00.1275A",
+      "name": "PCB1",
+      "spec": "FR-4 双面板 2OZ 板厚1.2mm±0.1mm 63.8*55*1.2mm(A2672  CD专用) 品牌:益欣",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "PCB1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 76,
+      "materialCode": "1.01.00.02.0290",
+      "name": "次级插件件",
+      "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) Vietnam版",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 77,
+      "materialCode": "0.01.09.00.0395A",
+      "name": "固态电容",
+      "spec": "560uF 25V ±20% 125℃ Ф6.3*12mm ESR:18mΩ 卧式:3.3±0.3mm 2000H 系列RQ 品牌：柏瑞凯",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "CE5,CE6",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 78,
+      "materialCode": "0.13.01.05.0093",
+      "name": "高温金手指胶带",
+      "spec": "W16*22*T0.05mm 单层 咖啡色 品牌:嘉泰欣",
+      "unit": "M",
+      "qty": 0.022,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 79,
+      "materialCode": "1.00.00.02.0237",
+      "name": "次级贴片件",
+      "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) Vietnam版",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 80,
+      "materialCode": "0.00.00.00.0203B-HF",
+      "name": "贴片电阻",
+      "spec": "150Ω ±5% 0805 1/8W 0805W8J0151T5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R14",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 81,
+      "materialCode": "0.00.00.01.0164B-HF",
+      "name": "贴片电阻",
+      "spec": "30Ω ±5% 1206 1/4W 1206W4J0300T5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "R1,R5",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 82,
+      "materialCode": "0.00.00.02.0294B-HF",
+      "name": "贴片电阻",
+      "spec": "120KΩ ±1% 0603 1/10W 0603WAF1203T5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R24A",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 83,
+      "materialCode": "0.00.00.02.0338B-HF",
+      "name": "贴片电阻",
+      "spec": "1KΩ ±1% 0603 1/10W 0603WAF1001T5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "R23,R24",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 84,
+      "materialCode": "0.00.00.02.0000B-HF",
+      "name": "贴片电阻",
+      "spec": "0Ω ±1% 0603 1/10W 0603WAF0000T5E 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R4",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 85,
+      "materialCode": "0.00.00.04.0005B-HF",
+      "name": "贴片电阻",
+      "spec": "100KΩ ±1% 0402 1/16W 0402WGF1003TCE 无卤 品牌:厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R33",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 86,
+      "materialCode": "0.00.00.04.0097B-HF",
+      "name": "贴片电阻",
+      "spec": "100Ω ±1% 0402 1/16W 0402WGF1000TCE 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "R28",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 87,
+      "materialCode": "0.00.00.04.0220B-HF",
+      "name": "贴片电阻",
+      "spec": "33Ω ±1% 0402 1/16W 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "R34,R7",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 88,
+      "materialCode": "0.00.00.04.0314B-HF",
+      "name": "贴片电阻",
+      "spec": "68Ω ±1% 0402 1/16W 无卤 品牌：厚声",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "R35,R36",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 89,
+      "materialCode": "0.01.00.00.0007A-HF",
+      "name": "贴片电容",
+      "spec": "22nF ±10％ 50V X7R 0603 223K CC0603KRX7R9BB223 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C21",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 90,
+      "materialCode": "0.01.00.00.0007G-HF",
+      "name": "贴片电容",
+      "spec": "22nF ±10％ 50V X7R 0603 223K CL10B223KB8NNNC 无卤 品牌:三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C21替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 91,
+      "materialCode": "0.01.00.00.0018A-HF",
+      "name": "贴片电容",
+      "spec": "1uF ±10％ 25V X7R 0603 105K CC0603KRX7R8BB105 无卤 品牌:国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C8",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 92,
+      "materialCode": "0.01.00.00.0018G-HF",
+      "name": "贴片电容",
+      "spec": "1uF ±10％ 25V X7R 0603 105K CL10B105KA8NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C8替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 93,
+      "materialCode": "0.01.00.01.4229A-HF",
+      "name": "贴片电容",
+      "spec": "1.5nF ±10％ 200V X7R 0805 152K CC0805KRX7RABB152 品牌：国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 94,
+      "materialCode": "0.01.00.00.4031A-HF",
+      "name": "贴片电容",
+      "spec": "100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 3.0,
+      "position": "C18,C30,C23",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 95,
+      "materialCode": "0.01.00.00.4031G-HF",
+      "name": "贴片电容",
+      "spec": "100nF ±10％ 50V X7R 0603 104K CL10B104KB8NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 3.0,
+      "position": "C18,C30,C23替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 96,
+      "materialCode": "0.01.00.01.2001A-HF",
+      "name": "贴片电容",
+      "spec": "10nF ±10％ 50V X7R 0805 103K CC0805KRX7R9BB103 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C10",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 97,
+      "materialCode": "0.01.00.01.2001G-HF",
+      "name": "贴片电容",
+      "spec": "10nF ±10％ 50V X7R 0805 103K CL21B103KBCNNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C10替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 98,
+      "materialCode": "0.01.00.01.4089G-HF",
+      "name": "贴片电容",
+      "spec": "2.2uF ±10％ 25V X7R 0805 225K CL21B225KAFNNNE 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C20",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 99,
+      "materialCode": "0.01.00.01.4089I-HF",
+      "name": "贴片电容",
+      "spec": "2.2uF ±10％ 25V X7R 0805 225K (C2012X7R1E225K) 无卤 品牌：TDK",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C20替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 100,
+      "materialCode": "0.01.00.01.4089A-HF",
+      "name": "贴片电容",
+      "spec": "2.2uF ±10％ 25V X7R 0805 225K CC0805KKX7R8BB225 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C20替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 101,
+      "materialCode": "0.01.00.01.4096D-HF",
+      "name": "贴片电容",
+      "spec": "2.2uF ±10％ 25V X7R 0805 225K 无卤 品牌：村田",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C20替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 102,
+      "materialCode": "0.01.00.01.4098G-HF",
+      "name": "贴片电容",
+      "spec": "4.7uF ±10％ 25V X5R 0805 475K CL21A475KAQNNNE 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C19",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 103,
+      "materialCode": "0.01.00.05.0005A-HF",
+      "name": "贴片电容",
+      "spec": "2.2nF ±10％ 50V X7R 0402 222K CC0402KRX7R9BB222 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "C25,C17",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 104,
+      "materialCode": "0.01.00.05.0005G-HF",
+      "name": "贴片电容",
+      "spec": "2.2nF ±10％ 50V X7R 0402 222K CL05B222KB5NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "C25,C17替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 105,
+      "materialCode": "0.01.00.05.0008A-HF",
+      "name": "贴片电容",
+      "spec": "100nF ±10％ 50V X7R 0402 104K CC0402KRX7R9BB104 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 3.0,
+      "position": "C14,C15,C33",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 106,
+      "materialCode": "0.01.00.05.0008G-HF",
+      "name": "贴片电容",
+      "spec": "100nF ±10％ 50V X7R 0402 104K CL05B104KB5NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 3.0,
+      "position": "C14,C15,C33替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 107,
+      "materialCode": "0.01.00.05.0008D-HF",
+      "name": "贴片电容",
+      "spec": "100nF ±10％ 50V X7R 0402 104K GRM155R71H104KE14D 无卤 品牌：村田",
+      "unit": "PCS",
+      "qty": 3.0,
+      "position": "C14,C15,C33替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 108,
+      "materialCode": "0.01.00.00.0032A-HF",
+      "name": "贴片电容",
+      "spec": "220nF ±10％ 50V X7R 0603 224K CC0603KRX7R9BB224 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C11",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 109,
+      "materialCode": "0.01.00.00.0032G-HF",
+      "name": "贴片电容",
+      "spec": "220nF ±10％ 50V X7R 0603 224K CL10B224KB8NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C11替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 110,
+      "materialCode": "0.01.00.05.0019A-HF",
+      "name": "贴片电容",
+      "spec": "1nF ±10% 50V X7R 0402 102K CC0402KRX7R9BB102 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C22",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 111,
+      "materialCode": "0.01.00.05.0019G-HF",
+      "name": "贴片电容",
+      "spec": "1nF ±10% 50V X7R 0402 102K CL05B102KB5NNNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "C22替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 112,
+      "materialCode": "0.01.00.05.0045A-HF",
+      "name": "贴片电容",
+      "spec": "330pF ±5％ 50V NPO 0402 331J CC0402JRNPO9BN331 无卤 品牌：国巨",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "C16,C26",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 113,
+      "materialCode": "0.01.00.05.0045G-HF",
+      "name": "贴片电容",
+      "spec": "330pF ±5％ 50V NPO 0402 331J CL05C331JB5NFNC 无卤 品牌：三星",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "C16,C26替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 114,
+      "materialCode": "0.00.04.00.0009A",
+      "name": "贴片热敏电阻",
+      "spec": "NTC 100KΩ ±1% 0603 B4100 品牌:仙桥",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "RT1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 115,
+      "materialCode": "0.00.13.01.0403E",
+      "name": "合金电阻",
+      "spec": "合金电阻 3mΩ ±1% 1206 RLM12FTCMR003 品牌：大毅",
+      "unit": "PCS",
+      "qty": 2.0,
+      "position": "RS1,RS2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 116,
+      "materialCode": "0.02.07.00.0187",
+      "name": "TVS 管",
+      "spec": "MSD5C051U SOD-523 品牌:美台高科",
+      "unit": "PCS",
+      "qty": 4.0,
+      "position": "TVS1,TVS2,TVS3,TVS4",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 117,
+      "materialCode": "0.02.07.00.0340",
+      "name": "TVS 管",
+      "spec": "MSD3C301VG SOD-323 30V 品牌：Me-TECh",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "ZD2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 118,
+      "materialCode": "0.05.01.00.0275",
+      "name": "贴片MOS管",
+      "spec": "VS3698AP 30V/105A N-Channel Advanced Power MOSFET RDS(on),TYP@ VGS=4.5V 4.5m? PDFN5x6 品牌:威兆",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "Q1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 119,
+      "materialCode": "0.05.01.00.0276",
+      "name": "贴片MOS管",
+      "spec": "N-Channel MOSFET 2N7002KW VDS 60V SOT-323 品牌：格瑞宝",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "Q3",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 120,
+      "materialCode": "0.05.01.00.0314",
+      "name": "贴片MOS",
+      "spec": "AKG10N046GL 100V 4.6mΩ PDFN5X6-8L 品牌：瑶芯/ATALLA",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "Q2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 121,
+      "materialCode": "0.05.01.00.0359",
+      "name": "贴片MOS",
+      "spec": "N-MOS MOT1145G 100V 5.5mΩ Max PDFN5X6 品牌：仁懋/MOT",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "Q2替代料",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 122,
+      "materialCode": "0.07.00.00.1230",
+      "name": "贴片IC",
+      "spec": "JW7726BH SOT23-6 品牌:杰华特",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "U1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 123,
+      "materialCode": "0.10.00.00.1276A",
+      "name": "PCB2",
+      "spec": "FR-4 四面板 外2内1OZ 板厚1.2mm±0.1mm 22.5*32*1.2mm (A2672 CD专用) 品牌:益欣",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "PCB2",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 124,
+      "materialCode": "0.07.00.00.1231",
+      "name": "贴片IC",
+      "spec": "协议芯片 SC215TA (A2672 CD版 100W 无PFC) 效验码:0xE8AAFEA9 品牌：南芯",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "U6",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 125,
+      "materialCode": "0.15.05.00.0094D",
+      "name": "Type-C母座",
+      "spec": "TYPE C 母座 贴16PIN 蓝色 创益通料号：82216-024（A2613专用）",
+      "unit": "PCS",
+      "qty": 1.0,
+      "position": "USB-C1",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 126,
+      "materialCode": "0.13.01.00.0020",
+      "name": "白胶",
+      "spec": "",
+      "unit": "KG",
+      "qty": 0.035,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 127,
+      "materialCode": "0.13.01.00.0009",
+      "name": "导热硅脂",
+      "spec": "",
+      "unit": "KG",
+      "qty": 2e-05,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 128,
+      "materialCode": "0.13.00.00.0018",
+      "name": "锡线",
+      "spec": "无铅锡线 Φ1.2mm 品牌:荷花",
+      "unit": "KG",
+      "qty": 0.0004,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 129,
+      "materialCode": "0.13.00.01.0007",
+      "name": "无铅锡条",
+      "spec": "无铅锡条 Sn99-0.3Ag-0.7Cu 无铅 品牌:云南锡业",
+      "unit": "KG",
+      "qty": 0.0005,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 130,
+      "materialCode": "0.13.02.00.0001",
+      "name": "助焊剂",
+      "spec": "TF-9000-5 无铅 品牌：同方",
+      "unit": "L",
+      "qty": 0.0004,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 131,
+      "materialCode": "0.13.02.99.0011",
+      "name": "触点润滑脂",
+      "spec": "JDBEC02-2触点润滑脂 品牌：菲尔特",
+      "unit": "KG",
+      "qty": 2e-05,
+      "position": "",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 132,
+      "materialCode": "0.13.01.00.0031",
+      "name": "固定胶",
+      "spec": "VS-790 改性溶解胶 1K/罐 品牌：博翔",
+      "unit": "KG",
+      "qty": 8e-05,
+      "position": "",
+      "lossRate": 0.0
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+BEGIN;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='smt_factory') THEN
+    GRANT USAGE ON SCHEMA rework TO smt_factory;
+    GRANT SELECT,INSERT,UPDATE,DELETE ON ALL TABLES IN SCHEMA rework TO smt_factory;
+    GRANT USAGE,SELECT,UPDATE ON ALL SEQUENCES IN SCHEMA rework TO smt_factory;
+    GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA rework TO smt_factory;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA rework GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO smt_factory;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA rework GRANT USAGE,SELECT,UPDATE ON SEQUENCES TO smt_factory;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA rework GRANT EXECUTE ON FUNCTIONS TO smt_factory;
+  END IF;
+END $$;
+
+INSERT INTO _migrations(filename,hash)
+VALUES('199_rework_runtime_permissions.sql','rework-runtime-permissions-v1')
+ON CONFLICT(filename) DO NOTHING;
+COMMIT;

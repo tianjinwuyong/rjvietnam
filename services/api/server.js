@@ -20128,25 +20128,57 @@ app.post("/wms/receiving/pallet-box-bindings", requirePermission("wms.execute"),
     }
     const latitude=Number(req.body?.gps?.latitude),longitude=Number(req.body?.gps?.longitude),accuracy=Number(req.body?.gps?.accuracy),capturedAt=req.body?.gps?.capturedAt||null;
     const hasGps=Number.isFinite(latitude)&&Number.isFinite(longitude)&&Number.isFinite(accuracy);
+    // WMS-owned code mapping. The QR carries raw codes; WMS resolves them
+    // against the master tables and stores the canonical values:
+    //   supplierCode  -> suppliers.code (name from suppliers table)
+    //   materialCode  -> Ruijing code <-> Vietnam code via the label master
+    const rawSupplierCode = String(req.body?.supplierCode || "").trim();
+    const rawSupplierName = String(req.body?.supplier || "").trim();
+    let supplierRow = rawSupplierCode
+      ? (await query(`SELECT id, code, name_zh, name_en, name_vi FROM suppliers WHERE UPPER(code)=UPPER($1) LIMIT 1`, [rawSupplierCode])).rows[0]
+      : null;
+    if (!supplierRow && rawSupplierName)
+      supplierRow = (await query(`SELECT id, code, name_zh, name_en, name_vi FROM suppliers WHERE name_zh=$1 OR name_en=$1 OR name_vi=$1 LIMIT 1`, [rawSupplierName])).rows[0];
+    const supplierCode = supplierRow?.code || rawSupplierCode || null;
+    const supplierName = supplierRow ? (supplierRow.name_zh || supplierRow.name_en || supplierRow.name_vi) : (rawSupplierName || null);
+
+    const rawMaterialCode = String(req.body?.materialCode || "").trim();
+    let ruijingCode = String(req.body?.ruijingMaterialCode || "").trim() || null;
+    let vietnamCode = String(req.body?.vietnamMaterialCode || "").trim() || null;
+    const looksVietnam = /^[A-Z]{1,3}\d{3,}/i.test(rawMaterialCode);
+    if (rawMaterialCode && !ruijingCode && !vietnamCode) {
+      if (looksVietnam) {
+        vietnamCode = rawMaterialCode;
+        const lm = (await query(`SELECT ruijing_material_code FROM wms_material_label_master WHERE UPPER(vietnam_material_code)=UPPER($1) LIMIT 1`, [rawMaterialCode])).rows[0];
+        if (lm?.ruijing_material_code) ruijingCode = lm.ruijing_material_code;
+        else { const m = (await query(`SELECT code FROM materials WHERE UPPER(vietnam_code)=UPPER($1) LIMIT 1`, [rawMaterialCode])).rows[0]; if (m?.code) ruijingCode = m.code; }
+      } else {
+        ruijingCode = rawMaterialCode;
+        const lm = (await query(`SELECT vietnam_material_code FROM wms_material_label_master WHERE UPPER(ruijing_material_code)=UPPER($1) LIMIT 1`, [rawMaterialCode])).rows[0];
+        if (lm?.vietnam_material_code) vietnamCode = lm.vietnam_material_code;
+        else { const m = (await query(`SELECT vietnam_code FROM materials WHERE code=$1 LIMIT 1`, [rawMaterialCode])).rows[0]; if (m?.vietnam_code) vietnamCode = m.vietnam_code; }
+      }
+    }
     // TEST MODE: remove duplicate-checking so the same box QR can be re-bound
     // repeatedly during UAT. Delete any prior binding with the same box_qr first.
     if (boxQr) { await query(`DELETE FROM wms_receiving_pallet_box_bindings WHERE UPPER(box_qr)=UPPER($1)`, [boxQr]); }
-    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at,package_level,parent_box_qr,declared_qty) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'OUTER'),$12,$13) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",package_level AS "packageLevel",parent_box_qr AS "parentBoxQr",declared_qty AS "declaredQty"`, [palletQr, boxQr, lotNo, req.body?.supplier || null, location.qr_code||location.code, req.user?.username || "MATERIAL_RECEIVER",hasGps?latitude:null,hasGps?longitude:null,hasGps?accuracy:null,hasGps?capturedAt:null,req.body?.packageLevel||"OUTER",req.body?.parentBoxQr||null,req.body?.declaredQty||null]);
+    const r = await query(`INSERT INTO wms_receiving_pallet_box_bindings(pallet_qr,box_qr,lot_no,supplier,location_qr,bound_by,pda_latitude,pda_longitude,pda_accuracy,gps_captured_at,package_level,parent_box_qr,declared_qty,material_code,vietnam_material_code,supplier_code) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,coalesce($11,'OUTER'),$12,$13,$14,$15,$16) RETURNING id,pallet_qr AS "palletQr",box_qr AS "boxQr",lot_no AS "lotNo",supplier,location_qr AS "locationQr",bound_by AS "boundBy",bound_at AS "boundAt",package_level AS "packageLevel",parent_box_qr AS "parentBoxQr",declared_qty AS "declaredQty",material_code AS "materialCode",vietnam_material_code AS "vietnamMaterialCode",supplier_code AS "supplierCode"`, [palletQr, boxQr, lotNo, supplierName, location.qr_code||location.code, req.user?.username || "MATERIAL_RECEIVER",hasGps?latitude:null,hasGps?longitude:null,hasGps?accuracy:null,hasGps?capturedAt:null,req.body?.packageLevel||"OUTER",req.body?.parentBoxQr||null,req.body?.declaredQty||null,ruijingCode||rawMaterialCode||null,vietnamCode||null,supplierCode]);
     // Binding is the step BEFORE IQC: promote the bound box into a material lot
     // awaiting IQC (iqc_status='pending'). This is what the IQC queue consumes.
     const matCode = String(req.body?.materialCode || "").trim();
     const declaredQty = Number(req.body?.declaredQty || 0);
     if (matCode && lotNo) {
-      let mat = (await query(`SELECT id FROM materials WHERE code=$1 LIMIT 1`, [matCode])).rows[0];
+      // Look up by either code form: Ruijing (0.xx.xx) or Vietnam (R0xxx).
+      // The resolved codes from the mapping block above take priority.
+      const codeCandidates = [ruijingCode, vietnamCode, matCode].filter(Boolean);
+      let mat = (await query(
+        `SELECT id FROM materials WHERE code=ANY($1) OR vietnam_code=ANY($1) ORDER BY CASE WHEN code=$2 THEN 0 ELSE 1 END LIMIT 1`,
+        [codeCandidates, ruijingCode || matCode]
+      )).rows[0];
       if (!mat) {
-        mat = (await query(`INSERT INTO materials (code,name_zh,name_en,name_vi,uom,material_type,domain_code) VALUES ($1,$1,$1,$1,'PCS','component','RAW_MATERIAL') RETURNING id`, [matCode])).rows[0];
+        mat = (await query(`INSERT INTO materials (code,name_zh,name_en,name_vi,uom,material_type,domain_code) VALUES ($1,$1,$1,$1,'PCS','component','RAW_MATERIAL') RETURNING id`, [ruijingCode || matCode])).rows[0];
       }
-      let sup = (await query(`SELECT id FROM suppliers WHERE UPPER(code)=UPPER($1) LIMIT 1`, [String(req.body?.supplierCode||"").trim()])).rows[0];
-      if (!sup) {
-        const supName = String(req.body?.supplier || "").trim();
-        const supRow = supName ? (await query(`SELECT id FROM suppliers WHERE name_zh=$1 LIMIT 1`, [supName])).rows[0] : null;
-        sup = supRow;
-      }
+      let sup = supplierRow;
       if (!sup) sup = (await query(`SELECT id FROM suppliers ORDER BY id LIMIT 1`)).rows[0];
       if (!sup) sup = (await query(`INSERT INTO suppliers (code,name_zh,name_en,name_vi,status) VALUES ('AUTO','AUTO','AUTO','AUTO','active') RETURNING id`)).rows[0];
       const existing = (await query(`SELECT id, storage_location_id FROM material_lots WHERE lot_no=$1 ORDER BY id DESC LIMIT 1`, [lotNo])).rows[0];
@@ -20243,23 +20275,25 @@ app.get("/wms/receiving/pre-iqc", requirePermission("wms.read"), async (_req, re
           m.vietnam_code,
           mv.vietnam_code
         ) AS "vietnamCode",
-        s.code AS "supplierCode",
-        b.supplier AS "supplierName",
+        COALESCE(b.supplier_code, s.code) AS "supplierCode",
+        COALESCE(s.name_zh, b.supplier) AS "supplierName",
         SUM(COALESCE(b.declared_qty,0))::numeric AS "totalQty",
         ml.manufacturing_date AS "productionDate",
         b.lot_no AS "lot",
         STRING_AGG(DISTINCT b.location_qr, ', ') AS "locationQrs",
         COALESCE(ml.iqc_status,'pending') AS "iqcStatus",
         COUNT(b.id) AS "boxCount"
-      FROM (SELECT b.*, CASE WHEN b.box_qr LIKE '%*%*%' THEN split_part(b.box_qr,'*',2) ELSE split_part(b.box_qr,':',2) END AS mat_sn FROM wms_receiving_pallet_box_bindings b) b
-      LEFT JOIN suppliers s ON s.name_zh=b.supplier OR s.name_en=b.supplier
+      FROM (SELECT b.*, COALESCE(b.material_code,
+             CASE WHEN b.box_qr LIKE '%*%*%' THEN split_part(b.box_qr,'*',2) ELSE split_part(b.box_qr,':',2) END) AS mat_sn
+           FROM wms_receiving_pallet_box_bindings b) b
+      LEFT JOIN suppliers s ON UPPER(s.code)=UPPER(b.supplier_code) OR s.name_zh=b.supplier OR s.name_en=b.supplier
       LEFT JOIN material_lots ml ON ml.lot_no=b.lot_no
       LEFT JOIN materials m ON m.id=ml.material_id
       LEFT JOIN materials mv ON mv.code=b.mat_sn
       LEFT JOIN wms_material_label_master lm ON lm.ruijing_material_code=b.mat_sn
       WHERE b.lot_no IS NOT NULL
         AND (ml.iqc_status IS NULL OR ml.iqc_status = 'pending')
-      GROUP BY b.mat_sn, b.lot_no, s.code, b.supplier, ml.manufacturing_date, ml.iqc_status, m.vietnam_code, mv.vietnam_code, b.vietnam_material_code, lm.vietnam_material_code
+      GROUP BY b.mat_sn, b.lot_no, b.supplier_code, s.code, s.name_zh, b.supplier, ml.manufacturing_date, ml.iqc_status, m.vietnam_code, mv.vietnam_code, b.vietnam_material_code, lm.vietnam_material_code
       ORDER BY b.lot_no`);
     res.json({ success: true, items: r.rows });
   } catch (err) { res.status(500).json(errorEnvelope("PRE_IQC_LOAD_FAILED", err.message)); }
@@ -20285,33 +20319,86 @@ app.put("/wms/receiving/pre-iqc/:lotNo/result", requirePermission("wms.execute")
       WHERE lot_no=$2 RETURNING id, lot_no AS "lot", iqc_status AS "iqcStatus"`, [newStatus, lotNo]);
     let ngMove = null;
     if (result === "FAIL") {
-      // Pick the first active hold/defective location as the NG destination.
-      const ngLoc = (await query(
-        `SELECT id, code, qr_code AS "qrCode"
-         FROM storage_locations
-         WHERE LOWER(location_type) IN ('hold','defect','defective','reject','rejected','ng','quarantine')
-           AND status='active'
-         ORDER BY CASE WHEN LOWER(location_type)='hold' THEN 0 ELSE 1 END, id
+      // NG QR is WMS-allocated: the canvas NG area (WMS-AREA:NG) is the
+      // destination. Fall back to a hold/defect storage location if no NG area
+      // exists yet. All of the lot's box bindings move to the NG QR.
+      let ngQr = null, ngCode = null;
+      const floorNg = (await query(
+        `SELECT area_code, area_qr, area_name
+         FROM wms_floor_storage_areas
+         WHERE status <> 'DISABLED'
+           AND (UPPER(area_code) IN ('NG','IQC-NG','NG-01')
+                OR UPPER(area_type) IN ('NG','QUARANTINE','DEFECT','REJECT'))
+         ORDER BY CASE WHEN UPPER(area_code)='NG' THEN 0 ELSE 1 END, area_code
          LIMIT 1`
       )).rows[0];
-      if (ngLoc) {
-        if (r.rows.length) {
-          await query(`UPDATE material_lots SET storage_location_id=$1, updated_at=now() WHERE id=$2`,
-            [ngLoc.id, r.rows[0].id]);
+      if (floorNg?.area_qr) { ngQr = floorNg.area_qr; ngCode = floorNg.area_code; }
+      else {
+        const hold = (await query(
+          `SELECT id, code, qr_code AS "qrCode"
+           FROM storage_locations
+           WHERE LOWER(location_type) IN ('hold','defect','defective','reject','rejected','ng','quarantine')
+             AND status='active'
+           ORDER BY CASE WHEN LOWER(location_type)='hold' THEN 0 ELSE 1 END, id
+           LIMIT 1`
+        )).rows[0];
+        if (hold) { ngQr = hold.qrCode || hold.code; ngCode = hold.code; }
+      }
+      if (ngQr) {
+        // Provision/attach a storage_locations row for the NG zone so the lot's
+        // storage_location_id points at NG too (material master shows NG).
+        let ngStorageId = (await query(
+          `SELECT id FROM storage_locations WHERE UPPER(qr_code)=UPPER($1) OR UPPER(code)=UPPER($2) LIMIT 1`,
+          [ngQr, ngCode]
+        )).rows[0]?.id ?? null;
+        if (!ngStorageId) {
+          try {
+            ngStorageId = (await query(
+              `INSERT INTO storage_locations (code, area, name_zh, name_en, name_vi, status, location_type, allow_receiving, allow_transfer, allow_putaway, qr_code)
+               VALUES ($1,$1,$2,$2,$2,'active','hold',TRUE,TRUE,TRUE,$3)
+               ON CONFLICT (code) DO UPDATE SET qr_code=EXCLUDED.qr_code, updated_at=now()
+               RETURNING id`,
+              [ngCode, ngCode, ngQr]
+            )).rows[0]?.id ?? null;
+          } catch (provisionErr) { console.error("pre-iqc NG location provision:", provisionErr.message); }
         }
-        const moved = await query(
-          `UPDATE wms_receiving_pallet_box_bindings
-             SET location_qr=$1
-           WHERE lot_no=$2
-             AND location_qr IS NOT NULL
-             AND location_qr <> ''
-             AND location_qr <> $1
-           RETURNING id, box_qr AS "boxQr", pallet_qr AS "palletQr"`,
-          [ngLoc.qrCode || ngLoc.code, lotNo]
-        );
-        ngMove = { ngLocation: ngLoc, movedBoxCount: moved.rowCount || 0, boxes: moved.rows };
+        if (r.rows.length && ngStorageId) {
+          await query(`UPDATE material_lots SET storage_location_id=$1, updated_at=now() WHERE id=$2`,
+            [ngStorageId, r.rows[0].id]);
+        }
+        // Each box gets its OWN NG position, numbered sequentially: the first
+        // successful NG binding takes NG P01-01, the next NG P01-02, … (the QR
+        // number increments by 1 per successful binding). Positions already
+        // occupied by earlier NG moves are skipped.
+        const ngPositions = (await query(
+          `SELECT qr_code AS "qrCode"
+           FROM wms_canvas_position_qrs
+           WHERE status='ACTIVE' AND position_type='PALLET'
+             AND UPPER(qr_code) LIKE 'NG %'
+           ORDER BY qr_code`
+        )).rows.map(x => x.qrCode);
+        const occupied = new Set((await query(
+          `SELECT DISTINCT location_qr AS "qr" FROM wms_receiving_pallet_box_bindings
+           WHERE location_qr IS NOT NULL AND UPPER(location_qr) LIKE 'NG %'`
+        )).rows.map(x => String(x.qr).toUpperCase()));
+        const boxes = (await query(
+          `SELECT id, box_qr AS "boxQr", pallet_qr AS "palletQr", location_qr AS "locationQr"
+           FROM wms_receiving_pallet_box_bindings WHERE lot_no=$1 ORDER BY id`,
+          [lotNo]
+        )).rows;
+        let cursor = 0;
+        const moved = [];
+        for (const box of boxes) {
+          if (String(box.locationQr || "").toUpperCase().startsWith("NG ")) continue; // already in NG
+          while (cursor < ngPositions.length && occupied.has(ngPositions[cursor].toUpperCase())) cursor++;
+          const target = ngPositions[cursor] || ngQr; // overflow falls back to the area QR
+          if (ngPositions[cursor]) { occupied.add(ngPositions[cursor].toUpperCase()); cursor++; }
+          await query(`UPDATE wms_receiving_pallet_box_bindings SET location_qr=$1 WHERE id=$2`, [target, box.id]);
+          moved.push({ ...box, locationQr: target });
+        }
+        ngMove = { ngLocation: { qrCode: ngQr, code: ngCode }, movedBoxCount: moved.length, boxes: moved };
       } else {
-        ngMove = { ngLocation: null, movedBoxCount: 0, note: "no active hold/defective storage location configured" };
+        ngMove = { ngLocation: null, movedBoxCount: 0, note: "no NG area or hold/defective location configured" };
       }
     }
     if (!r.rows.length) {
@@ -20348,6 +20435,85 @@ app.put("/wms/receiving/pre-iqc/:lotNo/result", requirePermission("wms.execute")
     );
     res.json({ success: true, data: r.rows[0], ngMove, historyId: hist.rows[0].id });
   } catch (err) { res.status(500).json(errorEnvelope("PRE_IQC_RESULT_FAILED", err.message)); }
+});
+
+// Delete ALL pre-IQC entries: every pending box binding + its material lot
+// and transactions. Used by the poReceipt page's "全部删除" button.
+// Runs in ONE transaction. wms_receiving_qr_registrations,
+// wms_material_position_history and wms_pda_receiving_documents reference
+// material_lots(id) with NO ACTION, so they are cleared BEFORE the lot rows —
+// otherwise DELETE material_lots fails with FK 23503 and the whole request
+// returns 500 while earlier deletes stay applied (no rollback in the old code).
+app.delete("/wms/receiving/pre-iqc", requirePermission("wms.execute"), async (_req, res) => {
+  const client = await pgPool.connect();
+  try {
+    await receivingQrRegistrationReady;
+    await pdaReceivingDocumentsReady;
+    await client.query("BEGIN");
+    // Pending set = box bindings whose lot is undecided, UNION every
+    // pending/undecided material lot. Bindings of already decided
+    // (released/rejected) lots are traceability history and stay.
+    const pendingLotNos = (await client.query(`
+      SELECT DISTINCT UPPER(lot_no) AS lot_no FROM (
+        SELECT b.lot_no FROM wms_receiving_pallet_box_bindings b
+          LEFT JOIN material_lots ml ON ml.lot_no = b.lot_no
+          WHERE b.lot_no IS NOT NULL AND (ml.iqc_status IS NULL OR ml.iqc_status = 'pending')
+        UNION
+        SELECT lot_no FROM material_lots WHERE iqc_status IS NULL OR iqc_status = 'pending'
+      ) p WHERE lot_no IS NOT NULL`)).rows.map(r => r.lot_no);
+    const lots = (await client.query(`SELECT id FROM material_lots WHERE iqc_status IS NULL OR iqc_status='pending'`)).rows.map(r => r.id);
+    let txns = 0, inspections = 0, registrations = 0, positionHistory = 0, documents = 0;
+    if (lots.length) {
+      txns = (await client.query(`DELETE FROM inventory_transactions WHERE material_lot_id=ANY($1)`, [lots])).rowCount || 0;
+      try { inspections = (await client.query(`DELETE FROM pda_inspection_records WHERE material_lot_id=ANY($1)`, [lots])).rowCount || 0; } catch { /* best effort */ }
+      registrations = (await client.query(`DELETE FROM wms_receiving_qr_registrations WHERE material_lot_id=ANY($1)`, [lots])).rowCount || 0;
+      positionHistory = (await client.query(`DELETE FROM wms_material_position_history WHERE material_lot_id=ANY($1)`, [lots])).rowCount || 0;
+      documents = (await client.query(`DELETE FROM wms_pda_receiving_documents WHERE material_lot_id=ANY($1)`, [lots])).rowCount || 0;
+      await client.query(`DELETE FROM material_lots WHERE id=ANY($1)`, [lots]);
+    }
+    const boxes = pendingLotNos.length
+      ? (await client.query(`DELETE FROM wms_receiving_pallet_box_bindings WHERE UPPER(lot_no) = ANY($1)`, [pendingLotNos])).rowCount || 0
+      : 0;
+    await client.query("COMMIT");
+    res.json({ success: true, deleted: { lots: lots.length, boxes, transactions: txns, inspections, registrations, positionHistory, documents } });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch { /* not in transaction */ }
+    res.status(500).json(errorEnvelope("PRE_IQC_DELETE_ALL_FAILED", err.message));
+  } finally { client.release(); }
+});
+
+// Delete one pre-IQC entry (by lot): removes the box bindings, the material
+// lot (with its transactions, QR registration, position history and receiving
+// documents), so the operator can clear a wrong scan from the poReceipt page
+// without SQL. lot_no matching is case-insensitive, matching every other
+// lot_no comparison in this file; the response no longer redefines the `lot`
+// key (the old object had `lot` twice, the boolean won and callers could not
+// tell which lot was deleted).
+app.delete("/wms/receiving/pre-iqc/:lotNo", requirePermission("wms.execute"), async (req, res) => {
+  const client = await pgPool.connect();
+  try {
+    const lotNo = String(req.params.lotNo || "").trim();
+    if (!lotNo) return res.status(400).json(errorEnvelope("VALIDATION", "lotNo required"));
+    await receivingQrRegistrationReady;
+    await pdaReceivingDocumentsReady;
+    await client.query("BEGIN");
+    const lot = (await client.query(`SELECT id, iqc_status FROM material_lots WHERE UPPER(lot_no)=UPPER($1) ORDER BY id DESC LIMIT 1`, [lotNo])).rows[0];
+    const boxes = (await client.query(`DELETE FROM wms_receiving_pallet_box_bindings WHERE UPPER(lot_no)=UPPER($1) RETURNING id`, [lotNo])).rowCount || 0;
+    let txns = 0, inspections = 0, registrations = 0, positionHistory = 0, documents = 0;
+    if (lot) {
+      txns = (await client.query(`DELETE FROM inventory_transactions WHERE material_lot_id=$1`, [lot.id])).rowCount || 0;
+      try { await client.query(`DELETE FROM pda_inspection_records WHERE material_lot_id=$1`, [lot.id]); } catch { /* FK-safe best effort */ }
+      registrations = (await client.query(`DELETE FROM wms_receiving_qr_registrations WHERE material_lot_id=$1`, [lot.id])).rowCount || 0;
+      positionHistory = (await client.query(`DELETE FROM wms_material_position_history WHERE material_lot_id=$1`, [lot.id])).rowCount || 0;
+      documents = (await client.query(`DELETE FROM wms_pda_receiving_documents WHERE material_lot_id=$1`, [lot.id])).rowCount || 0;
+      await client.query(`DELETE FROM material_lots WHERE id=$1`, [lot.id]);
+    }
+    await client.query("COMMIT");
+    res.json({ success: true, deleted: { lotNo, lotFound: !!lot, boxes, transactions: txns, inspections, registrations, positionHistory, documents } });
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch { /* not in transaction */ }
+    res.status(500).json(errorEnvelope("PRE_IQC_DELETE_FAILED", err.message));
+  } finally { client.release(); }
 });
 
 // Count of boxes already bound to each storage-location QR. The PDA shows this

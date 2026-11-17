@@ -1,0 +1,31 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - combobox [ref=e10]:
+      - option "中文" [selected]
+      - option "Tiếng Việt"
+      - option "English"
+    - generic [ref=e11]:
+      - generic [ref=e13]:
+        - paragraph [ref=e19]: 输入用户名开始识别
+        - generic [ref=e20]:
+          - generic [ref=e21]
+          - generic [ref=e25]
+          - button "登录" [ref=e29] [cursor=pointer]
+        - generic [ref=e30]: 演示账号默认密码：Factory@123
+      - generic [ref=e32]:
+        - generic [ref=e34]:
+          - heading "演示账号" [level=2] [ref=e35]
+          - paragraph [ref=e36]: 登录
+        - button "越南工厂负责人全权限快速登录 — 莫立斌" [ref=e37] [cursor=pointer]
+        - button "工厂经理快速登录 — 蒙营" [ref=e38] [cursor=pointer]
+        - button "📦 SMT PDA 上料员快速登录" [ref=e39] [cursor=pointer]
+        - generic [ref=e40]:
+          - button "莫立斌 MO_LI_BIN Vietnam Factory Manager · Full Access · 越南工厂负责人" [ref=e41] [cursor=pointer]
+          - button "蒙营 MENG_YING Factory Manager · Administrator" [ref=e45] [cursor=pointer]
+          - button "SMT PDA 上料员 VN_OP_001 SMT PDA Material Loader" [ref=e49] [cursor=pointer]
+          - button "SMT物料收料员 VN_MATERIAL_RECEIVER SMT Material Receiver · PDA / Scanner" [ref=e53] [cursor=pointer]
+          - button "Chen PMC 01 PMC_CN_01 PMC Planning" [ref=e57] [cursor=pointer]
+          - button "Warehouse 01 VN_WH_001 Warehouse" [ref=e61] [cursor=pointer]
+          - button "QC Vietnam 01 QC_VN_01 Quality" [ref=e65] [cursor=pointer]
+          - button "Li Wei MGT_CN_01 Management" [ref=e69] [cursor=pointer]
+  - region "Notifications alt+T"

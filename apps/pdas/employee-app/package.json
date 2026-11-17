@@ -1,0 +1,25 @@
+{
+  "name": "@smt-factory/employee-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.6.8",
+    "@capacitor/cli": "^8.4.2",
+    "@capacitor/core": "^7.6.8",
+    "@vitejs/plugin-react": "^5.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.8.0",
+    "vite": "^8.0.16"
+  },
+  "devDependencies": {
+        "@types/react": "^18.3.0",
+        "@types/react-dom": "^18.3.0"
+  }
+}

@@ -15,6 +15,7 @@ export type SignInResult = {
 };
 
 const DEMO_ACCOUNTS = [
+  { username: "wy", displayName: "WY", password: "Factory@123", roleLabel: "Full Access · 全部权限" },
   { username: "MO_LI_BIN", displayName: "莫立斌", password: "Factory@123", roleLabel: "Vietnam Factory Manager · Full Access · 越南工厂负责人" },
   { username: "MENG_YING", displayName: "蒙营", password: "my", roleLabel: "Factory Manager · Administrator" },
   { username: "VN_OP_001", displayName: "SMT PDA 上料员", password: "Factory@123", roleLabel: "SMT PDA Material Loader" },

@@ -1,0 +1,1 @@
+(Get-Content "C:\PostgreSQL\data\postgresql.conf") -replace "^#?primary_conninfo = '.*'", "primary_conninfo = 'host=100.116.166.118 port=5432 user=replicator password=Replicator@123'" | Set-Content "C:\PostgreSQL\data\postgresql.conf"

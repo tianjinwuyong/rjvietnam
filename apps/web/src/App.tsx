@@ -413,18 +413,81 @@ function TableShell({ children }: { children: ReactNode }) {
  * - "hr" / "maintenance" are UI-only modules (no backend permission)
  * - "erp" is defined in MODULE_ACCESS_PERMISSION but has no UI tab
  */
+/**
+ * Modules that make up the full workspace — used by roles that own the whole
+ * system (admin, plant_manager) so the sidebar never depends on a per-role list.
+ */
+const FULL_MODULES: ModuleKey[] = [
+  "dashboard", "pmc", "wms", "bom", "mes", "smtReelConsumption", "quality", "qms", "trace",
+  "reports", "admin", "hr", "mobile", "maintenance", "finance", "sales", "service",
+  "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee",
+  "managerDashboard", "workflow", "oa", "andonBoard", "manualLine3d",
+];
+
 const roleModuleAccess: Record<string, ModuleKey[]> = {
-  pmc: ["dashboard", "pmc", "bom", "trace", "mobile"],
+  admin: FULL_MODULES,
+  plant_manager: FULL_MODULES,
+  management: ["dashboard", "reports", "trace", "finance", "sales", "service", "procurement", "einvoice", "hr", "ai", "managerDashboard", "workflow", "oa", "manualLine3d"],
+  pmc: ["dashboard", "pmc", "bom", "trace", "mobile", "reports"],
   warehouse: ["dashboard", "wms", "trace", "mobile", "manualLine3d"],
+  material_receiver: ["dashboard", "wms", "quality", "trace", "mobile"],
   iqc: ["dashboard", "wms", "quality", "qms", "mobile", "manualLine3d"],
+  oqc: ["dashboard", "quality", "qms", "trace", "mes", "mobile", "manualLine3d"],
   scanner: ["dashboard", "mes", "mobile"],
   employee: ["dashboard", "employee", "mobile"],
   smt_operator: ["dashboard", "mes", "wms", "mobile", "team", "mobileleave", "manualLine3d"],
   quality: ["dashboard", "quality", "qms", "trace", "mobile", "manualLine3d"],
+  rework: ["dashboard", "mes", "quality", "qms", "manualLine3d"],
   engineering: ["dashboard", "mes", "quality", "qms", "trace", "maintenance", "mobile"],
-  admin: ["dashboard", "pmc", "wms", "bom", "mes", "quality", "qms", "trace", "reports", "admin", "hr", "mobile", "maintenance", "finance", "sales", "service", "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee", "managerDashboard", "workflow", "oa", "manualLine3d"],
-  management: ["dashboard", "reports", "trace", "finance", "sales", "service", "procurement", "einvoice", "hr", "ai", "managerDashboard", "workflow", "oa", "manualLine3d"],
+  line_manager_smt: ["dashboard", "mes", "quality", "qms", "trace", "reports", "maintenance", "mobile", "manualLine3d"],
+  line_manager_manual: ["dashboard", "mes", "quality", "qms", "trace", "reports", "maintenance", "mobile", "manualLine3d"],
+  line_manager_auto: ["dashboard", "mes", "quality", "qms", "trace", "reports", "maintenance", "mobile", "manualLine3d"],
+  production_transport: ["dashboard", "wms", "mes", "mobile"],
+  finance: ["dashboard", "finance", "einvoice", "procurement", "reports", "trace"],
+  purchasing: ["dashboard", "procurement", "wms", "reports", "trace"],
+  customer_service: ["dashboard", "sales", "service", "reports"],
+  hr_manager: ["dashboard", "hr", "employee", "reports", "workflow", "oa"],
+  reports_admin: ["dashboard", "reports", "trace", "managerDashboard"],
+  reports_viewer: ["dashboard", "reports"],
 };
+
+/**
+ * Fallback for roles that exist in the DB but have no explicit entry above:
+ * derive the sidebar from the permissions the login actually granted, so a new
+ * role never renders an empty navigation bar.
+ */
+const permissionModuleMap: Array<[string, ModuleKey[]]> = [
+  ["admin.", ["admin"]],
+  ["wms.", ["wms"]],
+  ["mes.", ["mes"]],
+  ["pmc.", ["pmc"]],
+  ["quality.", ["quality"]],
+  ["qms.", ["qms"]],
+  ["traceability.", ["trace"]],
+  ["finance.", ["finance"]],
+  ["procurement.", ["procurement"]],
+  ["sales.", ["sales"]],
+  ["service.", ["service"]],
+  ["maintenance.", ["maintenance"]],
+  ["einvoice.", ["einvoice"]],
+  ["hr.", ["hr"]],
+  ["reports.", ["reports"]],
+  ["ai.", ["ai"]],
+  ["management.", ["managerDashboard", "workflow"]],
+  ["master_data.", ["bom"]],
+];
+
+function resolveModuleAccess(user: SignInResult): ModuleKey[] {
+  const byRole = roleModuleAccess[user.roleKey];
+  if (byRole && byRole.length > 0) return byRole;
+  const derived = new Set<ModuleKey>(["dashboard"]);
+  for (const permission of user.permissions ?? []) {
+    for (const [prefix, mods] of permissionModuleMap) {
+      if (permission.startsWith(prefix)) mods.forEach((m) => derived.add(m));
+    }
+  }
+  return [...derived];
+}
 
 // ── Heartbeat / System Health ─────────────────────────────────────
 

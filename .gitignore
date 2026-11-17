@@ -146,3 +146,85 @@ credentials.json
 
 # graft's local graph cache — regenerable, not committed (run `graft build`).
 /graft/
+
+# ---------------------------------------------------------------------------
+# Baseline hygiene (added with the 2026-11 baseline snapshot).
+# Everything below is local runtime state, scratch diagnostics, or build output.
+# ---------------------------------------------------------------------------
+
+# Logs and captured process output
+logs/
+**/logs/
+*.stderr.log
+*.stdout.log
+*.log
+
+# Test / Playwright output
+test-results/
+**/test-results/
+.playwright-mcp/
+.playwright/
+playwright-report/
+
+# Build + packaging output
+web-dist-*.tgz
+apps/web/dist-*.tar.gz
+apps/web/dist-*.tgz
+
+# Root-level screenshots and captures (*.png is already ignored repo-wide above)
+/*.png
+/*.jpg
+/*.jpeg
+
+# One-off scratch scripts written at the repo root
+_*_tmp.mjs
+_*_tmp.cjs
+_*_tmp.js
+.tmp-*
+.tmp-*.cjs
+pw-*.cjs
+pw-*.js
+q*.cjs
+diag*.bat
+diag*.ps1
+
+# Python virtualenvs (services/api/.venv-ocr is ~13k files of vendored OCR deps)
+**/.venv/
+**/.venv-*/
+**/venv/
+
+# Stray nested copy of the tree (accidental `cp -r` of the repo into itself);
+# tracked through the real root paths, never through this duplicate.
+/smt-factory-system/
+
+# Vendored third-party checkouts / removed service dirs that are git repos in
+# their own right — they cannot be committed as content, and they are not
+# submodules of this project.
+/tools/VibeVoice/
+/integrations/openmes-source.removed/
+
+# Machine/runtime state — never source
+*.pid
+.codex-*
+.runtime/
+runtime-logs/
+backups/
+artifacts/
+tmp/
+
+# --- Migrations and seeds are SOURCE, not generated artifacts ----------------
+# The blanket `database/` (line 22) and `*.sql` (line 42) rules exist to keep
+# dumps, local schema sketches and one-off query files out of git. Applied
+# migrations and seeds are the opposite: they ARE the schema, they are
+# append-only, and the project cannot be rebuilt without them. Re-include the
+# two directories explicitly; everything else under database/ stays ignored.
+!database/
+database/*
+!database/migrations/
+!database/migrations/**
+!database/seeds/
+!database/seeds/**
+!database/docker/
+!database/docker/**
+!database/*.md
+
