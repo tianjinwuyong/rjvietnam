@@ -21,6 +21,7 @@ import { KnowledgeView } from "./KnowledgeView";
 import { SysView } from "./SysView";
 import { EquipmentView } from "./EquipmentView";
 import { HrView } from "./HrView";
+import { QualityView } from "./QualityView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
 
 /**
@@ -350,6 +351,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <EquipmentView locale={locale} sub={view} />
   ) : view === "attendance" || view === "cardRule" || view === "workCalendar" || view === "schedule" || view === "salary" || view === "salaryTemplate" || view === "perfFlow" || view === "training" || view === "myExams" || view === "handover" || view === "meetingList" || view === "meetingSeries" || view === "meetingActions" || view === "meetingMinutes" ? (
     <HrView locale={locale} sub={view} />
+  ) : view === "iqcInspect" || view === "mrbReview" || view === "ipqcRecords" || view === "faiRecords" || view === "inspectRecords" || view === "oqcInspect" || view === "qcTemplates" ? (
+    <QualityView locale={locale} sub={view} />
   ) : view === "notifications" ? (
     loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
       <>

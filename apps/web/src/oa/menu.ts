@@ -85,7 +85,15 @@ export type OaViewId =
   | "meetingList"
   | "meetingSeries"
   | "meetingActions"
-  | "meetingMinutes";
+  | "meetingMinutes"
+  // 品质管理组（IPQC/FAI/点检填写暂留建设中）
+  | "iqcInspect"
+  | "mrbReview"
+  | "ipqcRecords"
+  | "faiRecords"
+  | "inspectRecords"
+  | "oqcInspect"
+  | "qcTemplates";
 
 export const OA_MENU: OaMenuGroup[] = [
   {
@@ -119,28 +127,28 @@ export const OA_MENU: OaMenuGroup[] = [
     titleKey: "menu.qualityMgr",
     items: [],
     sections: [
-      { titleKey: "menu.iqcGroup", items: [{ titleKey: "menu.iqcInspect" }] },
-      { titleKey: "menu.mrbGroup", items: [{ titleKey: "menu.mrbReview" }] },
+      { titleKey: "menu.iqcGroup", items: [{ titleKey: "menu.iqcInspect", view: "iqcInspect" }] },
+      { titleKey: "menu.mrbGroup", items: [{ titleKey: "menu.mrbReview", view: "mrbReview" }] },
       {
         titleKey: "menu.qcIpqc",
         items: [
           { titleKey: "ipqcMod.fillTitle" },
-          { titleKey: "ipqcMod.recordsTitle" },
+          { titleKey: "ipqcMod.recordsTitle", view: "ipqcRecords" },
           { titleKey: "faiMod.fillTitle" },
-          { titleKey: "faiMod.recordsTitle" },
+          { titleKey: "faiMod.recordsTitle", view: "faiRecords" },
           { titleKey: "inspectRt.fillTitle" },
-          { titleKey: "inspectRt.recordsTitle" },
+          { titleKey: "inspectRt.recordsTitle", view: "inspectRecords" },
         ],
       },
-      { titleKey: "menu.qcOqc", items: [{ titleKey: "menu.oqcInspect" }] },
+      { titleKey: "menu.qcOqc", items: [{ titleKey: "menu.oqcInspect", view: "oqcInspect" }] },
       {
         titleKey: "menu.qualityTemplates",
         items: [
-          { titleKey: "menu.modelIqc", adminOnly: true },
-          { titleKey: "menu.modelIpqc", adminOnly: true },
-          { titleKey: "menu.modelOqc", adminOnly: true },
-          { titleKey: "menu.modelFai", adminOnly: true },
-          { titleKey: "menu.modelInspect", adminOnly: true },
+          { titleKey: "menu.modelIqc", adminOnly: true, view: "qcTemplates" },
+          { titleKey: "menu.modelIpqc", adminOnly: true, view: "qcTemplates" },
+          { titleKey: "menu.modelOqc", adminOnly: true, view: "qcTemplates" },
+          { titleKey: "menu.modelFai", adminOnly: true, view: "qcTemplates" },
+          { titleKey: "menu.modelInspect", adminOnly: true, view: "qcTemplates" },
         ],
       },
     ],
