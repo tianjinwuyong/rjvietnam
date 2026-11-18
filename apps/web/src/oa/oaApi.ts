@@ -1,4 +1,4 @@
-import { apiClient } from "../api/client";
+import { apiClient, authStorage } from "../api/client";
 
 /**
  * OA 原生模块 API 客户端 —— 调用 server.js 挂载的合并 OA 路由
@@ -533,16 +533,147 @@ export const oaDocApi = {
     apiClient.post<OaDocAttachmentRow>(`/api/docs/${docId}/attachments`, body),
 };
 
+// ---- 公共盘（drive.js 路由） ----
+
+export interface OaDriveFolderRow {
+  id: number | string;
+  parent_id?: number | string | null;
+  name: string;
+  owner_id?: number | string | null;
+  owner_name?: string | null;
+  can_read?: boolean | null;
+  can_edit?: boolean | null;
+  can_upload?: boolean | null;
+  can_delete?: boolean | null;
+  can_create?: boolean | null;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface OaDriveFileRow {
+  id: number | string;
+  folder_id?: number | string | null;
+  name: string;
+  disk_name?: string | null;
+  file_path: string;
+  file_size?: number | string | null;
+  mime_type?: string | null;
+  uploader_name?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export interface OaDrivePerm {
+  canRead: boolean;
+  canEdit: boolean;
+  canUpload: boolean;
+  canDelete: boolean;
+  canCreate: boolean;
+  canGrant: boolean;
+  isOwner: boolean;
+}
+
+export interface OaDriveFolderResult {
+  folder: OaDriveFolderRow;
+  perm: OaDrivePerm;
+  subfolders: OaDriveFolderRow[];
+  files: OaDriveFileRow[];
+}
+
+export interface OaDriveAclRow {
+  user_id: number | string;
+  real_name?: string | null;
+  username?: string | null;
+  dept_name?: string | null;
+  can_read?: boolean | null;
+  can_edit?: boolean | null;
+  can_upload?: boolean | null;
+  can_delete?: boolean | null;
+  can_create?: boolean | null;
+  can_grant?: boolean | null;
+  granted_by_name?: string | null;
+  manageable?: boolean;
+}
+
+export interface OaDriveAclResult {
+  list: OaDriveAclRow[];
+  ownerId?: number | string;
+  isOwner: boolean;
+  canGrant: boolean;
+}
+
+export interface OaDriveTrashResult {
+  files: OaDriveFileRow[];
+  folders: OaDriveFolderRow[];
+}
+
+export interface OaDriveAuditRow {
+  id: number | string;
+  action: string;
+  target_type?: string | null;
+  target_name?: string | null;
+  detail?: Record<string, unknown> | null;
+  created_at?: string;
+  user_name?: string | null;
+}
+
+export const oaDriveApi = {
+  root: () => apiClient.get<OaDriveFolderRow[]>("/api/drive"),
+
+  folder: (id: number | string) => apiClient.get<OaDriveFolderResult>(`/api/drive/folder/${id}`),
+
+  breadcrumb: (id: number | string) =>
+    apiClient.get<Array<{ id: number | string; name: string }>>(`/api/drive/breadcrumb/${id}`),
+
+  createFolder: (body: { parentId: number | string | null; name: string }) =>
+    apiClient.post<OaDriveFolderRow>("/api/drive/folder", body),
+
+  renameFolder: (id: number | string, name: string) =>
+    apiClient.put<unknown>(`/api/drive/folder/${id}`, { name }),
+
+  deleteFolder: (id: number | string) => apiClient.delete(`/api/drive/folder/${id}`),
+
+  addFile: (body: { folderId: number | string; fileName: string; tempRelPath: string; fileSize?: number; mimeType?: string }) =>
+    apiClient.post<OaDriveFileRow>("/api/drive/file", body),
+
+  renameFile: (id: number | string, name: string) =>
+    apiClient.put<unknown>(`/api/drive/file/${id}`, { name }),
+
+  deleteFile: (id: number | string) => apiClient.delete(`/api/drive/file/${id}`),
+
+  acl: (folderId: number | string) => apiClient.get<OaDriveAclResult>(`/api/drive/acl/${folderId}`),
+
+  setAcl: (folderId: number | string, body: { userId: number | string; canRead: boolean; canEdit: boolean; canUpload: boolean; canDelete: boolean; canCreate: boolean; canGrant?: boolean }) =>
+    apiClient.put<unknown>(`/api/drive/acl/${folderId}`, body),
+
+  removeAcl: (folderId: number | string, userId: number | string) =>
+    apiClient.delete(`/api/drive/acl/${folderId}/${userId}`),
+
+  trash: () => apiClient.get<OaDriveTrashResult>("/api/drive/trash"),
+
+  restore: (type: "file" | "folder", id: number | string) =>
+    apiClient.post<unknown>(`/api/drive/trash/${type}/${id}/restore`, {}),
+
+  purge: (type: "file" | "folder", id: number | string) =>
+    apiClient.post<unknown>(`/api/drive/trash/${type}/${id}/purge`, {}),
+
+  search: (keyword: string) =>
+    apiClient.get<{ files: OaDriveFileRow[]; folders: OaDriveFolderRow[] }>("/api/drive/search", { keyword }),
+
+  audit: (query: { page?: number; pageSize?: number; action?: string } = {}) =>
+    apiClient.get<{ list: OaDriveAuditRow[]; total: number; page: number; pageSize: number }>("/api/drive/audit", query),
+
+  auditExport: () => apiClient.get<OaDriveAuditRow[]>("/api/drive/audit/export"),
+};
+
 /** 附件下载/预览 URL：新窗口场景走 query token（见 oa/middleware/index.js）；不传时自动读当前登录 token */
 export function oaFileUrl(filePath: string, token?: string | null): string {
   const base = typeof window !== "undefined"
     ? `${window.location.protocol}//${window.location.hostname}:8080`
     : "http://127.0.0.1:8080";
   const url = `${base}/api/files/${filePath}`;
-  const tk = token === undefined
-    ? (typeof window !== "undefined"
-      ? window.sessionStorage.getItem("auth_token") || window.localStorage.getItem("token")
-      : null)
-    : token;
+  const tk = token === undefined ? authStorage.getToken() : token;
   return tk ? `${url}?token=${encodeURIComponent(tk)}` : url;
 }

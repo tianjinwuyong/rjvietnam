@@ -16,6 +16,7 @@ import { InstanceDetail } from "./InstanceDetail";
 import { Announcements } from "./Announcements";
 import { OrgView } from "./OrgView";
 import { DocsView, type DocsSubView } from "./DocsView";
+import { DriveView } from "./DriveView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
 
 /**
@@ -335,6 +336,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <OrgView locale={locale} />
   ) : view === "docs" || view === "docNew" || view === "docLedger" || view === "docIssueRecord" || view === "docObsolete" || view === "docExternal" ? (
     <DocsView locale={locale} sub={view as DocsSubView} onNavigate={s => { setWipKey(null); setView(s); }} />
+  ) : view === "drive" ? (
+    <DriveView locale={locale} />
   ) : view === "notifications" ? (
     loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
       <>
@@ -409,19 +412,23 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
             items: sec.items.filter(it => !it.adminOnly || isAdmin),
           })).filter(sec => sec.items.length > 0);
           if (visibleItems.length === 0 && visibleSections.length === 0) {
-            // 原版 single 组（公共盘/知识共享）：组头即链接，点击进建设中占位
+            // 原版 single 组：组头即链接。有 homeView 的（公共盘）进原生页，否则建设中占位
             return (
               <div key={group.titleKey} style={{ marginBottom: 10 }}>
                 <button
-                  onClick={() => setWipKey(menuText(group.titleKey, locale))}
+                  onClick={() => {
+                    if (group.homeView) { setWipKey(null); openItem({ titleKey: group.titleKey, view: group.homeView }); return; }
+                    setWipKey(menuText(group.titleKey, locale));
+                  }}
                   style={{
                     display: "block", width: "100%", textAlign: "left", padding: "6px 10px",
                     fontSize: 13, borderRadius: 6, cursor: "pointer",
-                    border: "1px solid transparent", background: "transparent",
-                    color: "var(--text-muted, #94a3b8)",
+                    border: group.homeView && !wipKey && view === group.homeView ? "1px solid #0f766e" : "1px solid transparent",
+                    background: group.homeView && !wipKey && view === group.homeView ? "#ecfdf5" : "transparent",
+                    color: group.homeView ? "inherit" : "var(--text-muted, #94a3b8)",
                   }}
                 >
-                  {menuText(group.titleKey, locale)} ·
+                  {menuText(group.titleKey, locale)}{group.homeView ? "" : " ·"}
                 </button>
               </div>
             );
