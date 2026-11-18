@@ -13,6 +13,7 @@ import { SnPoolView, SnRuleView, SnBatchView, SnVoidView, SnDetailView, SnTestVi
   StationNextView, StationPendingView, PassListView, PanelPreviewView, PassPanelView } from "./views-w6b";
 import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoMaterialsView,
   AiStationsView, AgingView, AgingDetailView, TraceMaterialBySnView, TraceMaterialByMaterialView } from "./views-w6c";
+import { DeviceConfigView, StationPassView, MachineDataView, PackingView, ItfLogView } from "./views-w7";
 
 interface SysInfo {
   sys_name: string;
@@ -119,6 +120,12 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "exec.agingdetail") return <AgingDetailView locale={locale} />;
     if (active === "exec.tracesn") return <TraceMaterialBySnView locale={locale} />;
     if (active === "exec.tracematerial") return <TraceMaterialByMaterialView locale={locale} />;
+    // W7 设备接口：DeviceConfig / StationPass / MachineData / Packing / itf 日志
+    if (active === "dev.deviceconfig") return <DeviceConfigView locale={locale} />;
+    if (active === "dev.stationpass") return <StationPassView locale={locale} />;
+    if (active === "dev.machinedata") return <MachineDataView locale={locale} />;
+    if (active === "dev.packing") return <PackingView locale={locale} />;
+    if (active === "dev.itflog") return <ItfLogView locale={locale} />;
     if (active === "mo" && activeView) {
       return <MoView key={activeView.code} locale={locale}
         fields={activeView.fields} filters={activeView.filters} />;

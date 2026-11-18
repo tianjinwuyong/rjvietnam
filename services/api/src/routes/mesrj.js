@@ -827,6 +827,256 @@ export function createMesrjRouter({ authenticateJWT }) {
     return res.json({ Success: true, Message: "", Data: row });
   });
 
+  // ── 设备侧 X-Api-Key 鉴权（源 devsrc.py _guard_key / sys_api_key.enabled）──
+  async function requireDeviceKey(req, res) {
+    const key = (req.headers["x-api-key"] || req.query.api_key || "").toString();
+    if (!key) return fail(res, "缺少 X-Api-Key", 401);
+    const hit = (await query(
+      "SELECT id FROM sys_api_key WHERE api_key=$1 AND enabled=1", [key])).rows[0];
+    if (!hit) return fail(res, "API Key 无效", 401);
+    return true;
+  }
+
+  // ── W7：DeviceConfig（设备侧拉取，X-Api-Key）──────────────────────────────
+  // GET /DeviceConfig/LineConfig — 产线/工位配置，供机台侧对齐线别与默认工位
+  router.get("/DeviceConfig/LineConfig", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const lineCode = (req.query.line_code || "").toString().trim();
+      const stationCode = (req.query.station_code || "").toString().trim();
+      const where = ["status=1"];
+      const args = [];
+      if (lineCode) { args.push(lineCode); where.push(`line_code=$${args.length}`); }
+      if (stationCode) { args.push(stationCode); where.push(`station_code=$${args.length}`); }
+      const rows = (await query(
+        `SELECT line_code, line_name, station_code, station_name, type_code, process_code, seq_no
+         FROM md_station WHERE ${where.join(" AND ")}
+         ORDER BY line_code, seq_no, station_code`, args)).rows;
+      return ok(res, rows);
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W7：StationPass（设备侧扫码过站入口，X-Api-Key）──────────────────────
+  // POST /StationPass/Scan — 机台扫描 SN 到工位，返回过站结果（OK/NG 及守卫信息）
+  router.post("/StationPass/Scan", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const d = req.body || {};
+      const sn = (d.sn || "").trim();
+      const stationCode = (d.station_code || "").trim();
+      const machineNo = (d.machine_no || "").toString().trim();
+      const result = (d.result || "OK").toString().trim();
+      if (!sn) return fail(res, "缺少 sn");
+      if (!stationCode) return fail(res, "缺少 station_code");
+      const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+      if (!snRow) return fail(res, `SN ${sn} 不存在`);
+      const passRow = {
+        sn, station_code: stationCode, result,
+        operator: machineNo || "machine",
+        pass_time: nowStr(), mark: `device:${machineNo || ""}`,
+      };
+      await query(
+        `INSERT INTO prd_pass (sn, station_code, result, operator, pass_time, mark)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [snRow.sn, stationCode, result, passRow.operator, passRow.pass_time, passRow.mark]);
+      await query(
+        "UPDATE prd_sn SET cur_station=$1, updated_at=$2 WHERE sn=$3",
+        [stationCode, nowStr(), sn]);
+      await audit(machineNo || "device", "设备接口", "StationPass 扫码", sn,
+        `station=${stationCode} result=${result}`, "");
+      return ok(res, { sn, station_code: stationCode, result, pass_time: passRow.pass_time }, "扫码过站完成");
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // GET /StationPass/Pending — 机台侧待处理 SN 列表（按工位/线别）
+  router.get("/StationPass/Pending", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const stationCode = (req.query.station_code || "").toString().trim();
+      const lineCode = (req.query.line_code || "").toString().trim();
+      const where = ["status IN ('在制','待修')"];
+      const args = [];
+      if (stationCode) { args.push(stationCode); where.push(`cur_station=$${args.length}`); }
+      if (lineCode) { args.push(lineCode); where.push(`line_code=$${args.length}`); }
+      const rows = (await query(
+        `SELECT sn, product_code, mo_no, cur_station AS station_code, cur_seq, status, created_at
+         FROM prd_sn WHERE ${where.join(" AND ")}
+         ORDER BY created_at ASC LIMIT 100`, args)).rows;
+      return ok(res, rows);
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W7：MachineData（设备侧上报测试数据，X-Api-Key）─────────────────────
+  // POST /MachineData/Upload — 机台上报单条测试数据，入库 prd_machine_data
+  router.post("/MachineData/Upload", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const d = req.body || {};
+      const sn = (d.sn || "").trim();
+      if (!sn) return fail(res, "缺少 sn");
+      await query(
+        `INSERT INTO prd_machine_data (sn, machine_no, machine_type, product_no, version, lot_no,
+                 loader_no, station_code, line_sn, track, mo_no, seq, begin_time, end_time,
+                 location, channel, pass_ng, ng_info, create_by, created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,now())`,
+        [sn,
+         (d.machine_no || "").trim(), (d.machine_type || "").trim(), (d.product_no || "").trim(),
+         (d.version || "").trim(), (d.lot_no || "").trim(), (d.loader_no || "").trim(),
+         (d.station_code || "").trim(), (d.line_sn || "").trim(), (d.track || "1").trim(),
+         (d.mo_no || "").trim(), (d.seq || "").trim(), (d.begin_time || "").trim(),
+         (d.end_time || "").trim(), (d.location || "").trim(), (d.channel || "").trim(),
+         (d.pass_ng || "").trim(), (d.ng_info || "").trim(), (d.create_by || d.machine_no || "device").trim()]);
+      return ok(res, { sn }, "机台数据上报完成");
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // GET /MachineData/List — 查询机台测试数据（分页，支持 sn / machine_no / station_code）
+  router.get("/MachineData/List", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const page = Math.max(1, Number(req.query.page || 1));
+      const size = Math.min(500, Math.max(1, Number(req.query.size || 20)));
+      const where = [];
+      const args = [];
+      const sn = (req.query.sn || "").toString().trim();
+      const machineNo = (req.query.machine_no || "").toString().trim();
+      const stationCode = (req.query.station_code || "").toString().trim();
+      if (sn) { args.push(`%${sn}%`); where.push(`sn ILIKE $${args.length}`); }
+      if (machineNo) { args.push(machineNo); where.push(`machine_no=$${args.length}`); }
+      if (stationCode) { args.push(stationCode); where.push(`station_code=$${args.length}`); }
+      const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const count = Number((await query(
+        `SELECT COUNT(*)::int AS n FROM prd_machine_data ${clause}`, args)).rows[0]?.n || 0);
+      const off = (page - 1) * size;
+      const rows = (await query(
+        `SELECT id, sn, machine_no, machine_type, product_no, version, lot_no, loader_no,
+                station_code, line_sn, track, mo_no, seq, begin_time, end_time, location,
+                channel, pass_ng, ng_info, create_by, created_at
+         FROM prd_machine_data ${clause}
+         ORDER BY created_at DESC
+         LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+        [...args, size, off])).rows;
+      return ok(res, { total: count, page, size, rows });
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // GET /MachineData/BySn — 按 SN 查询机台测试数据明细
+  router.get("/MachineData/BySn", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const sn = (req.query.sn || "").toString().trim();
+      if (!sn) return fail(res, "缺少 sn");
+      const rows = (await query(
+        `SELECT id, sn, machine_no, machine_type, product_no, version, lot_no, loader_no,
+                station_code, line_sn, track, mo_no, seq, begin_time, end_time, location,
+                channel, pass_ng, ng_info, create_by, created_at
+         FROM prd_machine_data WHERE sn=$1 ORDER BY created_at DESC`, [sn])).rows;
+      return ok(res, rows);
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W7：Packing（设备侧装箱/托盘，X-Api-Key）────────────────────────────
+  // POST /Packing/Box — 建箱/扫码入箱，入库 prd_box
+  router.post("/Packing/Box", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const d = req.body || {};
+      const boxNo = (d.box_no || "").trim();
+      const sn = (d.sn || "").trim();
+      if (!boxNo) return fail(res, "缺少 box_no");
+      const exists = (await query("SELECT id FROM prd_box WHERE box_no=$1", [boxNo])).rows[0];
+      if (!exists) {
+        await query(
+          `INSERT INTO prd_box (box_no, pallet_no, mo_no, product_code, qty, status, created_at)
+           VALUES ($1,'', $2,$3, 0, '开箱', now())`,
+          [boxNo, (d.mo_no || "").trim(), (d.product_code || "").trim()]);
+      }
+      if (sn) {
+        const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+        if (!snRow) return fail(res, `SN ${sn} 不存在`);
+        await query(
+          "UPDATE prd_box SET qty = COALESCE(qty,0) + 1 WHERE box_no=$1", [boxNo]);
+      }
+      return ok(res, { box_no: boxNo }, "装箱完成");
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // POST /Packing/Pallet — 建托/扫码入托，入库 prd_pallet
+  router.post("/Packing/Pallet", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const d = req.body || {};
+      const palletNo = (d.pallet_no || "").trim();
+      const boxNo = (d.box_no || "").trim();
+      if (!palletNo) return fail(res, "缺少 pallet_no");
+      const exists = (await query("SELECT id FROM prd_pallet WHERE pallet_no=$1", [palletNo])).rows[0];
+      if (!exists) {
+        await query(
+          `INSERT INTO prd_pallet (pallet_no, mo_no, line_code, status, created_at)
+           VALUES ($1,$2,$3,'开托', now())`,
+          [palletNo, (d.mo_no || "").trim(), (d.line_code || "").trim()]);
+      }
+      if (boxNo) {
+        await query("UPDATE prd_box SET pallet_no=$1 WHERE box_no=$2", [palletNo, boxNo]);
+      }
+      return ok(res, { pallet_no: palletNo }, "建托完成");
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // GET /Packing/Box/:box_no — 箱详情
+  router.get("/Packing/Box/:box_no", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const boxNo = req.params.box_no;
+      const row = (await query(
+        "SELECT box_no, pallet_no, mo_no, product_code, qty, status, created_at FROM prd_box WHERE box_no=$1",
+        [boxNo])).rows[0];
+      if (!row) return fail(res, `箱号 ${boxNo} 不存在`, 404);
+      return ok(res, row);
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // GET /Packing/Pallet/:pallet_no — 托详情
+  router.get("/Packing/Pallet/:pallet_no", async (req, res) => {
+    try {
+      if (!(await requireDeviceKey(req, res))) return;
+      const palletNo = req.params.pallet_no;
+      const row = (await query(
+        "SELECT pallet_no, mo_no, line_code, status, created_at FROM prd_pallet WHERE pallet_no=$1",
+        [palletNo])).rows[0];
+      if (!row) return fail(res, `托号 ${palletNo} 不存在`, 404);
+      return ok(res, row);
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W7：itf 日志（JWT 认证，后台查询）──────────────────────────────────
+  // GET /itf/api/log — 接口调用日志分页查询
+  router.get("/itf/api/log", async (req, res) => {
+    try {
+      const page = Math.max(1, Number(req.query.page || 1));
+      const size = Math.min(500, Math.max(1, Number(req.query.size || 20)));
+      const where = [];
+      const args = [];
+      const apiPath = (req.query.api_path || "").toString().trim();
+      const success = (req.query.success || "").toString().trim();
+      if (apiPath) { args.push(`%${apiPath}%`); where.push(`api_path ILIKE $${args.length}`); }
+      if (success === "1") { where.push("success=1"); }
+      else if (success === "0") { where.push("success=0"); }
+      const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      const count = Number((await query(
+        `SELECT COUNT(*)::int AS n FROM itf_api_log ${clause}`, args)).rows[0]?.n || 0);
+      const off = (page - 1) * size;
+      const rows = (await query(
+        `SELECT id, direction, api_path, method, req_body, resp_body, http_status,
+                success, cost_ms, sn, created_at
+         FROM itf_api_log ${clause}
+         ORDER BY created_at DESC
+         LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+        [...args, size, off])).rows;
+      return ok(res, { total: count, page, size, rows });
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
   // JWT 认证 + mesrj 用户装载（后续全部路由走这里）
   router.use(authenticateJWT, async (req, res, next) => {
     try {

@@ -488,6 +488,26 @@ export const MENU = [
       {
         "code": "exec.aging",
         "name": "老化数据"
+      },
+      {
+        "code": "dev.deviceconfig",
+        "name": "线别工位配置"
+      },
+      {
+        "code": "dev.stationpass",
+        "name": "机台扫码过站"
+      },
+      {
+        "code": "dev.machinedata",
+        "name": "机台测试数据"
+      },
+      {
+        "code": "dev.packing",
+        "name": "装箱 / 建托"
+      },
+      {
+        "code": "dev.itflog",
+        "name": "接口调用日志"
       }
     ]
   },
