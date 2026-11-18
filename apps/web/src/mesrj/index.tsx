@@ -6,6 +6,7 @@ import { mesrjApi, type MesrjMenuGroup } from "./api";
 import { t } from "./i18n";
 import { MesrjCrudPage } from "./GenericList";
 import { crudViews } from "./resources";
+import { BomImportView, BomTreeView, IssueView, MoView, PlanBoardView, PlanLoadView } from "./views-w4";
 
 interface SysInfo {
   sys_name: string;
@@ -77,6 +78,16 @@ export function MesrjModule({ locale }: { locale: Locale }) {
 
   const renderView = useCallback(() => {
     if (active === "home") return <HomeView locale={locale} />;
+    // W4 自定义页面（有业务流的）
+    if (active === "bom.tree") return <BomTreeView locale={locale} />;
+    if (active === "bom.import") return <BomImportView locale={locale} />;
+    if (active === "issue") return <IssueView locale={locale} />;
+    if (active === "plan.board") return <PlanBoardView locale={locale} />;
+    if (active === "plan.load") return <PlanLoadView locale={locale} />;
+    if (active === "mo" && activeView) {
+      return <MoView key={activeView.code} locale={locale}
+        fields={activeView.fields} filters={activeView.filters} />;
+    }
     if (activeView) {
       return (
         <MesrjCrudPage

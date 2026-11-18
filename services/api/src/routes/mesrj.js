@@ -12,18 +12,34 @@
 // 挂载：server.js → api.use("/mesrj", createMesrjRouter({...}))
 // ============================================================================
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { Router } from "express";
+import express, { Router } from "express";
 import { query } from "../db.js";
 import { MENU } from "../mesrj/menu.js";
 import { PARAM_DEFS } from "../mesrj/param-defs.js";
+import {
+  SEGS, SEG_ORDER, SEG_LABEL, PROC_OF_SEG, SEG_OF_PROC, AUX_SEG,
+  ISSUE_GROUP, ISSUE_LABEL, ISSUE_ORDER,
+  issueGroup, issueLabel, issueRank, segNormalize, segRank, segLabel, segEn,
+  PROC_NAME, SEG_TO_PROC, SEG_TO_WO, SEG_TO_SFG, SFG_MAIN_SEG, SFG_ORDER, PROC_SEGMENTS,
+  vnMapping, vnAttach,
+  pickLine, templateProcess, modelProcess, modelProcessLive, modelProcessSegments,
+  applyStationRetest, normalizeSteps, putGroupRoute, writeMembers, lockGroup,
+  groupKeyOf, modelSlug, nowStr, todayStr, ymNow,
+  etaCompute,
+  latestBomVersion, allSfg, moNoAll, peekNextSeq, nextMoSeq, previewCreate, previewMoNos,
+  outputOf, productRouteMap, lockMoRouteSteps, lockMoRoute, snapshotRoute, isSampling,
+  lineBusyMo, createMoAll,
+  mergeRows, aggBomItems, aggBomBySeg, writeIssueItems, nextIssueBase, createIssueForMo,
+  segMapForMo, backfillIssueSegments,
+  decorateMo, decorateItemVn, checkPo, buildIssueDoc,
+} from "../mesrj/domain.js";
 
 /** 源 util.ok(data, msg) */
 function ok(res, data = null, msg = "") {
   res.json({ success: true, msg: msg || "", data: data ?? null });
 }
 /** 源 util.fail(msg, code) */
-function fail(res, msg, code = 400) {
-  res.status(code).json({ success: false, msg, data: null });
+function fail(res, msg, code = 400) {  res.status(code).json({ success: false, msg, data: null });
 }
 
 // ── 参数读写（源 util.get_param / set_param）────────────────────────────────
@@ -31,6 +47,12 @@ function fail(res, msg, code = 400) {
 async function getParam(key, dflt = "") {
   const r = await query("SELECT param_val FROM sys_param WHERE param_key=$1", [key]);
   return r.rows[0] && r.rows[0].param_val != null ? r.rows[0].param_val : dflt;
+}
+
+/** Date → "YYYY-MM-DD HH:MM:SS"（源 util.now_str 同格式，用于 ETA 展示） */
+function fmtTs(d) {
+  const p = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 async function setParam(key, val, name = "", group = "") {
@@ -153,6 +175,10 @@ function Res(table, key, label, opts = {}) {
     softDelete: !!opts.soft_delete,
     permEdit: opts.perm_edit || null,
     readonly: !!opts.readonly,
+    // 行装饰（源 decorate：列表行补型号/越南码/ETA 等派生列）
+    decorate: opts.decorate || null,
+    // 额外过滤（源 extra_filters：col -> 带占位 $n 的 SQL 片段，f_<col> 触发）
+    extraFilters: opts.extra_filters || null,
   };
 }
 
@@ -231,6 +257,10 @@ function registerCrud(router, resources, permView, permEdit) {
       if (r.filters.includes(col) || col === "status") {
         args.push(v);
         where.push(`${col}=$${args.length}`);
+      } else if (r.extraFilters && r.extraFilters[col]) {
+        // 源 extra_filters：片段里可含多个 $N（同一参数值复用同一 $n）
+        args.push(v);
+        where.push(r.extraFilters[col].replace(/\$N/g, () => `$${args.length}`));
       }
     }
     const w = where.join(" AND ");
@@ -240,6 +270,7 @@ function registerCrud(router, resources, permView, permEdit) {
         `SELECT COUNT(*)::int AS n FROM ${r.table} WHERE ${w}`,
         `SELECT * FROM ${r.table} WHERE ${w} ORDER BY ${order}`,
         args, page, size);
+      if (r.decorate) rows.rows = await r.decorate(rows.rows);
       return ok(res, rows);
     } catch (ex) {
       return fail(res, `查询失败：${ex.message}`);
@@ -478,6 +509,80 @@ const SYS_RES = {
       required: ["login_name", "emp_name"], check: (d, isNew) => checkUser(d, isNew) }),
   role: Res("sys_role", "role_code", "角色",
     { search: ["role_code", "role_name"], required: ["role_code", "role_name"] }),
+};
+
+// ── W4 资源清单（源 bom.py / order.py / plan.py RES）─────────────────────────
+
+const BOM_RES = {
+  header: Res("bom_header", "", "BOM 版本", {
+    search: ["product_code", "version", "cust_code"],
+    filters: ["status", "product_code"],
+    required: ["product_code", "version"],
+    order: "product_code, version DESC",
+  }),
+  item: Res("bom_item", "", "BOM 明细", {
+    search: ["product_code", "material_code", "material_name", "pos_ref"],
+    filters: ["product_code", "version", "segment", "wo_type", "is_alt"],
+    required: ["product_code", "material_code"],
+    order: "product_code, segment, material_code",
+    decorate: decorateItemVn,
+    // 按机型过滤：成品机型 + 该机型半成品展开的 BOM 都算
+    extra_filters: {
+      model: `product_code IN (
+        SELECT product_code FROM md_product WHERE COALESCE(product_model,'')=$N
+        UNION
+        SELECT b.material_code FROM bom_item b
+          JOIN md_product p ON p.product_code=b.product_code
+         WHERE COALESCE(p.product_model,'')=$N AND b.item_type='SFG')`,
+    },
+  }),
+};
+
+const ORD_RES = {
+  po: Res("ord_po", "", "客户 PO", {
+    search: ["po_no", "cust_code", "product_code"],
+    filters: ["status", "cust_code"],
+    required: ["po_no", "product_code", "order_qty"],
+    order: "id DESC",
+    check: checkPo,
+  }),
+  mo: Res("ord_mo", "mo_no", "生产工单", {
+    search: ["mo_no", "po_no", "product_code", "fg_code"],
+    filters: ["status", "process_code", "type_code", "wo_type", "line_code", "po_no",
+      "product_code", "fg_code"],
+    required: ["mo_no", "product_code"],
+    // 单号与工头由系统生成；编辑时只能改数量、产线、日期（保证追溯对得上）
+    immutable: ["mo_no", "yy", "mm", "type_code", "seq_no", "process_code", "wo_type",
+      "product_code", "cust_code", "po_no", "po_line"],
+    decorate: decorateMo,
+    order: "id DESC",
+  }),
+  replenish: Res("ord_replenish", "rep_no", "补料单", {
+    search: ["rep_no", "mo_no", "material_code"],
+    filters: ["status", "reason"],
+    required: ["mo_no", "material_code"],
+    order: "id DESC",
+  }),
+  issueitem: Res("ord_issue_item", "issue_no", "领料明细", {
+    search: ["issue_no", "material_code", "material_name"],
+    filters: ["issue_no"],
+    order: "issue_no, line_seq",
+  }),
+};
+
+const PLAN_RES = {
+  schedule: Res("pln_schedule", "", "排产计划", {
+    search: ["mo_no", "line_code"],
+    filters: ["plan_date", "line_code", "shift_code", "status"],
+    required: ["plan_date", "line_code", "mo_no"],
+    order: "plan_date DESC, line_code, seq_no",
+  }),
+  capacity: Res("pln_capacity", "", "产线产能", {
+    search: ["line_code"],
+    filters: ["line_code", "shift_code", "status"],
+    required: ["line_code"],
+    order: "line_code, shift_code",
+  }),
 };
 
 // ── 路由装配 ────────────────────────────────────────────────────────────────
@@ -1323,6 +1428,971 @@ export function createMesrjRouter({ authenticateJWT }) {
     return ok(res, null, `已保存 ${changed.length} 项`);
   });
 
+  // ═══ W4 bom 域（源 api/bom.py）══════════════════════════════════════════
+
+  // 某产品的 BOM（取最新有效版）
+  router.get("/bom/product/:code", async (req, res) => {
+    let ver = (req.query.version || "").toString().trim();
+    if (!ver) {
+      const r = await query(
+        "SELECT version FROM bom_header WHERE product_code=$1 ORDER BY version DESC LIMIT 1",
+        [req.params.code]);
+      ver = r.rows[0]?.version ?? "";
+    }
+    if (!ver) return ok(res, { version: "", items: [], summary: {} });
+    const rows = (await query(
+      "SELECT * FROM bom_item WHERE product_code=$1 AND version=$2 ORDER BY segment, material_code",
+      [req.params.code, ver])).rows;
+    const sm = {};
+    for (const r of rows) {
+      const k = r.segment || "未分段";
+      sm[k] = (sm[k] ?? 0) + 1;
+    }
+    return ok(res, { product_code: req.params.code, version: ver, items: rows, summary: sm });
+  });
+
+  // 版本列表（下拉用）
+  router.get("/bom/versions", async (req, res) => {
+    const pc = (req.query.product_code || "").toString().trim();
+    const rows = pc
+      ? (await query(
+        "SELECT * FROM bom_header WHERE product_code=$1 ORDER BY version DESC", [pc])).rows
+      : (await query("SELECT * FROM bom_header ORDER BY product_code, version DESC")).rows;
+    return ok(res, rows);
+  });
+
+  // 保存 BOM 明细（前端解析好 JSON 提交；源 /bom/import）
+  router.post("/bom/import", requireMesrjPerm("bom.import"), async (req, res) => {
+    const rows = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (!rows.length) return fail(res, "没有要导入的数据");
+    let okN = 0;
+    const failRows = [];
+    const heads = new Set();
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const pc = String(r.product_code || "").trim();
+      const mc = String(r.material_code || "").trim();
+      if (!pc || !mc) { failRows.push({ row: i + 1, msg: "缺产品料号或物料料号" }); continue; }
+      const ver = String(r.version || "V1.0").trim();
+      const seg = String(r.segment || "").trim();
+      heads.add(`${pc}|${ver}|${String(r.cust_code || "")}`);
+      try {
+        const ex = await query(
+          "SELECT id FROM bom_item WHERE product_code=$1 AND version=$2 AND material_code=$3 AND pos_ref=$4",
+          [pc, ver, mc, String(r.pos_ref || "")]);
+        // 物料主数据里已是半成品 → 该行归半成品（免维护 item_type）
+        const sfgHit = await query(
+          "SELECT 1 AS x FROM md_product WHERE product_code=$1 AND product_type='SFG'", [mc]);
+        const itemType = (sfgHit.rows[0] || String(r.item_type || "").toUpperCase() === "SFG") ? "SFG" : "RM";
+        const data = {
+          item_type: itemType, product_code: pc, version: ver, material_code: mc,
+          material_name: r.material_name ?? "", spec: r.spec ?? "",
+          unit: r.unit || "PCS", qty_per: Number(r.qty_per || 0),
+          segment: seg, wo_type: SEG_TO_WO[seg] ?? (r.wo_type ?? ""),
+          pos_ref: r.pos_ref ?? "",
+          is_alt: ["1", "是", "True", "true"].includes(String(r.is_alt)) ? 1 : 0,
+          alt_group: r.alt_group ?? "",
+          mpq: Math.trunc(Number(r.mpq || 1)), loss_rate: Number(r.loss_rate || 0),
+        };
+        const cols = Object.keys(data);
+        if (ex.rows[0]) {
+          const sets = cols.map((c, k) => `${c}=$${k + 1}`).join(",");
+          await query(`UPDATE bom_item SET ${sets} WHERE id=$${cols.length + 1}`,
+            [...cols.map(c => data[c]), ex.rows[0].id]);
+        } else {
+          const ph = cols.map((_, k) => `$${k + 1}`).join(",");
+          await query(`INSERT INTO bom_item (${cols.join(",")}) VALUES (${ph})`,
+            cols.map(c => data[c]));
+        }
+        okN++;
+      } catch (ex2) {
+        failRows.push({ row: i + 1, msg: ex2.message });
+      }
+    }
+    for (const h of heads) {
+      const [pc, ver, cust] = h.split("|");
+      const hh = await query("SELECT id FROM bom_header WHERE product_code=$1 AND version=$2", [pc, ver]);
+      if (!hh.rows[0]) {
+        await query(
+          `INSERT INTO bom_header (product_code, version, cust_code, eff_date, status, src_file)
+           VALUES ($1,$2,$3,$4,'有效','前台导入')`, [pc, ver, cust, todayStr()]);
+      }
+      const pp = await query("SELECT id FROM md_product WHERE product_code=$1", [pc]);
+      if (!pp.rows[0]) {
+        await query(
+          `INSERT INTO md_product (product_code, product_name, product_model, cust_code, unit, status, product_type, remark, created_at)
+           VALUES ($1,$1,$1,$2,'PCS',1,'FG','由 BOM 自动创建',$3)`, [pc, cust, nowStr()]);
+      }
+    }
+    await audit(req.mesrjUser.login_name, "BOM", "导入", "bom_item",
+      `成功 ${okN} 行，失败 ${failRows.length} 行`, req.ip);
+    return ok(res, { ok: okN, fail: failRows },
+      `导入完成：成功 ${okN} 行，失败 ${failRows.length} 行`);
+  });
+
+  // 上传 .xlsx 直接导入（服务端解析；源 /bom/upload，openpyxl → SheetJS）
+  router.post("/bom/upload", requireMesrjPerm("bom.import"),
+    express.raw({ type: () => true, limit: "20mb" }), async (req, res) => {
+      const ctype = req.headers["content-type"] || "";
+      if (!/multipart|octet-stream/.test(ctype)) return fail(res, "请以文件上传（multipart）提交");
+      const XLSX = await import("xlsx");
+      let rows2d;
+      try {
+        const wb = XLSX.read(req.body, { type: "buffer", raw: true });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        rows2d = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+      } catch (ex) {
+        return fail(res, `读取 Excel 失败：${ex.message}`);
+      }
+      const HDRS = ["产品料号", "产品型号", "客户", "BOM版本", "分段", "物料料号", "物料名称",
+        "物料型号", "单位", "单位用量", "最小包装单位", "位号", "是否替代料", "替代组"];
+      let hdrI = -1;
+      for (let i = 0; i < rows2d.length; i++) {
+        const row = rows2d[i] || [];
+        if (row.some(c => c !== null && String(c).trim() === "产品料号")) { hdrI = i; break; }
+      }
+      if (hdrI < 0) return fail(res, "找不到表头行（必须含「产品料号」列）");
+      const hdr = (rows2d[hdrI] || []).map(c => c === null ? "" : String(c).trim());
+      const col = n => hdr.indexOf(n);
+      const idx = Object.fromEntries(HDRS.map(n => [n, col(n)]));
+      const g = (row, n) => {
+        const i = idx[n];
+        if (i < 0 || i >= row.length || row[i] === null) return "";
+        return String(row[i]).trim();
+      };
+      const out = [];
+      for (const row of rows2d.slice(hdrI + 1)) {
+        if (!row || !row.length) continue;
+        if (!g(row, "产品料号") || !g(row, "物料料号")) continue;
+        out.push({
+          product_code: g(row, "产品料号"), version: g(row, "BOM版本") || "V1.0",
+          cust_code: g(row, "客户"), segment: g(row, "分段"),
+          material_code: g(row, "物料料号"), material_name: g(row, "物料名称"),
+          spec: g(row, "物料型号"), unit: g(row, "单位") || "PCS",
+          qty_per: g(row, "单位用量"), mpq: g(row, "最小包装单位") || 1,
+          pos_ref: g(row, "位号"), is_alt: g(row, "是否替代料"), alt_group: g(row, "替代组"),
+        });
+      }
+      if (!out.length) return fail(res, "没有解析到有效数据行");
+      return ok(res, { rows: out, count: out.length }, `已解析 ${out.length} 行，确认后点「确认导入」`);
+    });
+
+  // 段用量统计（对账用）
+  router.get("/bom/segment-summary", async (req, res) => {
+    const pc = (req.query.product_code || "").toString().trim();
+    const where = pc ? "WHERE product_code=$1" : "";
+    const args = pc ? [pc] : [];
+    const rows = (await query(
+      `SELECT product_code, segment, COUNT(*)::int AS cnt,
+              SUM(CASE WHEN is_alt=1 THEN 1 ELSE 0 END)::int AS alt_cnt
+       FROM bom_item ${where} GROUP BY product_code, segment ORDER BY product_code, segment`,
+      args)).rows;
+    return ok(res, rows);
+  });
+
+  // 层级 BOM 树（成品 → 半成品 → 原料；源 _tree_node）
+  router.get("/bom/tree", async (req, res) => {
+    const pc = (req.query.product_code || "").toString().trim();
+    if (!pc) return fail(res, "缺产品料号");
+    const latestVer = async code =>
+      (await query("SELECT version FROM bom_header WHERE product_code=$1 ORDER BY version DESC LIMIT 1",
+        [code])).rows[0]?.version ?? "";
+    const product = async code =>
+      (await query("SELECT * FROM md_product WHERE product_code=$1", [code])).rows[0] ?? {};
+    const buildNode = async (code, version, depth, seen) => {
+      const p = await product(code);
+      const ver = version || await latestVer(code);
+      const node = {
+        code, name: p.product_name || code, model: p.product_model || "",
+        type: p.product_type || (depth === 0 ? "FG" : "SFG"),
+        version: ver, level: depth, children: [], material_groups: [],
+        count: 0, is_cycle: false,
+      };
+      if (!ver) return node;
+      if (seen.has(code) || depth > 6) { node.is_cycle = true; return node; }
+      const items = (await query(
+        `SELECT * FROM bom_item WHERE product_code=$1 AND version=$2
+         ORDER BY CASE COALESCE(item_type,'RM') WHEN 'SFG' THEN 0 ELSE 1 END, segment, material_code`,
+        [code, ver])).rows;
+      node.count = items.length;
+      const groups = new Map();
+      const children = [];
+      for (const it of items) {
+        if ((it.item_type || "RM") === "SFG") {
+          const child = await buildNode(it.material_code, "", depth + 1, new Set([...seen, code]));
+          child.qty_per = it.qty_per;
+          child.via_segment = it.segment;
+          child.via_wo = it.wo_type;
+          child.row_id = it.id;
+          children.push(child);
+        } else {
+          const k = it.segment || "未分段";
+          let grp = groups.get(k);
+          if (!grp) { grp = { segment: k, wo_type: it.wo_type || "", items: [], count: 0 }; groups.set(k, grp); }
+          grp.items.push({
+            material_code: it.material_code, material_name: it.material_name,
+            spec: it.spec, qty_per: it.qty_per, unit: it.unit, pos_ref: it.pos_ref,
+          });
+          grp.count++;
+        }
+      }
+      children.sort((a, b) => {
+        const ia = SFG_ORDER.indexOf(a.via_wo || ""), ib = SFG_ORDER.indexOf(b.via_wo || "");
+        return ((ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib)) || ((a.row_id || 0) - (b.row_id || 0));
+      });
+      node.children = children;
+      node.material_groups = [...groups.values()];
+      return node;
+    };
+    const root = await buildNode(pc, (req.query.version || "").toString().trim(), 0, new Set());
+    const acc = { sfg: 0, rm: 0, levels: 1 };
+    const walk = n => {
+      acc.sfg += n.type === "SFG" ? 1 : 0;
+      acc.rm += (n.material_groups || []).reduce((a, g) => a + g.count, 0);
+      acc.levels = Math.max(acc.levels, (n.level || 0) + 1);
+      for (const c of n.children || []) walk(c);
+    };
+    walk(root);
+    return ok(res, { root, summary: acc });
+  });
+
+  // 半成品归集建议（只算不写；源 /bom/sfg-suggest）
+  router.get("/bom/sfg-suggest", async (req, res) => {
+    const pc = (req.query.product_code || "").toString().trim();
+    const ver = (req.query.version || "").toString().trim() || await latestBomVersion(pc);
+    if (!pc || !ver) return fail(res, "缺产品料号或 BOM 版本");
+    const p = (await query("SELECT * FROM md_product WHERE product_code=$1", [pc])).rows[0] ?? {};
+    const model = p.product_model || p.product_name || pc;
+    const items = (await query(
+      "SELECT * FROM bom_item WHERE product_code=$1 AND version=$2", [pc, ver])).rows;
+    const groups = new Map(), haveSfg = {};
+    for (const it of items) {
+      if ((it.item_type || "RM") === "SFG") { haveSfg[it.material_code] = it; continue; }
+      const grp = SEG_TO_SFG[it.segment || ""];
+      if (!grp) continue;
+      let g = groups.get(grp);
+      if (!g) {
+        g = { group: grp, segments: [], count: 0, qty: 0,
+              suggest_code: `${pc}-${grp}`, suggest_name: `${model}-${grp}半成品` };
+        groups.set(grp, g);
+      }
+      if (!g.segments.includes(it.segment)) g.segments.push(it.segment);
+      g.count++;
+      g.qty += Number(it.qty_per || 0);
+    }
+    const rows = [];
+    for (const grp of SFG_ORDER) {
+      if (!groups.has(grp)) continue;
+      const g = groups.get(grp);
+      const exist = (await query(
+        "SELECT product_code FROM md_product WHERE product_type='SFG' AND product_code LIKE $1 ORDER BY id LIMIT 1",
+        [`%${grp}%`])).rows[0];
+      g.existing = exist?.product_code ?? "";
+      const already = Object.values(haveSfg).filter(c => (c.wo_type || "") === grp);
+      g.in_bom = already[0]?.material_code ?? "";
+      rows.push(g);
+    }
+    return ok(res, {
+      product_code: pc, version: ver, model, rows,
+      untouched: items
+        .filter(it => (it.item_type || "RM") === "RM" && !SEG_TO_SFG[it.segment || ""])
+        .map(it => ({ segment: it.segment, material_code: it.material_code, material_name: it.material_name })),
+    });
+  });
+
+  // 半成品归集执行（把平铺原料按段归到半成品下；源 /bom/sfg-apply）
+  router.post("/bom/sfg-apply", requireMesrjPerm("bom.edit"), async (req, res) => {
+    const d = req.body || {};
+    const pc = (d.product_code || "").trim();
+    const ver = (d.version || "").trim();
+    const groups = Array.isArray(d.groups) ? d.groups : [];
+    if (!pc || !ver || !groups.length) return fail(res, "缺产品料号、版本或分组");
+    const product = async code =>
+      (await query("SELECT * FROM md_product WHERE product_code=$1", [code])).rows[0] ?? null;
+    const pSelf = await product(pc);
+    if (pSelf?.product_type === "SFG") return fail(res, "半成品不能再做归集");
+    const done = [], errs = [];
+    for (const gj of groups) {
+      const grp = (gj.group || "").trim();
+      const code = (gj.sfg_code || "").trim();
+      const name = (gj.sfg_name || "").trim() || code;
+      const segs = Object.entries(SEG_TO_SFG).filter(([, v]) => v === grp).map(([k]) => k);
+      if (!grp || !code || !segs.length) { errs.push({ group: grp, msg: "半成品料号为空" }); continue; }
+      const old = await product(code);
+      if (old && (old.product_type || "FG") !== "SFG") {
+        errs.push({ group: grp, msg: `料号 ${code} 不是半成品，不能当半成品用` });
+        continue;
+      }
+      const ph = segs.map((_, i) => `$${i + 3}`).join(",");
+      const rows = (await query(
+        `SELECT * FROM bom_item WHERE product_code=$1 AND version=$2
+         AND COALESCE(item_type,'RM')='RM' AND segment IN (${ph})`, [pc, ver, ...segs])).rows;
+      if (!rows.length) { errs.push({ group: grp, msg: "该工序段没有待归集的原料" }); continue; }
+      if (!old) {
+        await query(
+          `INSERT INTO md_product
+           (product_code, product_name, product_model, cust_code, unit, status, product_type, remark, created_at)
+           VALUES ($1,$2,$3,'','PCS',1,'SFG',$4,$5)`,
+          [code, name, gj.sfg_model || name, `由 ${pc} 的 BOM 归集生成`, nowStr()]);
+      }
+      const hh = await query("SELECT id FROM bom_header WHERE product_code=$1 AND version=$2", [code, ver]);
+      if (!hh.rows[0]) {
+        await query(
+          `INSERT INTO bom_header (product_code, version, cust_code, eff_date, status, src_file, remark)
+           VALUES ($1,$2,'',$3,'有效',$4,$5)`,
+          [code, ver, todayStr(), `由 ${pc} ${ver} 归集`, `由 ${pc} 的 BOM 归集`]);
+      }
+      for (const it of rows) {
+        const ex = await query(
+          `SELECT id FROM bom_item WHERE product_code=$1 AND version=$2 AND material_code=$3 AND COALESCE(pos_ref,'')=$4`,
+          [code, ver, it.material_code, it.pos_ref || ""]);
+        const data = {
+          material_code: it.material_code, material_name: it.material_name, spec: it.spec,
+          unit: it.unit, qty_per: it.qty_per, segment: it.segment, wo_type: it.wo_type,
+          pos_ref: it.pos_ref, is_alt: it.is_alt, alt_group: it.alt_group,
+          mpq: it.mpq, loss_rate: it.loss_rate, remark: it.remark,
+          product_code: code, version: ver, item_type: "RM",
+        };
+        const cols = Object.keys(data);
+        if (ex.rows[0]) {
+          const sets = cols.map((c, k) => `${c}=$${k + 1}`).join(",");
+          await query(`UPDATE bom_item SET ${sets} WHERE id=$${cols.length + 1}`,
+            [...cols.map(c => data[c]), ex.rows[0].id]);
+        } else {
+          const ph2 = cols.map((_, k) => `$${k + 1}`).join(",");
+          await query(`INSERT INTO bom_item (${cols.join(",")}) VALUES (${ph2})`, cols.map(c => data[c]));
+        }
+        await query("DELETE FROM bom_item WHERE id=$1", [it.id]);
+      }
+      await query(
+        `INSERT INTO bom_item
+         (product_code, version, material_code, material_name, spec, unit, qty_per, segment, wo_type,
+          pos_ref, is_alt, alt_group, mpq, loss_rate, item_type)
+         VALUES ($1,$2,$3,$4,'','PCS',1,$5,$6,'',0,'',1,0,'SFG')`,
+        [pc, ver, code, name, SFG_MAIN_SEG[grp] ?? "", grp]);
+      done.push({ group: grp, sfg_code: code, moved: rows.length });
+      await audit(req.mesrjUser.login_name, "BOM", "归集半成品", pc,
+        `${grp} → ${code}（移入 ${rows.length} 行原料）`, req.ip);
+    }
+    let msg = `已归集 ${done.length} 个半成品`;
+    if (errs.length) msg += `；${errs.length} 组失败`;
+    return ok(res, { done, errors: errs }, msg);
+  });
+
+  // ═══ W4 plan 域（源 api/plan.py）════════════════════════════════════════
+
+  // 排产看板：排产明细 + 产线汇总
+  router.get("/plan/board", async (req, res) => {
+    const d1 = (req.query.d1 || todayStr()).toString().trim();
+    const d2 = (req.query.d2 || todayStr()).toString().trim();
+    const line = (req.query.line_code || "").toString().trim();
+    const where = ["s.plan_date BETWEEN $1 AND $2"];
+    const args = [d1, d2];
+    if (line) { where.push(`s.line_code=$${args.length + 1}`); args.push(line); }
+    const rows = (await query(
+      `SELECT s.*, m.wo_type, m.product_code, m.plan_qty AS mo_qty,
+              m.out_qty, m.status AS mo_status, m.po_no
+       FROM pln_schedule s LEFT JOIN ord_mo m ON m.mo_no = s.mo_no
+       WHERE ${where.join(" AND ")} ORDER BY s.plan_date, s.line_code, s.seq_no`, args)).rows;
+    const lines = (await query(
+      `SELECT line_code, line_name, tact_time, plan_hours FROM md_line
+       WHERE status=1 ORDER BY line_code`)).rows;
+    const stat = {};
+    for (const r of rows) {
+      const k = r.line_code || "未指定";
+      const s = stat[k] ??= { plan_qty: 0, cnt: 0 };
+      s.plan_qty += Number(r.plan_qty || 0);
+      s.cnt++;
+    }
+    return ok(res, { rows, lines, stat, d1, d2 });
+  });
+
+  // 未排产/已排产工单（排产时选择）
+  router.get("/plan/pending", async (req, res) => {
+    const rows = (await query(
+      `SELECT m.mo_no, m.wo_type, m.process_code, m.product_code, m.plan_qty, m.line_code,
+              m.plan_start, m.plan_end, m.status, m.po_no,
+              COALESCE(p.product_model, '') AS product_model
+       FROM ord_mo m
+       LEFT JOIN md_product p ON p.product_code = COALESCE(NULLIF(m.fg_code, ''), m.product_code)
+       WHERE m.status IN ('待排产','已排产') ORDER BY m.plan_end, m.mo_no`)).rows;
+    return ok(res, rows);
+  });
+
+  // 把工单排到某线某日
+  router.post("/plan/add", requireMesrjPerm("plan.edit"), async (req, res) => {
+    const d = req.body || {};
+    const moNo = (d.mo_no || "").toString().trim();
+    const line = (d.line_code || "").toString().trim();
+    const date = (d.plan_date || "").toString().trim();
+    if (!moNo || !line || !date) return fail(res, "工单、产线、计划日期都要填");
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    if (!mo) return fail(res, `工单不存在：${moNo}`);
+    if (["已完工", "已关闭", "作废"].includes(mo.status)) {
+      return fail(res, `该工单状态为「${mo.status}」，不能再排产`);
+    }
+    const qty = Number(d.plan_qty || mo.plan_qty || 0);
+    if (qty <= 0) return fail(res, "计划数量必须大于 0");
+    const mx = await query(
+      "SELECT MAX(seq_no) AS m FROM pln_schedule WHERE plan_date=$1 AND line_code=$2", [date, line]);
+    await query(
+      `INSERT INTO pln_schedule
+       (plan_date, shift_code, line_code, mo_no, product_code, plan_qty, seq_no, status, remark, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,'计划中',$8,$9)`,
+      [date, d.shift_code || "DAY", line, moNo, mo.fg_code || mo.product_code || "", qty,
+       Number(mx.rows[0]?.m ?? 0) + 1, d.remark ?? "", req.mesrjUser.login_name]);
+    if (mo.status === "待排产") {
+      await query(
+        `UPDATE ord_mo SET status='已排产', line_code=$2, plan_start=$3, updated_at=$4 WHERE id=$1`,
+        [mo.id, line, date, nowStr()]);
+    }
+    await audit(req.mesrjUser.login_name, "计划", "排产", moNo, `${date} / ${line} / ${qty}`, req.ip);
+    return ok(res, null, "已排产");
+  });
+
+  // 排产计划状态流转
+  router.post("/plan/:sid/status", requireMesrjPerm("plan.edit"), async (req, res) => {
+    const st = (req.body?.status || "").toString().trim();
+    if (!["计划中", "执行中", "已完成", "已取消"].includes(st)) return fail(res, "状态不合法");
+    const sid = Number(req.params.sid);
+    if (!sid) return fail(res, "缺 id");
+    await query("UPDATE pln_schedule SET status=$1 WHERE id=$2", [st, sid]);
+    return ok(res, null, "已更新");
+  });
+
+  // 产能预估（节拍法）
+  router.get("/plan/capacity/suggest", async (req, res) => {
+    const line = (req.query.line_code || "").toString().trim();
+    const date = (req.query.plan_date || todayStr()).toString().trim();
+    const ln = (await query("SELECT * FROM md_line WHERE line_code=$1", [line])).rows[0];
+    if (!ln) return fail(res, "产线不存在", 404);
+    const hours = Number(ln.plan_hours || 8);
+    const cal = (await query(
+      "SELECT is_workday FROM md_calendar WHERE cal_date=$1 AND line_code=$2", [date, line])).rows[0];
+    if (cal && !Number(cal.is_workday)) {
+      return ok(res, { capacity: 0, hours: 0, tact: ln.tact_time, note: "休息日或停工" });
+    }
+    const tact = Number(ln.tact_time || 0);
+    const cap = tact > 0 ? Math.trunc(hours * 3600 / tact) : 0;
+    const used = await query(
+      `SELECT COALESCE(SUM(plan_qty),0) AS n FROM pln_schedule
+       WHERE plan_date=$1 AND line_code=$2 AND status<>'已取消'`, [date, line]);
+    const usedN = Number(used.rows[0]?.n ?? 0);
+    return ok(res, { capacity: cap, used: usedN, free: Math.max(0, cap - usedN), hours, tact });
+  });
+
+  // 产能标准（UPH）列表 + 下拉项
+  router.get("/plan/capmaster/list", async (req, res) => {
+    const where = ["enabled=1"];
+    const args = [];
+    for (const k of ["line_code", "product_code", "process"]) {
+      const v = (req.query[k] || "").toString().trim();
+      if (v) { where.push(`${k}=$${args.length + 1}`); args.push(v); }
+    }
+    const kw = (req.query.keyword || "").toString().trim();
+    if (kw) {
+      args.push(`%${kw}%`);
+      const n = args.length;
+      where.push(`(product_code ILIKE $${n} OR line_code ILIKE $${n} OR process ILIKE $${n})`);
+    }
+    const rows = (await query(
+      `SELECT * FROM cfg_capacity WHERE ${where.join(" AND ")}
+       ORDER BY line_code, product_code, process`, args)).rows;
+    const opts = {
+      lines: (await query("SELECT DISTINCT line_code FROM cfg_capacity ORDER BY line_code")).rows
+        .map(r => r.line_code),
+      products: (await query("SELECT DISTINCT product_code FROM cfg_capacity ORDER BY product_code")).rows
+        .map(r => r.product_code),
+      processes: (await query(
+        "SELECT process_code FROM cfg_process WHERE enabled=1 ORDER BY sort_no, process_code")).rows
+        .map(r => r.process_code),
+    };
+    if (!opts.processes.length) {
+      opts.processes = (await query("SELECT DISTINCT process FROM cfg_capacity ORDER BY process")).rows
+        .map(r => r.process);
+    }
+    return ok(res, { rows, opts });
+  });
+
+  // 产能标准保存（upsert）
+  router.post("/plan/capmaster/save", requireMesrjPerm("plan.edit"), async (req, res) => {
+    const d = req.body || {};
+    const line = (d.line_code || "").toString().trim();
+    const prod = (d.product_code || "").toString().trim();
+    const proc = (d.process || "").toString().trim();
+    if (!(line && prod && proc)) return fail(res, "产线、产品、工序都要填");
+    const uph = Number(d.uph || 0);
+    const ppl = Math.trunc(Number(d.std_headcount || 0));
+    const now = nowStr();
+    await query(
+      `INSERT INTO cfg_capacity
+       (line_code, product_code, process, uph, std_headcount, enabled, remark, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,1,$6,$7,$7)
+       ON CONFLICT (line_code, product_code, process) DO UPDATE SET
+         uph=EXCLUDED.uph, std_headcount=EXCLUDED.std_headcount,
+         enabled=1, remark=EXCLUDED.remark, updated_at=EXCLUDED.updated_at`,
+      [line, prod, proc, uph, ppl, d.remark || "", now]);
+    await audit(req.mesrjUser.login_name, "计划", "改产能", `${line}/${prod}/${proc}`,
+      `UPH=${uph} 人数=${ppl}`, req.ip);
+    return ok(res, null, "已保存");
+  });
+
+  // 产能标准删除
+  router.post("/plan/capmaster/delete", requireMesrjPerm("plan.edit"), async (req, res) => {
+    const rid = Number(req.body?.id || 0);
+    if (!rid) return fail(res, "缺 id");
+    await query("DELETE FROM cfg_capacity WHERE id=$1", [rid]);
+    await audit(req.mesrjUser.login_name, "计划", "删产能", String(rid), "", req.ip);
+    return ok(res, null, "已删除");
+  });
+
+  // 产线负载（计划量 vs UPH 产能）
+  router.get("/plan/load", async (req, res) => {
+    const d1 = (req.query.d1 || todayStr()).toString().trim();
+    const d2 = (req.query.d2 || d1).toString().trim();
+    const line = (req.query.line_code || "").toString().trim();
+    const hours = {
+      DAY: Number(await getParam("plan.hours_day", "10") || 10),
+      NIGHT: Number(await getParam("plan.hours_night", "10") || 10),
+    };
+    const where = ["p.plan_date BETWEEN $1 AND $2", "p.status<>'已取消'",
+      "COALESCE(p.process,'')<>''", "COALESCE(p.product_code,'')<>''"];
+    const args = [d1, d2];
+    if (line) { where.push(`p.line_code=$${args.length + 1}`); args.push(line); }
+    const rows = (await query(
+      `SELECT p.plan_date, p.shift_code, p.product_code, p.process,
+              SUM(p.plan_qty) AS qty, COUNT(*)::int AS cnt
+       FROM pln_schedule p WHERE ${where.join(" AND ")}
+       GROUP BY p.plan_date, p.shift_code, p.product_code, p.process
+       ORDER BY p.plan_date, p.shift_code, p.product_code, p.process`, args)).rows;
+    const capCache = {};
+    const capOf = async (prod, proc) => {
+      proc = (proc || "").trim();
+      const k = `${prod}|${proc}`;
+      if (k in capCache) return capCache[k];
+      const exact = await query(
+        `SELECT MAX(uph) AS u FROM cfg_capacity WHERE enabled=1 AND product_code=$1 AND process=$2`,
+        [prod, proc]);
+      let uph = Number(exact.rows[0]?.u ?? 0);
+      if (!uph) {
+        if (proc === "SMT") {
+          const r2 = await query(
+            `SELECT uph FROM cfg_capacity WHERE enabled=1 AND product_code=$1 AND process LIKE 'SMT%'`,
+            [prod]);
+          const vals = r2.rows.map(x => Number(x.uph)).filter(Boolean);
+          uph = vals.length ? Math.min(...vals) : 0;
+        } else if (proc.startsWith("插件")) {
+          const r2 = await query(
+            `SELECT MAX(uph) AS u FROM cfg_capacity WHERE enabled=1 AND product_code=$1 AND process='插件'`,
+            [prod]);
+          uph = Number(r2.rows[0]?.u ?? 0);
+        }
+      }
+      capCache[k] = uph;
+      return uph;
+    };
+    const out = [];
+    for (const r of rows) {
+      const h = hours[r.shift_code] ?? 10;
+      const uph = await capOf(r.product_code, r.process);
+      const cap = Math.round(uph * h);
+      const qty = Number(r.qty || 0);
+      out.push({
+        plan_date: r.plan_date, shift_code: r.shift_code,
+        shift_name: r.shift_code === "NIGHT" ? "夜班" : "白班",
+        product_code: r.product_code, process: r.process,
+        qty, uph, hours: h, cap,
+        load: cap ? Math.round(qty * 1000 / cap) / 10 : null,
+        cnt: r.cnt,
+      });
+    }
+    // 日汇总：瓶颈段取 max（各段负载）
+    const days = new Map();
+    for (const r of out) {
+      const d = days.get(r.plan_date) ?? { plan_date: r.plan_date, qty: 0, cap: 0, bottleneck: "", load: null };
+      d.qty += r.qty;
+      d.cap += r.cap;
+      if (r.load !== null && (d.load === null || r.load > d.load)) {
+        d.load = r.load;
+        d.bottleneck = `${r.product_code} / ${r.process}`;
+      }
+      days.set(r.plan_date, d);
+    }
+    const dayList = [...days.values()].sort((a, b) => a.plan_date.localeCompare(b.plan_date));
+    const loads = out.map(x => x.load).filter(x => x !== null);
+    return ok(res, {
+      rows: out, days: dayList, hours,
+      summary: {
+        qty: out.reduce((a, x) => a + x.qty, 0),
+        cap: out.reduce((a, x) => a + x.cap, 0),
+        load: loads.length ? Math.round(loads.reduce((a, b) => a + b, 0) / loads.length * 10) / 10 : null,
+        peak: loads.length ? Math.max(...loads) : 0,
+        over: loads.filter(x => x > 100).length,
+        no_capacity: out.filter(x => !x.uph).length,
+      },
+    });
+  });
+
+  // 完工时间预估（ETA）
+  router.get("/plan/mo/eta", async (req, res) => {
+    const mo = (req.query.mo_no || "").toString().trim();
+    const mos = mo.split(",").map(x => x.trim()).filter(Boolean);
+    const data = await etaCompute(mos.length ? mos : null);
+    const rows = [];
+    for (const [k, v0] of Object.entries(data)) {
+      const v = { mo_no: k, ...v0 };
+      const d = v.done_at;
+      delete v.done_at;
+      v.doneAt = d ? `${fmtTs(d).slice(0, 16)}` : "";
+      rows.push(v);
+    }
+    rows.sort((a, b) => (a.doneAt || "9999").localeCompare(b.doneAt || "9999"));
+    return ok(res, { rows, now: nowStr() });
+  });
+
+  // ═══ W4 order 域（源 api/order.py）══════════════════════════════════════
+
+  // 开单（一 PO 一张总工单）
+  router.post("/order/mo/create", requireMesrjPerm("mo.create"), async (req, res) => {
+    const d = req.body || {};
+    const pool = !!(d.pool || d.is_pool);
+    let productCode = (d.product_code || "").toString().trim();
+    const typeCode = String(d.type_code || "1").trim();
+    let planQty = Math.trunc(Number(d.plan_qty || 0));
+    let planEnd = (d.plan_end || "").toString().trim();
+    const planStart = (d.plan_start || "").toString().trim();
+    const remark = (d.remark || "").toString().trim();
+    const srcMoNo = (d.src_mo_no || "").toString().trim();
+
+    let poNo = "", poLine = "1", custCode = "", po = null;
+    if (d.po_id) {
+      po = (await query("SELECT * FROM ord_po WHERE id=$1", [d.po_id])).rows[0];
+      if (!po) return fail(res, "找不到该客户 PO");
+    } else if ((d.po_no || "").toString().trim()) {
+      poNo = d.po_no.trim();
+      po = (await query(
+        "SELECT * FROM ord_po WHERE po_no=$1 ORDER BY po_line LIMIT 1", [poNo])).rows[0];
+    }
+    if (po) {
+      if (productCode && po.product_code && po.product_code !== productCode) {
+        return fail(res, `客户 PO ${po.po_no}（${po.po_line}）的产品是 ${po.product_code}，与本单产品 ${productCode} 不一致`);
+      }
+      if (["已关闭", "已完工"].includes(po.status || "")) {
+        return fail(res, `客户 PO ${po.po_no} 已经（${po.status}），不能再开单`);
+      }
+      poNo = po.po_no; poLine = po.po_line; custCode = po.cust_code || "";
+      productCode = productCode || po.product_code;
+      planQty = planQty || Number(po.order_qty || 0);
+      planEnd = planEnd || po.delivery_date || "";
+    }
+    if (!productCode) return fail(res, "必选产品（产品料号）");
+    const prod = await query("SELECT id FROM md_product WHERE product_code=$1", [productCode]);
+    if (!prod.rows[0]) return fail(res, `找不到产品料号：${productCode}`);
+    if (planQty < 0 || (planQty <= 0 && !pool)) return fail(res, "计划数量必须大于 0");
+    if (pool) {
+      const ex = await poolMoOf(productCode);
+      if (ex) {
+        return ok(res, { created: [], exists: [ex.mo_no], seq_no: 0, pool: true, mo_no: ex.mo_no },
+          `产品 ${productCode} 已有常驻工单 ${ex.mo_no}（${ex.status}）——同一产品只允许一张常驻工单，直接排产即可`);
+      }
+    }
+    if (!["1", "2", "3"].includes(typeCode)) {
+      return fail(res, "工单类型不合法（1 正单 / 2 备品 / 3 返单）");
+    }
+    if (planStart && planEnd && planEnd < planStart) {
+      return fail(res, "计划完工日期不能早于计划开始日期");
+    }
+    if (typeCode === "3" && srcMoNo) {
+      const src = await query("SELECT id FROM ord_mo WHERE mo_no=$1", [srcMoNo]);
+      if (!src.rows[0]) return fail(res, `返单引用的原工单不存在：${srcMoNo}`);
+    }
+    if (!poNo && typeCode === "1" && !pool) {
+      return fail(res, "正单必须挂客户 PO 号（没有 PO 则备品单，否则追溯回一台都查不到）");
+    }
+    const { seq, created, exists } = await createMoAll({
+      productCode, planQty, typeCode, batches: d.batches ?? null,
+      poNo, poLine, custCode, planStart, planEnd, remark, srcMoNo,
+      createdBy: req.mesrjUser.login_name, syncPlan: !!d.sync_plan,
+      segLines: d.line_map || {}, routeMap: d.route_map || {},
+      variant: (d.variant || "").toString().trim(), isPool: pool,
+    });
+    for (const e of exists || []) {
+      if (typeof e === "object" && e?.error) return fail(res, e.error);
+    }
+    if (po && created.length) {
+      await query("UPDATE ord_po SET status='已排产' WHERE id=$1", [po.id]);
+    }
+    await audit(req.mesrjUser.login_name, "工单", "开单", poNo,
+      `${productCode} 计划${planQty}，开 ${created.length} 张`, req.ip);
+    const mos = created.map(c => c.mo_no);
+    let msg = mos.length ? `已开 ${created.length} 张工单：${mos.join("、")}` : "未开新单";
+    if (exists.length) msg += `；${exists.length} 张已存在（跳过）`;
+    return ok(res, { seq_no: seq, created, exists, mo_nos: mos, msg }, msg);
+  });
+
+  // 开单前预览（占号情况）
+  router.get("/order/mo/create/preview", async (req, res) => {
+    let pc = (req.query.product_code || "").toString().trim();
+    let poNo = (req.query.po_no || "").toString().trim();
+    if (req.query.po_id) {
+      const po = (await query("SELECT * FROM ord_po WHERE id=$1", [req.query.po_id])).rows[0];
+      if (po) { pc = po.product_code; poNo = po.po_no; }
+    }
+    let tc = (req.query.type_code || "1").toString().trim();
+    if (!["1", "2", "3"].includes(tc)) tc = "1";
+    return ok(res, await previewCreate(pc, tc, poNo, Number(req.query.batches || 1)));
+  });
+
+  // ── 旧「一单多段」接口：已停用（源 _legacy_blocked）──
+  const legacyBlocked = (_req, res) =>
+    fail(res, "已改为一 PO 一张单模式，旧分单接口已停用。请用「计划排产」里的开单（/api/order/mo/create）——一张单内部已包含各分段计划。");
+  router.post("/order/mo/split", legacyBlocked);
+  router.post("/order/mo/create-batch", legacyBlocked);
+
+  // 旧预览接口（按 PO 看分段号，页面兼容保留）
+  router.get("/order/mo/preview", async (req, res) => {
+    const poId = req.query.po_id;
+    const po = (await query("SELECT * FROM ord_po WHERE id=$1", [poId])).rows[0];
+    if (!po) return fail(res, "找不到该 PO");
+    const typeCode = (req.query.type_code || "1").toString().trim();
+    const r = await previewCreate(po.product_code, typeCode, po.po_no, 1);
+    r.po_no = po.po_no;
+    r.product_code = po.product_code;
+    return ok(res, r);
+  });
+
+  // 多段预览（兼容保留）
+  router.get("/order/mo/preview-batch", async (req, res) => {
+    const productCode = (req.query.product_code || "").toString().trim();
+    let typeCode = (req.query.type_code || "1").toString().trim();
+    const poNo = (req.query.po_no || "").toString().trim();
+    const procs = (req.query.processes || "01,02,03,04").toString().split(",")
+      .map(p => p.trim()).filter(p => p in PROC_NAME);
+    if (!["1", "2", "3"].includes(typeCode)) typeCode = "1";
+    return ok(res, await previewMoNos(productCode, typeCode, poNo, procs.length ? procs : ["01", "02", "03", "04"]));
+  });
+
+  // 工单状态流转
+  const MO_FLOW = {
+    "待排产": ["待排产", "作废"], "已排产": ["生产中", "待排产", "作废"],
+    "生产中": ["已完工", "作废"], "已完工": ["已关闭"], "已关闭": [], "作废": [],
+  };
+  router.post("/order/mo/:id/status", requireMesrjPerm("mo.edit"), async (req, res) => {
+    const to = (req.body?.status || "").toString().trim();
+    const mo = (await query("SELECT * FROM ord_mo WHERE id=$1", [req.params.id])).rows[0];
+    if (!mo) return fail(res, "工单不存在", 404);
+    if (!(MO_FLOW[mo.status] ?? []).includes(to)) {
+      return fail(res, `不能从「${mo.status}」直接变为「${to}」`);
+    }
+    await query("UPDATE ord_mo SET status=$1, updated_at=$2 WHERE id=$3",
+      [to, nowStr(), mo.id]);
+    await audit(req.mesrjUser.login_name, "工单", "改状态", mo.mo_no, `${mo.status} -> ${to}`, req.ip);
+    return ok(res, null, `已变为「${to}」`);
+  });
+
+  // 开工（PDA/扫描台：待排产/已排产/待下发 → 生产中，记 actual_start）
+  router.post("/order/mo/:moNo/start", requireMesrjPerm("prod.pass"), async (req, res) => {
+    const moNo = req.params.moNo;
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    if (!mo) return fail(res, "工单不存在", 404);
+    const cur = (mo.status || "").trim();
+    if (cur === "生产中") {
+      return ok(res, { mo_no: moNo, status: cur, changed: 0 }, "该工单已经在生产中");
+    }
+    if (["已完工", "已关闭"].includes(cur)) {
+      return fail(res, `工单已${cur}，不能开工`);
+    }
+    const force = !!req.body?.force;
+    if (!force) {
+      const busy = await lineBusyMo(moNo);
+      if (busy) {
+        return ok(res, {
+          need_confirm: true, busy_mo: busy.mo_no, busy_product: busy.product_code || "",
+          line_code: busy.line_code,
+          msg: `${busy.line_code} 正在生产 ${busy.mo_no}（产品 ${busy.product_code || ""}），确认要切换产线生产吗？`,
+        }, "该产线已有生产中的工单");
+      }
+    }
+    const upd = { status: "生产中", updated_at: nowStr() };
+    let actualStart = mo.actual_start || "";
+    if (!(mo.actual_start || "")) {
+      upd.actual_start = nowStr();
+      actualStart = upd.actual_start;
+    }
+    await query("UPDATE ord_mo SET status=$1, updated_at=$2, actual_start=$3 WHERE mo_no=$4",
+      [upd.status, upd.updated_at, mo.actual_start || nowStr(), moNo]);
+    await audit(req.mesrjUser.login_name, "工单", "开工", moNo, `${cur} -> 生产中`, req.ip);
+    return ok(res, { mo_no: moNo, status: "生产中", changed: 1, actual_start: actualStart },
+      `${moNo} 已开工`);
+  });
+
+  // PDA 开工选择清单（含拼板信息；源 /order/mo/options）
+  router.get("/order/mo/options", async (req, res) => {
+    const rs = await query(`
+      SELECT m.mo_no, m.product_code, m.fg_code, m.line_code, m.plan_qty,
+             m.status, m.actual_start, m.process_code,
+             COALESCE(p.product_model, '') AS product_model,
+             COALESCE(p.product_name, '')  AS product_name,
+             COALESCE(l.model, '')         AS panel_model,
+             COALESCE(l.total, 0)          AS panel_total,
+             (SELECT COUNT(DISTINCT x.sn) FROM prd_pass x
+               WHERE x.mo_no = m.mo_no AND x.result = 'OK'
+                 AND x.station_code LIKE '%SMT-AOI%') AS done_qty
+      FROM ord_mo m
+      LEFT JOIN md_product p ON p.product_code = m.fg_code
+      LEFT JOIN cfg_panel_layout l
+             ON l.enabled = 1 AND l.product_code = m.fg_code
+            AND l.id = (SELECT MAX(id) FROM cfg_panel_layout
+                        WHERE enabled = 1 AND product_code = m.fg_code)
+      WHERE m.status IN ('待排产','已排产','待下发','生产中')
+      ORDER BY CASE WHEN m.status = '生产中' THEN 0 ELSE 1 END,
+               COALESCE(NULLIF(m.actual_start,''), m.created_at) DESC,
+               m.mo_no DESC
+      LIMIT 200`);
+    return ok(res, { rows: rs.rows });
+  });
+
+  // 生成领料单（分段总工单 → 按段拆 N 张）
+  router.post("/order/issue/generate", requireMesrjPerm("issue.create"), async (req, res) => {
+    const d = req.body || {};
+    const r = await createIssueForMo((d.mo_no || "").toString().trim(),
+      req.mesrjUser.login_name, !!d.force, d.qty ?? null);
+    if (!r.ok) return fail(res, r.msg);
+    return ok(res, r.data, r.msg);
+  });
+
+  // 领料单打印（xlsx 下载；模板布局按源 issue_doc.py 重建）
+  router.get("/order/issue/:issueNo/doc", async (req, res) => {
+    try {
+      const [buf, fname] = await buildIssueDoc(req.params.issueNo);
+      res.setHeader("Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition",
+        `attachment; filename="${encodeURIComponent(fname)}"`);
+      return res.send(buf);
+    } catch (ex) {
+      return fail(res, ex.message);
+    }
+  });
+
+  // 换料/改料（替代料换算；源 /order/issue/item/substitute）
+  router.post("/order/issue/item/substitute", requireMesrjPerm("issue.create"), async (req, res) => {
+    const d = req.body || {};
+    const itemId = Number(d.item_id || 0);
+    const target = (d.material_code || "").toString().trim();
+    const reason = (d.reason || "").toString().trim();
+    if (!itemId || !target) return fail(res, "缺明细行或目标料号");
+    const it = (await query("SELECT * FROM ord_issue_item WHERE id=$1", [itemId])).rows[0];
+    if (!it) return fail(res, "领料明细不存在", 404);
+    const iv = (await query("SELECT * FROM ord_issue WHERE issue_no=$1", [it.issue_no])).rows[0];
+    if (!iv) return fail(res, "领料单不存在", 404);
+    if (iv.status === "已发料") {
+      return fail(res, "已确认的领料单，不能再改料号（要改先撤回/作废）");
+    }
+    if (iv.status === "作废") return fail(res, "领料单已作废");
+    const mainCode = it.main_code || it.material_code;
+    const alts = (it.alt_list || "").split("，").filter(Boolean);
+    if (target !== mainCode && !alts.includes(target)) {
+      return fail(res, `料号 ${target} 不在该行的替代料清单里`);
+    }
+    // 取目标料号的单位用量（替代料用量可能不同）
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [iv.mo_no])).rows[0];
+    const ver = mo ? await latestBomVersion(mo.product_code) : "";
+    let qtyPer = Number(it.qty_per || 0);
+    if (target !== mainCode && ver && mo) {
+      const row = (await query(
+        `SELECT qty_per FROM bom_item WHERE product_code=$1 AND version=$2 AND material_code=$3 LIMIT 1`,
+        [mo.product_code, ver, target])).rows[0];
+      if (row && row.qty_per) qtyPer = Number(row.qty_per);
+    }
+    const need = mo ? qtyPer * Number(mo.plan_qty || 0) : Number(it.need_qty || 0);
+    const mpq = Math.trunc(Number(it.mpq || 1));
+    const issueQty = ["KG", "L", "M", "G"].includes(it.unit)
+      ? Math.round(need * 1e4) / 1e4
+      : (mpq ? Math.ceil(need / mpq) * mpq : Math.round(need));
+    await query(
+      `UPDATE ord_issue_item SET material_code=$1, is_substitute=$2, qty_per=$3,
+       need_qty=$4, issue_qty=$5 WHERE id=$6`,
+      [target, target === mainCode ? 0 : 1, Math.round(qtyPer * 1e6) / 1e6,
+       Math.round(need * 1e4) / 1e4, issueQty, itemId]);
+    await audit(req.mesrjUser.login_name, "领料",
+      target !== mainCode ? "改用替代料" : "换回主料",
+      it.issue_no, `${it.material_code} → ${target}（${reason || "未填原因"}）`, req.ip);
+    return ok(res, { material_code: target, need_qty: Math.round(need * 1e4) / 1e4, issue_qty: issueQty },
+      `已改为： ${target}`);
+  });
+
+  // 确认发料
+  router.post("/order/issue/:issueNo/confirm", requireMesrjPerm("issue.confirm"), async (req, res) => {
+    const issueNo = req.params.issueNo;
+    const items = Array.isArray(req.body?.items) ? req.body.items : [];
+    const iv = (await query("SELECT * FROM ord_issue WHERE issue_no=$1", [issueNo])).rows[0];
+    if (!iv) return fail(res, "领料单不存在", 404);
+    if (iv.status === "已发料") return fail(res, "该领料单已确认发料");
+    for (const it of items) {
+      if (it?.id) {
+        await query("UPDATE ord_issue_item SET issue_qty=$1 WHERE id=$2 AND issue_no=$3",
+          [it.issue_qty ?? 0, it.id, issueNo]);
+      }
+    }
+    await query(
+      "UPDATE ord_issue SET status='已发料', issue_by=$2, issue_time=$3 WHERE issue_no=$1",
+      [issueNo, req.mesrjUser.emp_name, nowStr()]);
+    await audit(req.mesrjUser.login_name, "领料", "确认发料", issueNo, "", req.ip);
+    return ok(res, null, "已确认发料");
+  });
+
+  // 领料单详情（明细带越南码 + 工单头；段列缺失时按 BOM 回填）
+  router.get("/order/issue/:issueNo/detail", async (req, res) => {
+    const issueNo = req.params.issueNo;
+    const iv = (await query("SELECT * FROM ord_issue WHERE issue_no=$1", [issueNo])).rows[0];
+    if (!iv) return fail(res, "领料单不存在", 404);
+    const mo = (await query(
+      `SELECT mo_no, wo_type, product_code, fg_code, output_codes, process_code,
+              plan_qty, line_code, status FROM ord_mo WHERE mo_no=$1`, [iv.mo_no])).rows[0];
+    if (mo) await backfillIssueSegments(issueNo, mo);
+    const items = await vnAttach(
+      (await query("SELECT * FROM ord_issue_item WHERE issue_no=$1 ORDER BY line_seq", [issueNo])).rows);
+    return ok(res, { ...iv, items, mo });
+  });
+
+  // 领料单列表（分页）
+  router.get("/order/issue/list", async (req, res) => {
+    const [page, size] = cleanPageArgs(req.query);
+    const kw = (req.query.keyword || "").toString().trim();
+    const where = ["1=1"], args = [];
+    if (kw) {
+      args.push(`%${kw}%`);
+      const n = args.length;
+      where.push(`(issue_no ILIKE $${n} OR mo_no ILIKE $${n})`);
+    }
+    const st = (req.query.f_status || "").toString().trim();
+    if (st) { args.push(st); where.push(`status=$${args.length}`); }
+    const w = where.join(" AND ");
+    return ok(res, await paged(
+      `SELECT COUNT(*)::int AS n FROM ord_issue WHERE ${w}`,
+      `SELECT * FROM ord_issue WHERE ${w} ORDER BY id DESC`, args, page, size));
+  });
+
+  // 补料单
+  router.post("/order/replenish", requireMesrjPerm("issue.create"), async (req, res) => {
+    const d = req.body || {};
+    const moNo = (d.mo_no || "").toString().trim();
+    if (!moNo) return fail(res, "必须挂一张已存在的工单（在工单上补料，不要凭空开）");
+    const mo = await query("SELECT id FROM ord_mo WHERE mo_no=$1", [moNo]);
+    if (!mo.rows[0]) return fail(res, "必须挂一张已存在的工单（在工单上补料，不要凭空开）");
+    const prefix = `BL${todayStr().replace(/-/g, "").slice(2)}`;
+    const mx = await query(
+      "SELECT COUNT(*)::int AS n FROM ord_replenish WHERE rep_no LIKE $1", [`${prefix}%`]);
+    const repNo = `${prefix}${String(Number(mx.rows[0]?.n ?? 0) + 1).padStart(3, "0")}`;
+    await query(
+      `INSERT INTO ord_replenish (rep_no, mo_no, material_code, qty, reason, status, created_by)
+       VALUES ($1,$2,$3,$4,$5,'待发',$6)`,
+      [repNo, moNo, d.material_code ?? "", Number(d.qty || 0), d.reason ?? "补料",
+       req.mesrjUser.login_name]);
+    return ok(res, { rep_no: repNo }, `补料单 ${repNo} 已提交`);
+  });
+
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════
 
   const mdCrud = Router();
@@ -1333,7 +2403,20 @@ export function createMesrjRouter({ authenticateJWT }) {
   registerCrud(sysCrud, SYS_RES, "sys.user.view", "sys.user.edit");
   router.use("/sys", sysCrud);
 
+  // W4：bom / order / plan 通用 CRUD（源 _crud.register(prefix="/bom"|"/order"|"/plan")）
+  const bomCrud = Router();
+  registerCrud(bomCrud, BOM_RES, "bom.view", "bom.edit");
+  router.use("/bom", bomCrud);
+
+  const ordCrud = Router();
+  registerCrud(ordCrud, ORD_RES, "mo.view", "mo.edit");
+  router.use("/order", ordCrud);
+
+  const planCrud = Router();
+  registerCrud(planCrud, PLAN_RES, "plan.view", "plan.edit");
+  router.use("/plan", planCrud);
+
   return router;
 }
 
-export { ok, fail, getParam, setParam, audit, hashPwd, verifyPwd, currentUser, hasPerm, requireMesrjPerm, tableColumns, Res, cleanRow, safeOrder, cleanPageArgs, paged, registerCrud, MD_RES, SYS_RES };
+export { ok, fail, getParam, setParam, audit, hashPwd, verifyPwd, currentUser, hasPerm, requireMesrjPerm, tableColumns, Res, cleanRow, safeOrder, cleanPageArgs, paged, registerCrud, MD_RES, SYS_RES, BOM_RES, ORD_RES, PLAN_RES };
