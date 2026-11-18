@@ -239,7 +239,7 @@ id,code,name_zh,name_en,name_vi
 239,R0308-01004,护角 L50*50*920mm 硬纸 ROHS 960个产品4个护角 和通,"Corner protector L50*50*920mm hard paper, RoHS, 960pcs/1 protector, Hexing","Bao ve goc L50*50*920mm giay cung, RoHS, 960cai/1 bao ve goc"
 240,R0309-01001,线材标签 AC线材标签 V1版本 变更Logo 尺寸：88.9*38.1mm 印字颜色：绿地黑白字 底色:Panton 368C 材质：54#珠光合成纸+哑光膜+单面背胶 厚度0.1mm 耐酒精擦拭 RoHS REACH 迈智,"AC wire label V1, Logo change, 8.9*38.1mm, green/black, Pantone 368C, 4# pearlescent paper, matte, 0.1mm, alcohol resistant, RoHS REACH","Nhan day AC V1, doi Logo, 8.9*38.1mm, xanh/den, Pantone 368C, giay ngoc trai 4#, mo, 0.1mm, chong alcohol, RoHS REACH"
 241,R0310-01001,外箱标签 白色铜版纸 100*150mm,outer box label is white coated paper，size100*150mm。,1
-242,R0310-01002,空白标签 空白标签 白色铜版纸100*80mm,Màng trắng 100*80mm,Màng trắng 100*80mm
+242,R0310-01002,空白标签 空白标签 白色铜版纸100*80mm,Blank white coated-paper label 100*80mm,Nhãn giấy couche trắng 100*80mm
 243,R0311-01001,保护膜 0.35mm*100mm*1000米超声波专用,"Protective film 0.35mm*100mm*1000m, ultrasonic dedicated","Mang bao ve 0.35mm*100mm*1000m, chuyen dung sieu am"
 244,R0312-01001,CPE袋 L100+35*107mm 材质CPE 厚度0.03mm 符合环保要求 “丝印增加意大利回收标PE-C7+实心三角形版本”,"CPEbag L100+35*107mm materialCPE thickness0.03mm meets environmental requirements ""silkscreen adds Italy recycling markPE-C7+solid triangle version""",1
 245,R0313-01001,封口贴 51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm,51004002204 V4 A2507011sealing sticker 50# transparent oil gluePET full adhesive strong oil glue Φ30mm peel force：6.3N 30*30mm,51004002204 V4 A2507011nhãn dán niêm phong 50# keo dầu trong suốtPET keo toàn bộ keo dầu dính chắc Φ30mm lực bóc：6.3N 30*30mm
@@ -298,7 +298,7 @@ id,code,name_zh,name_en,name_vi
 2786,0.00.00.01.0466L-HF,贴片电阻,Surface Mount Resistor,Đèn điện tử mặt phẳng
 2787,0.12.00.00.0835,面壳,Shell,nháy
 2789,0.00.03.05.0083M,压敏电阻,Sensitive Resistor,Resistor cảm ứng
-2790,0.14.05.00.0000,吸塑,Injection Molding,Injection Molding
+2790,0.14.05.00.0000,吸塑,Blister tray (vacuum-formed),Khay nhựa hút chân không
 2791,0.09.00.00.0726U,变压器,Transformer,Transformer
 2792,0.00.00.00.0244L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
 2793,0.14.01.01.0011,大胶袋,Large Bag,Bao bì lớn
@@ -599,7 +599,7 @@ id,code,name_zh,name_en,name_vi
 3098,0.02.04.00.0249,贴片二极管,Surface Mount Diode,Đèn mặt phẳng
 3100,0.09.02.00.0005J,变压器,Transformer,Transformer
 3101,0.07.00.00.1420-HF,贴片IC,Surface Mount Integrated Circuit,IC mặt phẳng
-3102,0.12.05.00.0348,麦拉片,Mylar Sheet,Mylar Sheet
+3102,0.12.05.00.0348,麦拉片,Mylar sheet,Tấm Mylar
 3103,0.06.00.00.0157L,方形保险丝,Square Fuse,Mặt phẳng bảo vệ
 3104,0.12.01.00.0684,底壳,Base Shell,Mặt phẳng
 3105,0.14.00.02.0896,彩盒,Color Box,Bao bì màu
@@ -662,39 +662,39 @@ id,code,name_zh,name_en,name_vi
 3162,0.00.13.02.0028F,合金电阻,alloy resistor,resistor
 3163,0.00.00.01.0349G-HF,贴片电阻,surface mount resistor,resistor
 3164,0.15.05.00.0205-HF,Type-C母座,Type-C mother seat,Type-Cổ cắm cái
-3165,0.12.99.00.0060,插脚压紧支架,terminal clip holder,terminal clip holder
+3165,0.12.99.00.0060,插脚压紧支架,Pin clamp holder,Giá kẹp chân linh kiện
 3166,0.00.00.00.0115C-HF,贴片电阻,surface mount resistor,resistor
-3167,0.12.01.00.0986R,主体壳,body shell,body shell
-3168,0.12.01.00.1030R,底壳,base shell,base shell
+3167,0.12.01.00.0986R,主体壳,Main body shell,Vỏ thân chính
+3168,0.12.01.00.1030R,底壳,Bottom shell,Vỏ dưới
 3169,0.00.00.01.0457A-HF,贴片电阻,surface mount resistor,resistor
-3170,0.03.03.00.0095,环形电感,ring inductor,ring inductor
-3171,0.02.05.00.0169A,贴片开关二极管,surface mount diode,surface mount diode
-3172,0.02.04.00.0268H,贴片肖特基二极管,surface mount Schottky diode,surface mount Schottky diode
-3173,0.05.01.00.0368,贴片MOS管,surface mount MOS tube,surface mount MOS tube
+3170,0.03.03.00.0095,环形电感,Ring inductor,Cuộn cảm hình vòng
+3171,0.02.05.00.0169A,贴片开关二极管,SMD switching diode,Diode chuyển mạch dán
+3172,0.02.04.00.0268H,贴片肖特基二极管,SMD Schottky diode,Diode Schottky dán
+3173,0.05.01.00.0368,贴片MOS管,SMD MOSFET,MOSFET dán
 3174,0.00.00.01.0073A-HF,贴片电阻,surface mount resistor,resistor
-3175,0.01.01.04.0231F,电解电容,electrolytic capacitor,electrolytic capacitor
-3176,0.03.03.00.0186J,环形电感,ring inductor,ring inductor
+3175,0.01.01.04.0231F,电解电容,Electrolytic capacitor,Tụ điện giải
+3176,0.03.03.00.0186J,环形电感,Ring inductor,Cuộn cảm hình vòng
 3177,0.14.00.02.0886-HF,礼盒,box,box
 3178,0.09.00.00.0771J,变压器,transformer,transformer
 3179,0.00.00.01.0471M-HF,贴片电阻,surface mount resistor,resistor
 3180,0.15.05.00.0094D,Type-C母座,Type-C mother seat,Type-Cổ cắm cái
-3181,0.12.01.00.0961X,底壳,base shell,base shell
-3182,0.15.03.00.0104-HF,贴片连接器,surface mount connector,surface mount connector
+3181,0.12.01.00.0961X,底壳,Bottom shell,Vỏ dưới
+3182,0.15.03.00.0104-HF,贴片连接器,SMD connector,Đầu nối dán
 3183,0.09.00.00.0807,变压器,transformer,transformer
-3184,0.13.01.99.0086-HF,双组份导热凝胶B,B-component conductive paste,B-component conductive paste
-3185,0.01.09.00.0266C,固态电容,solid-state capacitor,solid-state capacitor
-3186,0.01.09.00.0348A,固态电容,solid-state capacitor,solid-state capacitor
-3187,0.12.09.00.0017,铁氟龙套管,Teflon tube,Teflon tube
-3188,0.07.00.00.1326-HF,贴片IC,surface mount IC,surface mount IC
+3184,0.13.01.99.0086-HF,双组份导热凝胶B,Two-part thermal gel B,Gel dẫn nhiệt hai thành phần B
+3185,0.01.09.00.0266C,固态电容,Solid capacitor,Tụ rắn
+3186,0.01.09.00.0348A,固态电容,Solid capacitor,Tụ rắn
+3187,0.12.09.00.0017,铁氟龙套管,Teflon sleeve,Ống Teflon
+3188,0.07.00.00.1326-HF,贴片IC,SMD IC,IC dán
 3189,0.00.00.02.0297L-HF,贴片电阻,surface mount resistor,resistor
-3190,0.11.02.01.0036,散热片,heat sink,heat sink
-3191,0.07.00.00.1074,贴片IC,surface mount IC,surface mount IC
-3192,0.07.00.00.1309-HF,贴片IC,surface mount IC,surface mount IC
-3193,0.01.10.00.0062B,薄膜电容,film capacitor,film capacitor
-3194,0.01.05.00.0232E,Y电容,Y capacitor,Y capacitor
-3195,0.14.08.00.0143-HF,LENS保护膜,LENS protection film,LENS protection film
-3196,0.13.01.04.0407-HF,变压器侧面导热垫,transformer side heat sink pad,transformer side heat sink pad
-3197,0.01.05.00.0074S-HF,Y电容,Y capacitor,Y capacitor
+3190,0.11.02.01.0036,散热片,Heat sink,Tản nhiệt
+3191,0.07.00.00.1074,贴片IC,SMD IC,IC dán
+3192,0.07.00.00.1309-HF,贴片IC,SMD IC,IC dán
+3193,0.01.10.00.0062B,薄膜电容,Film capacitor,Tụ màng
+3194,0.01.05.00.0232E,Y电容,Y capacitor,Tụ Y
+3195,0.14.08.00.0143-HF,LENS保护膜,Lens protective film,Màng bảo vệ lens
+3196,0.13.01.04.0407-HF,变压器侧面导热垫,Transformer-side thermal pad,Miếng dẫn nhiệt bên biến áp
+3197,0.01.05.00.0074S-HF,Y电容,Y capacitor,Tụ Y
 3198,0.06.00.00.0105B,保险管,fuse,fuse
 3199,0.07.00.00.1319-HF,贴片IC,Surface Mount IC,Chip Mount
 3200,0.08.04.00.0025,汽车电子线,Automotive Electronic Wire,Cable Ô tô điện tử
@@ -740,7 +740,7 @@ id,code,name_zh,name_en,name_vi
 3240,0.00.00.00.0607B-HF,贴片电阻,Surface Mount Resistor,Độ ẩm mặt
 3242,0.01.00.05.0019E-HF,贴片电容,Surface Mount Capacitor,Độ ẩm mặt
 3243,0.01.01.05.0317F,电解电容,Aluminum Electrolytic Capacitor,Độ ẩm mặt
-3244,0.08.02.00.0139,C-C配线,C-C Wiring,C-C Wiring
+3244,0.08.02.00.0139,C-C配线,C-C wiring harness,Bó dây nối C-C
 3245,0.00.00.04.0050L-HF,贴片电阻,Surface Mount Resistor,Độ ẩm mặt
 3246,0.07.00.00.1126,贴片IC,Surface Mount Integrated Circuit,Độ ẩm mặt
 3247,0.03.09.00.0115-HF,工型电感,Coil,Độ ẩm mặt
@@ -896,7 +896,7 @@ id,code,name_zh,name_en,name_vi
 3401,0.06.00.00.0195A,保险丝,Fuse,Đèn làm chập
 3402,0.01.00.00.4135S-HF,贴片电容,Surface Mount Capacitor,Cảm ứng điện mặt phẳng
 3403,0.00.00.02.0139B-HF,贴片电阻,Surface Mount Resistor,Đèn mặt phẳng
-3404,0.05.00.00.0272,插件MOS管,Component MOSFET,Component MOSFET
+3404,0.05.00.00.0272,插件MOS管,Through-hole MOSFET,MOSFET xuyên lỗ
 3405,0.08.01.00.0715D,DC线,DC Line,Đường dẫn DC
 3407,0.14.00.00.0804-HF,中箱,Middle Box,Bộ phận trung tâm
 3408,0.11.02.00.0315,散热片,Heat Sink,Màng tán nhiệt
@@ -931,7 +931,7 @@ id,code,name_zh,name_en,name_vi
 3437,0.07.00.00.1230,贴片IC,Surface Mount IC,IC bề mặt
 3438,0.14.02.00.0582,平卡,Flat Card,Mặt phẳng
 3439,0.12.05.00.0369,麦拉片,Mylar Sheet,Màng Mylar
-3440,0.05.00.00.0205,插件MOS管,Component MOSFET,Component MOSFET
+3440,0.05.00.00.0205,插件MOS管,Through-hole MOSFET,MOSFET xuyên lỗ
 3441,0.01.00.00.4215L-HF,贴片电容,Surface Mount Capacitor,Cánh điện bề mặt
 3442,0.11.02.01.0037,散热片,Heat Sink,Màng tán nhiệt
 3443,0.00.00.01.0411B-HF,贴片电阻,Surface Mount Resistor,Resistor bề mặt
@@ -1563,7 +1563,7 @@ id,code,name_zh,name_en,name_vi
 4085,0.01.05.00.0174K,Y1电容,Y1 Capacitor,Capacitor Y1
 4086,0.15.05.00.0216,Type-C母座,Type-C Mother Seat,Ngắt Kênh Type-C
 4087,0.09.01.00.0029J,变压器,Transformer,Transformer
-4088,0.10.00.00.1383D-HF,PCB板,PCB Board,PCB Board
+4088,0.10.00.00.1383D-HF,PCB板,PCB board,Bo mạch PCB
 4089,0.12.99.00.0086-HF,装饰件,Decorative Part,Nguyên Mặt Nối
 4090,0.02.03.00.0495Y,FAST DIODE/快速二极管,FAST DIODE/Quick Diode,ĐIỀU HỢP FAST/ĐIỀU HỢP Rnhanh
 4091,0.12.03.00.0266-HF,塑胶片,Plastic Sheet,Sheet Plast
@@ -1858,44 +1858,44 @@ id,code,name_zh,name_en,name_vi
 4391,0.01.01.09.0075W,电解电容,electrolytic capacitor,capacitor điệnđiện giải
 4392,0.07.00.00.1353,贴片IC,Surface Mount Integrated Circuit,Chip Mount
 4393,0.05.00.00.0203,插件MOS管,Pluggable MOSFET,MOSFET
-4394,0.12.07.00.0097,热缩套管,Thermally Shrinkable Sleeve,Thermally Shrinkable Sleeve
+4394,0.12.07.00.0097,热缩套管,Heat-shrink sleeve,Ống gen co nhiệt
 4395,0.13.01.04.0415,导热硅胶垫,Thermal Conductive Silicone Pad,Pad Sắt Nóng
 4396,0.01.00.02.4114L-HF,贴片电容,Surface Mount Capacitor,Capacitor
 4397,0.07.00.00.0805,贴片IC,Surface Mount Integrated Circuit,Chip Mount
-4398,0.12.99.00.0061,转轴,Rotating Shaft,Rotating Shaft
-4399,0.12.05.00.0309,麦拉片,Mylar Film,Mylar Film
+4398,0.12.99.00.0061,转轴,Rotating shaft,Trục xoay
+4399,0.12.05.00.0309,麦拉片,Mylar film,Màng Mylar
 4400,0.01.01.00.0023,电解电容,Electrolytic Capacitor,Capacitor
 4401,0.06.00.00.0113H,方形保险丝,Square Fuse,Fuse
 4402,0.01.05.00.0167B,Y1电容,Y1 Capacitor,Capacitor
-4403,0.14.05.00.0000-HF,吸塑,Injection Molding,Injection Molding
+4403,0.14.05.00.0000-HF,吸塑,Blister tray (vacuum-formed),Khay nhựa hút chân không
 4404,0.00.00.02.0315A-HF,贴片电阻,Surface Mount Resistor,Resistor
 4405,0.14.01.01.0290,CPE袋,CPE Bag,CPE Bao
 4406,0.01.05.00.0005A,Y1电容,Y1 Capacitor,Capacitor
 4407,0.00.00.01.0343A-HF,贴片电阻,Surface Mount Resistor,Resistor
 4408,0.06.00.00.0157B,方形保险丝,Square Fuse,Fuse
-4409,0.18.01.00.0036-HF,LCD显示屏,LCD Display,LCD Display
+4409,0.18.01.00.0036-HF,LCD显示屏,LCD display,Màn hình LCD
 4410,0.01.01.05.0377,电解电容,Electrolytic Capacitor,Capacitor
 4412,0.00.00.04.0036L-HF,贴片电阻,Surface Mount Resistor,Resistor
 4413,0.02.99.00.0039-HF,贴片二极管,Surface Mount Diode,Diode
-4414,0.08.00.00.0412-HF,EU连接线L,EU Connection Line L,EU Connection Line L
+4414,0.08.00.00.0412-HF,EU连接线L,EU connection cable L,Cáp kết nối EU L
 4415,0.03.00.02.0006Z-HF,贴片电感,Surface Mount Inductor,Inductor
-4416,0.12.01.00.0365R-HF,底壳,Base Shell,Base Shell
+4416,0.12.01.00.0365R-HF,底壳,Bottom shell,Vỏ dưới
 4417,0.02.03.00.0166F,贴片二极管,Surface Mount Diode,Diode
 4418,0.05.00.00.0268,插件MOS管,Pluggable MOSFET,MOSFET
-4419,0.07.00.00.1331-HF,集成电路IC,Mother Seat,Mother Seat
-4420,0.13.01.04.0242,底座硅胶垫,Insulating Yellow Tape,Insulating Yellow Tape
-4421,0.11.00.01.0035,平头螺丝,Silicone Foot Pad,Silicone Foot Pad
+4419,0.07.00.00.1331-HF,集成电路IC,Integrated circuit (IC),Mạch tích hợp IC
+4420,0.13.01.04.0242,底座硅胶垫,Base silicone pad,Miếng đệm silicone đế
+4421,0.11.00.01.0035,平头螺丝,Flat-head screw,Vít đầu dẹt
 4422,0.07.00.00.1352,贴片IC,Surface Mount Integrated Circuit,Chip Mount
-4423,0.16.00.00.0059,温度开关,Base Shell,Base Shell
-4424,0.08.00.00.0281,硅胶线,Airplane Box,Airplane Box
-4425,0.12.01.00.0499R-HF,底壳,Base Shell,Base Shell
+4423,0.16.00.00.0059,温度开关,Temperature switch,Công tắc nhiệt độ
+4424,0.08.00.00.0281,硅胶线,Silicone wire,Dây silicone
+4425,0.12.01.00.0499R-HF,底壳,Bottom shell,Vỏ dưới
 4426,0.03.03.00.0238Z,插件环形电感,Pluggable Ring Inductor,Inductor
-4427,4.02.100279,母座,Mother Seat,Mother Seat
-4428,0.13.01.08.0080,绝缘黄胶带,Insulating Yellow Tape,Insulating Yellow Tape
-4429,0.12.11.00.0045,硅胶脚垫,Silicone Foot Pad,Silicone Foot Pad
+4427,4.02.100279,母座,Female socket,Ổ cắm cái
+4428,0.13.01.08.0080,绝缘黄胶带,Yellow insulating tape,Băng keo cách điện màu vàng
+4429,0.12.11.00.0045,硅胶脚垫,Silicone foot pad,Miếng đệm chân silicone
 4431,0.14.01.01.0210,PE袋,PE Bag,PE Bao
-4432,0.12.01.00.0644A-HF,底壳,Base Shell,Base Shell
-4433,0.14.03.00.0148,飞机盒,Airplane Box,Airplane Box
+4432,0.12.01.00.0644A-HF,底壳,Bottom shell,Vỏ dưới
+4433,0.14.03.00.0148,飞机盒,Airplane shipping box,Hộp carton vận chuyển
 4434,0.14.06.00.0600,充电器说明书,charger manual,bì thư hướng dẫn sử dụng
 4435,0.03.00.01.0178D-HF,贴片电感,surface mount inductor,đèn cảm ứng mặt phẳng
 4436,0.00.13.02.0028D,合金电阻,alloy resistor,đèn cảm ứng đồng axit
@@ -2173,7 +2173,7 @@ id,code,name_zh,name_en,name_vi
 4723,0.00.00.01.0416B-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4724,0.15.05.00.0163,USB连接器,USB connector,kết nối USB
 4725,0.00.13.00.0017D,合金电阻,alloy resistor,đèn resistor hợp kim
-4726,0.13.01.07.0238-HF,LCM缓冲防尘泡棉,LCM buffer dust-proof foam,LCM buffer dust-proof foam
+4726,0.13.01.07.0238-HF,LCM缓冲防尘泡棉,LCM buffer dust-proof foam,Mút xốp chống bụi đệm LCM
 4727,0.00.13.01.0383E,合金电阻,alloy resistor,đèn resistor hợp kim
 4728,0.07.00.00.1187,集成电路IC,IC,đèn IC
 4729,0.01.00.00.4215A-HF,贴片电容,Surface Mount Capacitor,Độ ẩm mặt hàng
@@ -2584,7 +2584,7 @@ id,code,name_zh,name_en,name_vi
 5150,0.01.09.00.0397,固态电容,Solid Capacitor,Cáp điện tử
 5151,0.01.01.01.0118B-HF,电解电容,Electrolytic Capacitor,Cápđiện giải
 5152,0.00.03.05.0071B-HF,压敏电阻,Sensitive Resistor,Resistor nhạy cảm
-5153,0.14.02.01.0234,长刀卡,Long Knife,Long Knife
+5153,0.14.02.01.0234,长刀卡,Long knife clip,Kẹp dao dài
 5154,0.14.01.01.0243-HF,平口袋,Flat Bag,Bao bì phẳng
 5155,0.11.02.00.0243,散热片,Heat Sink,Đèn sáng
 5156,0.14.00.00.0766,外箱,Outer Box,Bao bì ngoài
@@ -2854,8 +2854,8 @@ id,code,name_zh,name_en,name_vi
 5827,0.14.02.00.0423,隔板,separator,lớp cách
 5828,0.14.02.00.0490,隔板,separator,lớp cách
 5829,0.14.02.00.0533,电解电容平卡,Electrolytic Capacitor,Đèn điệnđiện giải
-5830,0.14.02.01.0225,12刀卡,12 Volt Card,12 Volt Card
-5831,0.14.02.01.0226,4刀卡,4 Volt Card,4 Volt Card
+5830,0.14.02.01.0225,12刀卡,12-knife clip,Kẹp dao 12
+5831,0.14.02.01.0226,4刀卡,4-knife clip,Kẹp dao 4
 5832,0.14.02.01.0246,长刀卡,Long Sword Card,Card Súng Lưỡi
 5833,0.14.02.01.0247,短刀卡,Short Sword Card,Card Súng Mũi
 5834,0.14.03.00.0182,电解电容啤盒,Electrolytic Capacitor Box,Bình Electrolytic Capacitor

@@ -331,3 +331,9 @@ grant select, insert, update on public.wms_receipt_orders, public.wms_picking_or
 权威检查（Node `[\u4e00-\u9fff]`，psql 经 PowerShell 传中文正则会乱码，不可靠）发现 LLM 对 244 条长技术描述只译了前半段，英文名残留中文 37+12 条、越文名残留 187+35 条（如 `Dongguan Lingen五金电子有限公司`、`đèn capacitor电解`）。
 
 `scripts/etl/rjvn-translate-mixed.mjs` 用 **112 个中文片段 → EN/VI 术语词典**确定性替换（长片段优先，避免 `热敏电阻` 被 `电阻` 部分替换）。结果：`materials` 202 行、`suppliers` 42 行清理完毕，**残留中文 0**。词典仅覆盖残留片段，输出仍是机器生成，业务校对清单已刷新。
+
+### 人工校对第一批（59 条）
+
+启发式扫描发现 59 条 `name_en = name_vi`（英文被复制到越文字段），其中 6 条英文也译错（LLM 条目错位，如 `集成电路IC → Mother Seat`、`平头螺丝 → Silicone Foot Pad`、`12刀卡 → 12 Volt Card`）。
+`scripts/etl/rjvn-translate-proofread.sql` 逐条给出 EN/VI 修正（幂等 guard `name_en=name_vi`）。
+结果：`name_en = name_vi` 降至 **0**，校对 CSV 已刷新。其余检查：截断 25 条（varchar 160 上限）、双空格 2 条，未发现 `??`/`undefined` 等占位符。
