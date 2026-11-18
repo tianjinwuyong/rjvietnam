@@ -49,6 +49,7 @@ export type OaViewId =
   | "notifications"
   | "announcements"
   | "org"
+  | "orgImport"
   // 体系文件（原版 /docs 组首页 + 三个独立台账入口页；
   // /doc-ledger、/docs/new 原版不在侧边栏，由文档库页内按钮进入）
   | "docs"
@@ -179,7 +180,7 @@ export const OA_MENU: OaMenuGroup[] = [
         items: [
           // 原版 perm:org:manage；原生只读版对全员开放（只读无风险）
           { titleKey: "menu.org", view: "org" },
-          { titleKey: "menu.orgImport" },
+          { titleKey: "menu.orgImport", view: "orgImport" },
         ],
       },
       {

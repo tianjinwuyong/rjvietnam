@@ -15,6 +15,7 @@ import { FlowForm } from "./FlowForm";
 import { InstanceDetail } from "./InstanceDetail";
 import { Announcements } from "./Announcements";
 import { OrgView } from "./OrgView";
+import { OrgImportView } from "./OrgImportView";
 import { DocsView, type DocsSubView } from "./DocsView";
 import { DriveView } from "./DriveView";
 import { KnowledgeView } from "./KnowledgeView";
@@ -340,6 +341,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <Announcements locale={locale} />
   ) : view === "org" ? (
     <OrgView locale={locale} />
+  ) : view === "orgImport" ? (
+    <OrgImportView locale={locale} />
   ) : view === "docs" || view === "docNew" || view === "docLedger" || view === "docIssueRecord" || view === "docObsolete" || view === "docExternal" ? (
     <DocsView locale={locale} sub={view as DocsSubView} onNavigate={s => { setWipKey(null); setView(s); }} />
   ) : view === "drive" ? (
