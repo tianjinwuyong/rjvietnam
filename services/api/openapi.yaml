@@ -4850,3 +4850,36 @@ paths:
     get: { tags: [PDA], summary: PDA management dashboard, responses: { "200": { description: OK } } }
   /pda/dashboard/activity-timeline:
     get: { tags: [PDA], summary: PDA activity timeline, responses: { "200": { description: OK } } }
+  /sales/dashboard-summary:
+    get: { tags: [Sales], summary: Sales dashboard summary, responses: { "200": { description: OK } } }
+  /sales/orders:
+    get: { tags: [Sales], summary: List sales orders, responses: { "200": { description: OK } } }
+    post: { tags: [Sales], summary: Create sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}:
+    get: { tags: [Sales], summary: Sales order detail, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/history:
+    get: { tags: [Sales], summary: Sales order status history, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/confirm:
+    post: { tags: [Sales], summary: Confirm sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/release:
+    post: { tags: [Sales], summary: Release sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/ship:
+    post: { tags: [Sales], summary: Ship sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/deliver:
+    post: { tags: [Sales], summary: Record delivery for sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/invoice:
+    post: { tags: [Sales], summary: Invoice sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/pay:
+    post: { tags: [Sales], summary: Record payment for sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/cancel:
+    post: { tags: [Sales], summary: Cancel sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/close:
+    post: { tags: [Sales], summary: Close sales order, responses: { "200": { description: OK } } }
+  /sales/orders/{id}/lines/{lineId}/fulfill:
+    put: { tags: [Sales], summary: Fulfill a sales order line, responses: { "200": { description: OK } } }
+  /sales/quotes:
+    get: { tags: [Sales], summary: List sales quotes, responses: { "200": { description: OK } } }
+  /sales/quotes/{id}/convert-to-so:
+    put: { tags: [Sales], summary: Convert quote to sales order, responses: { "200": { description: OK } } }
+  /wms/receiving/label-ai:
+    post: { tags: [WMS], summary: Parse receiving-label image via local Ollama vision, responses: { "200": { description: OK } } }
