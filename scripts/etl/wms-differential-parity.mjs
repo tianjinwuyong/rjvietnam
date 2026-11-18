@@ -58,7 +58,7 @@ const PAIRS = [
   { name: "IQC 待检", o: "/api/iqc/pending", s: "/rjvn-iqc/pending", kind: "list" },
   { name: "IQC 统计", o: "/api/iqc/stats/pass-rate", s: "/rjvn-iqc/stats", kind: "stats" },
   { name: "抽样计算", o: "/api/iqc/sampling/calculate?lotSize=500&aql=2.5&level=II", s: "/rjvn-iqc/sampling/calculate?lotSize=500&aql=2.5&level=II", kind: "scalar" },
-  { name: "严格度当前", o: "/api/iqc/strictness/current", s: "/rjvn-iqc/strictness/current", kind: "scalar" },
+  { name: "严格度当前", o: "/api/iqc/strictness/current?materialId=e5153a01-669b-4d5e-ba20-63b65bc420f5", s: "/rjvn-iqc/strictness/current?materialId=e5153a01-669b-4d5e-ba20-63b65bc420f5", kind: "scalar" },
   { name: "严格度列表", o: "/api/iqc/strictness/list", s: "/rjvn-iqc/strictness/list", kind: "list" },
   { name: "收料单列表", o: "/api/receipt/list", s: "/rjvn-receipt/list", kind: "list" },
   { name: "仓库列表", o: "/api/receipt/warehouses", s: "/rjvn-receipt/warehouses", kind: "list" },

@@ -418,8 +418,10 @@ export const wmsApi = {
   },
   getRjvnIqcStats() {
     return apiClient.get<{
-      lots: number; pending: number; passed: number; failed: number; passRate: number;
-      byStrictness: Array<{ name: string; value: number }>;
+      summary: { totalLots: number; passedLots: number; failedLots: number; passRate: number };
+      trend: Array<{ period: string; totalLots: number; passedLots: number; passRate: number }>;
+      topMaterials: Array<{ materialCode: string; materialName: string; totalLots: number; passedLots: number; passRate: number }>;
+      topSuppliers: Array<{ supplierCode: string; supplierName: string; totalLots: number; passedLots: number; passRate: number }>;
     }>("/rjvn-iqc/stats");
   },
 

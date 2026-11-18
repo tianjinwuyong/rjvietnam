@@ -37,7 +37,7 @@
     "name": "IQC 统计",
     "oracle": "/api/iqc/stats/pass-rate",
     "smt": "/rjvn-iqc/stats",
-    "verdict": "VALUE-DIFF",
+    "verdict": "NO-SCALARS",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
@@ -47,103 +47,54 @@
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
     "scalarMatch": 0,
-    "scalarTotal": 5,
-    "scalarDiff": {
-      "failed": {
-        "match": false,
-        "smt": 1
-      },
-      "lots": {
-        "match": false,
-        "smt": 502
-      },
-      "passRate": {
-        "match": false,
-        "smt": 99.7
-      },
-      "passed": {
-        "match": false,
-        "smt": 335
-      },
-      "pending": {
-        "match": false,
-        "smt": 166
-      }
-    }
+    "scalarTotal": 0,
+    "scalarDiff": {}
   },
   {
     "name": "抽样计算",
     "oracle": "/api/iqc/sampling/calculate?lotSize=500&aql=2.5&level=II",
     "smt": "/rjvn-iqc/sampling/calculate?lotSize=500&aql=2.5&level=II",
-    "verdict": "VALUE-DIFF",
+    "verdict": "MATCH",
     "oracleStatus": 200,
-    "smtStatus": 500,
+    "smtStatus": 200,
     "oracleTotal": 0,
     "smtTotal": 0,
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 0,
+    "scalarMatch": 7,
     "scalarTotal": 10,
     "scalarDiff": {
-      "ac": {
-        "match": false,
-        "oracle": 3
-      },
       "actualSampleSize": {
         "match": false,
         "oracle": 50
       },
-      "aql": {
+      "planText": {
         "match": false,
-        "oracle": "2.5"
+        "smt": "G-II / N=50 / Ac=3 Re=4"
       },
-      "codeLetter": {
+      "strictness": {
         "match": false,
-        "oracle": "H"
-      },
-      "error": {
-        "match": false,
-        "smt": "批量必须大于等于2"
-      },
-      "level": {
-        "match": false,
-        "oracle": "II"
-      },
-      "lotSize": {
-        "match": false,
-        "oracle": 500
-      },
-      "re": {
-        "match": false,
-        "oracle": 4
-      },
-      "sampleSize": {
-        "match": false,
-        "oracle": 50
-      },
-      "success": {
-        "match": false,
-        "smt": false
+        "smt": "normal"
       }
     }
   },
   {
     "name": "严格度当前",
-    "oracle": "/api/iqc/strictness/current",
-    "smt": "/rjvn-iqc/strictness/current",
-    "verdict": "NO-SCALARS",
-    "oracleStatus": 400,
+    "oracle": "/api/iqc/strictness/current?materialId=e5153a01-669b-4d5e-ba20-63b65bc420f5",
+    "smt": "/rjvn-iqc/strictness/current?materialId=e5153a01-669b-4d5e-ba20-63b65bc420f5",
+    "verdict": "MATCH",
+    "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
-    "smtTotal": 49,
+    "smtTotal": 0,
     "oracleFields": 0,
-    "smtFields": 18,
+    "smtFields": 0,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 0,
-    "scalarTotal": 0,
+    "scalarMatch": 5,
+    "scalarTotal": 5,
     "scalarDiff": {}
   },
   {
@@ -278,16 +229,16 @@
     "name": "库存调拨",
     "oracle": "/api/inventory/transfer/list",
     "smt": "/rjvn-inventory/transfers",
-    "verdict": "EMPTY/NO-DATA",
+    "verdict": "COUNT-DIFF",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
-    "smtTotal": 0,
+    "smtTotal": 2,
     "oracleFields": 0,
-    "smtFields": 0,
+    "smtFields": 20,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 1,
+    "scalarMatch": 0,
     "scalarTotal": 5,
     "scalarDiff": {
       "limit": {
@@ -305,6 +256,12 @@
       "pageSize": {
         "match": false,
         "oracle": 20
+      },
+      "total": {
+        "match": false,
+        "oracle": 0,
+        "smt": 2,
+        "deltaPct": -100
       }
     }
   },
@@ -312,16 +269,16 @@
     "name": "盘点单",
     "oracle": "/api/stock-take/list",
     "smt": "/rjvn-doc/stock-take/list",
-    "verdict": "EMPTY/NO-DATA",
+    "verdict": "COUNT-DIFF",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
-    "smtTotal": 0,
+    "smtTotal": 2,
     "oracleFields": 0,
-    "smtFields": 0,
+    "smtFields": 43,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 1,
+    "scalarMatch": 0,
     "scalarTotal": 5,
     "scalarDiff": {
       "limit": {
@@ -339,6 +296,12 @@
       "pageSize": {
         "match": false,
         "oracle": 20
+      },
+      "total": {
+        "match": false,
+        "oracle": 0,
+        "smt": 2,
+        "deltaPct": -100
       }
     }
   },
@@ -346,16 +309,16 @@
     "name": "MRB",
     "oracle": "/api/mrb/list",
     "smt": "/rjvn-doc/mrb/list",
-    "verdict": "EMPTY/NO-DATA",
+    "verdict": "COUNT-DIFF",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
-    "smtTotal": 0,
+    "smtTotal": 2,
     "oracleFields": 0,
-    "smtFields": 0,
+    "smtFields": 42,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 1,
+    "scalarMatch": 0,
     "scalarTotal": 5,
     "scalarDiff": {
       "limit": {
@@ -373,6 +336,12 @@
       "pageSize": {
         "match": false,
         "oracle": 20
+      },
+      "total": {
+        "match": false,
+        "oracle": 0,
+        "smt": 2,
+        "deltaPct": -100
       }
     }
   },
@@ -380,16 +349,16 @@
     "name": "供应商退货",
     "oracle": "/api/supplier-return/list",
     "smt": "/rjvn-doc/supplier-return/list",
-    "verdict": "EMPTY/NO-DATA",
+    "verdict": "COUNT-DIFF",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
-    "smtTotal": 0,
+    "smtTotal": 2,
     "oracleFields": 0,
-    "smtFields": 0,
+    "smtFields": 19,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 1,
+    "scalarMatch": 0,
     "scalarTotal": 5,
     "scalarDiff": {
       "limit": {
@@ -407,6 +376,12 @@
       "pageSize": {
         "match": false,
         "oracle": 20
+      },
+      "total": {
+        "match": false,
+        "oracle": 0,
+        "smt": 2,
+        "deltaPct": -100
       }
     }
   },
@@ -414,16 +389,16 @@
     "name": "超领",
     "oracle": "/api/over-picking/list",
     "smt": "/rjvn-doc/over-picking/list",
-    "verdict": "EMPTY/NO-DATA",
+    "verdict": "COUNT-DIFF",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 0,
-    "smtTotal": 0,
+    "smtTotal": 2,
     "oracleFields": 0,
-    "smtFields": 0,
+    "smtFields": 20,
     "fieldOverlapPct": null,
     "fieldCoveragePct": null,
-    "scalarMatch": 1,
+    "scalarMatch": 0,
     "scalarTotal": 5,
     "scalarDiff": {
       "limit": {
@@ -441,6 +416,12 @@
       "pageSize": {
         "match": false,
         "oracle": 20
+      },
+      "total": {
+        "match": false,
+        "oracle": 0,
+        "smt": 2,
+        "deltaPct": -100
       }
     }
   }

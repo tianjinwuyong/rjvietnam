@@ -19,8 +19,10 @@ import { wmsApi } from "../api/wms";
 type Row = Record<string, unknown>;
 
 interface IqcStats {
-  lots: number; pending: number; passed: number; failed: number; passRate: number;
-  byStrictness: Array<{ name: string; value: number }>;
+  summary: { totalLots: number; passedLots: number; failedLots: number; passRate: number };
+  trend: Array<{ period: string; totalLots: number; passedLots: number; passRate: number }>;
+  topMaterials: Array<{ materialCode: string; materialName: string; totalLots: number; passedLots: number; passRate: number }>;
+  topSuppliers: Array<{ supplierCode: string; supplierName: string; totalLots: number; passedLots: number; passRate: number }>;
 }
 interface LotDetail {
   lot: Row; records: Row[]; report: Row | null; strictness: Row | null;
@@ -214,19 +216,19 @@ export function WmsRjvnIqc({ locale }: { locale: Locale }) {
         <div className="stat-grid">
           <div className="stat-card">
             <span className="stat-label">{t("wms.rjvnIqc.lots", locale)}</span>
-            <strong className="stat-value">{(stats?.lots ?? 0).toLocaleString()}</strong>
+            <strong className="stat-value">{(stats?.summary?.totalLots ?? 0).toLocaleString()}</strong>
           </div>
           <div className="stat-card">
             <span className="stat-label">{t("wms.rjvnIqc.pending", locale)}</span>
-            <strong className="stat-value">{(stats?.pending ?? 0).toLocaleString()}</strong>
+            <strong className="stat-value">{((stats?.summary?.totalLots ?? 0) - (stats?.summary?.passedLots ?? 0) - (stats?.summary?.failedLots ?? 0)).toLocaleString()}</strong>
           </div>
           <div className="stat-card">
             <span className="stat-label">{t("wms.rjvnIqc.passed", locale)}</span>
-            <strong className="stat-value">{(stats?.passed ?? 0).toLocaleString()}</strong>
+            <strong className="stat-value">{(stats?.summary?.passedLots ?? 0).toLocaleString()}</strong>
           </div>
           <div className="stat-card">
             <span className="stat-label">{t("wms.rjvnIqc.passRate", locale)}</span>
-            <strong className="stat-value">{Math.round(stats?.passRate ?? 0)}%</strong>
+            <strong className="stat-value">{Math.round(stats?.summary?.passRate ?? 0)}%</strong>
           </div>
         </div>
       </section>

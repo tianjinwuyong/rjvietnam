@@ -420,16 +420,28 @@ export function registerRjvnIqcRoutes(app, pgPool, requirePermission) {
 
   // Current strictness, one row per material (prefers inspection_type='material').
   // Source: strictness.service.ts:611-702 list, :764-794 getCurrentStrictness.
+  // Response contract mirrors the original rjvn WMS /api/iqc/strictness/current:
+  // { strictness, inspectionLevel, aql, isExempt, isSuspended }.
   app.get("/rjvn-iqc/strictness/current", perm, wrap(async (req, res) => {
     const materialId = req.query.materialId;
-    const { rows } = await pgPool.query(`select distinct on (s.material_id)
-        s.*, m.material_code, m.material_name
+    if (!isUuid(materialId)) throw new HttpError(400, "缺少参数 materialId");
+    const { rows } = await pgPool.query(`select s.strictness, s.inspection_level, s.aql
       from public.rjvn_iqc_inspection_strictness s
-      left join public.rjvn_material m on m.id = s.material_id
-      where ($1::uuid is null or s.material_id = $1)
-      order by s.material_id, case when s.inspection_type = 'material' then 0 else 1 end, s._created_at desc`,
-      [isUuid(materialId) ? materialId : null]);
-    res.json({ success: true, data: { rows } });
+      where s.material_id = $1
+      order by case when s.inspection_type = 'material' then 0 else 1 end, s._created_at desc
+      limit 1`,
+      [materialId]);
+    const row = rows[0];
+    const strictness = row?.strictness || "normal";
+    const inspectionLevel = row?.inspection_level || "II";
+    const aql = row?.aql || "0.4";
+    res.json({ success: true, data: {
+      strictness,
+      inspectionLevel,
+      aql,
+      isExempt: strictness === "exempt",
+      isSuspended: strictness === "suspended",
+    } });
   }));
 
   // Strictness ledger list.
@@ -491,8 +503,8 @@ export function registerRjvnIqcRoutes(app, pgPool, requirePermission) {
 
   // Sampling plan calculator. Source: sampling-plan.service.ts:215-294.
   app.get("/rjvn-iqc/sampling/calculate", perm, wrap(async (req, res) => {
-    let qty = req.query.qty, aql = req.query.aql;
-    let inspectionLevel = req.query.inspectionLevel, strictness = req.query.strictness;
+    let qty = req.query.qty ?? req.query.lotSize, aql = req.query.aql;
+    let inspectionLevel = req.query.inspectionLevel ?? req.query.level, strictness = req.query.strictness;
     if (isUuid(req.query.lotId)) {
       const l = await pgPool.query(`select l.total_qty, s.aql, s.inspection_level, s.strictness
         from public.rjvn_iqc_lot l
@@ -714,23 +726,65 @@ export function registerRjvnIqcRoutes(app, pgPool, requirePermission) {
     }
   }));
 
-  // IQC KPI stats over the mirror tables.
+  // IQC KPI stats over the mirror tables. Response contract mirrors the
+  // original rjvn WMS /api/iqc/stats/pass-rate: summary / trend / topMaterials / topSuppliers.
   app.get("/rjvn-iqc/stats", perm, wrap(async (req, res) => {
-    const [totals, byStrictness] = await Promise.all([
-      pgPool.query(`select count(*)::int as lots,
-        count(*) filter (where lower(coalesce(inspection_result,'')) = 'pending')::int as pending,
-        count(*) filter (where lower(coalesce(inspection_result,'')) = 'pass')::int as passed,
-        count(*) filter (where lower(coalesce(inspection_result,'')) in ('fail','reject','hold'))::int as failed
+    const [totals, trend, topMaterials, topSuppliers] = await Promise.all([
+      pgPool.query(`select count(*)::int as total_lots,
+        count(*) filter (where lower(coalesce(inspection_result,'')) = 'pass')::int as passed_lots,
+        count(*) filter (where lower(coalesce(inspection_result,'')) in ('fail','reject','hold'))::int as failed_lots
         from public.rjvn_iqc_lot`),
-      pgPool.query(`select strictness as name, count(*)::int as value
-        from public.rjvn_iqc_inspection_strictness group by strictness order by value desc`),
+      pgPool.query(`select to_char(coalesce(inspection_time, receipt_date), 'YYYY-MM-DD') as period,
+        count(*)::int as total_lots,
+        count(*) filter (where lower(coalesce(inspection_result,'')) = 'pass')::int as passed_lots
+        from public.rjvn_iqc_lot
+        group by 1 order by 1`),
+      pgPool.query(`select m.material_code as material_code, m.material_name as material_name,
+        count(*)::int as total_lots,
+        count(*) filter (where lower(coalesce(l.inspection_result,'')) = 'pass')::int as passed_lots
+        from public.rjvn_iqc_lot l
+        left join public.rjvn_material m on m.id = l.material_id
+        group by m.material_code, m.material_name
+        order by total_lots desc
+        limit 10`),
+      pgPool.query(`select s.supplier_code as supplier_code, s.supplier_name as supplier_name,
+        count(*)::int as total_lots,
+        count(*) filter (where lower(coalesce(l.inspection_result,'')) = 'pass')::int as passed_lots
+        from public.rjvn_iqc_lot l
+        left join public.rjvn_supplier s on s.id = l.supplier_id
+        group by s.supplier_code, s.supplier_name
+        order by total_lots desc
+        limit 10`),
     ]);
     const t = totals.rows[0];
-    const judged = t.passed + t.failed;
+    const total = Number(t.total_lots || 0);
+    const passed = Number(t.passed_lots || 0);
+    const failed = Number(t.failed_lots || 0);
+    const judged = passed + failed;
+    const passRate = judged ? Math.round((passed / judged) * 10000) / 100 : 0;
+    const pct = (n, d) => d ? Math.round((n / d) * 10000) / 100 : 0;
     res.json({ success: true, data: {
-      lots: t.lots, pending: t.pending, passed: t.passed, failed: t.failed,
-      passRate: judged ? Math.round((t.passed / judged) * 10000) / 100 : 0,
-      byStrictness: byStrictness.rows,
+      summary: { totalLots: total, passedLots: passed, failedLots: failed, passRate },
+      trend: trend.rows.map(r => ({
+        period: r.period,
+        totalLots: Number(r.total_lots),
+        passedLots: Number(r.passed_lots),
+        passRate: pct(Number(r.passed_lots), Number(r.total_lots)),
+      })),
+      topMaterials: topMaterials.rows.map(r => ({
+        materialCode: r.material_code,
+        materialName: r.material_name,
+        totalLots: Number(r.total_lots),
+        passedLots: Number(r.passed_lots),
+        passRate: pct(Number(r.passed_lots), Number(r.total_lots)),
+      })),
+      topSuppliers: topSuppliers.rows.map(r => ({
+        supplierCode: r.supplier_code,
+        supplierName: r.supplier_name,
+        totalLots: Number(r.total_lots),
+        passedLots: Number(r.passed_lots),
+        passRate: pct(Number(r.passed_lots), Number(r.total_lots)),
+      })),
     } });
   }));
 }
