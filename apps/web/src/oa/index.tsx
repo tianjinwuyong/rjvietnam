@@ -11,68 +11,67 @@ import {
   type OaPaged,
   type OaStatsOverview,
 } from "./oaApi";
+import { t } from "./i18n";
 
-const words: Record<string, Record<Locale, string>> = {
-  title: { "zh-CN": "OA 协同办公", "vi-VN": "OA văn phòng đốc tác", "en-US": "OA collaboration" },
-  tabOverview: { "zh-CN": "概览", "vi-VN": "Tổng quan", "en-US": "Overview" },
-  tabTodo: { "zh-CN": "待我审批", "vi-VN": "Chờ tôi duyệt", "en-US": "My approvals" },
-  tabMine: { "zh-CN": "我发起的", "vi-VN": "Tôi khởi tạo", "en-US": "Submitted by me" },
-  tabCc: { "zh-CN": "抄送我的", "vi-VN": "CC cho tôi", "en-US": "CC to me" },
-  tabNotifications: { "zh-CN": "通知", "vi-VN": "Thông báo", "en-US": "Notifications" },
-  tabAnnouncements: { "zh-CN": "公告", "vi-VN": "Công báo", "en-US": "Announcements" },
-  todoCount: { "zh-CN": "待办任务", "vi-VN": "Việc chờ xử lý", "en-US": "Pending tasks" },
-  runningCount: { "zh-CN": "在途单据", "vi-VN": "Đang xử lý", "en-US": "In-flight" },
-  completedCount: { "zh-CN": "已完结", "vi-VN": "Hoàn tất", "en-US": "Completed" },
-  announcementUnread: { "zh-CN": "公告未读", "vi-VN": "Công báo chưa đọc", "en-US": "Unread announcements" },
-  colNo: { "zh-CN": "单号", "vi-VN": "Số đơn", "en-US": "No." },
-  colTitle: { "zh-CN": "标题", "vi-VN": "Tiêu đề", "en-US": "Title" },
-  colType: { "zh-CN": "流程类型", "vi-VN": "Loại quy trình", "en-US": "Flow type" },
-  colApplicant: { "zh-CN": "发起人", "vi-VN": "Người khởi tạo", "en-US": "Applicant" },
-  colStatus: { "zh-CN": "状态", "vi-VN": "Trạng thái", "en-US": "Status" },
-  colCreatedAt: { "zh-CN": "发起时间", "vi-VN": "Thời gian tạo", "en-US": "Created" },
-  colFinishedAt: { "zh-CN": "完结时间", "vi-VN": "Thời gian kết thúc", "en-US": "Finished" },
-  colPublisher: { "zh-CN": "发布人", "vi-VN": "Người đăng", "en-US": "Publisher" },
-  colReadCount: { "zh-CN": "已读", "vi-VN": "Đã đọc", "en-US": "Reads" },
-  searchPlaceholder: { "zh-CN": "搜索标题 / 单号", "vi-VN": "Tìm tiêu đề / số đơn", "en-US": "Search title / no." },
-  search: { "zh-CN": "搜索", "vi-VN": "Tìm", "en-US": "Search" },
-  refresh: { "zh-CN": "刷新", "vi-VN": "Làm mới", "en-US": "Refresh" },
-  markAllRead: { "zh-CN": "全部标为已读", "vi-VN": "Đánh dấu tất cả đã đọc", "en-US": "Mark all read" },
-  empty: { "zh-CN": "暂无数据", "vi-VN": "Chưa có dữ liệu", "en-US": "No data" },
-  loading: { "zh-CN": "加载中…", "vi-VN": "Đang tải…", "en-US": "Loading…" },
-  loadFailed: { "zh-CN": "加载失败", "vi-VN": "Tải thất bại", "en-US": "Failed to load" },
-  backToList: { "zh-CN": "返回列表", "vi-VN": "Quay lại danh sách", "en-US": "Back to list" },
-  approve: { "zh-CN": "通过", "vi-VN": "Duyệt qua", "en-US": "Approve" },
-  reject: { "zh-CN": "驳回", "vi-VN": "Từ chối", "en-US": "Reject" },
-  commentLabel: { "zh-CN": "审批意见", "vi-VN": "Ý kiến duyệt", "en-US": "Comment" },
-  actionDone: { "zh-CN": "操作成功", "vi-VN": "Thao tác thành công", "en-US": "Done" },
-  actionFailed: { "zh-CN": "操作失败", "vi-VN": "Thao tác thất bại", "en-US": "Action failed" },
-  auditTrail: { "zh-CN": "审批记录", "vi-VN": "Lịch sử duyệt", "en-US": "Audit trail" },
-  formData: { "zh-CN": "表单内容", "vi-VN": "Nội dung biểu mẫu", "en-US": "Form content" },
-  statusRunning: { "zh-CN": "进行中", "vi-VN": "Đang chạy", "en-US": "Running" },
-  statusCompleted: { "zh-CN": "已通过", "vi-VN": "Đã duyệt", "en-US": "Approved" },
-  statusRejected: { "zh-CN": "已驳回", "vi-VN": "Đã từ chối", "en-US": "Rejected" },
-  statusWithdrawn: { "zh-CN": "已撤回", "vi-VN": "Đã thu hồi", "en-US": "Withdrawn" },
-  statusTerminated: { "zh-CN": "已终止", "vi-VN": "Đã chấm dứt", "en-US": "Terminated" },
-  statusDraft: { "zh-CN": "草稿", "vi-VN": "Bản nháp", "en-US": "Draft" },
-  recent: { "zh-CN": "最近单据", "vi-VN": "Đơn gần đây", "en-US": "Recent instances" },
-  byFlow: { "zh-CN": "按流程类型", "vi-VN": "Theo loại quy trình", "en-US": "By flow type" },
-  unread: { "zh-CN": "未读", "vi-VN": "Chưa đọc", "en-US": "Unread" },
+// UI 键 → 原 OA 词典键（i18n/zh|en|vi.json，措辞与原系统逐字一致）
+const K: Record<string, string> = {
+  title: "app.name",
+  tabOverview: "menu.workbench",
+  tabTodo: "menu.todo",
+  tabMine: "menu.mine",
+  tabCc: "menu.cc",
+  tabNotifications: "announce.cat_notice",
+  tabAnnouncements: "menu.announcements",
+  todoCount: "dash.todoTitle",
+  runningCount: "flowStatus.running",
+  completedCount: "flowStatus.completed",
+  announcementUnread: "announce.unreadTag",
+  colNo: "flowList.instanceNo",
+  colTitle: "flowList.titleCol",
+  colType: "flowList.defCol",
+  colApplicant: "flowList.applicantCol",
+  colStatus: "flowList.statusCol",
+  colCreatedAt: "flowList.time",
+  colPublisher: "announce.publisher",
+  colReadCount: "announce.readCountShort",
+  searchPlaceholder: "common.keyword",
+  search: "common.search",
+  refresh: "common.refresh",
+  markAllRead: "layout.markAllRead",
+  empty: "common.empty",
+  loading: "common.loading",
+  loadFailed: "empty.loadFailed",
+  backToList: "flowDetail.back",
+  approve: "flowDetail.pass",
+  reject: "flowDetail.reject",
+  commentLabel: "flowDetail.approveOpinion",
+  commentPlaceholder: "flowDetail.opinionPlaceholder",
+  actionDone: "flowDetail.actionDone",
+  actionFailed: "common.failed",
+  auditTrail: "flowDetail.log",
+  formData: "flowDetail.applyContent",
+  recent: "dash.recentDocs",
+  byFlow: "admin.byDef",
+  read: "dash.read",
+  unread: "dash.unread",
 };
 
-const w = (key: string, locale: Locale): string => words[key]?.[locale] ?? key;
+const w = (key: string, locale: Locale): string => t(K[key] ?? key, locale);
 
-const statusWordKey: Record<string, string> = {
-  running: "statusRunning",
-  completed: "statusCompleted",
-  approved: "statusCompleted",
-  rejected: "statusRejected",
-  withdrawn: "statusWithdrawn",
-  terminated: "statusTerminated",
-  draft: "statusDraft",
+const statusDictKey: Record<string, string> = {
+  draft: "flowStatus.draft",
+  running: "flowStatus.running",
+  completed: "flowStatus.completed",
+  approved: "flowStatus.approved",
+  rejected: "flowStatus.rejected",
+  withdrawn: "flowStatus.withdrawn",
+  terminated: "flowStatus.terminated",
+  archived: "flowStatus.archived",
+  canceled: "flowStatus.canceled",
 };
 
 function statusLabel(status: string, locale: Locale): string {
-  return w(statusWordKey[status] ?? "statusRunning", locale);
+  return t(statusDictKey[status] ?? "flowStatus.running", locale);
 }
 
 const statusColor: Record<string, string> = {
@@ -221,6 +220,7 @@ function InstanceDetail({
             value={comment}
             onChange={e => setComment(e.target.value)}
             rows={2}
+            placeholder={w("commentPlaceholder", locale)}
             style={{ width: "100%", boxSizing: "border-box", marginBottom: 10 }}
           />
           <div style={{ display: "flex", gap: 8 }}>
@@ -457,7 +457,7 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
                     {notifications.list.map(n => (
                       <tr key={String(n.id)} style={{ fontWeight: n.read_at ? 400 : 700 }}>
                         <td>{n.title}{n.content ? <span style={{ color: "var(--text-muted, #64748b)" }}> — {n.content}</span> : null}</td>
-                        <td>{n.read_at ? w("statusCompleted", locale) : w("unread", locale)}</td>
+                        <td>{n.read_at ? w("read", locale) : w("unread", locale)}</td>
                         <td>{fmtDate(n.created_at, locale)}</td>
                       </tr>
                     ))}
