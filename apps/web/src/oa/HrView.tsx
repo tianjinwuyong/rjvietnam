@@ -147,6 +147,7 @@ function MeetingCreatePage({ locale, onCreated }: { locale: Locale; onCreated: (
   const [attendees, setAttendees] = useState<Array<number | string>>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [agenda, setAgenda] = useState<Array<{ text: string; text_vi: string }>>([]);
 
   useEffect(() => {
     oaApi.users({ scope: "all" }).then(l => setUsers(l || [])).catch(() => setUsers([]));
@@ -167,7 +168,9 @@ function MeetingCreatePage({ locale, onCreated }: { locale: Locale; onCreated: (
         onlineLink: onlineLink.trim() || null,
         hostId: hostId || null,
         recorderId: recorderId || null,
-        agendaItems: [],
+        agendaItems: agenda
+          .map(a => ({ text: a.text.trim(), text_vi: a.text_vi.trim() || null }))
+          .filter(a => a.text),
         attendees: attendees.map(id => ({ userId: id })),
       });
       onCreated();
@@ -237,6 +240,25 @@ function MeetingCreatePage({ locale, onCreated }: { locale: Locale; onCreated: (
           </select>
         </div>
       </div>
+
+      <label style={label}>{t("meeting.agenda", locale)}</label>
+      {agenda.map((a, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, marginBottom: 6, flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: 13, width: 20 }}>{i + 1}</span>
+          <input value={a.text} onChange={e => setAgenda(g => g.map((x, j) => j === i ? { ...x, text: e.target.value } : x))}
+            placeholder={t("meeting.agendaText", locale)} style={{ flex: "1 1 180px", boxSizing: "border-box" }} />
+          <input value={a.text_vi} onChange={e => setAgenda(g => g.map((x, j) => j === i ? { ...x, text_vi: e.target.value } : x))}
+            placeholder={t("meeting.agendaTextVi", locale)} style={{ flex: "1 1 180px", boxSizing: "border-box" }} />
+          <button type="button" style={{ ...btn, padding: "3px 8px" }} disabled={i === 0}
+            onClick={() => setAgenda(g => { const c = [...g]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; return c; })}>↑</button>
+          <button type="button" style={{ ...btn, padding: "3px 8px" }} disabled={i === agenda.length - 1}
+            onClick={() => setAgenda(g => { const c = [...g]; [c[i + 1], c[i]] = [c[i], c[i + 1]]; return c; })}>↓</button>
+          <button type="button" style={{ ...btn, padding: "3px 8px", color: "var(--danger, #b91c1c)" }}
+            onClick={() => setAgenda(g => g.filter((_, j) => j !== i))}>{t("common.delete", locale)}</button>
+        </div>
+      ))}
+      <button type="button" style={{ ...btn, marginBottom: 12, border: "1px solid #0f766e", color: "#0f766e", background: "none", borderRadius: 6 }}
+        onClick={() => setAgenda(g => [...g, { text: "", text_vi: "" }])}>+ {t("meeting.agenda", locale)}</button>
 
       <label style={label}>{t("meeting.attendees", locale)}</label>
       <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 10px", marginBottom: 12 }}>
