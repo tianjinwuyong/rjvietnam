@@ -126,7 +126,18 @@ function strings(file, cjkOnly) {
 const ORACLE_ROOT = "D:/rj/rjvn/WMS-20261019";
 const ozh = strings(path.join(ORACLE_ROOT, "client", "src", "i18n", "locales", "zh.ts"), true);
 const ovi = strings(path.join(ORACLE_ROOT, "client", "src", "i18n", "locales", "vi.ts"), true);
+function wmsStrings(file) {
+  if (!fs.existsSync(file)) return [];
+  const out = new Set();
+  for (const line of fs.readFileSync(file, "utf8").split(/\r?\n/)) {
+    if (!/"wms\./.test(line)) continue;
+    const vals = [...line.matchAll(/"(?:zh-CN|vi-VN)":\s*"([^"]*)"/g)].map((m) => m[1].trim().toLowerCase());
+    for (const v of vals) if (v && /[\u4e00-\u9fff\u00c0-\u024f]/.test(v)) out.add(v);
+  }
+  return [...out];
+}
 const sAll = strings(path.join(ROOT, "apps", "web", "src", "i18n.ts"), true);
+const sWms = wmsStrings(path.join(ROOT, "apps", "web", "src", "i18n.ts"));
 const jaccard = (a, b) => {
   const A = new Set(a), B = new Set(b);
   if (!A.size || !B.size) return 0;
@@ -137,6 +148,9 @@ const frontend = {
   oracleZhLabels: ozh.length, oracleViLabels: ovi.length, smtLabels: sAll.length,
   zhVsSmtOverlapPct: jaccard(ozh, sAll),
   viVsSmtOverlapPct: jaccard(ovi, sAll),
+  smtWmsKeys: sWms.length,
+  wmsZhOverlapPct: jaccard(ozh, sWms),
+  wmsViOverlapPct: jaccard(ovi, sWms),
   sharedZhSample: ozh.filter((x) => sAll.includes(x)).slice(0, 25),
 };
 
@@ -189,8 +203,9 @@ const lines = [
   "",
   "## 前端一致性",
   "",
-  `- 原版中文标签 ${frontend.oracleZhLabels} / 越文 ${frontend.oracleViLabels}；SMT 全量标签 ${frontend.smtLabels}`,
-  `- 标签字面重合：中文 ${frontend.zhVsSmtOverlapPct}% / 越文 ${frontend.viVsSmtOverlapPct}%`,
+  `- 原版中文标签 ${frontend.oracleZhLabels} / 越文 ${frontend.oracleViLabels}；SMT 全量标签 ${frontend.smtLabels}、其中 WMS 键 ${frontend.smtWmsKeys}`,
+  `- 标签字面重合（全量 i18n）：中文 ${frontend.zhVsSmtOverlapPct}% / 越文 ${frontend.viVsSmtOverlapPct}%`,
+  `- 标签字面重合（仅 WMS 键，更公平）：中文 ${frontend.wmsZhOverlapPct}% / 越文 ${frontend.wmsViOverlapPct}%`,
   `- 截图见 shots/（oracle-home/iqc/receipt、smt-home/iqc/receipt）`,
   "",
   "## 判定说明",
