@@ -82,15 +82,20 @@ export type OaViewId =
   | "training"
   | "myExams"
   | "handover"
+  | "meetingCreate"
   | "meetingList"
   | "meetingSeries"
   | "meetingActions"
   | "meetingMinutes"
-  // 品质管理组（IPQC/FAI/点检填写暂留建设中）
+  // 品质管理组（全部实现）
   | "iqcInspect"
   | "mrbReview"
+  | "ipqcFill"
   | "ipqcRecords"
+  | "faiFill"
   | "faiRecords"
+  | "inspectFill"
+  | "inspectRecords"
   | "inspectRecords"
   | "oqcInspect"
   | "qcTemplates"
@@ -134,11 +139,11 @@ export const OA_MENU: OaMenuGroup[] = [
       {
         titleKey: "menu.qcIpqc",
         items: [
-          { titleKey: "ipqcMod.fillTitle" },
+          { titleKey: "ipqcMod.fillTitle", view: "ipqcFill" },
           { titleKey: "ipqcMod.recordsTitle", view: "ipqcRecords" },
-          { titleKey: "faiMod.fillTitle" },
+          { titleKey: "faiMod.fillTitle", view: "faiFill" },
           { titleKey: "faiMod.recordsTitle", view: "faiRecords" },
-          { titleKey: "inspectRt.fillTitle" },
+          { titleKey: "inspectRt.fillTitle", view: "inspectFill" },
           { titleKey: "inspectRt.recordsTitle", view: "inspectRecords" },
         ],
       },
@@ -215,7 +220,7 @@ export const OA_MENU: OaMenuGroup[] = [
         titleKey: "menu.hrMeeting",
         items: [
           { titleKey: "menu.meetingList", view: "meetingList" },
-          { titleKey: "menu.meetingCreate" },
+          { titleKey: "menu.meetingCreate", view: "meetingCreate" },
           { titleKey: "menu.meetingSeries", view: "meetingSeries" },
           { titleKey: "menu.meetingActions", view: "meetingActions" },
           { titleKey: "menu.meetingMinutes", view: "meetingMinutes" },

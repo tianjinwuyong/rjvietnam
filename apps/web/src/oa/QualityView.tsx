@@ -3,6 +3,7 @@ import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { apiClient } from "../api/client";
 import { t } from "./i18n";
 import { GenericListPage, fmtDate, type GenCol } from "./OaGeneric";
+import { QcFillForm } from "./QcFill";
 
 /**
  * 品质管理组 —— IQC 检验 / MRB 评审 / IPQC·FAI·点检记录 / OQC 抽样 / 检验模板库。
@@ -114,13 +115,127 @@ function OqcPage({ locale }: { locale: Locale }) {
   );
 }
 
+// ============ 点检填写 ============
+
+function InspectFillPage({ locale }: { locale: Locale }) {
+  const [rows, setRows] = useState<Array<Record<string, unknown>> | null>(null);
+  const [picked, setPicked] = useState<Record<string, unknown> | null>(null);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const load = useCallback(async () => {
+    setError("");
+    try {
+      const all = await apiClient.get<Array<Record<string, unknown>>>("/api/equipment/tasks");
+      setRows((all || []).filter(r => r.status === "pending"));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  const done = async () => {
+    if (!picked) return;
+    try {
+      await apiClient.post(`/api/equipment/tasks/${picked.id}/done`, { result: result.trim() || null });
+      setMessage(t("equipTask.submitOk", locale));
+      setPicked(null);
+      setResult("");
+      void load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  if (picked) {
+    return (
+      <div className="surface-panel" style={{ padding: "16px 18px", maxWidth: 640 }}>
+        <h3 style={{ margin: "0 0 10px" }}>
+          {t("inspectRt.fillTitle", locale)} · {String(picked.equipment_name ?? picked.equipment_code ?? "-")}
+        </h3>
+        <p style={{ fontSize: 13, color: "var(--text-muted, #64748b)", margin: "0 0 12px" }}>
+          {String(picked.template_name ?? "-")} · {fmtDate(picked.plan_date)}
+        </p>
+        <label style={{ display: "block", marginBottom: 5, fontSize: 13 }}>{t("equipTask.value", locale)}</label>
+        <textarea value={result} onChange={e => setResult(e.target.value)} rows={6}
+          style={{ width: "100%", boxSizing: "border-box", marginBottom: 12, resize: "vertical" }} />
+        {error && <p style={{ color: "var(--danger, #b91c1c)", fontSize: 13 }}>{error}</p>}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={() => void done()}
+            style={{ padding: "8px 18px", cursor: "pointer", background: "#0f766e", color: "#fff", border: 0, borderRadius: 6 }}>
+            {t("equipTask.execute", locale)}
+          </button>
+          <button onClick={() => setPicked(null)} style={{ padding: "8px 14px", cursor: "pointer" }}>{t("common.cancel", locale)}</button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {message && <p style={{ fontSize: 13, color: "#15803d" }}>{message}</p>}
+      {error && <p style={{ color: "var(--danger, #b91c1c)", fontSize: 13 }}>{error}</p>}
+      {!rows ? <div className="empty-state">{t("common.loading", locale)}</div>
+        : rows.length === 0 ? <div className="empty-state">{t("common.empty", locale)}</div>
+          : (
+            <div className="table-shell">
+              <table>
+                <thead>
+                  <tr>
+                    <th>{t("equipment.name", locale)}</th>
+                    <th style={{ width: 130 }}>{t("equipment.code", locale)}</th>
+                    <th style={{ width: 160 }}>{t("inspectTpl.title", locale) === "inspectTpl.title" ? "template" : t("inspectTpl.title", locale)}</th>
+                    <th style={{ width: 110 }}>{t("training.planDate", locale)}</th>
+                    <th style={{ width: 110 }}>{""}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(r => (
+                    <tr key={String(r.id)}>
+                      <td>{String(r.equipment_name ?? "-")}</td>
+                      <td>{String(r.equipment_code ?? "-")}</td>
+                      <td>{String(r.template_name ?? "-")}</td>
+                      <td>{fmtDate(r.plan_date)}</td>
+                      <td>
+                        <button onClick={() => setPicked(r)} style={{ padding: "4px 10px", cursor: "pointer" }}>
+                          {t("equipTask.execute", locale)}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+    </div>
+  );
+}
+
 // ============ 出口 ============
 
 export type QualitySubView =
-  | "iqcInspect" | "mrbReview" | "ipqcRecords" | "faiRecords"
-  | "inspectRecords" | "oqcInspect" | "qcTemplates";
+  | "iqcInspect" | "mrbReview" | "ipqcFill" | "ipqcRecords" | "faiFill" | "faiRecords"
+  | "inspectFill" | "inspectRecords" | "oqcInspect" | "qcTemplates";
 
-export function QualityView({ locale, sub }: { locale: Locale; sub: QualitySubView }) {
+export function QualityView({ locale, sub, onNavigate }: { locale: Locale; sub: QualitySubView; onNavigate?: (sub: QualitySubView) => void }) {
+  // 提报表单：由 sub 直接派生（避免 useState 初始值不随路由更新的缺陷）
+  if (sub === "ipqcFill" || sub === "faiFill") {
+    const back: QualitySubView = sub === "ipqcFill" ? "ipqcRecords" : "faiRecords";
+    return (
+      <QcFillForm
+        key={sub}
+        locale={locale}
+        mode={sub === "ipqcFill" ? "ipqc" : "fai"}
+        onDone={() => onNavigate?.(back)}
+        onCancel={() => onNavigate?.(back)}
+      />
+    );
+  }
+
+  if (sub === "inspectFill") return <InspectFillPage locale={locale} />;
+
   switch (sub) {
     case "iqcInspect":
       return <IqcPage locale={locale} />;

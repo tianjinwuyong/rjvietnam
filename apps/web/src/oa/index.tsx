@@ -350,10 +350,10 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <SysView locale={locale} sub={view} />
   ) : view === "equipment" || view === "equipStocktake" || view === "equipTasks" || view === "equipCalib" || view === "equipAlerts" ? (
     <EquipmentView locale={locale} sub={view} />
-  ) : view === "attendance" || view === "cardRule" || view === "workCalendar" || view === "schedule" || view === "salary" || view === "salaryTemplate" || view === "perfFlow" || view === "training" || view === "myExams" || view === "handover" || view === "meetingList" || view === "meetingSeries" || view === "meetingActions" || view === "meetingMinutes" ? (
-    <HrView locale={locale} sub={view} />
-  ) : view === "iqcInspect" || view === "mrbReview" || view === "ipqcRecords" || view === "faiRecords" || view === "inspectRecords" || view === "oqcInspect" || view === "qcTemplates" ? (
-    <QualityView locale={locale} sub={view} />
+  ) : view === "attendance" || view === "cardRule" || view === "workCalendar" || view === "schedule" || view === "salary" || view === "salaryTemplate" || view === "perfFlow" || view === "training" || view === "myExams" || view === "handover" || view === "meetingCreate" || view === "meetingList" || view === "meetingSeries" || view === "meetingActions" || view === "meetingMinutes" ? (
+    <HrView locale={locale} sub={view} onNavigate={s => setView(s)} />
+  ) : view === "iqcInspect" || view === "mrbReview" || view === "ipqcFill" || view === "ipqcRecords" || view === "faiFill" || view === "faiRecords" || view === "inspectFill" || view === "inspectRecords" || view === "oqcInspect" || view === "qcTemplates" ? (
+    <QualityView locale={locale} sub={view} onNavigate={s => { setWipKey(null); setView(s); }} />
   ) : view === "settings" ? (
     <SettingsView locale={locale} />
   ) : view === "notifications" ? (

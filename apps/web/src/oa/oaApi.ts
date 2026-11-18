@@ -726,6 +726,35 @@ export const oaKnowledgeApi = {
     apiClient.get<OaKnowledgeVersionRow[]>(`/api/knowledge/${id}/versions`),
 };
 
+// ---- 品质填写（IPQC/FAI 提报） ----
+
+export interface OaQcTemplateRow {
+  id: number | string;
+  code?: string | null;
+  name?: string | null;
+  name_vi?: string | null;
+  line?: string | null;
+  shift?: string | null;
+  product_code?: string | null;
+  process?: string | null;
+  content?: string | null;
+  active?: boolean | null;
+}
+
+export const oaQcApi = {
+  ipqcTemplates: () => apiClient.get<OaQcTemplateRow[]>("/api/ipqc/templates"),
+  createIpqcRecord: (body: {
+    templateId: number | string; line?: string | null; shift?: string | null; checkDate?: string | null;
+    content?: string | null; remark?: string | null; abnormal?: boolean; abnormalNote?: string | null; status: "draft" | "submitted";
+  }) => apiClient.post<unknown>("/api/ipqc/records", body),
+
+  faiTemplates: () => apiClient.get<OaQcTemplateRow[]>("/api/fai/templates"),
+  createFaiRecord: (body: {
+    templateId: number | string; productCode?: string | null; batchNo?: string | null; machineCode?: string | null;
+    content?: string | null; remark?: string | null; abnormal?: boolean; abnormalNote?: string | null; status: "draft" | "submitted";
+  }) => apiClient.post<unknown>("/api/fai/records", body),
+};
+
 /** 附件下载/预览 URL：新窗口场景走 query token（见 oa/middleware/index.js）；不传时自动读当前登录 token */
 export function oaFileUrl(filePath: string, token?: string | null): string {
   const base = typeof window !== "undefined"

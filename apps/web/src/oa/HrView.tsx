@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
-import { apiClient } from "../api/client";
+import { apiClient, } from "../api/client";
+import { oaApi, type OaUserOption } from "./oaApi";
 import { t } from "./i18n";
 import { GenericListPage, fmtDate, cell, type GenCol } from "./OaGeneric";
 
@@ -130,15 +131,152 @@ function WorkCalendarPage({ locale }: { locale: Locale }) {
   );
 }
 
+// ============ 会议发起 ============
+
+function MeetingCreatePage({ locale, onCreated }: { locale: Locale; onCreated: () => void }) {
+  const [title, setTitle] = useState("");
+  const [titleVi, setTitleVi] = useState("");
+  const [start, setStart] = useState("");
+  const [end, setEnd] = useState("");
+  const [form, setForm] = useState("offline");
+  const [location, setLocation] = useState("");
+  const [onlineLink, setOnlineLink] = useState("");
+  const [hostId, setHostId] = useState("");
+  const [recorderId, setRecorderId] = useState("");
+  const [users, setUsers] = useState<OaUserOption[]>([]);
+  const [attendees, setAttendees] = useState<Array<number | string>>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    oaApi.users({ scope: "all" }).then(l => setUsers(l || [])).catch(() => setUsers([]));
+  }, []);
+
+  const submit = async () => {
+    setError("");
+    if (!title.trim()) { setError(t("meeting.meetingTitle", locale)); return; }
+    setBusy(true);
+    try {
+      await apiClient.post("/api/meeting", {
+        title: title.trim(),
+        titleVi: titleVi.trim() || null,
+        plannedStart: start || null,
+        plannedEnd: end || null,
+        form,
+        location: location.trim() || null,
+        onlineLink: onlineLink.trim() || null,
+        hostId: hostId || null,
+        recorderId: recorderId || null,
+        agendaItems: [],
+        attendees: attendees.map(id => ({ userId: id })),
+      });
+      onCreated();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const label = { display: "block", marginBottom: 5, fontSize: 13 };
+  const input = { width: "100%", boxSizing: "border-box" as const, marginBottom: 10 };
+
+  return (
+    <div className="surface-panel" style={{ padding: "16px 18px", maxWidth: 720 }}>
+      <h3 style={{ margin: "0 0 14px" }}>{t("menu.meetingCreate", locale)}</h3>
+
+      <label style={label}>{t("meeting.meetingTitle", locale)} *</label>
+      <input value={title} onChange={e => setTitle(e.target.value)} style={input} />
+
+      <label style={label}>{t("meeting.titleVi", locale)}</label>
+      <input value={titleVi} onChange={e => setTitleVi(e.target.value)} style={input} />
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={label}>{t("meeting.plannedStart", locale)}</label>
+          <input type="datetime-local" value={start} onChange={e => setStart(e.target.value)} style={input} />
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={label}>{t("meeting.plannedEnd", locale)}</label>
+          <input type="datetime-local" value={end} onChange={e => setEnd(e.target.value)} style={input} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <label style={label}>{t("meeting.form", locale)}</label>
+          <select value={form} onChange={e => setForm(e.target.value)} style={{ ...input, padding: "6px 8px" }}>
+            <option value="offline">{t("meeting.form_offline", locale)}</option>
+            <option value="online">{t("meeting.form_online", locale)}</option>
+            <option value="hybrid">{t("meeting.form_hybrid", locale)}</option>
+          </select>
+        </div>
+        <div style={{ flex: "1 1 180px" }}>
+          <label style={label}>{t("meeting.location", locale)}</label>
+          <input value={location} onChange={e => setLocation(e.target.value)} style={input} />
+        </div>
+        <div style={{ flex: "1 1 180px" }}>
+          <label style={label}>{t("meeting.onlineLink", locale)}</label>
+          <input value={onlineLink} onChange={e => setOnlineLink(e.target.value)} style={input} />
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={label}>{t("meeting.host", locale)}</label>
+          <select value={hostId} onChange={e => setHostId(e.target.value)} style={{ ...input, padding: "6px 8px" }}>
+            <option value="">—</option>
+            {users.map(u => <option key={String(u.id)} value={String(u.id)}>{u.real_name ?? u.username}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <label style={label}>{t("meeting.recorder", locale)}</label>
+          <select value={recorderId} onChange={e => setRecorderId(e.target.value)} style={{ ...input, padding: "6px 8px" }}>
+            <option value="">—</option>
+            {users.map(u => <option key={String(u.id)} value={String(u.id)}>{u.real_name ?? u.username}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <label style={label}>{t("meeting.attendees", locale)}</label>
+      <div style={{ maxHeight: 180, overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 6, padding: "6px 10px", marginBottom: 12 }}>
+        {users.map(u => {
+          const checked = attendees.includes(u.id);
+          return (
+            <label key={String(u.id)} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, padding: "2px 0" }}>
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={e => setAttendees(a => (e.target.checked ? [...a, u.id] : a.filter(x => String(x) !== String(u.id))))}
+              />
+              {u.real_name ?? u.username}{u.employee_no ? <span style={{ color: "var(--text-muted, #64748b)" }}>（{u.employee_no}）</span> : null}
+            </label>
+          );
+        })}
+      </div>
+
+      {error && <p style={{ color: "var(--danger, #b91c1c)", fontSize: 13 }}>{error}</p>}
+
+      <div style={{ display: "flex", gap: 8 }}>
+        <button disabled={busy} onClick={() => void submit()}
+          style={{ padding: "8px 18px", cursor: "pointer", background: "#0f766e", color: "#fff", border: 0, borderRadius: 6 }}>
+          {t("common.save", locale)}
+        </button>
+        {busy && <span style={{ alignSelf: "center", fontSize: 13 }}>{t("common.loading", locale)}</span>}
+      </div>
+    </div>
+  );
+}
+
 // ============ 出口 ============
 
 export type HrSubView =
   | "attendance" | "cardRule" | "workCalendar" | "schedule"
   | "salary" | "salaryTemplate" | "perfFlow"
   | "training" | "myExams" | "handover"
-  | "meetingList" | "meetingSeries" | "meetingActions" | "meetingMinutes";
+  | "meetingCreate" | "meetingList" | "meetingSeries" | "meetingActions" | "meetingMinutes";
 
-export function HrView({ locale, sub }: { locale: Locale; sub: HrSubView }) {
+export function HrView({ locale, sub, onNavigate }: { locale: Locale; sub: HrSubView; onNavigate?: (sub: HrSubView) => void }) {
   switch (sub) {
     case "attendance":
       return (
@@ -251,6 +389,8 @@ export function HrView({ locale, sub }: { locale: Locale; sub: HrSubView }) {
           ]}
         />
       );
+    case "meetingCreate":
+      return <MeetingCreatePage locale={locale} onCreated={() => onNavigate?.("meetingList")} />;
     case "meetingList":
       return (
         <GenericListPage
