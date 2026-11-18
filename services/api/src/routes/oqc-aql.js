@@ -18,7 +18,7 @@ import { Router } from "express";
 import { randomUUID } from "node:crypto";
 import { getClient, query } from "../db.js";
 import { envelope, errorEnvelope, listEnvelope } from "../shared/helpers.js";
-import { plansFor, verdict } from "../aql.js";
+import { plansFor, verdict, poLotQty, snBelongsToPallet } from "../aql.js";
 
 export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
   const router = Router();
@@ -30,6 +30,8 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
 
   const normalize = (body = {}) => ({
     lotQty: asNum(body.lotQty ?? body.totalQty, 0),
+    poNo: String(body.poNo ?? body.po_no ?? body.customerPoNo ?? "").trim(),
+    palletNo: String(body.palletNo ?? body.pallet_no ?? "").trim(),
     aqlMa: asNum(body.aqlMa, 1.0),
     aqlMi: asNum(body.aqlMi, 2.5),
     level: String(body.level ?? "II").trim().toUpperCase() || "II",
@@ -103,7 +105,21 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
   // ── 新建批 ───────────────────────────────────────────────────────────────
   router.post("/batches", authenticateJWT, requirePermission("quality.inspect"), async (req, res) => {
     const body = req.body?.payload ?? req.body ?? {};
-    const { lotQty, aqlMa, aqlMi, level, severity } = normalize(body);
+    const { lotQty: requestedQty, poNo, palletNo, aqlMa, aqlMi, level, severity } = normalize(body);
+    // 批量未填时按 PO 从 prd_pallet / prd_box 自动推导（源 core/oqc_aql.py _po_lot_qty）
+    let lotQty = requestedQty;
+    let lotBasis = null;
+    if (lotQty <= 0 && poNo) {
+      const derived = await poLotQty(query, poNo);
+      lotQty = derived.n;
+      lotBasis = derived.basis;
+    }
+    if (lotQty <= 0) {
+      return res.status(400).json(errorEnvelope("AQL_PLAN_INVALID",
+        lotBasis === "none"
+          ? `PO ${poNo} 在 prd_pallet / prd_box 中没有台数记录`
+          : "lotQty 必须大于 0"));
+    }
     const plan = plansFor(lotQty, aqlMa, aqlMi, level, severity);
     if (!plan.ok) return res.status(400).json(errorEnvelope("AQL_PLAN_INVALID", plan.note));
 
@@ -114,17 +130,18 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
       const row = (await client.query(
         `INSERT INTO qms_oqc_batches(
            batch_no, shipment_no, customer_code, customer_name, customer_po_no,
+           po_no, pallet_no, lot_basis,
            inspection_type, status, total_qty, sample_size,
            aql_level, inspection_level, severity_profile,
            aql_ma, aql_mi, sample_code, lot_code,
            ac_critical, ac_major, re_major, ac_minor, re_minor,
            ac_reject, re_pass, plan_source, plan_note,
            inspector_id, inspector_name, inspection_started_at, remarks)
-         VALUES($1,$2,$3,$4,$5,$6,'SAMPLING',$7,$8,$9,$10,$11,
-                $12,$13,$14,$15,
-                $16,$17,$18,$19,$20,
-                $21,$22,'z1.4',$23,
-                $24,$25,NOW(),$26)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'SAMPLING',$10,$11,$12,$13,$14,
+                $15,$16,$17,$18,
+                $19,$20,$21,$22,$23,
+                $24,$25,'z1.4',$26,
+                $27,$28,NOW(),$29)
          RETURNING id, batch_no AS "batchNo", status, sample_size AS "sampleSize",
            sample_code AS "sampleCode", ac_critical AS "acCritical",
            ac_major AS "acMajor", re_major AS "reMajor", ac_minor AS "acMinor", re_minor AS "reMinor"`,
@@ -132,6 +149,7 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
           body.customerCode || body.customer_code || null,
           body.customerName || body.customer_name || null,
           body.customerPoNo || body.customer_po_no || null,
+          poNo || null, palletNo || null, lotBasis || 'manual',
           String(body.inspectionType || "OQC").toUpperCase(),
           lotQty, plan.n,
           level, level, severity,
@@ -207,6 +225,17 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
       return res.status(400).json(errorEnvelope("VALIDATION", "FAIL requires severity in CR/MA/MI"));
     }
     try {
+      // 托盘归属校验（源 core/oqc_aql.py _belongs）：批绑定了托盘时，SN 必须属于该托盘
+      const batchRow = (await query(
+        `SELECT pallet_no FROM qms_oqc_batches WHERE id = $1`,
+        [req.params.id],
+      )).rows[0];
+      if (batchRow?.pallet_no) {
+        const belong = await snBelongsToPallet(query, batchRow.pallet_no, sn);
+        if (!belong.ok) {
+          return res.status(400).json(errorEnvelope("SN_PALLET_MISMATCH", belong.reason, { actualPallet: belong.actualPallet || null }));
+        }
+      }
       const existing = (await query(
         `SELECT id FROM qms_oqc_items WHERE batch_id = $1 AND upper(sn) = $2 LIMIT 1`,
         [req.params.id, sn],

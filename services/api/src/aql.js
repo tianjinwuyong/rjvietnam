@@ -169,3 +169,83 @@ export const SEVERITY_LABELS = Object.freeze({
   tightened: "加严检验",
   reduced: "放宽检验",
 });
+
+// ═══════════════════════════════════════════════════════════════════════════
+// OQC 托盘/PO 台数拆分（逐语义移植自源 core/oqc_aql.py 的 _po_lot_qty / _belongs）
+//
+// _po_lot_qty(po_no)：按 PO 号从 prd_pallet 汇总 total_qty；为 0 时再从 prd_box
+// 汇总 qty。用于 OQC 批量创建时，lotQty 未填则自动推导批量。
+// _belongs(pallet_no, sn)：校验 SN 是否属于指定托盘，用于 OQC 扫码归属检查。
+//
+// 两个函数都接收 (query, ...) 作为参数，query 签名与 db.js 的 query 一致，
+// 便于单元测试时 mock，不依赖真实数据库。
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Port of `_po_lot_qty(po_no)` from core/oqc_aql.py.
+ *
+ * Lot quantity basis for an OQC batch when the operator did not enter one:
+ *   1. SUM(total_qty) from prd_pallet where po_no = $1  (basis = "po")
+ *   2. else SUM(qty) from prd_box where po_no = $1      (basis = "box")
+ *   3. else 0                                           (basis = "none")
+ *
+ * @param {Function} query  sql query function (db.js style): (sql, params) => Promise<{rows}>
+ * @param {string|null} poNo
+ * @returns {{n: number, basis: "po"|"box"|"none"}}
+ */
+export async function poLotQty(query, poNo) {
+  const p = String(poNo ?? "").trim();
+  if (!p) return { n: 0, basis: "none" };
+
+  const palletRows = await query(
+    `SELECT COALESCE(SUM(total_qty), 0) AS n FROM prd_pallet WHERE po_no = $1`,
+    [p],
+  );
+  const n = Number(palletRows.rows[0]?.n ?? 0);
+  if (n > 0) return { n, basis: "po" };
+
+  const boxRows = await query(
+    `SELECT COALESCE(SUM(qty), 0) AS n FROM prd_box WHERE po_no = $1`,
+    [p],
+  );
+  const m = Number(boxRows.rows[0]?.n ?? 0);
+  if (m > 0) return { n: m, basis: "box" };
+
+  return { n: 0, basis: "none" };
+}
+
+/**
+ * Port of `_belongs(pallet_no, sn)` from core/oqc_aql.py.
+ *
+ * Verify a scanned SN belongs to the given pallet for OQC rework/inspection:
+ *   - SN must exist in prd_sn
+ *   - prd_sn.pallet_no must equal palletNo (case-insensitive)
+ *
+ * @param {Function} query  sql query function (db.js style)
+ * @param {string|null} palletNo
+ * @param {string|null} sn
+ * @returns {{ok: boolean, reason?: string, actualPallet?: string|null}}
+ */
+export async function snBelongsToPallet(query, palletNo, sn) {
+  const code = String(sn ?? "").trim();
+  if (!code) return { ok: false, reason: "SN 不能为空" };
+
+  const rows = await query(
+    `SELECT pallet_no FROM prd_sn WHERE upper(sn) = upper($1) LIMIT 1`,
+    [code],
+  );
+  const row = rows.rows[0];
+  if (!row) return { ok: false, reason: "SN 未建档" };
+
+  const actual = String(row.pallet_no ?? "").trim();
+  const expected = String(palletNo ?? "").trim();
+  if (!expected) return { ok: true, actualPallet: actual || null };
+  if (actual.toUpperCase() !== expected.toUpperCase()) {
+    return {
+      ok: false,
+      reason: `SN ${code} 属于托盘 ${actual || "(未绑定)"}，不属于托盘 ${expected}`,
+      actualPallet: actual || null,
+    };
+  }
+  return { ok: true, actualPallet: actual };
+}

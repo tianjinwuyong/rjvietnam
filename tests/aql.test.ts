@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { codeFor, plan, plansFor, verdict } from "../services/api/src/aql.js";
+import { codeFor, plan, plansFor, verdict, poLotQty, snBelongsToPallet } from "../services/api/src/aql.js";
 import { CODE_ORDER, PLANS } from "../services/api/src/aql-plans.js";
 
 describe("AQL code letter (Z1.4 general level)", () => {
@@ -88,6 +88,76 @@ describe("AQL verdict", () => {
     const v = verdict({ cr: 0 }, { ok: false, note: "批量必须大于 0" });
     expect(v).toMatchObject({ ok: null, accepted: null });
     expect(v.reasons[0]).toContain("批量必须大于 0");
+  });
+});
+
+// ── OQC 托盘/PO 台数拆分（mock query，不依赖真实数据库）─────────────────────
+const mockQuery = (sql, params) => {
+  const s = sql.toUpperCase();
+  if (s.includes("PRD_PALLET")) {
+    return Promise.resolve({ rows: [{ n: String(params[0] === "PO-A" ? 500 : 0) }] });
+  }
+  if (s.includes("PRD_BOX")) {
+    return Promise.resolve({ rows: [{ n: String(params[0] === "PO-B" ? 300 : 0) }] });
+  }
+  if (s.includes("PRD_SN")) {
+    const sn = String(params[0]).toUpperCase();
+    if (sn === "SN-P1") return Promise.resolve({ rows: [{ pallet_no: "PALL-A" }] });
+    if (sn === "SN-P2") return Promise.resolve({ rows: [{ pallet_no: "PALL-B" }] });
+    return Promise.resolve({ rows: [] });
+  }
+  return Promise.resolve({ rows: [] });
+};
+
+describe("OQC poLotQty (PO → lot qty basis)", () => {
+  it("prefers prd_pallet total_qty over prd_box qty", async () => {
+    const r = await poLotQty(mockQuery, "PO-A");
+    expect(r).toEqual({ n: 500, basis: "po" });
+  });
+
+  it("falls back to prd_box qty when pallet has no record", async () => {
+    const r = await poLotQty(mockQuery, "PO-B");
+    expect(r).toEqual({ n: 300, basis: "box" });
+  });
+
+  it("returns none when neither table has the PO", async () => {
+    const r = await poLotQty(mockQuery, "PO-Z");
+    expect(r).toEqual({ n: 0, basis: "none" });
+  });
+
+  it("returns none for empty PO", async () => {
+    const r = await poLotQty(mockQuery, "");
+    expect(r).toEqual({ n: 0, basis: "none" });
+  });
+});
+
+describe("OQC snBelongsToPallet", () => {
+  it("accepts when the SN belongs to the pallet", async () => {
+    const r = await snBelongsToPallet(mockQuery, "PALL-A", "sn-p1");
+    expect(r).toEqual({ ok: true, actualPallet: "PALL-A" });
+  });
+
+  it("rejects when the SN belongs to a different pallet", async () => {
+    const r = await snBelongsToPallet(mockQuery, "PALL-A", "sn-p2");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain("PALL-B");
+    expect(r.actualPallet).toBe("PALL-B");
+  });
+
+  it("rejects when the SN is not registered", async () => {
+    const r = await snBelongsToPallet(mockQuery, "PALL-A", "sn-ghost");
+    expect(r.ok).toBe(false);
+    expect(r.reason).toContain("未建档");
+  });
+
+  it("accepts any SN when palletNo is empty", async () => {
+    const r = await snBelongsToPallet(mockQuery, "", "sn-p1");
+    expect(r).toEqual({ ok: true, actualPallet: "PALL-A" });
+  });
+
+  it("rejects empty SN", async () => {
+    const r = await snBelongsToPallet(mockQuery, "PALL-A", "");
+    expect(r).toEqual({ ok: false, reason: "SN 不能为空" });
   });
 });
 
