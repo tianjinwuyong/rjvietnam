@@ -818,6 +818,48 @@ const CFG_RES = {
   }),
 };
 
+// ── W9 资源清单（源 emp.py RES）─────────────────────────────────────────
+
+/** 工号必填（工号就是工牌码） */
+function chkEmp(data, _isNew, _old) {
+  if (!String(data.emp_no || "").trim()) return [false, "工号必填（工号就是工牌码）"];
+  return [true, ""];
+}
+
+const EMP_RES = {
+  employees: Res("md_employee", "emp_no", "员工", {
+    search: ["emp_no", "emp_name", "dept", "post"],
+    filters: ["dept", "status", "line_code"],
+    required: ["emp_no", "emp_name"],
+    order: "emp_no",
+    check: chkEmp,
+  }),
+  skills: Res("cfg_skill", "skill_code", "资质项", {
+    search: ["skill_code", "skill_name"],
+    filters: ["process_code", "enabled"],
+    required: ["skill_code", "skill_name"],
+    order: "sort_no, skill_code",
+  }),
+  stasks: Res("cfg_station_skill", "id", "工位资质要求", {
+    search: ["station_code", "type_code", "skill_code"],
+    filters: ["station_code", "type_code", "skill_code"],
+    required: ["skill_code"],
+    order: "type_code, station_code",
+  }),
+  certs: Res("prd_emp_cert", "id", "员工持证", {
+    search: ["emp_no", "skill_code"],
+    filters: ["emp_no", "skill_code", "status"],
+    required: ["emp_no", "skill_code"],
+    order: "emp_no, skill_code",
+  }),
+  exams: Res("prd_emp_exam", "id", "考核记录", {
+    search: ["emp_no", "emp_name", "skill_code", "examiner"],
+    filters: ["emp_no", "skill_code", "pass"],
+    order: "exam_date DESC, id DESC",
+    readonly: true,
+  }),
+};
+
 // ── 路由装配 ────────────────────────────────────────────────────────────────
 
 export function createMesrjRouter({ authenticateJWT }) {
@@ -4498,6 +4540,782 @@ export function createMesrjRouter({ authenticateJWT }) {
     return res.send(r.buffer);
   });
 
+  // ── W9：员工资质与上岗（源 emp.py 自定义接口）─────────────────────────
+
+  function _nowStr() {
+    return new Date().toISOString().slice(0, 19).replace("T", " ");
+  }
+  function _todayStr() {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  async function _empStationSkills(station_code) {
+    const st = (await query("SELECT station_code, type_code FROM md_station WHERE station_code=$1", [station_code])).rows[0];
+    const out = [], seen = new Set();
+    const rows = (await query("SELECT skill_code FROM cfg_station_skill WHERE station_code=$1 ORDER BY id", [station_code])).rows;
+    for (const r of rows) {
+      if (r.skill_code && !seen.has(r.skill_code)) { seen.add(r.skill_code); out.push(r.skill_code); }
+    }
+    if (out.length) return _empSkillNames(out);
+    if (st && st.type_code) {
+      const rows2 = (await query("SELECT skill_code FROM cfg_station_skill WHERE station_code='' AND type_code=$1 ORDER BY id", [st.type_code])).rows;
+      for (const r of rows2) {
+        if (r.skill_code && !seen.has(r.skill_code)) { seen.add(r.skill_code); out.push(r.skill_code); }
+      }
+    }
+    return _empSkillNames(out);
+  }
+
+  async function _empSkillNames(codes) {
+    if (!codes.length) return [];
+    const ph = codes.map((_, i) => `$${i + 1}`).join(",");
+    const m = {};
+    const rs = (await query(`SELECT skill_code, skill_name FROM cfg_skill WHERE skill_code IN (${ph})`, codes)).rows;
+    for (const r of rs) m[r.skill_code] = r.skill_name;
+    return codes.map(c => ({ skill_code: c, skill_name: m[c] || c }));
+  }
+
+  async function _empEmployee(emp_no) {
+    const r = (await query("SELECT * FROM md_employee WHERE emp_no=$1", [(emp_no || "").trim()])).rows[0];
+    return r || null;
+  }
+
+  async function _empCertOf(emp_no, skill_code) {
+    const r = (await query("SELECT * FROM prd_emp_cert WHERE emp_no=$1 AND skill_code=$2", [emp_no, skill_code])).rows[0];
+    return r || null;
+  }
+
+  function _empCertState(cert) {
+    if (!cert) return "无证";
+    let st = cert.status || "合格";
+    const exp = (cert.expire_date || "").trim();
+    const today = _todayStr();
+    if (st === "合格" && exp && exp < today) return "过期";
+    return st;
+  }
+
+  async function _empActiveAuth(emp_no, station_code) {
+    const now = _nowStr();
+    const r = (await query(
+      "SELECT * FROM prd_emp_auth WHERE emp_no=$1 AND station_code=$2 AND status='有效' AND (expire_at='' OR expire_at>=$3) ORDER BY id DESC LIMIT 1",
+      [emp_no, station_code, now])).rows[0];
+    return r || null;
+  }
+
+  async function _empCheckEnabled() {
+    const v = await getParam("emp.check_enabled", "0");
+    return ["1", "true", "on"].includes(String(v || "0").trim());
+  }
+
+  async function _empCheck(emp_no, station_code) {
+    emp_no = String(emp_no || "").trim();
+    if (!emp_no) return { ok: false, code: "NO_EMP", msg: "没有识别到员工工号", temp: 0 };
+    const emp = await _empEmployee(emp_no);
+    if (!emp) return { ok: false, code: "NO_EMP", msg: `工号 ${emp_no} 不在员工档案里`, temp: 0 };
+    if (Number(emp.status || 0) !== 1) {
+      return { ok: false, code: "LEFT", emp, msg: `${emp.emp_name || emp_no} 已离职，不能上岗`, temp: 0 };
+    }
+    const need = await _empStationSkills(station_code);
+    if (!need.length) {
+      return { ok: true, code: "NO_SKILL", emp, temp: 0, msg: "该工位未配置资质要求" };
+    }
+    const bad = [];
+    for (const s of need) {
+      const c = await _empCertOf(emp_no, s.skill_code);
+      if (_empCertState(c) !== "合格") bad.push({ skill_code: s.skill_code, skill_name: s.skill_name, state: _empCertState(c) });
+    }
+    if (!bad.length) {
+      return { ok: true, code: "OK", emp, temp: 0, msg: `${emp.emp_name || emp_no} 资质有效` };
+    }
+    const au = await _empActiveAuth(emp_no, station_code);
+    if (au) {
+      return { ok: true, code: "BY_AUTH", emp, temp: 1, auth: au, bad,
+        msg: `${emp.emp_name || emp_no} 资质不合规，凭班长临时授权放行（至 ${(au.expire_at || "").slice(0, 16)}）` };
+    }
+    const b0 = bad[0];
+    const label = { "无证": "没有", "不合格": "考核不合格", "过期": "已过期", "停用": "已停用" }[b0.state] || b0.state;
+    const code = { "无证": "NO_CERT", "不合格": "FAILED", "过期": "EXPIRED", "停用": "DISABLED" }[b0.state] || "NO_CERT";
+    return { ok: false, code, emp, bad, temp: 0,
+      msg: `${emp.emp_name || emp_no} 的「${b0.skill_name}」资质${label}，不能操作该工位（请联系班长）` };
+  }
+
+  async function _empRecordExam(emp_no, skill_code, exam_date, score, passed, examiner, remark, valid_months, emp_name) {
+    emp_no = String(emp_no || "").trim();
+    if (!emp_no || !skill_code) return [false, "工号和资质项必填"];
+    const emp = await _empEmployee(emp_no);
+    if (!emp) return [false, `工号 ${emp_no} 不在员工档案里（请先建员工）`];
+    const name = emp_name || emp.emp_name || "";
+    await query(
+      `INSERT INTO prd_emp_exam (emp_no, emp_name, skill_code, exam_date, score, pass, examiner, remark, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [emp_no, name, skill_code, exam_date || _todayStr(),
+       score !== null && score !== "" ? Number(score) : null,
+       passed ? 1 : 0, examiner || "", remark || "", _nowStr()]);
+    let exp = "";
+    if (passed && Number(valid_months || 0) > 0) {
+      try {
+        const base = new Date((exam_date || _todayStr()).slice(0, 10));
+        exp = new Date(base.getTime() + 30 * Number(valid_months) * 86400000).toISOString().slice(0, 10);
+      } catch { exp = ""; }
+    }
+    const sk = (await query("SELECT skill_name FROM cfg_skill WHERE skill_code=$1", [skill_code])).rows[0];
+    const data = {
+      emp_no, skill_code, skill_name: (sk && sk.skill_name) || "", pass_date: exam_date || _todayStr(),
+      expire_date: exp, status: passed ? "合格" : "不合格",
+      exam_score: score !== null && score !== "" ? Number(score) : null, source: "考核", updated_at: _nowStr(),
+    };
+    const old = await _empCertOf(emp_no, skill_code);
+    if (old) {
+      await query(`UPDATE prd_emp_cert SET skill_code=$2, skill_name=$3, pass_date=$4, expire_date=$5, status=$6, exam_score=$7, source=$8, updated_at=$9 WHERE id=$1`,
+        [old.id, data.skill_code, data.skill_name, data.pass_date, data.expire_date, data.status, data.exam_score, data.source, data.updated_at]);
+    } else {
+      await query(`INSERT INTO prd_emp_cert (emp_no, skill_code, skill_name, pass_date, expire_date, status, exam_score, source, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [data.emp_no, data.skill_code, data.skill_name, data.pass_date, data.expire_date, data.status, data.exam_score, data.source, data.updated_at]);
+    }
+    return [true, `已记录：${name} ${skill_code} ${passed ? "合格" : "不合格"}`];
+  }
+
+  async function _empOnDuty(station_code) {
+    const r = (await query("SELECT * FROM prd_emp_login WHERE station_code=$1 AND status='在岗' ORDER BY id DESC LIMIT 1", [station_code])).rows[0];
+    return r || null;
+  }
+
+  router.get("/emp/overview", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const total = Number((await query("SELECT COUNT(*)::int AS n FROM md_employee WHERE status=1")).rows[0].n || 0);
+    const certs = Number((await query("SELECT COUNT(*)::int AS n FROM prd_emp_cert WHERE status='合格'")).rows[0].n || 0);
+    const failed = Number((await query("SELECT COUNT(*)::int AS n FROM prd_emp_cert WHERE status='不合格'")).rows[0].n || 0);
+    const today = _todayStr();
+    let soon = 0, expired = 0;
+    const rows = (await query("SELECT expire_date, status FROM prd_emp_cert WHERE status='合格' AND COALESCE(expire_date,'')<>''")).rows;
+    for (const r of rows) {
+      try {
+        const d = String(r.expire_date || "").slice(0, 10);
+        if (!d) continue;
+        if (d < today) expired += 1;
+        else if (new Date(d).getTime() - new Date(today).getTime() <= 30 * 86400000) soon += 1;
+      } catch { continue; }
+    }
+    const onDuty = Number((await query("SELECT COUNT(*)::int AS n FROM prd_emp_login WHERE status='在岗'")).rows[0].n || 0);
+    const now = _nowStr();
+    const authActive = Number((await query("SELECT COUNT(*)::int AS n FROM prd_emp_auth WHERE status='有效' AND (expire_at='' OR expire_at>=$1)", [now])).rows[0].n || 0);
+    return ok(res, {
+      emp_total: total, cert_ok: certs, cert_failed: failed,
+      cert_expiring: soon, cert_expired: expired,
+      check_enabled: await _empCheckEnabled(),
+      on_duty: onDuty, auth_active: authActive,
+    });
+  });
+
+  router.get("/emp/check", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const emp_no = String(req.query.emp_no || "").trim();
+    const station_code = String(req.query.station_code || "").trim();
+    if (!station_code) return fail(res, "请给工位");
+    const r = await _empCheck(emp_no, station_code);
+    r.need = await _empStationSkills(station_code);
+    r.enabled = await _empCheckEnabled();
+    return ok(res, r);
+  });
+
+  router.post("/emp/exam/entry", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    const [okk, msg] = await _empRecordExam(
+      d.emp_no, d.skill_code, String(d.exam_date || _todayStr()).slice(0, 10),
+      d.score, Boolean(Number(d.pass || 1) || 0),
+      (req.mesrjUser || {}).emp_name || (req.mesrjUser || {}).login_name || "",
+      d.remark || "", Number(d.valid_months || 0));
+    if (!okk) return fail(res, msg);
+    await audit((req.mesrjUser || {}).login_name || "", "员工资质", "录入考核",
+      `${d.emp_no} / ${d.skill_code}`, msg);
+    return ok(res, null, msg);
+  });
+
+  router.post("/emp/exam/import", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    const text = String(d.text || "").trim();
+    if (!text) return fail(res, "内容为空，请粘贴表格");
+    const skills = {};
+    const srows = (await query("SELECT skill_code, skill_name FROM cfg_skill")).rows;
+    for (const r of srows) {
+      skills[String(r.skill_code || "").toUpperCase()] = r.skill_code;
+      skills[String(r.skill_name || "").trim().toUpperCase()] = r.skill_code;
+    }
+    const by = (req.mesrjUser || {}).login_name || "";
+    let okN = 0; const errs = [];
+    const passLine = Number(d.pass_line || 60);
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      if (i === 0 && (/工号/.test(line) || /emp/i.test(line))) continue;
+      const parts = line.replace("\t", ",").split(",").map(x => x.trim());
+      if (parts.length < 4) {
+        errs.push(`第 ${i + 1} 行字段不够（要 工号,姓名,资质项,成绩[,日期,月数]）：${line}`);
+        continue;
+      }
+      const [emp_no, name, skill_raw, score] = parts;
+      const exam_date = (parts[4] || _todayStr()).slice(0, 10);
+      const months = parts[5] || "0";
+      const sc = skills[String(skill_raw).toUpperCase()];
+      if (!sc) { errs.push(`第 ${i + 1} 行：不认识资质项「${skill_raw}」`); continue; }
+      let score_v;
+      try { score_v = score ? Number(score) : null; } catch { score_v = null; }
+      const passed = score_v === null ? true : score_v >= passLine;
+      let months_v;
+      try { months_v = Number(parseFloat(months || 0)); } catch { months_v = 0; }
+      const [okk, msg] = await _empRecordExam(emp_no, sc, exam_date, score_v, passed, by, "批量导入", months_v, name);
+      if (okk) okN++; else errs.push(`第 ${i + 1} 行：${msg}`);
+    }
+    await audit(by, "员工资质", "批量导入考核", "", `成功 ${okN} / 失败 ${errs.length}`);
+    return ok(res, { ok: okN, failed: errs.length, errors: errs.slice(0, 50) },
+      `导入完成：成功 ${okN} 条，失败 ${errs.length} 条`);
+  });
+
+  router.post("/emp/login", requireMesrjPerm("prod.pass"), async (req, res) => {
+    const d = req.body || {};
+    const emp_no = String(d.emp_no || "").trim();
+    const station_code = String(d.station_code || "").trim();
+    if (!station_code) return fail(res, "请选择工位");
+    const r = await _empCheck(emp_no, station_code);
+    if (!r.ok) return ok(res, { accepted: false, msg: r.msg, code: r.code, emp: r.emp || null }, r.msg);
+    const st = (await query("SELECT line_code, station_name, short_name FROM md_station WHERE station_code=$1", [station_code])).rows[0];
+    const old = await _empOnDuty(station_code);
+    if (old && old.emp_no !== emp_no) {
+      await query("UPDATE prd_emp_login SET status='已离岗', out_at=$1 WHERE id=$2", [_nowStr(), old.id]);
+    }
+    const now = _nowStr();
+    await query(`INSERT INTO prd_emp_login (emp_no, emp_name, station_code, line_code, work_date, shift_code, in_at, status, bind_by, remark)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [emp_no, (r.emp || {}).emp_name || "", station_code, (st && st.line_code) || "", _todayStr(),
+       String(d.shift_code || "").trim(), now, "在岗", (req.mesrjUser || {}).login_name || "",
+       r.temp ? "临时授权上岗" : ""]);
+    await audit((req.mesrjUser || {}).login_name || "", "员工资质", "上岗", emp_no,
+      `${station_code} / ${r.msg}`);
+    return ok(res, { accepted: true, emp: r.emp || null, temp: r.temp, msg: `${(r.emp || {}).emp_name} 已上岗：${r.msg}`},
+      `${(r.emp || {}).emp_name} 已上岗`);
+  });
+
+  router.post("/emp/logout", requireMesrjPerm("prod.pass"), async (req, res) => {
+    const d = req.body || {};
+    const emp_no = String(d.emp_no || "").trim();
+    const station_code = String(d.station_code || "").trim();
+    if (!emp_no && !station_code) return fail(res, "给工号或工位");
+    let sql = "SELECT * FROM prd_emp_login WHERE status='在岗'";
+    const args = [];
+    if (emp_no) { sql += " AND emp_no=$" + (args.length + 1); args.push(emp_no); }
+    if (station_code) { sql += " AND station_code=$" + (args.length + 1); args.push(station_code); }
+    const rows = (await query(sql, args)).rows;
+    if (!rows.length) return fail(res, "没有在岗记录");
+    for (const r of rows) {
+      await query("UPDATE prd_emp_login SET status='已离岗', out_at=$1 WHERE id=$2", [_nowStr(), r.id]);
+    }
+    return ok(res, { count: rows.length }, `已离岗 ${rows.length} 条`);
+  });
+
+  router.get("/emp/duty", requireMesrjPerm("prod.pass"), async (req, res) => {
+    const rows = (await query("SELECT * FROM prd_emp_login WHERE status='在岗' ORDER BY station_code")).rows;
+    for (const r of rows) {
+      const st = (await query("SELECT short_name, station_name FROM md_station WHERE station_code=$1", [r.station_code])).rows[0];
+      r.station_name = st ? (st.short_name || st.station_name) : r.station_code;
+    }
+    return ok(res, rows);
+  });
+
+  router.post("/emp/auth", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    const emp_no = String(d.emp_no || "").trim();
+    const station_code = String(d.station_code || "").trim();
+    if (!emp_no || !station_code) return fail(res, "工号和工位必填");
+    if (!(await _empEmployee(emp_no))) return fail(res, `工号 ${emp_no} 不在员工档案里`);
+    const reason = String(d.reason || "").trim();
+    if (!reason) return fail(res, "临时授权必须写原因（会记入审计）");
+    let hours;
+    try { hours = Number(d.hours || 4); } catch { hours = 4; }
+    const exp = new Date(Date.now() + hours * 3600000).toISOString().slice(0, 19).replace("T", " ");
+    const sks = await _empStationSkills(station_code);
+    await query(`INSERT INTO prd_emp_auth (emp_no, station_code, skill_code, authorized_by, reason, expire_at, status, created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [emp_no, station_code, sks.map(s => s.skill_code).join(","),
+       (req.mesrjUser || {}).emp_name || (req.mesrjUser || {}).login_name || "", reason, exp, "有效", _nowStr()]);
+    await audit((req.mesrjUser || {}).login_name || "", "员工资质", "临时授权", emp_no,
+      `${station_code} / ${hours}H / ${reason}`);
+    return ok(res, { expire_at: exp }, `已授权至 ${exp.slice(0, 16)}`);
+  });
+
+  router.post("/emp/auth/revoke", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    const aid = d.id;
+    if (!aid) return fail(res, "缺少 id");
+    await query("UPDATE prd_emp_auth SET status='已撤销' WHERE id=$1", [aid]);
+    await audit((req.mesrjUser || {}).login_name || "", "员工资质", "撤销授权", String(aid));
+    return ok(res, null, "已撤销");
+  });
+
+  router.get("/emp/auth/list", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const rows = (await query("SELECT * FROM prd_emp_auth ORDER BY id DESC LIMIT 200")).rows;
+    const now = _nowStr();
+    for (const r of rows) {
+      if (r.status === "有效" && r.expire_at && r.expire_at < now) r.status = "已过期";
+    }
+    return ok(res, rows);
+  });
+
+  // ── W9：工程变更（源 ecn.py，17 路由，eng_change/item/flow 三表）────────
+  // 数据库时区：时间列全是 varchar（与 migration 285 一致），统一用 nowStr() "YYYY-MM-DD HH:MM:SS"。
+
+  function _ecnF(v, d = 0) {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : d;
+  }
+
+  async function _ecnSafeSum(tbl, materialCode) {
+    if (!materialCode) return 0;
+    try {
+      const r = await query(`SELECT COALESCE(SUM(qty),0) AS s FROM ${tbl} WHERE material_code=$1`, [materialCode]);
+      return Number(r.rows[0] && r.rows[0].s != null ? r.rows[0].s : 0);
+    } catch { return 0; } // erp_stock/erp_inventory 可能尚未建，评估不许因表缺失挂掉
+  }
+
+  async function _ecnGenNo(type = "ECN") {
+    const day = todayStr().slice(0, 10).replace(/-/g, "").slice(2);
+    const pre = `${(type || "ECN").toUpperCase()}-${day}-`;
+    let n = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE ecn_no LIKE $1", [pre + "%"])).rows[0].n || 0) + 1;
+    while ((await query("SELECT 1 FROM eng_change WHERE ecn_no=$1", [pre + String(n).padStart(3, "0")])).rows[0]) n += 1;
+    return pre + String(n).padStart(3, "0");
+  }
+
+  async function _ecnFlow(ecnNo, node, action, actor, opinion = "") {
+    await query("INSERT INTO eng_change_flow (ecn_no,node,action,actor,opinion,at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [ecnNo, node, action, actor || "", opinion || "", nowStr()]);
+  }
+
+  async function _ecnOne(ecnNo) {
+    const r = await query("SELECT * FROM eng_change WHERE ecn_no=$1", [ecnNo]);
+    return r.rows[0] || null;
+  }
+
+  async function _ecnItems(ecnNo) {
+    const r = await query("SELECT * FROM eng_change_item WHERE ecn_no=$1 ORDER BY seq_no, id", [ecnNo]);
+    return r.rows;
+  }
+
+  async function _ecnFlows(ecnNo) {
+    const r = await query("SELECT * FROM eng_change_flow WHERE ecn_no=$1 ORDER BY id", [ecnNo]);
+    return r.rows;
+  }
+
+  function _ecnMoGe(a, b) {
+    a = String(a || "").trim(); b = String(b || "").trim();
+    if (!b) return true;
+    if (!a) return false;
+    if (a.length === b.length) return a >= b;
+    try { return Number(a) >= Number(b); } catch { return a >= b; }
+  }
+
+  async function _ecnEvaluate(ecnNo) {
+    const e = await _ecnOne(ecnNo);
+    if (!e) return { ok: false, msg: `变更单不存在：${ecnNo}` };
+    const pc = String(e.product_code || "").trim();
+    const oldMat = String(e.old_material || "").trim();
+    let mos = [], wip = 0, done = 0, pallets = 0;
+    if (pc) {
+      try {
+        mos = (await query("SELECT mo_no,product_code,plan_qty,out_qty,line_code,status,plan_start,po_no FROM ord_mo WHERE product_code=$1 AND COALESCE(status,'') NOT IN ('已完工','已关闭','取消','已取消') ORDER BY mo_no", [pc])).rows;
+      } catch { mos = []; }
+    }
+    try {
+      wip = Number((await query("SELECT COUNT(*)::int AS n FROM prd_sn WHERE COALESCE(status,'') IN ('在制','待修','待检')" + (pc ? " AND product_code=$2" : ""), pc ? [pc] : [])).rows[0].n || 0);
+    } catch {}
+    try {
+      done = Number((await query("SELECT COUNT(*)::int AS n FROM prd_sn WHERE COALESCE(status,'') IN ('已完工','已入库','已出货')" + (pc ? " AND product_code=$2" : ""), pc ? [pc] : [])).rows[0].n || 0);
+    } catch {}
+    const stockM = await _ecnSafeSum("erp_stock", oldMat);
+    const stockW = await _ecnSafeSum("erp_inventory", oldMat);
+    if (pc) {
+      try {
+        pallets = Number((await query("SELECT COUNT(*)::int AS n FROM prd_pallet WHERE COALESCE(oqc_status,'')<>'' AND COALESCE(po_no,'')<>'' AND COALESCE(product_code,'')=$1", [pc])).rows[0].n || 0);
+      } catch {}
+    }
+    const impact = {
+      product_code: pc, at: nowStr(), open_mo_count: mos.length,
+      open_mos: mos.slice(0, 50), wip_qty: wip, done_qty: done,
+      old_material: oldMat, old_stock_mes: _ecnF(stockM), old_stock_wms: _ecnF(stockW),
+      old_stock: Math.max(stockM, stockW), pallets, verdict: "",
+    };
+    const bits = [];
+    if (impact.open_mo_count) bits.push(`受影响未完工工单 ${impact.open_mo_count} 个`);
+    if (impact.wip_qty) bits.push(`在制 ${impact.wip_qty} 台`);
+    if (impact.done_qty) bits.push(`已产出 ${impact.done_qty} 台`);
+    if (oldMat) bits.push(`旧料 ${oldMat} 库存 ${impact.old_stock}`);
+    if (impact.pallets) bits.push(`已封板 ${impact.pallets} 板（一旦出货只能做售后）`);
+    impact.verdict = bits.join("；") || "未指定产品/物料，影响面需人工确认";
+    await query("UPDATE eng_change SET impact_json=$1, updated_at=$2 WHERE ecn_no=$3", [JSON.stringify(impact), nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "影响评估", "评估", "system", impact.verdict);
+    return { ok: true, impact };
+  }
+
+  // 字典 / 看板：登录即可
+  router.get("/ecn/meta", requireMesrjPerm("prod.trace"), async (_req, res) => {
+    const TYPES = [["ECN", "ECN 工程变更（内部）"], ["PCN", "PCN 产品变更通知（对客户）"], ["DEV", "DEV 临时偏离（一次性放行）"]];
+    const REASONS = [["customer","客户要求"],["design","设计改进"],["cost","成本/替代料"],["material","物料停产/缺料"],["process","工艺/设备变更"],["supplier","供应商变更"],["regulation","法规/环保"],["quality","质量改善"],["other","其他"]];
+    const EFFECTIVITY = [["now","立即生效（批准即切换）"],["date","指定日期起生效"],["mo","指定工单起生效"],["run_out_old","用完旧料后切换（人工确认）"]];
+    const ITEM_TYPES = ["物料","BOM","工艺路线","工装治具","检验标准","包装","标签","设备程序","SOP","培训","软件/固件"];
+    const ACTIONS = ["替换","新增","取消","升版","参数调整","无变化"];
+    const RISK = ["低","中","高"];
+    const STATUS = ["草稿","待审批","已批准","执行中","待验证","已关闭","已拒绝","已取消"];
+    const stats = await _ecnStats();
+    return ok(res, {
+      types: TYPES.map(([v, t]) => ({ v, t })),
+      reasons: REASONS.map(([v, t]) => ({ v, t })),
+      effectivity: EFFECTIVITY.map(([v, t]) => ({ v, t })),
+      item_types: ITEM_TYPES, actions: ACTIONS, risk: RISK, status: STATUS, stats,
+    });
+  });
+
+  router.get("/ecn/list", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const a = req.query;
+    const status = String(a.status || "").trim();
+    const kw = String(a.kw || "").trim();
+    const product = String(a.product || "").trim();
+    const ecnType = String(a.type || "").trim();
+    const limit = Math.min(Math.max(parseInt(a.limit || "200", 10) || 200, 1), 1000);
+    const w = ["1=1"], args = [];
+    if (status) {
+      if (status === "未完结") w.push("status IN ('待审批','已批准','执行中','待验证')");
+      else { w.push(`status=$${args.length + 1}`); args.push(status); }
+    }
+    if (ecnType) { w.push(`ecn_type=$${args.length + 1}`); args.push(ecnType); }
+    if (product) { w.push(`(product_code LIKE $${args.length + 1} OR product_model LIKE $${args.length + 2})`); args.push(`%${product}%`, `%${product}%`); }
+    if (kw) { w.push(`(ecn_no LIKE $${args.length + 1} OR title LIKE $${args.length + 2} OR old_material LIKE $${args.length + 3} OR new_material LIKE $${args.length + 4} OR ref_no LIKE $${args.length + 5})`); args.push(`%${kw}%`,`%${kw}%`,`%${kw}%`,`%${kw}%`,`%${kw}%`); }
+    const rows = (await query(
+      `SELECT id,ecn_no,ecn_type,title,change_reason,product_code,product_model,old_material,new_material,effectivity,effective_date,effective_mo_no,risk_level,status,need_fai,need_customer,block_pass,owner,dept,impact_json,created_at,approved_at,effective_at,fai_result,customer_reply FROM eng_change WHERE ${w.join(" AND ")} ORDER BY id DESC LIMIT $${args.length + 1}`, [...args, limit])).rows;
+    const out = [];
+    for (const r of rows) {
+      const d = { ...r };
+      try { const imp = JSON.parse(d.impact_json || "{}"); d.impact_verdict = imp.verdict || ""; d.wip_qty = imp.wip_qty || 0; d.open_mo_count = imp.open_mo_count || 0; d.old_stock = imp.old_stock || 0; } catch { d.impact_verdict = ""; d.wip_qty = 0; d.open_mo_count = 0; d.old_stock = 0; }
+      delete d.impact_json;
+      out.push(d);
+    }
+    return ok(res, { rows: out, stats: await _ecnStats() });
+  });
+
+  router.get("/ecn/:ecn_no", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, `变更单不存在：${ecnNo}`);
+    const d = { ...e };
+    try { d.impact = JSON.parse(d.impact_json || "{}"); } catch { d.impact = {}; }
+    d.items = await _ecnItems(ecnNo);
+    d.flows = await _ecnFlows(ecnNo);
+    // 当前该不该生效（对默认工单/现在）
+    let mo = String(d.effective_mo_no || "").trim();
+    if (!mo) {
+      try { mo = String((await query("SELECT mo_no FROM ord_mo WHERE product_code=$1 ORDER BY mo_no DESC LIMIT 1", [d.product_code || ""])).rows[0]?.mo_no || ""); } catch { mo = ""; }
+    }
+    const hit = _ecnMoGe(mo, d.effective_mo_no || "") && (d.effectivity || "now") === "now";
+    d.switch_now = { hit: hit ? 1 : 0, why: hit ? "立即生效" : "未切换", probe_mo: mo };
+    return ok(res, d);
+  });
+
+  const _ECN_FIELDS = ("ecn_type,title,change_reason,reason_note,customer_code,ref_no,product_code,product_model,po_no,line_code,bom_from,bom_to,old_material,new_material,old_qty,new_qty,unit,before_desc,after_desc,effectivity,effective_date,effective_mo_no,risk_level,need_fai,need_customer,block_pass,owner,dept").split(",");
+
+  router.post("/ecn/create", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const typ = String(d.ecn_type || "ECN").trim().toUpperCase();
+    if (!["ECN", "PCN", "DEV"].includes(typ)) return fail(res, "变更类型只支持 ECN / PCN / DEV");
+    if (!String(d.title || "").trim()) return fail(res, "变更主题不能为空");
+    if (!String(d.product_code || "").trim() && !String(d.old_material || "").trim()) return fail(res, "至少填「成品编码」或「旧物料编码」之一，否则影响面算不出来");
+    const no = await _ecnGenNo(typ);
+    const data = {};
+    for (const k of _ECN_FIELDS) {
+      let v = d[k];
+      if (k === "old_qty" || k === "new_qty") v = _ecnF(v);
+      else if (k === "need_fai" || k === "need_customer" || k === "block_pass") v = ["1","true","on","yes"].includes(String(v).toLowerCase()) ? 1 : 0;
+      else v = v === null || v === undefined ? "" : String(v).trim();
+      data[k] = v;
+    }
+    data.ecn_no = no; data.ecn_type = typ;
+    data.effectivity = data.effectivity || "now";
+    data.risk_level = data.risk_level || "中";
+    data.unit = data.unit || "PCS";
+    data.status = "草稿";
+    data.created_by = user; data.created_at = nowStr(); data.updated_at = nowStr();
+    const cols = Object.keys(data);
+    await query(`INSERT INTO eng_change (${cols.join(",")}) VALUES (${cols.map(() => "?").join(",")})`, cols.map(c => data[c]));
+    await _ecnFlow(no, "建单", "创建", user, data.title || "");
+    await audit(user, "工程变更", "建单", no, data.title || "");
+    return ok(res, { ecn_no: no }, `已建单 ${no}（草稿）`);
+  });
+
+  router.post("/ecn/:ecn_no/update", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if (!["草稿", "待审批"].includes(e.status || "")) return fail(res, `只有「草稿 / 待审批」状态能改内容；已批准的变更要改，请作废后另开一张（留痕）`);
+    const sets = [], args = [];
+    for (const k of Object.keys(d)) {
+      if (!_ECN_FIELDS.includes(k)) continue;
+      let v = d[k];
+      if (k === "old_qty" || k === "new_qty") v = _ecnF(v);
+      else if (k === "need_fai" || k === "need_customer" || k === "block_pass") v = ["1","true","on","yes"].includes(String(v).toLowerCase()) ? 1 : 0;
+      else v = v === null || v === undefined ? "" : String(v).trim();
+      sets.push(`${k}=$${args.length + 1}`); args.push(v);
+    }
+    if (!sets.length) return fail(res, "没有要更新的字段");
+    sets.push(`updated_at=$${args.length + 1}`); args.push(nowStr());
+    args.push(ecnNo);
+    await query(`UPDATE eng_change SET ${sets.join(",")} WHERE ecn_no=$${args.length}`, args);
+    await _ecnFlow(ecnNo, "修改", "更新", user, sets.slice(0, -1).map(s => s.split("=")[0]).join(","));
+    return ok(res, null, "已保存");
+  });
+
+  router.post("/ecn/:ecn_no/evaluate", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const r = await _ecnEvaluate(ecnNo);
+    if (!r.ok) return fail(res, r.msg);
+    return ok(res, r.impact, `影响评估：${r.impact.verdict}`);
+  });
+
+  router.post("/ecn/:ecn_no/items", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if (!["草稿", "待审批", "已批准", "执行中"].includes(e.status || "")) return fail(res, `当前状态（${e.status}）不能加执行项`);
+    if (!String(d.item_type || "").trim()) return fail(res, "请选变更对象类型");
+    const seq = Number((await query("SELECT IFNULL(MAX(seq_no),0) AS m FROM eng_change_item WHERE ecn_no=$1", [ecnNo])).rows[0].m || 0) + 1;
+    const rid = (await query("INSERT INTO eng_change_item (ecn_no,seq_no,item_type,target,before_val,after_val,action,owner,remark) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id", [ecnNo, seq, d.item_type || "", d.target || "", d.before_val || "", d.after_val || "", d.action || "", d.owner || user, d.remark || ""])).rows[0].id;
+    await query("UPDATE eng_change SET updated_at=$1 WHERE ecn_no=$2", [nowStr(), ecnNo]);
+    return ok(res, { id: rid }, "已加执行项");
+  });
+
+  router.delete("/ecn/item/:item_id", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const itemId = Number(req.params.item_id);
+    const user = (req.mesrjUser || {}).login_name || "";
+    const r = (await query("SELECT * FROM eng_change_item WHERE id=$1", [itemId])).rows[0];
+    if (!r) return fail(res, "执行项不存在");
+    if (Number(r.done || 0)) return fail(res, "已完成的执行项不能删（留痕）");
+    await query("DELETE FROM eng_change_item WHERE id=$1", [itemId]);
+    return ok(res, null, "已删除");
+  });
+
+  router.post("/ecn/item/:item_id/done", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const itemId = Number(req.params.item_id);
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const done = !["0", "false"].includes(String(d.done));
+    const r = (await query("SELECT * FROM eng_change_item WHERE id=$1", [itemId])).rows[0];
+    if (!r) return fail(res, "执行项不存在");
+    const e = await _ecnOne(r.ecn_no);
+    if (!e) return fail(res, "变更单不存在");
+    if (!["已批准", "执行中", "待验证"].includes(e.status || "")) return fail(res, `只有已批准的变更单可以勾执行项（当前 ${e.status}）`);
+    if (done) {
+      await query("UPDATE eng_change_item SET done=1, done_at=$1, done_by=$2 WHERE id=$3", [nowStr(), user, itemId]);
+    } else {
+      await query("UPDATE eng_change_item SET done=0, done_at='', done_by='' WHERE id=$1", [itemId]);
+    }
+    const left = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change_item WHERE ecn_no=$1 AND done=0", [r.ecn_no])).rows[0].n || 0);
+    const total = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change_item WHERE ecn_no=$1", [r.ecn_no])).rows[0].n || 0);
+    if (left === 0 && total > 0 && ["已批准", "执行中"].includes(e.status || "")) {
+      await query("UPDATE eng_change SET status='待验证', updated_at=$1 WHERE ecn_no=$2", [nowStr(), r.ecn_no]);
+      await _ecnFlow(r.ecn_no, "执行", "全部执行项完成 → 待验证", user, "");
+    } else if (left > 0 && (e.status || "") === "已批准") {
+      await query("UPDATE eng_change SET status='执行中', updated_at=$1 WHERE ecn_no=$2", [nowStr(), r.ecn_no]);
+    }
+    return ok(res, { left }, (done ? "已执行" : "已取消执行") + (left ? `；还剩 ${left} 条未执行` : "；执行项已全部完成"));
+  });
+
+  function _ecnSwitchHit(e, moNo, at = "") {
+    const eff = String(e.effectivity || "now").toLowerCase();
+    at = at || nowStr();
+    if (eff === "now") return { hit: true, why: "立即生效" };
+    if (eff === "date") {
+      const d = String(e.effective_date || "").trim();
+      if (!d) return { hit: false, why: "未填生效日期" };
+      return { hit: at.slice(0, 10) >= d.slice(0, 10), why: `生效日 ${d}` };
+    }
+    if (eff === "mo") {
+      const base = String(e.effective_mo_no || "").trim();
+      if (!base) return { hit: false, why: "未填生效工单" };
+      return { hit: _ecnMoGe(moNo, base), why: `生效工单 ${base} 起` };
+    }
+    if (eff === "run_out_old") {
+      const st = String(e.status || "");
+      if (["执行中", "待验证", "已关闭"].includes(st) && String(e.effective_at || "")) return { hit: true, why: `旧料已用完，${String(e.effective_at).slice(0, 16)} 切换` };
+      return { hit: false, why: "等旧料用完（人工确认后才切换）" };
+    }
+    return { hit: false, why: `未知切换方式：${eff}` };
+  }
+
+  async function _ecnPassAction() {
+    const v = String(await getParam("ecn.pass_action", "warn") || "warn").trim().toLowerCase();
+    return ["warn", "block"].includes(v) ? v : "warn";
+  }
+
+  async function _ecnPassWarn(moNo) {
+    moNo = String(moNo || "").trim();
+    if (!moNo) return [];
+    let mo;
+    try { mo = (await query("SELECT product_code, po_no FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0]; } catch { return []; }
+    if (!mo) return [];
+    const pc = String(mo.product_code || "");
+    let rows;
+    try {
+      rows = (await query(
+        `SELECT ecn_no,ecn_type,title,status,effectivity,effective_date,effective_mo_no,block_pass,product_code,old_material,new_material,risk_level FROM eng_change WHERE status IN ('已批准','执行中','待验证') AND (product_code=$1 OR (COALESCE(product_code,'')='' AND COALESCE(old_material,'')<>'' AND old_material IN (SELECT b.material_code FROM bom_item b WHERE b.product_code=$2 AND b.version=(SELECT version FROM bom_header WHERE product_code=$3 AND COALESCE(status,'生效')='生效' ORDER BY version DESC LIMIT 1)))) ORDER BY id DESC LIMIT 8`, [pc, pc, pc])).rows;
+    } catch { return []; }
+    const out = [];
+    for (const e of rows) {
+      const { hit, why } = _ecnSwitchHit(e, moNo);
+      out.push({ ecn_no: e.ecn_no, ecn_type: e.ecn_type, title: e.title, status: e.status, risk_level: e.risk_level, old_material: e.old_material, new_material: e.new_material, hit: hit ? 1 : 0, why, block_pass: Number(e.block_pass || 0) });
+      if (out.length >= 2) break;
+    }
+    return out;
+  }
+
+  async function _ecnStats() {
+    let byType = {}, open = 0, pending = 0, executing = 0, verifying = 0, overdue = 0, newIn = 0, waitCustomer = 0, blockPass = 0;
+    try {
+      const bt = (await query("SELECT ecn_type, COUNT(*)::int AS n FROM eng_change GROUP BY ecn_type")).rows;
+      for (const r of bt) byType[r.ecn_type] = r.n;
+      const cut = (d => { const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; })(new Date(Date.now() - 30 * 86400000));
+      open = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE status IN ('待审批','已批准','执行中','待验证')")).rows[0].n || 0);
+      pending = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE status='待审批'")).rows[0].n || 0);
+      executing = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE status IN ('已批准','执行中')")).rows[0].n || 0);
+      verifying = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE status='待验证'")).rows[0].n || 0);
+      overdue = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE status IN ('已批准','执行中','待验证') AND COALESCE(approved_at,'')<>'' AND NULLIF(approved_at,'')::timestamp < now() - interval '30 days'")).rows[0].n || 0);
+      newIn = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE created_at>=$1", [cut])).rows[0].n || 0);
+      waitCustomer = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE ecn_type='PCN' AND need_customer=1")).rows[0].n || 0);
+      blockPass = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change WHERE block_pass=1 AND status IN ('已批准','执行中','待验证')")).rows[0].n || 0);
+    } catch {}
+    return { open, pending_approve: pending, executing, verifying, overdue, new_in_range: newIn, wait_customer: waitCustomer, block_pass: blockPass, by_type: byType, pass_action: await _ecnPassAction() };
+  }
+
+  router.post("/ecn/:ecn_no/submit", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if (!["草稿", "待审批"].includes(e.status || "")) return fail(res, `当前状态（${e.status}）不能提交审批`);
+    if (!String(e.before_desc || "").trim() || !String(e.after_desc || "").trim()) return fail(res, "「变更前」「变更后」都要写清楚，审批人要看得懂改了什么");
+    if ((e.effectivity || "") === "date" && !String(e.effective_date || "").trim()) return fail(res, "切换方式是「指定日期」，请填生效日期");
+    if ((e.effectivity || "") === "mo" && !String(e.effective_mo_no || "").trim()) return fail(res, "切换方式是「指定工单」，请填生效工单号");
+    const items = await _ecnItems(ecnNo);
+    if (!items.length && !String(e.old_material || e.bom_to || e.new_material || "").trim()) return fail(res, "请至少加一条执行项（改哪个物料/BOM/工艺/检验标准）");
+    const r = await _ecnEvaluate(ecnNo);
+    if (!r.ok) return fail(res, r.msg);
+    await query("UPDATE eng_change SET status='待审批', submitted_at=$1, updated_at=$2 WHERE ecn_no=$3", [nowStr(), nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "提交", "提交审批", user, r.impact.verdict || "");
+    await audit(user, "工程变更", "提交审批", ecnNo, r.impact.verdict || "");
+    return ok(res, { impact: r.impact }, `已提交审批（影响评估：${r.impact.verdict}）`);
+  });
+
+  router.post("/ecn/:ecn_no/approve", requireMesrjPerm("prod.release"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const ok = !["0", "false", "no"].includes(String(d.ok ?? true).toLowerCase());
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if ((e.status || "") !== "待审批") return fail(res, `只有「待审批」能审批（当前 ${e.status}）`);
+    if (ok) {
+      const eff = String(e.effectivity || "now").toLowerCase();
+      const st = eff === "now" ? "执行中" : "已批准";
+      const effAt = eff === "now" ? nowStr() : "";
+      await query("UPDATE eng_change SET status=$1, approved_at=$2, approved_by=$3, effective_at=$4, updated_at=$5 WHERE ecn_no=$6", [st, nowStr(), user, effAt, nowStr(), ecnNo]);
+      await _ecnFlow(ecnNo, "审批", "批准", user, d.opinion || "");
+      await audit(user, "工程变更", "批准", ecnNo, `切换方式 ${e.effectivity}${effAt ? "，立即生效" : ""}`, "");
+      return ok(res, { status: st, effective_at: effAt }, `已批准${effAt ? "，立即生效（已进入执行）" : ""}`);
+    }
+    await query("UPDATE eng_change SET status='已拒绝', approved_by=$1, updated_at=$2 WHERE ecn_no=$3", [user, nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "审批", "驳回", user, d.opinion || "");
+    await audit(user, "工程变更", "驳回", ecnNo, d.opinion || "", "");
+    return ok(res, { status: "已拒绝" }, "已驳回");
+  });
+
+  router.post("/ecn/:ecn_no/effective", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if (!["已批准", "执行中", "待验证"].includes(e.status || "")) return fail(res, `只有已批准的变更单能标记切换（当前 ${e.status}）`);
+    if ((e.effectivity || "") !== "run_out_old") return fail(res, "只有「用完旧料后切换」需要人工确认切换时间");
+    const mat = String(e.old_material || "");
+    const stock = Math.max(await _ecnSafeSum("erp_stock", mat), await _ecnSafeSum("erp_inventory", mat));
+    if (stock > 0 && !String(d.note || "").trim()) return fail(res, `旧料 ${mat} 账上还有 ${stock}，确认已用完请填一句说明（如：剩余已退回仓库/已挪用到 XXX 单）`);
+    await query("UPDATE eng_change SET effective_at=$1, status=CASE WHEN status='已批准' THEN '执行中' ELSE status END, updated_at=$2 WHERE ecn_no=$3", [nowStr(), nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "切换", "标记旧料已用完", user, d.note || "");
+    return ok(res, { effective_at: nowStr() }, `已标记切换生效（${nowStr()}）`);
+  });
+
+  router.post("/ecn/:ecn_no/fai", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if (!["已批准", "执行中", "待验证"].includes(e.status || "")) return fail(res, `当前状态（${e.status}）不能做首件验证`);
+    const r = String(d.result || "OK").toUpperCase();
+    if (r !== "OK" && r !== "NG") return fail(res, "验证结果只能是 OK / NG");
+    await query("UPDATE eng_change SET fai_result=$1, fai_note=$2, verify_result=$3, verify_note=$4, updated_at=$5 WHERE ecn_no=$6", [r, d.note || "", r === "OK" ? "通过" : "不通过", d.note || "", nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "首件验证", `FAI ${r}`, user, d.note || "");
+    return ok(res, { fai_result: r }, `首件验证：${r}`);
+  });
+
+  router.post("/ecn/:ecn_no/close", requireMesrjPerm("prod.release"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if ((e.status || "") === "已关闭") return fail(res, "已经关闭了");
+    if (Number(e.need_fai || 0) && (e.fai_result || "") !== "OK") return fail(res, "本变更要求首件验证（FAI），请先做验证并判 OK 再关闭");
+    const left = Number((await query("SELECT COUNT(*)::int AS n FROM eng_change_item WHERE ecn_no=$1 AND done=0", [ecnNo])).rows[0].n || 0);
+    if (left) return fail(res, `还有 ${left} 条执行项没完成，不能关闭`);
+    await query("UPDATE eng_change SET status='已关闭', closed_at=$1, closed_by=$2, updated_at=$3 WHERE ecn_no=$4", [nowStr(), user, nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "关闭", "关闭变更", user, d.note || "");
+    await audit(user, "工程变更", "关闭", ecnNo, d.note || "", "");
+    return ok(res, { status: "已关闭" }, "已关闭");
+  });
+
+  router.post("/ecn/:ecn_no/cancel", requireMesrjPerm("prod.release"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if (["已关闭", "已取消"].includes(e.status || "")) return fail(res, `已经${e.status}了`);
+    if ((e.status || "") === "执行中" && !String(d.note || "").trim()) return fail(res, "已进入执行中，作废必须填原因（可能是已部分执行，要留痕）");
+    await query("UPDATE eng_change SET status='已取消', updated_at=$1, verify_note=$2 WHERE ecn_no=$3", [nowStr(), d.note || "", ecnNo]);
+    await _ecnFlow(ecnNo, "作废", "取消", user, d.note || "");
+    await audit(user, "工程变更", "作废", ecnNo, d.note || "", "");
+    return ok(res, { status: "已取消" }, "已作废");
+  });
+
+  router.post("/ecn/:ecn_no/customer", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const ecnNo = String(req.params.ecn_no || "").trim();
+    const d = req.body || {};
+    const user = (req.mesrjUser || {}).login_name || "";
+    const e = await _ecnOne(ecnNo);
+    if (!e) return fail(res, "变更单不存在");
+    if ((e.ecn_type || "") !== "PCN") return fail(res, "只有 PCN（对客户变更通知）需要记录客户回复");
+    const reply = String(d.reply || "").trim();
+    if (!reply) return fail(res, "请填客户回复（同意 / 不同意 / 有条件同意）");
+    await query("UPDATE eng_change SET customer_reply=$1, customer_reply_at=$2, customer_approver=$3, need_customer=0, updated_at=$4 WHERE ecn_no=$5", [reply, nowStr(), String(d.approver || "").trim(), nowStr(), ecnNo]);
+    await _ecnFlow(ecnNo, "客户回复", reply, user, `客户批准人：${d.approver || "-"}`);
+    return ok(res, { customer_reply: reply }, "客户回复已记录");
+  });
+
+  router.get("/ecn/pass-warn", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const mo = String(req.query.mo_no || "").trim();
+    return ok(res, { rows: await _ecnPassWarn(mo), action: await _ecnPassAction() });
+  });
+
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════
 
   const mdCrud = Router();
@@ -4530,7 +5348,12 @@ export function createMesrjRouter({ authenticateJWT }) {
   registerCrud(cfgCrud, CFG_RES, "cfg.view", "cfg.edit");
   router.use("/cfg", cfgCrud);
 
+  // W9：emp 通用 CRUD（源 _crud.register(prefix="/emp")；固定自定义接口已在上面注册）
+  const empCrud = Router();
+  registerCrud(empCrud, EMP_RES, "prod.trace", "md.edit");
+  router.use("/emp", empCrud);
+
   return router;
 }
 
-export { ok, fail, getParam, setParam, audit, hashPwd, verifyPwd, currentUser, hasPerm, requireMesrjPerm, tableColumns, Res, cleanRow, safeOrder, cleanPageArgs, paged, registerCrud, MD_RES, SYS_RES, BOM_RES, ORD_RES, PLAN_RES, ROUTE_RES, CFG_RES };
+export { ok, fail, getParam, setParam, audit, hashPwd, verifyPwd, currentUser, hasPerm, requireMesrjPerm, tableColumns, Res, cleanRow, safeOrder, cleanPageArgs, paged, registerCrud, MD_RES, SYS_RES, BOM_RES, ORD_RES, PLAN_RES, ROUTE_RES, CFG_RES, EMP_RES };

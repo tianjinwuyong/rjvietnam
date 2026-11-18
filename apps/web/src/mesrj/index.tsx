@@ -15,6 +15,7 @@ import { SnPoolView, SnRuleView, SnBatchView, SnVoidView, SnDetailView, SnTestVi
 import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoMaterialsView,
   AiStationsView, AgingView, AgingDetailView, TraceMaterialBySnView, TraceMaterialByMaterialView } from "./views-w6c";
 import { DeviceConfigView, StationPassView, MachineDataView, PackingView, ItfLogView } from "./views-w7";
+import { EcNView } from "./views-w9";
 
 interface SysInfo {
   sys_name: string;
@@ -100,6 +101,8 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     // W8 AOI 集成 + 出货报告模板
     if (active === "report.aoi") return <AoiDashView locale={locale} />;
     if (active === "report.tpl") return <ReportTplView locale={locale} />;
+    // W9：员工资质（通用 CRUD）+ 工程变更 ECN/PCN
+    if (active === "qlt.ecn") return <EcNView locale={locale} />;
     // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
     if (active === "exec.snpool") return <SnPoolView locale={locale} />;
     if (active === "exec.snrule") return <SnRuleView locale={locale} />;

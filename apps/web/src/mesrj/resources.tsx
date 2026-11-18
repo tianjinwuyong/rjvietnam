@@ -575,5 +575,95 @@ export function crudViews(locale: Locale): CrudViewConfig[] {
       ],
       filters: [{ key: "pcb_sn", labelKey: "exec.sn" }],
     },
+    // ── W9：员工资质（源 emp.py RES，basePath /emp）──────────────────────
+    {
+      code: "emp.employee", basePath: "emp", res: "employees",
+      fields: [
+        { key: "emp_no", labelKey: "emp.employee.emp_no", required: true },
+        { key: "emp_name", labelKey: "emp.employee.emp_name", required: true },
+        { key: "dept", labelKey: "emp.employee.dept" },
+        { key: "post", labelKey: "emp.employee.post" },
+        { key: "line_code", labelKey: "field.line_code" },
+        { key: "phone", labelKey: "sys.user.phone" },
+        { key: "status", labelKey: "field.status", type: "bool", options: S(locale) },
+        { key: "hire_date", labelKey: "emp.employee.hire_date" },
+        { key: "remark", labelKey: "field.remark" },
+      ],
+      filters: [
+        { key: "dept", labelKey: "emp.employee.dept" },
+        { key: "status", labelKey: "field.status", type: "bool", options: S(locale) },
+        { key: "line_code", labelKey: "field.line_code" },
+      ],
+    },
+    {
+      code: "emp.skill", basePath: "emp", res: "skills",
+      fields: [
+        { key: "skill_code", labelKey: "emp.skill.skill_code", required: true },
+        { key: "skill_name", labelKey: "emp.skill.skill_name", required: true },
+        { key: "process_code", labelKey: "field.process_code" },
+        { key: "sort_no", labelKey: "emp.skill.sort_no", type: "number" },
+        { key: "enabled", labelKey: "field.status", type: "bool", options: S(locale) },
+        { key: "remark", labelKey: "field.remark" },
+      ],
+      filters: [
+        { key: "process_code", labelKey: "field.process_code" },
+        { key: "enabled", labelKey: "field.status", type: "bool", options: S(locale) },
+      ],
+    },
+    {
+      code: "emp.stask", basePath: "emp", res: "stasks",
+      fields: [
+        { key: "station_code", labelKey: "md.station.station_code", required: true },
+        { key: "type_code", labelKey: "emp.stask.type_code", required: true },
+        { key: "skill_code", labelKey: "emp.skill.skill_code", required: true },
+        { key: "remark", labelKey: "field.remark" },
+      ],
+      filters: [
+        { key: "station_code", labelKey: "md.station.station_code" },
+        { key: "type_code", labelKey: "emp.stask.type_code" },
+        { key: "skill_code", labelKey: "emp.skill.skill_code" },
+      ],
+    },
+    {
+      code: "emp.cert", basePath: "emp", res: "certs",
+      fields: [
+        { key: "emp_no", labelKey: "emp.employee.emp_no", required: true },
+        { key: "skill_code", labelKey: "emp.skill.skill_code", required: true },
+        { key: "skill_name", labelKey: "emp.skill.skill_name" },
+        { key: "level", labelKey: "emp.cert.level", type: "number" },
+        { key: "pass_date", labelKey: "emp.cert.pass_date" },
+        { key: "expire_date", labelKey: "emp.cert.expire_date" },
+        { key: "status", labelKey: "emp.cert.status" },
+        { key: "exam_score", labelKey: "emp.cert.exam_score", type: "number" },
+        { key: "source", labelKey: "emp.cert.source" },
+        { key: "remark", labelKey: "field.remark" },
+        { key: "updated_at", labelKey: "sys.log.time", readonly: true },
+      ],
+      filters: [
+        { key: "emp_no", labelKey: "emp.employee.emp_no" },
+        { key: "skill_code", labelKey: "emp.skill.skill_code" },
+        { key: "status", labelKey: "emp.cert.status" },
+      ],
+    },
+    {
+      code: "emp.exam", basePath: "emp", res: "exams",
+      fields: [
+        { key: "id", labelKey: "common.id", readonly: true },
+        { key: "emp_no", labelKey: "emp.employee.emp_no", readonly: true },
+        { key: "emp_name", labelKey: "emp.employee.emp_name", readonly: true },
+        { key: "skill_code", labelKey: "emp.skill.skill_code", readonly: true },
+        { key: "exam_date", labelKey: "emp.cert.pass_date", readonly: true },
+        { key: "score", labelKey: "emp.cert.exam_score", type: "number", readonly: true },
+        { key: "pass", labelKey: "emp.exam.pass", type: "bool", options: S(locale), readonly: true },
+        { key: "examiner", labelKey: "emp.exam.examiner", readonly: true },
+        { key: "remark", labelKey: "field.remark", readonly: true },
+        { key: "created_at", labelKey: "sys.log.time", readonly: true },
+      ],
+      filters: [
+        { key: "emp_no", labelKey: "emp.employee.emp_no" },
+        { key: "skill_code", labelKey: "emp.skill.skill_code" },
+        { key: "pass", labelKey: "emp.exam.pass", type: "bool", options: S(locale) },
+      ],
+    },
   ];
 }
