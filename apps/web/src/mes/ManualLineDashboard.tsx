@@ -3724,7 +3724,7 @@ export function ManualLineDashboard() {
     async function loadFeederData() {
       try {
         const woRes = await pmcApi.getWorkOrders({ status: "running", limit: 10 });
-        const wos = (woRes.data?.items ?? []).filter((w: any) =>
+        const wos = (woRes.items ?? []).filter((w: any) =>
           w.status === "running" || w.status === "released"
         );
         if (cancelled) return;
@@ -3736,8 +3736,8 @@ export function ManualLineDashboard() {
           wos.slice(0, 5).map(async (wo: any) => {
             try {
               const res = await mesApi.getFeederBindings({ workOrderCode: wo.code, bound: true, limit: 50 });
-              if (!cancelled && res.data?.items) {
-                allBindings.push(...res.data.items.map((b: any) => ({ ...b, _wo: wo.code })));
+              if (!cancelled && res.items) {
+                allBindings.push(...res.items.map((b: any) => ({ ...b, _wo: wo.code })));
               }
             } catch { /* skip individual WO failures */ }
           })

@@ -338,7 +338,7 @@ export const pmcApi = {
     return apiClient.post(`/erp/customers/${id}/transition`, { payload: { action, reason } });
   },
 
-  async updateErpCustomer(id: number, payload: { code?: string; nameZh?: string; nameEn?: string }) {
+  async updateErpCustomer(id: number, payload: { code?: string; nameZh?: string; nameEn?: string; contactName?: string; email?: string; phone?: string; paymentTermsDays?: number; riskLevel?: string }) {
     return apiClient.patch(`/erp/customers/${id}`, { payload });
   },
 

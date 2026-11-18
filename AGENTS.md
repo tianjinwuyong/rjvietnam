@@ -4,7 +4,7 @@
 
 ## Stack
 
-React 18.3.1 + Vite 8 + TypeScript 5.8 + Express + Vitest 4 + PostgreSQL (raw `pg` driver, no ORM)
+React 18.3.1 + Vite 5.4.21 + TypeScript 5.9.3 + Express 5.2.1 + Vitest 4.1.9 + PostgreSQL (raw `pg` driver, no ORM)
 
 **Languages**: zh-CN (primary), en-US, vi-VN — all UI text **must** use i18n keys, never hardcoded strings.
 
@@ -15,30 +15,44 @@ React 18.3.1 + Vite 8 + TypeScript 5.8 + Express + Vitest 4 + PostgreSQL (raw `p
 ```
 smt-factory-system/
 ├── apps/
-│   ├── web/                  React SPA (port 5178 via Vite)
-│   ├── scanner-terminal/     Station scanner app
+│   ├── web/                  React SPA (port 5178 via Vite) — main UI
+│   ├── pdas/dashboard/       PDA dashboard (Kotlin/WebView consumer)
+│   ├── pdas/plant-manager/   PDA plant-manager app
 │   ├── display-board/        Andon/display board
-│   └── station-agent/        Electron-based station agent
+│   ├── station-agent/        Electron-based station agent
+│   ├── website/              Public site
+│   └── qrbindingforinternalboadandshell/  QR binding tool
 ├── packages/                 NOT npm workspaces — import via relative paths
-│   ├── shared-types/         Domain types (Locale, WorkOrder, MaterialLot, …)
+│   ├── shared-types/         Domain types + contracts.ts DTOs
 │   ├── business-rules/       Work order coding + inventory validation
-│   └── validators/           isBarcodeScan(), assertWorkOrderCode()
+│   ├── validators/           isBarcodeScan(), assertWorkOrderCode()
+│   ├── pda-components/       Shared PDA UI
+│   ├── ui-kit/               Shared web UI primitives
+│   ├── station-config/       Station config schema
+│   └── mes-ate-contract/     MES/ATE interface contract
 ├── services/
-│   ├── api/                  Express API — port 8080 (~16.6K lines server.js)
+│   ├── api/                  Express API — port 8080 (server.js ≈45K lines)
 │   ├── worker/               Background job worker
-│   ├── realtime/            WebSocket/realtime service
-│   └── watchdog/            Auto-restart on crash (3s delay)
+│   ├── realtime/             WebSocket/realtime service
+│   ├── watchdog/             Auto-restart on crash (3s delay)
+│   ├── aoi-api/              AOI adapter API
+│   ├── replication/          DB replication/failover helpers
+│   ├── supplier-portal-api/  Supplier portal backend
+│   └── memory/               mem0 long-term memory service (port 9876)
 ├── database/
-│   ├── migrations/           SQL migrations (001–045+)
-│   └── seeds/               Demo data seeds
+│   ├── migrations/           279 SQL migrations, applied by scripts/migrate.mjs
+│   └── seeds/                Demo data seeds (002_bom_seed.sql, …)
 ├── integrations/             80+ station/device adapter dirs (aoi, spi, fct, etc.)
-├── tests/                   Vitest test files
-└── start_dev.js             Preferred dev launcher
+├── tests/                    72 Vitest files (unit + integration)
+├── app_rules/                Lane ownership rules per area
+├── harness/ + .factory/      Self-verifying factory scaffold (see FACTORY_RULES.md)
+├── graft/                    Repo context graph (see Graft section below)
+└── start_dev.js              Preferred dev launcher
 ```
 
 ## npm Workspaces
 
-`package.json` has `workspaces: ['apps/*', 'services/*', 'packages/*']`. Apps and services are proper workspaces; **packages are not** — import them via relative path: `../../../packages/shared-types/src/factory`.
+`package.json` has `workspaces: ['apps/*', 'services/*', 'packages/*']`. **Apps and services are proper workspaces; packages are not** — import via relative path: `../../../packages/shared-types/src/factory`.
 
 ## Developer Commands
 
@@ -49,10 +63,15 @@ smt-factory-system/
 | `npm run dev:api` | `npm --workspace services/api run dev` → `node server.js` |
 | `npm run dev:web` | `npm --workspace apps/web run dev` → `vite` |
 | `npm run build` | Vite production build (`apps/web`) |
-| `npm run test` | `vitest run` |
+| `npm run test` | `vitest run` (72 test files) |
+| `npm run test:e2e` | `playwright test` |
+| `npm run test:hardware` | Smart-shelf hardware suite (`vitest.hardware.config.ts`) |
 | `npm run typecheck` | `tsc -p tsconfig.base.json --noEmit` |
-| `npm run migrate` | Apply migrations |
-| `npm run migrate:seed` | Apply migrations + seed data |
+| `npm run typecheck:all` | typecheck + `typecheck:tests` |
+| `npm run migrate` | `node scripts/migrate.mjs` — applies pending migrations |
+| `npm run migrate:seed` | `node scripts/migrate.mjs --seed` — migrations + seeds |
+
+`scripts/migrate.mjs` flags: `--plan` (list pending, apply nothing), `--fresh` (drop everything, dev only), `--seed`. Tracks applied files in `_migrations` table.
 
 ## Running Services
 
@@ -69,7 +88,7 @@ smt-factory-system/
 
 ## Login Credentials
 
-All accounts use password: `Factory@123` (hardcoded in `services/api/server.js` lines 1565, 2636 — should move to `.env`)
+All accounts use password: `Factory@123` (`services/api/server.js:15978` — should move to `.env`)
 
 Sample accounts from seed data:
 - `VN_OP_001` / `Factory@123` — SMT operator (vi-VN)
@@ -84,18 +103,22 @@ JWT secret and expiry in `.env` (`JWT_SECRET`, `JWT_EXPIRY_MS`).
 
 | Module | UI Path | API Prefix |
 |--------|---------|------------|
-| Dashboard | `apps/web/src/` | `/dashboard` |
-| WMS | `apps/web/src/wms/` (29 files) | `/wms` |
-| PMC | `apps/web/src/pmc/` (23 files) | `/pmc` |
-| MES | `apps/web/src/mes/` | `/mes` (54 endpoints) |
-| HR | `apps/web/src/hr/` | `/hr` |
-| Finance | `apps/web/src/finance/` | `/finance` |
-| Equipment | `apps/web/src/equipment/` | `/equipment` |
+| Dashboard | `apps/web/src/` , `manager-dashboard/` | `/dashboard` |
+| WMS | `apps/web/src/wms/` | `/wms` |
+| PMC | `apps/web/src/pmc/` | `/pmc` |
+| MES | `apps/web/src/mes/` | `/mes` |
+| HR | `apps/web/src/hr/` , `employee/` | `/hr` |
+| Finance | `apps/web/src/finance/` , `einvoice/` | `/finance` |
+| Procurement | `apps/web/src/procurement/` | `/procurement` |
+| QMS / Quality | `apps/web/src/qms/` , `quality/` | `/qms`, `/quality` |
+| Equipment / Maintenance | `apps/web/src/maintenance/` , `spareparts/` | `/equipment` |
+| OA / Workflow | `apps/web/src/oa/` , `workflow/` | `/oa` |
+| AOI | `apps/web/src/aoi/` | `/aoi` |
 | Reports | `apps/web/src/reports/` | `/reports` |
-| Quality | `apps/web/src/quality/` | `/quality` |
-| AI | `apps/web/src/ai/` | `/ai` — Ollama at `localhost:11434` |
+| AI | `apps/web/src/ai/` , `agents/` | `/ai` — Ollama at `localhost:11434` |
 | Sales | `apps/web/src/sales/` | `/sales` |
-| Service | `apps/web/src/service/` | `/service` |
+| Service | `apps/web/src/service/` , `services/` | `/service` |
+| Project / Admin | `apps/web/src/project-mgmt/` , `projects/` , `admin/` | `/projects` |
 
 ## App Rules (`app_rules/`)
 
@@ -123,6 +146,9 @@ Key UI rules (`app_rules/ui.md`): one active locale per page (never stack zh+en+
 5. **Schema conventions**: `bigserial` PKs, `timestamptz`, `varchar` codes, `created_by/created_at/updated_at`
 6. **Master data multilingual**: `name_zh`, `name_en`, `name_vi` columns
 7. **Packages via relative path**: `../../../packages/shared-types/src/factory`
+8. **Migrations are append-only** — numbered `NNN_name.sql` in `database/migrations/`, never edit or renumber an applied file. Check state with `node scripts/migrate.mjs --plan` before writing one.
+9. **`server.js` also creates tables at runtime** — some tables exist only via `CREATE TABLE IF NOT EXISTS` in `services/api/server.js`, and later migrations reference them. New migrations must not assume the migration set alone produces the schema.
+10. **Verify before claiming done** — `npm run typecheck` + `npm run test` (+ `npm run test:e2e` when a user-facing flow changes).
 
 ## WMS Workflow
 
@@ -135,15 +161,26 @@ IQC flow: `pending → hold (if failed) → released` or `pending → rejected`.
 
 ## Known Issues
 
-- **React "Invalid hook call" / blank page in dev** — caused by React 19 + Vite 8 + npm workspaces esbuild interop bug. Vite pre-bundles CJS React with `needsInterop: true`, creating separate `ReactSharedInternals` instances between `react` and `react-dom/client`. Root cause: `ReactDOMSharedInternals.d` set by react-dom but never visible to react's `resolveDispatcher()`. **Fix**: use React 18.3.1 (`react@18.3.1`, `react-dom@18.3.1`). Full details in `docs/skills.md` → "Dev Server Invalid Hook Call Bug".
+- **React "Invalid hook call" / blank page in dev** — caused by React 19 + npm workspaces esbuild interop bug. Vite pre-bundles CJS React with `needsInterop: true`, creating separate `ReactSharedInternals` instances between `react` and `react-dom/client`. Root cause: `ReactDOMSharedInternals.d` set by react-dom but never visible to react's `resolveDispatcher()`. **Fix**: stay on React 18.3.1 (`react@18.3.1`, `react-dom@18.3.1`) with Vite 5.4.21. Full details in `docs/skills.md` → "Dev Server Invalid Hook Call Bug".
 - **Watchdog process management on Windows** — background terminal sessions may exit even when child processes are healthy. Use `start_dev.js` directly.
-- **Hardcoded password** — `Factory@123` is hardcoded in `server.js` lines 1565, 2636. Should be read from `.env`.
+- **Hardcoded password** — `Factory@123` is hardcoded at `services/api/server.js:15978` (`password === "Factory@123"`). Should be read from `.env`.
 - **API_PORT in .env.example is 3000** — actual server defaults to 8080 (line: `const PORT = Number(process.env.API_PORT ?? process.env.PORT ?? 8080)`).
+- **Repo root is a junk drawer** — ~400 untracked scratch files (`*.log`, `pw-*.cjs`, `_*_tmp.mjs`, test PNGs) sit beside real sources. Leave them alone; never `git add -A`.
 
 ## Environment
 
-- PostgreSQL: `127.0.0.1:5432/smt_factory` (password: `postgres` via `PGPASSWORD` env)
-- Ollama: `http://localhost:11434/v1` (model: `gemma4:latest`)
+**Live database: `smt_factory` on `127.0.0.1:5432`** — this is what `.env` and `services/api/.env` point at (`PGDATABASE=smt_factory`, `PGUSER=smt_factory`). 279/279 migrations applied, tracked in `public._migrations`; 992 base tables in `public`. `services/api/server.js:867,886` open extra pools with `options: "-c search_path=public"`, so the API runs on `public`, not a named schema.
+
+- `psql` is not on PATH: `C:\Program Files\PostgreSQL\17\bin\psql.exe`. Connect with `PGPASSWORD=postgres`.
+- **`factory` is not the live DB.** It holds `rjvn` (263 tables), `public` (256) and `mesapp` (29) with only **128** of 279 migrations applied (`public.schema_migrations`) — a rehearsal/legacy target. `rjvn_mgmt`, `rjvn_verify`, `oa_rehearsal`, `oa_staging`, `oa_source`, `wms` are likewise side databases.
+- Schema drift note: `scripts/migrate.mjs` defaults to `PGDATABASE=smt_factory` and tracks `_migrations`; any DB showing `schema_migrations` instead was migrated by something else and is out of band.
+- Agent message bus: Redis on `127.0.0.1:6379`. Hermes and OpenCode talk through the `factory-mailbox` MCP server (`send_message` / `check_inbox`). Do not use Herdr agent commands for hand-off. See `../prompts/opencode_system.md`.
+
+## Self-verifying factory (`harness/`, `factory/`, `.factory/`, `app_rules/`)
+
+This repo carries the scaffold from `FACTORY_RULES.md`: governance files (`MISSION.md`, `FACTORY.md`, `FACTORY_RULES.md`) are human-owned and a PR touching them is an automatic reject. `factory/gate.py`, `merge.py`, `guard.py`, `state.py` are the gates that are actually code; `harness/ci.py` and `.factory/holdout/` are the checks. `MISSION.md` / `FACTORY.md` are still unfilled templates — do not treat `<angle-bracket>` placeholders as real scope.
+
+Ollama: `http://localhost:11434/v1` (model: `gemma4:latest`)
 
 ## Memory Server (mem0 AI 记忆)
 
@@ -208,44 +245,28 @@ Start-Process -FilePath "C:\Users\tianj\AppData\Local\Programs\Python\Python314\
 - Bugs: minimal fix, no opportunistic refactor
 - New features: match existing patterns strictly
 
-<!-- graft:start -->
+## Multi-agent rules
+
+Concurrent agents follow `docs/AGENT-WORKFLOW.md` (lane ownership, `.factory/locks/<lane>.lock` claims, Redis mailbox message types, W0–W3 wave gates, HANDOFF template). Non-negotiables:
+
+1. **Single writer per file** — claim before editing, release when done.
+2. **Never touch governance** — `MISSION.md`, `FACTORY.md`, `FACTORY_RULES.md`, `harness/`, `.factory/locks`, `.factory/holdout`.
+3. **Never restart the dev servers** (`:8080`, `:5178`) while others work.
+4. **Never `git add -A`** — the root holds 400+ scratch scripts and logs.
+5. **No green without evidence** — a lane is done only when its Gate command output is pasted in the handoff.
+
 ## Graft — repo context graph
 
-This repo is indexed in `graft/`: small linked markdown nodes that explain each
-system and carry exact file:line spans, kept in sync with the code through git.
+This repo is indexed in `graft/`: small linked markdown nodes that explain each system and carry exact file:line spans, kept in sync with the code through git.
 
-For ANY task here — understanding how something works, finding where code lives,
-or scoping a change — get context from the graph before grepping or opening
-source files. Re-ask freely (it's cheap) and reuse literal identifiers you
-already have (symbol, error string, file name) as the query. New to this repo?
-Run `graft map` first — a token-budgeted orientation (dir clusters, hubs,
-hotspots), no LLM, no key.
+For ANY task here — understanding how something works, finding where code lives, or scoping a change — get context from the graph before grepping or opening source files. Re-ask freely (it's cheap) and reuse literal identifiers you already have (symbol, error string, file name) as the query. New to this repo? Run `graft map` first — a token-budgeted orientation (dir clusters, hubs, hotspots), no LLM, no key.
 
-- Run `graft ask "<your question>" --source` → ranked nodes with the relevant
-  code spans inlined (each hit's ≤8-line crux by default; `--full` for whole
-  definitions when the crux isn't enough). Match the tool to the task shape:
-  for understanding or editing, the top node IS the answer — cite its
-  `covers:` file:line spans and edit straight from `--source`. For
-  exhaustive tasks ("every occurrence / every caller of this pattern"), ranked
-  results are top-N, not complete — run `graft grep "<literal>"` instead
-  (exhaustive over indexed files, grouped by enclosing symbol), falling back
-  to raw `grep -rn` only for unindexed files.
-- `graft skeleton <file>` → every definition's signature + span, ~10× cheaper
-  than reading the file; use it to skim an API surface.
-- `graft callers <symbol>` gives precomputed, exact edges — who calls this.
-  Add `--direction out` for what it calls, or `--depth N` to walk
-  transitively for the full blast radius. For structural questions, skip
-  ranking and use this directly.
+- Run `graft ask "<your question>" --source` → ranked nodes with the relevant code spans inlined (each hit's ≤8-line crux by default; `--full` for whole definitions when the crux isn't enough). Match the tool to the task shape: for understanding or editing, the top node IS the answer — cite its `covers:` file:line spans and edit straight from `--source`. For exhaustive tasks ("every occurrence / every caller of this pattern"), ranked results are top-N, not complete — run `graft grep "<literal>"` instead (exhaustive over indexed files, grouped by enclosing symbol), falling back to raw `grep -rn` only for unindexed files.
+- `graft skeleton <file>` → every definition's signature + span, ~10× cheaper than reading the file; use it to skim an API surface.
+- `graft callers <symbol>` gives precomputed, exact edges — who calls this. Add `--direction out` for what it calls, or `--depth N` to walk transitively for the full blast radius. For structural questions, skip ranking and use this directly.
 - Or browse: `graft/INDEX.md` lists every node; follow the links.
-- Monorepos and folders of multiple repos rank fairly across sub-projects —
-  hits carry `[scope/]` labels naming which one they're from. Narrow with
-  `graft ask "<task>" --in <scope>/` once you know where you're working.
+- Monorepos and folders of multiple repos rank fairly across sub-projects — hits carry `[scope/]` labels naming which one they're from. Narrow with `graft ask "<task>" --in <scope>/` once you know where you're working.
 
-If a returned span is truncated ("+N more lines"), open the file at that exact
-range before finalizing. Only open source files when a node genuinely lacks a
-needed detail, and then at the exact file:line the node points to — never
-re-read whole files.
+If a returned span is truncated ("+N more lines"), open the file at that exact range before finalizing. Only open source files when a node genuinely lacks a needed detail, and then at the exact file:line the node points to — never re-read whole files.
 
-After big code changes, refresh the graph with `graft build` (deterministic,
-no API key, $0).
-<!-- graft:end -->
+After big code changes, refresh the graph with `graft build` (deterministic, no API key, $0).

@@ -1584,7 +1584,7 @@ function AutoNgRoutingRoutes() {
   const greenLaneZ = -12.35;
   const autoCode = (code: string) => code.startsWith("manu_") ? `AUTO_${code.slice(5).toUpperCase()}` : code;
   const stationIndex = (code: string) => AUTO_STATIONS.findIndex(([stationCode]) => stationCode === code.toLowerCase().replace(/^auto_/, "auto_") || stationCode.toUpperCase() === code.toUpperCase());
-  const returnTargets = (sourceIndex: number) => {
+  const returnTargets = (sourceIndex: number): number[] => {
     const sourceCode = AUTO_STATIONS[sourceIndex][0].toUpperCase();
     const policy = policies.find((item: any) => item.appliesTo?.some((code: string) => code.toUpperCase() === sourceCode));
     const action = policy?.action || {};
@@ -1730,7 +1730,7 @@ function DesignatedRepairReturnRoutes() {
   const repairX = 36;
   const repairZ = -7.8;
   const returnLaneZ = (index: number) => 9.2 + index * 0.22;
-  const returnTargets = (sourceIndex: number) => {
+  const returnTargets = (sourceIndex: number): number[] => {
     const sourceCode = MANUAL_STATIONS[sourceIndex][0] === "pda_load"
       ? "manu_pda"
       : MANUAL_STATIONS[sourceIndex][0] === "manu_outer_box_binding"
@@ -3020,7 +3020,7 @@ function Hall({
           code={code}
           name={localizedStationName(code, locale) || name}
           row={mes[code]}
-          onSelect={onOpenChat}
+          onSelect={(code) => onOpenChat(code, localizedStationName(code, locale))}
         />
       ))}
       {VISIBLE_3D_SCREEN_STATIONS.map(([code, name]) => (
@@ -3044,7 +3044,7 @@ function Hall({
         code="manu_rework"
         name={localizedStationName("manu_rework", locale)}
         row={mes.manu_rework}
-        onSelect={onOpenChat}
+        onSelect={(code) => onOpenChat(code, localizedStationName(code, locale))}
       />
       <MotherboardPanel x={stationX(2)} station={localizedStationName(lineCode("ict"), locale)} row={mes[lineCode("ict")]} onFocus={() => onFocusLayout(stationX(2), MOTHERBOARD_PANEL_Y, 0.98)} />
       <MotherboardPanel x={stationX(3)} station={localizedStationName(lineCode("fct"), locale)} row={mes[lineCode("fct")]} onFocus={() => onFocusLayout(stationX(3), MOTHERBOARD_PANEL_Y, 0.98)} />
@@ -3381,7 +3381,7 @@ function App() {
       if (useRange && !Number.isNaN(startDate.getTime())) params.set("since", startDate.toISOString());
       const response = await fetch(`/api/station/confirmed-motherboards?${params.toString()}`, { cache: "no-store" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json();
+      const body: { items?: Array<Record<string, unknown>> } = await response.json();
       return Array.isArray(body.items) ? body.items : [];
     };
     void (async () => {
@@ -3453,7 +3453,7 @@ function App() {
           code: detail.code,
           sn: detail.sn || "—",
           detectedAt,
-          status: "ALARMING",
+          status: "ALARMING" as const,
         },
         ...current,
       ].slice(0, 20));

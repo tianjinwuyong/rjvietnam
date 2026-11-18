@@ -70,7 +70,22 @@ export type OaViewId =
   // 系统管理组（流程设计/系统设置暂留建设中）
   | "ledger"
   | "flowVersions"
-  | "customField";
+  | "customField"
+  // 人事管理组（组织导入/发起会议暂留建设中）
+  | "attendance"
+  | "cardRule"
+  | "workCalendar"
+  | "schedule"
+  | "salary"
+  | "salaryTemplate"
+  | "perfFlow"
+  | "training"
+  | "myExams"
+  | "handover"
+  | "meetingList"
+  | "meetingSeries"
+  | "meetingActions"
+  | "meetingMinutes";
 
 export const OA_MENU: OaMenuGroup[] = [
   {
@@ -155,26 +170,26 @@ export const OA_MENU: OaMenuGroup[] = [
       {
         titleKey: "menu.hrAttendance",
         items: [
-          { titleKey: "menu.attendance" },
-          { titleKey: "menu.cardRule" },
-          { titleKey: "menu.workCalendar" },
-          { titleKey: "menu.schedule" },
+          { titleKey: "menu.attendance", view: "attendance" },
+          { titleKey: "menu.cardRule", view: "cardRule" },
+          { titleKey: "menu.workCalendar", view: "workCalendar" },
+          { titleKey: "menu.schedule", view: "schedule" },
         ],
       },
       {
         titleKey: "menu.hrSalary",
         items: [
-          { titleKey: "menu.salary" },
-          { titleKey: "menu.salaryTemplate" },
-          { titleKey: "menu.perfFlow" },
+          { titleKey: "menu.salary", view: "salary" },
+          { titleKey: "menu.salaryTemplate", view: "salaryTemplate" },
+          { titleKey: "menu.perfFlow", view: "perfFlow" },
         ],
       },
       {
         titleKey: "menu.hrTraining",
         items: [
-          { titleKey: "menu.training" },
-          { titleKey: "exam.myExams" },
-          { titleKey: "menu.handover" },
+          { titleKey: "menu.training", view: "training" },
+          { titleKey: "exam.myExams", view: "myExams" },
+          { titleKey: "menu.handover", view: "handover" },
         ],
       },
       {
@@ -189,11 +204,11 @@ export const OA_MENU: OaMenuGroup[] = [
       {
         titleKey: "menu.hrMeeting",
         items: [
-          { titleKey: "menu.meetingList" },
+          { titleKey: "menu.meetingList", view: "meetingList" },
           { titleKey: "menu.meetingCreate" },
-          { titleKey: "menu.meetingSeries" },
-          { titleKey: "menu.meetingActions" },
-          { titleKey: "menu.meetingMinutes" },
+          { titleKey: "menu.meetingSeries", view: "meetingSeries" },
+          { titleKey: "menu.meetingActions", view: "meetingActions" },
+          { titleKey: "menu.meetingMinutes", view: "meetingMinutes" },
         ],
       },
     ],

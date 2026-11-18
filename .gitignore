@@ -7,6 +7,7 @@
 .codex-runtime/
 .codex-temp/
 .omo/
+.omp/
 .runtime/
 .skills/
 .tmp/
@@ -176,17 +177,23 @@ apps/web/dist-*.tgz
 /*.jpg
 /*.jpeg
 
-# One-off scratch scripts written at the repo root
-_*_tmp.mjs
-_*_tmp.cjs
-_*_tmp.js
-.tmp-*
-.tmp-*.cjs
-pw-*.cjs
-pw-*.js
-q*.cjs
-diag*.bat
-diag*.ps1
+# One-off scratch scripts written at the repo root.
+# These are anchored with a leading slash on purpose: an unanchored
+# "q*.cjs" also matched services/api/query_*.cjs, and opencode still
+# hashed those files into its snapshot trees. A file whose blob was
+# missing from .git/objects made `git write-tree` fail with
+# "invalid object ... for 'scripts/quick_get.cjs'", which broke every
+# snapshot the agent took (agent appeared stuck, snapshot never landed).
+/*_tmp.mjs
+/*_tmp.cjs
+/*_tmp.js
+/.tmp-*
+/.tmp-*.cjs
+/pw-*.cjs
+/pw-*.js
+/q*.cjs
+/diag*.bat
+/diag*.ps1
 
 # Python virtualenvs (services/api/.venv-ocr is ~13k files of vendored OCR deps)
 **/.venv/

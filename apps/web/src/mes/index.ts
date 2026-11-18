@@ -19,6 +19,8 @@ export type MesTabKey =
   | "scrap"
   | "trace"
   | "stationOperator"
+  | "stationPass"
+  | "oqcAql"
   | "repair"
   | "ictMonitor"
   | "productionLine"
@@ -71,6 +73,8 @@ export const mesTabKeys: MesTabKey[] = [
   "scrap",
   "trace",
   "stationOperator",
+  "stationPass",
+  "oqcAql",
   "repair",
   "ictMonitor",
   "productionLine",
@@ -123,6 +127,8 @@ export const mesTabTranslationKeys: Record<MesTabKey, string> = {
   scrap: "mes.subnav.scrap",
   trace: "mes.subnav.trace",
   stationOperator: "mes.subnav.stationOperator",
+  stationPass: "mes.subnav.stationPass",
+  oqcAql: "mes.subnav.oqcAql",
   repair: "mes.subnav.repair",
   ictMonitor: "mes.subnav.ictMonitor",
   productionLine: "mes.subnav.productionLine",
@@ -170,9 +176,9 @@ export type MesThemeKey = "product" | "ng";
 
 export const mesGroups: Array<{ key: MesGroupKey; theme: MesThemeKey; labelKey: string; tabs: MesTabKey[] }> = [
   { key: "productOverview", theme: "product", labelKey: "mes.group.overview", tabs: ["overview", "managerConsole", "dashboard"] },
-  { key: "productExecution", theme: "product", labelKey: "mes.group.execution", tabs: ["productionLine", "manualLine", "autoLine", "stationOperator", "processFlow", "stationWorkflow"] },
+  { key: "productExecution", theme: "product", labelKey: "mes.group.execution", tabs: ["productionLine", "manualLine", "autoLine", "stationOperator", "stationPass", "processFlow", "stationWorkflow"] },
   { key: "productMaterial", theme: "product", labelKey: "mes.group.material", tabs: ["materialVerify", "materialLoad", "smtMaterialBindings", "materialRollQr", "smtLoading3d", "tooljetSmtLoading", "dispatchBoard", "smtLoader", "pdaLoad", "pdaDevice", "pdaScan", "pdaOnline", "smtExemptions"] },
-  { key: "productPackaging", theme: "product", labelKey: "mes.group.packaging", tabs: ["packagingBoxes", "qrWorkOrders"] },
+  { key: "productPackaging", theme: "product", labelKey: "mes.group.packaging", tabs: ["packagingBoxes", "qrWorkOrders", "oqcAql"] },
   { key: "productTraceability", theme: "product", labelKey: "mes.group.traceability", tabs: ["trace", "journey", "bomReconciliation"] },
   { key: "productDigitalTwin", theme: "product", labelKey: "mes.group.digitalTwin", tabs: ["manualLine3d", "autoLine3d", "warehouseStorage", "ictMonitor"] },
   { key: "productConfiguration", theme: "product", labelKey: "mes.group.configuration", tabs: ["stationType", "stationMaster", "processDoc", "processManagement", "timeControl"] },
@@ -193,7 +199,7 @@ export type MesContribution = {
 };
 
 const productCore = new Set<MesTabKey>([
-  "overview", "dashboard", "productionLine", "manualLine", "autoLine", "stationOperator",
+  "overview", "dashboard", "productionLine", "manualLine", "autoLine", "stationOperator", "stationPass", "oqcAql",
   "processFlow", "stationWorkflow", "trace", "journey", "bomReconciliation", "packagingBoxes", "qrWorkOrders",
 ]);
 const ngCore = new Set<MesTabKey>(["ngTracking", "ngRouting", "ngManagement", "repair", "rework", "ngRevival", "retestRules", "scrap"]);
@@ -225,6 +231,7 @@ export { StagnationTracking } from "./StagnationTracking";
 export { ScrapRegistration } from "./ScrapRegistration";
 export { TraceabilitySearch } from "./TraceabilitySearch";
 export { StationOperator } from "./StationOperator";
+export { StationPassConsole } from "./StationPassConsole";
 export { MaterialLoadingDashboard } from "./MaterialLoadingDashboard";
 export { MaterialLoadingWorkflow } from "./MaterialLoadingWorkflow";
 export { MaterialDispatchBoard } from "./MaterialDispatchBoard";

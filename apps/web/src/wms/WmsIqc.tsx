@@ -20,7 +20,7 @@ interface IqcInspection {
   id: number; incoming_record_id: number; lot_no: string; material_code: string;
   supplier_code: string; batch_size: number; sample_size: number; aql_level: string;
   inspector_id: string; inspection_types: string[]; result: string;
-  submitted_at: string; completed_at: string; defects: IqcDefect[];
+  submitted_at: string; completed_at: string; defects?: IqcDefect[];
   ac_critical?: number; re_critical?: number; ac_major?: number; re_major?: number;
   ac_minor?: number; re_minor?: number;
 }
@@ -422,7 +422,7 @@ export function WmsIqc({ locale }: { locale: Locale }) {
     setSaving(true);
     try {
       if (showJudgeModal.id < 0) {
-        const result = showJudgeModal.defects.length ? "fail" : "pass";
+        const result = (showJudgeModal.defects || []).length ? "fail" : "pass";
         const completed = { ...showJudgeModal, result, completed_at: new Date().toISOString() };
         setSubmitted(previous => previous.filter(item => item.id !== completed.id));
         setHistory(previous => [completed, ...previous]);
@@ -435,7 +435,7 @@ export function WmsIqc({ locale }: { locale: Locale }) {
         supplierCode: showJudgeModal.supplier_code || "UNKNOWN",
         materialCode: showJudgeModal.material_code,
         lotNo: showJudgeModal.lot_no,
-        result: showJudgeModal.defects.length ? "FAIL" : "PASS",
+        result: (showJudgeModal.defects || []).length ? "FAIL" : "PASS",
         operator: showJudgeModal.inspector_id || "iqc",
       });
       await wmsApi.completeIqcInspection(showJudgeModal.id);

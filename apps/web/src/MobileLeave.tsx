@@ -10,6 +10,7 @@ function getCurrentUser() {
 }
 
 type Locale = 'zh-CN' | 'vi-VN' | 'en-US';
+type Translate = (key: string, ...args: unknown[]) => string;
 
 const i18n = {
   'zh-CN': {
@@ -177,7 +178,7 @@ function BalanceBar({ balances, locale }: { balances: any[]; locale: Locale }) {
 }
 
 // ── Leave Form ─────────────────────────────────────────────────────────────────
-function LeaveForm({ t, locale, onSuccess, balances }: { t: (k: string) => string; locale: Locale; onSuccess: () => void; balances: any[] }) {
+function LeaveForm({ t, locale, onSuccess, balances }: { t: Translate; locale: Locale; onSuccess: () => void; balances: any[] }) {
   const user = getCurrentUser();
   const [leaveType, setLeaveType] = useState('personal');
   const [startDate, setStartDate] = useState(today());
@@ -199,20 +200,20 @@ function LeaveForm({ t, locale, onSuccess, balances }: { t: (k: string) => strin
       if (bal) {
         const remaining = Number(bal.days_left ?? bal.remaining ?? 0);
         if (remaining < days) {
-          setError(t(locale, 'insufficient_balance', remaining, days));
+          setError(t('insufficient_balance', remaining, days));
           return;
         }
       }
     }
-    if (days > 3 && leaveType !== 'report' && !attachment) { setError(t(locale, 'attachment_required')); return; }
+    if (days > 3 && leaveType !== 'report' && !attachment) { setError(t('attachment_required')); return; }
     setLoading(true);
     try {
       const result = await submitLeave(user.employee_id, leaveType, startDate, endDate, reason, attachment, isUrgent);
-      if (result.error) { setError(t(locale, 'submit_error', result.error)); return; }
+      if (result.error) { setError(t('submit_error', result.error)); return; }
       setLeaveType('personal'); setStartDate(today()); setEndDate(today()); setReason(''); setAttachment(null); setIsUrgent(false);
       onSuccess();
     } catch (err: any) {
-      setError(t(locale, 'submit_error', err.message));
+      setError(t('submit_error', err.message));
     } finally {
       setLoading(false);
     }
@@ -278,7 +279,7 @@ function LeaveForm({ t, locale, onSuccess, balances }: { t: (k: string) => strin
 }
 
 // ── Swap Form ──────────────────────────────────────────────────────────────────
-function SwapForm({ t, locale, onSuccess }: { t: (k: string) => string; locale: Locale; onSuccess: () => void }) {
+function SwapForm({ t, locale, onSuccess }: { t: Translate; locale: Locale; onSuccess: () => void }) {
   const user = getCurrentUser();
   const [partnerId, setPartnerId] = useState('');
   const [shiftDate, setShiftDate] = useState(today());
@@ -307,10 +308,10 @@ function SwapForm({ t, locale, onSuccess }: { t: (k: string) => string; locale: 
         onSuccess();
         return;
       }
-      if (result.error) { setError(t(locale, 'swap_error') + ': ' + result.error); return; }
+      if (result.error) { setError(t('swap_error') + ': ' + result.error); return; }
       setPartnerId(''); setShiftDate(today()); setReason('');
       onSuccess();
-    } catch (err: any) { setError(t(locale, 'swap_error')); }
+    } catch (err: any) { setError(t('swap_error')); }
     finally { setLoading(false); }
   };
 
@@ -344,7 +345,7 @@ function SwapForm({ t, locale, onSuccess }: { t: (k: string) => string; locale: 
 }
 
 // ── PendingConfirmPanel (Q4) ──────────────────────────────────────────────────
-function PendingConfirmPanel({ t, locale, onRefresh }: { t: (k: string) => string; locale: Locale; onRefresh: () => void }) {
+function PendingConfirmPanel({ t, locale, onRefresh }: { t: Translate; locale: Locale; onRefresh: () => void }) {
   const user = getCurrentUser();
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -413,7 +414,7 @@ function PendingConfirmPanel({ t, locale, onRefresh }: { t: (k: string) => strin
 }
 
 // ── History Panel (Q14) ────────────────────────────────────────────────────────
-function HistoryPanel({ t, locale, refreshKey }: { t: (k: string) => string; locale: Locale; refreshKey: number }) {
+function HistoryPanel({ t, locale, refreshKey }: { t: Translate; locale: Locale; refreshKey: number }) {
   const user = getCurrentUser();
   const [leaveHistory, setLeaveHistory] = useState<any[]>([]);
   const [swapHistory, setSwapHistory] = useState<any[]>([]);
@@ -486,7 +487,7 @@ function HistoryPanel({ t, locale, refreshKey }: { t: (k: string) => string; loc
 }
 
 // ── Notif Panel ─────────────────────────────────────────────────────────────────
-function NotifPanel({ t, locale }: { t: (k: string) => string; locale: Locale }) {
+function NotifPanel({ t, locale }: { t: Translate; locale: Locale }) {
   const user = getCurrentUser();
   const [notifs, setNotifs] = useState<any[]>([]);
   useEffect(() => {

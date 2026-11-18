@@ -59,9 +59,19 @@ import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
 import { registerRjvnPickingRoutes } from "./src/rjvn-picking.js";
 import { registerRjvnDocFlowRoutes } from "./src/rjvn-docflow.js";
 import { registerCanonicalDataRoutes } from "./src/rjvn-canonical-api.js";
+// ── OA module (merged from the standalone OA system, parity port) ──
+import { createOaRouter } from "./src/oa/shim.js";
+import { config as oaConfig } from "./src/oa/config/index.js";
+import { registerRoutes as registerOaRoutes } from "./src/oa/routes/index.js";
+
+import { startCron as startOaCron, stopCron as stopOaCron } from "./src/oa/services/cron.js";
+import { bootstrapAdmin as oaBootstrapAdmin } from "./src/oa/services/bootstrap.js";
+import { checkConnection as oaCheckConnection } from "./src/oa/db/index.js";
 import manualLineRouter from "./src/routes/manual-line.js";
 import autoLineRouter from "./src/routes/auto-line.js";
 import manuLineRouter from "./src/routes/manu-line.js";
+import { createStationPassRouter } from "./src/routes/station-pass.js";
+import { createOqcAqlRouter } from "./src/routes/oqc-aql.js";
 import { canonicalLineCode, canonicalStationCode } from "./src/shared/station-identity.js";
 import { evaluateVisualInspection, DEFAULT_POLICY as VISUAL_INSPECTION_POLICY } from "./src/visual-inspection.js";
 import { evaluateProductGate } from "./src/product-gate.js";
@@ -83,7 +93,7 @@ import {
   askReport,
   health as llmHealth,
 } from "../../integrations/llm/index.js";
-import { createHmac, createHash, randomUUID } from "node:crypto";
+import { createHmac, createHash, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 if(process.env.DEBUG_STARTUP==="1")console.log("startup: imports loaded");
 const api = express.Router();
@@ -113,6 +123,17 @@ for (const method of ["get", "post", "put", "patch", "delete"]) {
     }),
   );
 }
+
+// ═══ Authentication gate (must stay the FIRST registration on the api router) ═══
+// Security finding 3: this used to be registered ~200 route definitions further
+// down the file, so every route declared above it was reachable without a JWT.
+// Registering it before the first route guarantees no api route escapes the gate.
+api.use((req, res, next) => {
+  // Assignment lookup is a read-only station handshake; the PDA supplies its
+  // device identity and line in the query before an operator JWT is present.
+  if (req.path === "/dispatch/assignments" && req.method === "GET") return next();
+  return authenticateJWT(req, res, next);
+});
 
 // ═══ Emergency Management System ═══
 // Q11-Q14: 全覆盖应变平台
@@ -954,6 +975,7 @@ app.use(cors());
 // Station inventory snapshots contain complete 12-board motherboard objects.
 // Keep enough headroom for backlog reconciliation without splitting a snapshot.
 app.use(express.json({ limit: "10mb" }));
+
 const API_DOMAIN_RULES=[
   ["/api/integration","INTEGRATION"],["/api/wms","WMS"],["/api/smt","STATION"],["/api/station","STATION"],["/api/auth","AUTH"],
   ["/pmc","PMC"],["/mes","MES"],["/wms","WMS"],["/hr","HR"],["/finance","FINANCE"],
@@ -9168,12 +9190,79 @@ app.post("/api/mes/product-gate/evaluate", async (req, res) => {
   }
 });
 
+// ── OA module (merged from the standalone OA system) ─────────────────
+// Mounted BEFORE app.use("/api", api): the SMT api router has an api-wide
+// JWT gate at its top (Bearer-only), which would otherwise swallow every
+// OA request that authenticates via x-token / x-api-key / ?token= before
+// the OA router ever sees it. Mounted here, OA owns its 607 non-colliding
+// routes with its own authenticate (SMT-JWT-only since the single-token
+// change), while the two colliding paths (POST /api/auth/login, POST
+// /api/auth/logout) are NOT registered by the shim and fall through to the
+// SMT api router — single-login policy: users authenticate against the
+// SMT user store; the embedded OA UI receives the same SMT JWT.
+const { router: oaRouter, app: oaApp } = createOaRouter(oaConfig);
+await registerOaRoutes(oaApp);
+app.use(oaRouter);
+console.log("[oa] routes registered on the SMT Express app (search_path=oa,public)");
+
+// ── OA frontends (ported from the standalone OA system) ──────────────
+// Legacy hash-router SPA at /oa/ and the "strangler" rebuild at /next/ —
+// the same mounts as the golden master, so the asset URLs baked into the
+// builds resolve as-is (web-next hardcodes /next/assets/...; the legacy
+// build uses absolute /assets/... which are rebased to /oa/assets/ below).
+// index.html is transformed per request (never cached, matching the golden
+// master) and gets an SSO bootstrap script injected: ?smt_token=<SMT JWT>
+// is copied into localStorage.oa_token — the single token key both OA
+// builds read — so the embedded UI runs on the one SMT JWT with no second
+// login. /oa-logo.png is aliased at the root because the legacy runtime
+// patches reference it with an absolute path.
+const oaWebDist = path.join(__dirname, "oa-web");
+const oaWebNextDist = path.join(__dirname, "oa-web-next");
+const OA_SSO_SNIPPET = '<script>(function(){try{var q=new URLSearchParams(location.search);var t=q.get("smt_token");if(t){localStorage.setItem("oa_token",t);q.delete("smt_token");var s=q.toString();history.replaceState(null,"",location.pathname+(s?"?"+s:"")+location.hash);}}catch(e){}})();</script>';
+function sendOaIndex(distDir, transform, req, res) {
+  let html = fs.readFileSync(path.join(distDir, "index.html"), "utf8");
+  if (transform) html = transform(html);
+  html = html.replace(/<head>/i, "<head>" + OA_SSO_SNIPPET);
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
+  res.type("html").send(html);
+}
+function mountOaSpa(mount, distDir, transform, label) {
+  if (!fs.existsSync(path.join(distDir, "index.html"))) {
+    console.warn("[oa]", label, "dist not found at", distDir);
+    return;
+  }
+  const staticHandler = express.static(distDir, { index: false });
+  app.use(mount, (req, res, next) => {
+    if (req.method !== "GET") return next();
+    if (req.path === "/" || req.path === "" || req.path === "/index.html" || !req.path.includes(".")) {
+      return sendOaIndex(distDir, transform, req, res);
+    }
+    staticHandler(req, res, next);
+  });
+  console.log("[oa]", label, "served at", mount, "from", distDir);
+}
+mountOaSpa("/oa", oaWebDist, (html) => html
+  .replace(/src="\/assets\//g, 'src="/oa/assets/')
+  .replace(/href="\/assets\//g, 'href="/oa/assets/')
+  .replace(/src="\/oa-/g, 'src="/oa/oa-'), "legacy frontend");
+// 注：index.html 里的 /favicon.png 不重写 —— legacy dist 本身就没有这个文件
+//（golden master 同样 404），保留原路径让 SMT 自己的 favicon 接管。
+mountOaSpa("/next", oaWebNextDist, null, "next frontend");
+if (fs.existsSync(path.join(oaWebDist, "oa-logo.png"))) {
+  app.get("/oa-logo.png", (req, res) => res.sendFile(path.join(oaWebDist, "oa-logo.png")));
+}
+// ── end OA module mount ──────────────────────────────────────────────
+
 app.use("/api", api);
 
 // ── Line-specific API routers (extracted to src/routes/) ──────────────────
 api.use("/mes/manual-line", manualLineRouter);
 api.use("/mes/auto-line",   autoLineRouter);
 api.use("/mes/manu-line",   manuLineRouter);
+// Native station-pass engine (PG): 过站校验 + NG 路线 + 跳站放行单
+api.use("/mes/station-pass", createStationPassRouter({ authenticateJWT, requirePermission }));
+// OQC AQL 出货抽检（Z1.4 抽样方案 + CR/MA/MI 判定 + 处置）
+api.use("/qms/oqc-aql", createOqcAqlRouter({ authenticateJWT, requirePermission }));
 
 // ── Finance Routes ─────────────────────────────────────────────────────────
 // GET /api/finance/ar-invoices
@@ -13983,14 +14072,18 @@ function authenticateJWT(req, res, next) {
   if (req.path.startsWith("/health") || req.path.startsWith("/openapi") || req.path.startsWith("/ai/health") || req.path.startsWith("/managers/")) return next();
   // Station integration paths — no JWT required (but may require separate station-level auth)
   // NOTE: /mes/events requires JWT auth (station agents login via /auth/login)
+  // /mes/spi/upload is posted by the SPI/AOI machine adapter
+  // (integrations/leichen-spi/sendmes.py) which carries no token; it was open
+  // before the auth gate moved to the top of the router and stays open here
+  // explicitly instead of by accident of declaration order.
   if (req.path.startsWith("/station/confirmed-motherboards/search/") ||
       req.path.startsWith("/api/station/confirmed-motherboards/search/") ||
+      req.path === "/mes/spi/upload" ||
       req.path.startsWith("/mes/sn-duplicate-attempts") ||
       req.path.startsWith("/mes/ng-registry") ||
       req.path.startsWith("/aging/ng_registry") ||
       req.path.startsWith("/shelf/") ||
       req.path.startsWith("/hr/employees/qr-code/scan") ||
-      req.path.startsWith("/sql/") ||
       req.path === "/mes/work-start" || req.path === "/mes/feeder-validate" ||
       // Public station status for display boards (topology page)
       req.path === "/mes/andon-board" || req.path === "/api/mes/andon-board") return next();
@@ -13998,8 +14091,11 @@ function authenticateJWT(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   // Test-only unified PDA builds use a local role catalog while the workflow
-  // is being verified. Never enable this path in production.
-  if (process.env.NODE_ENV !== "production" && req.headers["x-pda-test-mode"] === "1") {
+  // is being verified. Security finding 2: the header alone must never grant
+  // permissions, so it is honoured only when the operator explicitly opted in
+  // with PDA_TEST_MODE=1 and the runtime is not production.
+  const pdaTestModeEnabled = process.env.PDA_TEST_MODE === "1" && process.env.NODE_ENV !== "production";
+  if (pdaTestModeEnabled && req.headers["x-pda-test-mode"] === "1") {
     req.user = {
       userId: "pda-test-user",
       username: "PDA_TEST",
@@ -14028,12 +14124,9 @@ function authenticateJWT(req, res, next) {
 // HR lifecycle routes use the legacy middleware name. Keep one canonical
 // implementation so those routes cannot prevent the MES API from starting.
 const authenticate = authenticateJWT;
-api.use((req, res, next) => {
-  // Assignment lookup is a read-only station handshake; the PDA supplies its
-  // device identity and line in the query before an operator JWT is present.
-  if (req.path === "/dispatch/assignments" && req.method === "GET") return next();
-  return authenticateJWT(req, res, next);
-});
+// The api-wide JWT gate is registered at the top of this router (before the
+// first route). Do not add a second registration here — it would only apply to
+// the routes declared below it, which is the defect that gate used to have.
 
 // The original specialist HR tables reference hr_employees, while the current
 // employee directory uses employees. Mirror the real directory identities into
@@ -15961,6 +16054,28 @@ async function getSessionWithAssignments(sessionId) {
 
 // ── Auth ──
 
+// Password verification. Security finding 4: credentials live in
+// users.password_hash (see database/migrations/20260731_users_password_hash.sql),
+// never as literals in this file. Format: scrypt$N$r$p$<base64 salt>$<base64 hash>.
+// Comparison is constant-time; a missing/garbled hash denies the login.
+function verifyPasswordHash(password, storedHash) {
+  const parts = String(storedHash ?? "").split("$");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  const [, N, r, p, salt, encoded] = parts;
+  try {
+    const expected = Buffer.from(encoded, "base64");
+    if (expected.length === 0 || !salt) return false;
+    const actual = scryptSync(String(password), salt, expected.length, {
+      N: Number(N),
+      r: Number(r),
+      p: Number(p),
+    });
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
 api.post("/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body ?? {};
@@ -15969,7 +16084,7 @@ api.post("/auth/login", async (req, res) => {
     }
     const loginName = String(username).trim() === "蒙营" ? "MENG_YING" : String(username).trim() === "莫立斌" ? "MO_LI_BIN" : String(username).trim();
     const result = await authPool.query(
-      `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
+      `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status, u.password_hash
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = $1`,
       [loginName],
     );
@@ -15977,11 +16092,7 @@ api.post("/auth/login", async (req, res) => {
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Invalid credentials"));
     }
     const user = result.rows[0];
-    const passwordValid = user.username === "MENG_YING"
-      ? password === "my"
-      : user.username === "HWG"
-        ? password === "hwg"
-        : password === "Factory@123";
+    const passwordValid = verifyPasswordHash(password, user.password_hash);
     if (!passwordValid) {
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Invalid credentials"));
     }
@@ -30222,18 +30333,10 @@ api.post("/smt/loading/daily-plans/:id/publish", async (req, res) => {
   catch (err) { console.error("POST /api/smt/loading/daily-plans/:id/publish:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
 });
 
-const HOST = process.env.HOST ?? "0.0.0.0";
-const server = app.listen(PORT, HOST, () => {
-  const addr = server.address();
-  const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
-  console.log(`API service listening on http://${HOST}:${actualPort}`);
-  query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Initial lifecycle refresh failed:", error.message));
-});
-
-const lifecycleClassifier = setInterval(() => {
-  query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Lifecycle refresh failed:", error.message));
-}, 5 * 60 * 1000);
-lifecycleClassifier.unref();
+// (Removed: a second app.listen + lifecycle setInterval were pasted inside this
+// request handler. The only listener/timer pair lives in the Start section at
+// the end of this file; the duplicates here would have bound the port again on
+// the first request that reached this handler.)
 
         if (decision === "blocked") {
           return res.status(409).json(errorEnvelope("DUPLICATE_SN_BLOCKED",
@@ -38691,76 +38794,11 @@ api.get("/shelf/summary", async (req, res) => {
   }
 });
 
-// GET /api/sql/tables — list all tables in GM_WareHouse
-api.get("/sql/tables", async (req, res) => {
-  try {
-    const rows = await sqlQuery(`
-      SELECT TABLE_NAME, TABLE_TYPE
-      FROM INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_CATALOG = 'GM_WareHouse'
-      ORDER BY TABLE_TYPE, TABLE_NAME
-    `);
-    res.json(envelope({ tables: rows }));
-  } catch (err) {
-    console.error("GET /api/sql/tables:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /api/sql — execute raw SQL against GM_WareHouse
-// Body: { sql: string }
-// Returns: { columns: string[], rows[], rowCount, duration }
-api.post("/sql", async (req, res) => {
-  try {
-    const { sql } = req.body ?? {};
-    if (!sql?.trim()) {
-      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "sql is required" } });
-    }
-    const trimmed = sql.trim();
-    const start = Date.now();
-
-    // Detect query type
-    const firstWord = trimmed.split(/\s+/)[0].toUpperCase();
-    const isSelect = firstWord === "SELECT";
-
-    if (isSelect) {
-      const rows = await sqlQuery(trimmed);
-      const duration = Date.now() - start;
-      res.json({
-        columns: rows.length > 0 ? Object.keys(rows[0]) : [],
-        rows,
-        rowCount: rows.length,
-        duration,
-        type: "SELECT",
-      });
-    } else {
-      // INSERT/UPDATE/DELETE/EXEC — use TDS rowcount
-      const conn = (await import("mssql")).default;
-      const pool = await conn.connect({
-        server: "192.168.0.110",
-        port: 1433,
-        user: "sa",
-        password: "abc@123",
-        database: "GM_WareHouse",
-        options: { encrypt: false, trustServerCertificate: true },
-      });
-      const result = await pool.request().query(trimmed);
-      await pool.close();
-      const duration = Date.now() - start;
-      res.json({
-        columns: [],
-        rows: [],
-        rowCount: result.rowsAffected[0] ?? 0,
-        duration,
-        type: firstWord,
-        message: `${firstWord} — ${result.rowsAffected[0]} row(s) affected`,
-      });
-    }
-  } catch (err) {
-    console.error("POST /api/sql:", err.message);
-    res.status(500).json({ error: { code: "SERVER_ERROR", message: err.message } });
-  }
-});
+// GET /api/sql/tables and POST /api/sql were removed: they exposed the
+// GM_WareHouse SQL Server to any caller, including an arbitrary-statement POST
+// that authenticated with hardcoded `sa` credentials. Inventory/warehouse reads
+// that legitimately need SQL Server still go through src/sqlserver.js helpers
+// behind dedicated, permissioned routes.
 
 // GET /api/shelf/racks — 2 racks × 2 sides × 700 bins, with occupancy from Sys_CellsInfo
 // Returns: { racks: [{ code, side, bins: [{binCode, row, col, occupied, serialNumber, materialCode}]}] }
@@ -46267,6 +46305,25 @@ const server = app.listen(PORT, HOST, () => {
   const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
   console.log(`API service listening on http://${HOST}:${actualPort}`);
   query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Initial lifecycle refresh failed:", error.message));
+  // ── OA module boot (merged mode) ──────────────────────────────────
+  // Mirrors the standalone OA server's start(): admin bootstrap → cron.
+  // Skipped silently when the OA schema is not reachable so a missing
+  // `oa` schema degrades the OA module only, never the SMT API.
+  (async () => {
+    const db = await oaCheckConnection();
+    if (!db.ok) {
+      console.warn(`[oa] database not reachable — OA module disabled (${db.error})`);
+      return;
+    }
+    try {
+      await oaBootstrapAdmin();
+      if (oaConfig.cron.enabled) startOaCron();
+      console.log("[oa] boot complete (admin bootstrap + cron started)");
+    } catch (err) {
+      console.warn(`[oa] boot failed (module degraded): ${err.message}`);
+    }
+  })();
+  // ── end OA module boot ────────────────────────────────────────────
 });
 
 // Lightweight classifier: the database remains canonical, while every API

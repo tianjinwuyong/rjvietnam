@@ -24,6 +24,27 @@ const MIGRATIONS_DIR = join(ROOT, "database", "migrations");
 const SEEDS_DIR = join(ROOT, "database", "seeds");
 const TRACKING_TABLE = "_migrations";
 
+// Run as the same role the API uses. Without this the runner falls back to
+// postgres/postgres, and every table it creates is owned by the admin role —
+// the API then fails with "permission denied for table ...". Only PG* keys are
+// taken from .env, and never over an already-exported variable.
+const ENV_PATH = join(ROOT, ".env");
+if (existsSync(ENV_PATH)) {
+  for (const rawLine of readFileSync(ENV_PATH, "utf8").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith("#")) continue;
+    const eq = line.indexOf("=");
+    if (eq <= 0) continue;
+    const key = line.slice(0, eq).trim();
+    if (!/^PG[A-Z_]+$/.test(key) || process.env[key] !== undefined) continue;
+    let value = line.slice(eq + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    process.env[key] = value;
+  }
+}
+
 const pool = new pg.Pool({
   host: process.env.PGHOST ?? "127.0.0.1",
   port: Number(process.env.PGPORT ?? 5432),

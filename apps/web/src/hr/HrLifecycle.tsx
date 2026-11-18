@@ -102,18 +102,22 @@ export function HrLifecycle({ locale }: Props) {
     } catch (e) { console.error(e); }
   }
 
-  function TaskRow({ task, type, onComplete }: { task: any; type: "on" | "off"; onComplete: (id: number) => void }) {
+  const TASK_CATEGORY_LABELS: Record<string, string> = { paperwork: " paperwork", system: "系统", equipment: "设备", training: "培训", access: "权限", orientation: " orientation", other: "其他", knowledge: "知识", finance: "财务", hr: "HR", it: "IT" };
+
+const TASK_STATUS_LABELS: Record<string, string> = { pending: "待处理", in_progress: "进行中", completed: "已完成", skipped: "已跳过" };
+
+function TaskRow({ task, type, onComplete }: { task: OnboardingTaskInstance | OffboardingTaskInstance; type: "on" | "off"; onComplete: (id: number) => void }) {
     const color = STATUS_COLORS[task.status] || "#6b7280";
     const isPending = task.status === "pending";
     return (
       <tr>
         <td>{task.task_name_zh}</td>
-        <td>{{ paperwork:" paperwork",system:"系统",equipment:"设备",training:"培训",access:"权限",orientation:" orientation",other:"其他",knowledge:"知识",finance:"财务",hr:"HR",it:"IT" }[task.task_category] || task.task_category}</td>
+        <td>{TASK_CATEGORY_LABELS[task.task_category] || task.task_category}</td>
         <td>{task.assignee_name || task.assignee_role}</td>
         <td>{task.due_date}</td>
         <td>
           <span style={{ display:"inline-block", padding:"2px 10px", borderRadius:12, background:color+"22", color, fontWeight:600, fontSize:12 }}>
-            {{ pending:"待处理",in_progress:"进行中",completed:"已完成",skipped:"已跳过" }[task.status] || task.status}
+            {TASK_STATUS_LABELS[task.status] || task.status}
           </span>
         </td>
         <td>{task.completed_at ? task.completed_at.slice(0,10) : "—"}</td>

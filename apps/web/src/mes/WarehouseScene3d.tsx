@@ -217,7 +217,7 @@ function FloorStorageArea({ area, onFocus }: { area: FloorArea; onFocus: (area: 
       const columns = Math.max(1, Math.floor(width / 1.35));
       const px = minX + .8 + (index % columns) * 1.25;
       const pz = minZ + .85 + Math.floor(index / columns) * 1.3;
-      return <PalletLoad key={`${area.areaCode}-${index}`} x={px} y={0.05} z={pz} onFocus={() => onFocus([px, 0.75, pz])} cell={{
+      return <PalletLoad key={`${area.areaCode}-${index}`} x={px} y={0.05} z={pz} onFocus={() => onFocus(area, [px, 0.75, pz])} cell={{
         shelfCode: area.areaCode, cellNumber: String(index + 1), status: "occupied", lightColor: null,
         lightAt: null, updatedAt: area.updatedAt, labelId: null,
         lotNo: null, qty: 1, materialCode: area.areaType, materialName: area.areaName, iqcStatus: area.status,

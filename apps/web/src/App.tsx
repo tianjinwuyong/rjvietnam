@@ -121,10 +121,11 @@ import { ReportsDashboard } from "./reports";
 import type { MesTabKey } from "./mes";
 import { mesThemes } from "./mes";
 import { getMesContribution } from "./mes";
-import { mesGroups, mesTabKeys, mesTabTranslationKeys, ProcessFlow, StationWorkflow, ProcessDocumentation, ProcessManagement, FoolProofRules, FeederPreparationMapping, FirstArticleInspectionPage, MaterialVerificationPage, RetestRules, StagnationTracking, ScrapRegistration, TraceabilitySearch, StationOperator, TimeControl, MaterialLoadingDashboard, MaterialLoadingWorkflow, MaterialDispatchBoard, StationTypeList, StationMaster, RepairWorkflow, ProductionLineDashboard, AutoLineDashboard, ReworkDashboard, NgRevivalManagement, NgRealtimeTracking, NgRouteConfigurator, NgManagementPage, NgClosedLoopBoard, PassShortageManagement, PackagingBoxManagement, QrWorkOrderManagement, PdaLoadDashboard, MesManagerConsole, MesOverview, JourneySearch, BomReconciliation, PdaDeviceManagement, PdaUnifiedScanning, PdaOnlineMonitor, MaterialRollQrGenerator, SmtLoading3dSimulator, SmtMaterialBindingTable } from "./mes";
+import { mesGroups, mesTabKeys, mesTabTranslationKeys, ProcessFlow, StationWorkflow, ProcessDocumentation, ProcessManagement, FoolProofRules, FeederPreparationMapping, FirstArticleInspectionPage, MaterialVerificationPage, RetestRules, StagnationTracking, ScrapRegistration, TraceabilitySearch, StationOperator, StationPassConsole, TimeControl, MaterialLoadingDashboard, MaterialLoadingWorkflow, MaterialDispatchBoard, StationTypeList, StationMaster, RepairWorkflow, ProductionLineDashboard, AutoLineDashboard, ReworkDashboard, NgRevivalManagement, NgRealtimeTracking, NgRouteConfigurator, NgManagementPage, NgClosedLoopBoard, PassShortageManagement, PackagingBoxManagement, QrWorkOrderManagement, PdaLoadDashboard, MesManagerConsole, MesOverview, JourneySearch, BomReconciliation, PdaDeviceManagement, PdaUnifiedScanning, PdaOnlineMonitor, MaterialRollQrGenerator, SmtLoading3dSimulator, SmtMaterialBindingTable } from "./mes";
 import { AiChat } from "./ai/AiChat";
 import { SmtMaterialExemptions } from "./mes/SmtMaterialExemptions";
 import { SmtMaterialLoadingPage } from "./mes/SmtMaterialLoadingPage";
+import { OqcAqlConsole } from "./qms/OqcAqlConsole";
 import { AiPatrolChat } from "./ai/AiPatrolChat";
 import { qualityPatrol, maintenancePatrol, mesPatrol, hrPatrol } from "./ai/patrol";
 import { Projects } from "./projects/Projects";
@@ -2081,6 +2082,10 @@ function Mes({ locale }: { locale: Locale }) {
         return <JourneySearch locale={locale} />;
       case "stationOperator":
         return <StationOperator locale={locale} />;
+      case "stationPass":
+        return <StationPassConsole locale={locale} />;
+      case "oqcAql":
+        return <OqcAqlConsole locale={locale} />;
       case "repair":
         return <RepairWorkflow locale={locale} />;
       case "retestRules":

@@ -18,7 +18,10 @@ import { ScanBarcode, Camera, Printer, CheckCircle, AlertTriangle, X, Truck, Pac
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi } from "../api";
-import type { ReceivingLot, PdaInspectionRecord } from "../api";
+import type { MaterialLot, PdaInspectionRecord } from "../api";
+
+/** Shape returned by GET /wms/material-lots (camelCase DTO + supplier name from suppliers.name_zh). */
+type ScannedLot = MaterialLot & { supplierName?: string };
 
 interface PdaReceiveState {
   step: "scan" | "camera" | "confirm" | "msd" | "done";
@@ -187,7 +190,7 @@ export function WmsPdaReceiving({ locale }: { locale: Locale }) {
         resolvedLabel = lineage.family?.pallet?.palletCode || lineage.family?.containerId || val;
         result = await wmsApi.getMaterialLots({ labelId: resolvedLabel, limit: 1 });
       }
-      const lot = result.items?.[0] as (ReceivingLot & { labelId?: string; name_zh?: string; supplierName?: string }) | undefined;
+      const lot = result.items?.[0] as ScannedLot | undefined;
       if (!lot) {
         setFeedback({ ok: false, msg: `未找到栈板码/外箱码：${val}` });
         setScanValue("");
@@ -240,7 +243,7 @@ export function WmsPdaReceiving({ locale }: { locale: Locale }) {
       setExceptionAuthorizationId(Number(authorization.exceptionId));
       let result = await wmsApi.getMaterialLots({ labelId: pendingUnregisteredQr, limit: 1 });
       if (!result.items?.length) result = await wmsApi.getMaterialLots({ lotNo: pendingUnregisteredQr, limit: 1 });
-      const lot = result.items?.[0] as (ReceivingLot & { labelId?: string; name_zh?: string; supplierName?: string }) | undefined;
+      const lot = result.items?.[0] as ScannedLot | undefined;
       setState(s => ({
         ...s,
         preReceiptQr: "",

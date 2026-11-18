@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { Locale } from "../i18n";
+import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { MaterialRollQrGenerator, type MaterialRollPrefill } from "../mes/MaterialRollQrGenerator";
 
 const supplierLabel: MaterialRollPrefill = { materialSn: "12058-0000362-20260810-001", materialCode: "12058-0000362", lotNo: "20260810", dateCode: "20260810", supplierCode: "CR075", supplierLot: "20260810", description: "Transformer EE17 / PC95 / 1150uH", quantity: 300000, unit: "PCS", rollCount: 1, referenceSn: "SUP-001" };
