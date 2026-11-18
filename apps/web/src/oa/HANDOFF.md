@@ -17,16 +17,17 @@
 | Wave C | 品质 7 页：IQC/MRB/巡线记录/首件记录/点检记录/出货检验/检验模板库 | `6a78492` |
 | 收尾 | 系统设置（改密码/语言偏好） | `2bbb380` |
 
-侧边栏建设中项从 50+ 降到 **6 个**（见下）。
+侧边栏建设中项已全部清零。最后 6 项完成情况：
 
-## 剩余 6 个建设中项（均为复杂表单/设计器，建议按此顺序做）
+| 项目 | 实现 | 说明 |
+|---|---|---|
+| 巡线提报/首件提报 | `QcFill.tsx`（QcFillForm，ipqc/fai 共用骨架） | `POST /api/ipqc/records` / `/api/fai/records`；abnormal 提交后端自动开品质异常单 |
+| 点检填写 | `QualityView.tsx` InspectFillPage | `GET /api/equipment/tasks`（pending）+ `POST /api/equipment/tasks/:id/done` |
+| 会议发起 | `HrView.tsx` MeetingCreatePage | `POST /api/meeting`（v1 不含议程 jsonb 编辑，可在详情补） |
+| 组织导入 | `OrgImportView.tsx` | 模板下载/导出（客户端 xlsx）、岗位字典 CRUD、上传预览（⚙ 自动工号 / ✕ 岗位不匹配）、150/批分批导入 |
+| 流程设计 | `FlowDesignView.tsx` | 节点/字段/高级三页签；条件装配与原版语义一致（field+op 才生成 condition，value_ref 走 ref 源）；`PUT /api/flows/:id/config` 保存即出版本快照；`POST /api/flows` 新建 |
 
-1. **流程设计**（menu.flowDesign，adminOnly）— 可视化流程设计器，词典 `designExtra` 109 键。后端 `PUT /api/flows/:id/config`、`POST /api/flows`（flow.js）。工作量最大。
-2. **巡线提报**（ipqcMod.fillTitle）— IPQC 填写：选产线/班次/日期 + 模板逐项 OK/NG。`POST /api/ipqc/records`，模板 `GET /api/ipqc/templates`。参考 `ipqc-service.js`。
-3. **首件提报**（faiMod.fillTitle）— 同构 IPQC。`POST /api/fai/records`。
-4. **点检填写**（inspectRt.fillTitle）— 设备点检任务执行。`GET /api/equipment/tasks`（type=inspect）+ 模板，见 `equipTask.*` 词典（execute/pickTemplate/useTpl 等键已备）。
-5. **会议发起**（menu.meetingCreate）— 会议表单（基本信息/参会人/议程）。`POST /api/meeting`，`meeting.*` 词典 252 键已备。
-6. **组织导入**（menu.orgImport）— Excel 导入向导。`org-import-service.js`，`orgImport.*` 63 键已备。
+提交：`ea88ad2`（四个表单页）、`03c7d17`（组织导入）、流程设计（见后续提交）。
 
 ## 关键模式（新页面照抄即可）
 

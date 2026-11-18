@@ -16,6 +16,7 @@ import { InstanceDetail } from "./InstanceDetail";
 import { Announcements } from "./Announcements";
 import { OrgView } from "./OrgView";
 import { OrgImportView } from "./OrgImportView";
+import { FlowDesignView } from "./FlowDesignView";
 import { DocsView, type DocsSubView } from "./DocsView";
 import { DriveView } from "./DriveView";
 import { KnowledgeView } from "./KnowledgeView";
@@ -351,6 +352,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <KnowledgeView locale={locale} />
   ) : view === "ledger" || view === "flowVersions" || view === "customField" ? (
     <SysView locale={locale} sub={view} />
+  ) : view === "flowDesign" ? (
+    <FlowDesignView locale={locale} />
   ) : view === "equipment" || view === "equipStocktake" || view === "equipTasks" || view === "equipCalib" || view === "equipAlerts" ? (
     <EquipmentView locale={locale} sub={view} />
   ) : view === "attendance" || view === "cardRule" || view === "workCalendar" || view === "schedule" || view === "salary" || view === "salaryTemplate" || view === "perfFlow" || view === "training" || view === "myExams" || view === "handover" || view === "meetingCreate" || view === "meetingList" || view === "meetingSeries" || view === "meetingActions" || view === "meetingMinutes" ? (

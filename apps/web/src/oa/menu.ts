@@ -71,6 +71,7 @@ export type OaViewId =
   // 系统管理组（流程设计/系统设置暂留建设中）
   | "ledger"
   | "flowVersions"
+  | "flowDesign"
   | "customField"
   // 人事管理组（组织导入/发起会议暂留建设中）
   | "attendance"
@@ -235,7 +236,7 @@ export const OA_MENU: OaMenuGroup[] = [
       { titleKey: "menu.ledger", view: "ledger" },
       { titleKey: "menu.flowVersions", view: "flowVersions" },
       { titleKey: "customField.manageTitle", view: "customField" },
-      { titleKey: "menu.flowDesign", adminOnly: true },
+      { titleKey: "menu.flowDesign", adminOnly: true, view: "flowDesign" },
       { titleKey: "menu.system", adminOnly: true, view: "settings" },
     ],
   },
