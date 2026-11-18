@@ -32,7 +32,9 @@ function listRoute(pool, { table, alias = "t", select, searchCols = [], join = "
     const [data, count] = await Promise.all([
       pool.query(`select ${select} from public.${table} ${alias} ${join} ${where}
         order by ${order || `${alias}.id`} limit $${lim} offset $${off}`, [...params, limit, offset]),
-      pool.query(`select count(*)::int as n from public.${table} ${alias} ${where}`, params),
+      // Search columns may belong to joined tables (lots/reels/boms/inspections),
+      // so the count query must carry the same join as the data query.
+      pool.query(`select count(*)::int as n from public.${table} ${alias} ${join} ${where}`, params),
     ]);
     res.json({ success: true, data: { rows: data.rows, total: count.rows[0].n, limit, offset } });
   });

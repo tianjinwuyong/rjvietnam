@@ -62,8 +62,11 @@ export function WmsCanonicalData({ locale }: { locale: Locale }) {
     finally { setLoading(false); }
   }, [entity, q]);
 
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => { const tm = setTimeout(() => void load(), 300); return () => clearTimeout(tm); }, [q, entity]); // eslint-disable-line
+  // Debounced load on filter/entity change; a single effect avoids duplicate requests.
+  useEffect(() => {
+    const tm = setTimeout(() => void load(), q ? 300 : 0);
+    return () => clearTimeout(tm);
+  }, [load, q]);
 
   return (
     <div className="screen-stack">
