@@ -52,16 +52,37 @@ SMT 现有 `apps/web/src/mes/`（Product Gate 架构）与 `services/api` statio
 | W3 | 前端基座：mesrj 菜单/路由/i18n + home + md 10 页（GenericList 模式） | ~12 页 | ✅ 本次 |
 | W4 | bom（4 页）+ ord（po/mo/issue）+ pln（3 页） | ~10 页 | ✅ 8b229f4 |
 | W5 | proc 工艺 + cfg 配置中心 19 页 | ~22 页 | ✅ ad25ee5 |
-| W6 | exec 执行域（scan/pass/bind/pack/pallet/trace/defect/repair/release） | ~31 页 | 🔄 拆三段 |
+| W6 | exec 执行域（scan/pass/bind/pack/pallet/trace/defect/repair/release） | ~31 页 | ✅ 拆三段全完成 |
 | W6a | 过站引擎：do_pass 主流程 + 守卫/放行/路线锁换 + SN 取号 + /exec/pass 等 11 路由 | exec.py 1-2760 | ✅ b829139 + 366f8ac |
 | W6b | SN 池/激光拼板/工位看板：laser×9、sn rules/batch/pool/void/detail/test、station next/pending、pass list、panel_preview/pass_panel | exec.py 2674-3896 | ✅ 9da2a87 |
 | W6c | 维修/报废/报表：repair、scrap、device_health、yield、repair/list、mo/materials、ai_stations、aging×2、trace/material×2 | exec.py 3753-5250 + report.py | ✅ 9da2a87 |
 | W7 | 设备接口（DeviceConfig/StationPass/MachineData/Packing）+ itf 日志 | ~60 路由 | ✅ 7683286 |
-| W8 | AOI 集成（看板/字典/机型归一/位号映射）+ 出货报告模板（上传/映射/生成）+ 迁移 284 | 18 路由 | ✅ 本次 |
+| W8 | AOI 集成（看板/字典/机型归一/位号映射）+ 出货报告模板（上传/映射/生成）+ 迁移 284 | 18 路由 | ✅ a619fd6 |
 
-## 5. 环境坑位备忘
+## 5. 剩余未移植（源 427 路由，已落 160 显式 + 8 个 CRUD 组）
+
+| 源模块 | 路由 | 内容 | 备注 |
+|---|---|---|---|
+| smt.py | 42 | SMT 段：贴片/锡膏/回流/分板/绑码 | ⚠ 与 SMT 侧现有 `apps/web/src/mes/` 重叠最多，需先定方向 |
+| repair.py | 31 | 维修作业（明细/交接/ATE 复测回填） | W6c 已做 repairRegister/repairList，作业台未做 |
+| smta.py | 31 | 辅料管控 | 源站位/领用/盘点 |
+| oqc.py | 27 | OQC 抽检（Z1.4 已在 SMT 侧 qms/oqc-aql） | ⚠ 与 SMT 侧 OQC 重叠 |
+| pack.py | 21 | 外箱包装/装箱单 | |
+| ecn.py | 17 | 工程变更（首件/换料确认，过站拦截 ECN_PENDING） | W6a 的 ECN 拦截只留了桩 |
+| pallet.py | 14 | 栈板绑码 | |
+| emp.py | 10 | 员工资质（考核/证件过期） | W6a 的资质检查留了桩 |
+| panel.py | 10 | 分板扫码 | |
+| analyze.py / board.py / trace_export.py | 17 | 分析看板 / 大屏 / 追溯导出 | 对应 W8 剩余 |
+
+> **收敛提醒**：源系统 127 页中，`smt`/`oqc` 两块与 SMT 系统现有模块职责高度重叠，
+> 移植前需人工确认是「并入现有模块」还是「mesrj 另起一套」，否则会造出两套真相。
+
+## 6. 环境坑位备忘
 
 - 原系统 `web/pages.js` 用 hash 路由 + keep-alive 多标签；SMT 侧用子视图路由（同 OA）
 - `exec.py` 44 路由含 Check/Submit 两段式过站（prd_pass_check Mark 一次性防重放）——移植时保序
 - 原登录 `rjmes_user` cookie + 12h token；SMT 侧改挂 JWT 后 `sys_user` 保留做产线数据权限（sys_user_line）
 - SQLite `datetime('now','localtime')` 语义 = 服务器本地时区；PG 统一 timestamptz，展示层转 Asia/Ho_Chi_Manh
+- **PG 不允许在 GROUP BY / ORDER BY 引用同层 SELECT 的别名**（SQLite 可以）——移植聚合查询时必须重复表达式
+- **PG 没有 `substr(timestamptz, n, m)`**——日期切片改 `to_char(col AT TIME ZONE 'Asia/Ho_Chi_Minh', 'YYYY-MM-DD')`
+- **express.json 不解析 multipart**——模板上传走 `content_base64`，或另挂 multer
