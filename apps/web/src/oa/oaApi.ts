@@ -1,199 +1,160 @@
 import { apiClient } from "../api/client";
 
-export type OaRequestStatus = "pending" | "approved" | "rejected";
-export type OaRequestType = "leave" | "purchase" | "expense" | "material_receiving";
+/**
+ * OA 原生模块 API 客户端 —— 调用 server.js 挂载的合并 OA 路由
+ * (services/api/src/oa/routes/*,单一 SMT JWT,Bearer 认证)。
+ * OA 响应为 {code:0,msg,data} 信封,apiClient 已剥壳返回 data。
+ */
 
-export interface OaRequest {
-  id: string;
+export type OaInstanceStatus = "draft" | "running" | "completed" | "rejected" | "withdrawn" | "terminated" | (string & {});
+
+export interface OaInstanceSummary {
+  id: number | string;
+  instance_no: string;
   title: string;
-  type: OaRequestType;
-  requester: string;
-  department: string;
-  amount?: number;
-  submittedAt: string;
-  dueAt: string;
-  status: OaRequestStatus;
-  summary: string;
-  details: Array<{ label: string; value: string }>;
+  status: OaInstanceStatus;
+  applicant_id?: number | string | null;
+  organization?: string | null;
+  created_at: string;
+  submitted_at?: string | null;
+  finished_at?: string | null;
+  current_index?: number | null;
+  closed_loop?: boolean | null;
+  applicant_name?: string | null;
+  dept_name?: string | null;
+  dept_name_en?: string | null;
+  def_name: string;
+  def_code?: string;
+  icon?: string | null;
+  category?: string | null;
 }
 
-export interface OaAuditEvent {
-  id: string;
-  requestId: string;
-  action: "submitted" | "approved" | "rejected";
-  actor: string;
-  at: string;
-  note?: string;
+export interface OaPaged<T> {
+  list: T[];
+  total: number;
+  page: number;
+  size: number;
 }
 
-const seedRequests: OaRequest[] = [
-  {
-    id: "OA-20260826-014",
-    title: "September line-side tooling purchase",
-    type: "purchase",
-    requester: "Nguyen Minh Anh",
-    department: "Manufacturing Engineering",
-    amount: 1280,
-    submittedAt: "2026-08-26 09:42",
-    dueAt: "2026-08-27",
-    status: "pending",
-    summary: "Replacement torque drivers and ESD fixtures for L004 manual line.",
-    details: [
-      { label: "Cost center", value: "VN-ENG-04" },
-      { label: "Supplier", value: "Vina Industrial Supply" },
-      { label: "Business reason", value: "Two fixtures are beyond calibration window; replacement protects the next model changeover." },
-    ],
-  },
-  {
-    id: "OA-20260826-013",
-    title: "Annual leave · September 2",
-    type: "leave",
-    requester: "Tran Thi Hoa",
-    department: "SMT Operations",
-    submittedAt: "2026-08-26 08:15",
-    dueAt: "2026-08-26",
-    status: "pending",
-    summary: "One day annual leave request with shift coverage confirmed.",
-    details: [
-      { label: "Leave dates", value: "2026-09-02 (1 day)" },
-      { label: "Coverage", value: "Le Van Nam · SMT Operator" },
-      { label: "Handover", value: "AOI inspection checklist handed over before shift end." },
-    ],
-  },
-  {
-    id: "OA-20260825-011",
-    title: "Line 3 overtime meal expense",
-    type: "expense",
-    requester: "Pham Quoc Bao",
-    department: "PMC",
-    amount: 86,
-    submittedAt: "2026-08-25 17:26",
-    dueAt: "2026-08-26",
-    status: "approved",
-    summary: "Meal expense for approved overtime during customer order recovery.",
-    details: [
-      { label: "Cost center", value: "VN-PMC-02" },
-      { label: "Overtime window", value: "2026-08-25 · 18:00–21:00" },
-      { label: "Receipt", value: "Attached · 1 file" },
-    ],
-  },
-];
-
-const seedAudit: OaAuditEvent[] = [
-  { id: "AUD-104", requestId: "OA-20260826-014", action: "submitted", actor: "Nguyen Minh Anh", at: "2026-08-26 09:42", note: "Submitted for plant manager review" },
-  { id: "AUD-103", requestId: "OA-20260826-013", action: "submitted", actor: "Tran Thi Hoa", at: "2026-08-26 08:15", note: "Coverage confirmed" },
-  { id: "AUD-102", requestId: "OA-20260825-011", action: "approved", actor: "Le Quang Huy", at: "2026-08-25 18:02", note: "Approved within PMC overtime budget" },
-  { id: "AUD-101", requestId: "OA-20260825-011", action: "submitted", actor: "Pham Quoc Bao", at: "2026-08-25 17:26" },
-];
-
-export interface OaRepository {
-  listRequests(): Promise<OaRequest[]>;
-  listAudit(): Promise<OaAuditEvent[]>;
-  submit(request: Omit<OaRequest, "id" | "submittedAt" | "status"> & { requester?: string }): Promise<OaRequest>;
-  decide(id: string, decision: "approved" | "rejected", note: string): Promise<{ request: OaRequest; audit: OaAuditEvent }>;
+export interface OaTask {
+  id: number | string;
+  instance_id: number | string;
+  node_index?: number;
+  node_name?: string | null;
+  assignee_id?: number | string | null;
+  assignee_name?: string | null;
+  status: string;
+  created_at?: string;
+  finished_at?: string | null;
+  comment?: string | null;
 }
 
-/** Replace this adapter with the OA HTTP client when backend contracts are available. */
-export function createOaMockRepository(): OaRepository {
-  let requests = seedRequests.map((request) => ({ ...request, details: [...request.details] }));
-  let audit = [...seedAudit];
-  return {
-    async listRequests() { return requests; },
-    async listAudit() { return audit; },
-    async submit(input) {
-      const now = new Date();
-      const submittedAt = now.toISOString().slice(0, 16).replace("T", " ");
-      const request: OaRequest = { ...input, id: `OA-${now.toISOString().slice(0, 10).replace(/-/g, "")}-MAT-${String(Date.now()).slice(-6)}`, requester: input.requester || "Current user", submittedAt, status: "pending" };
-      requests = [request, ...requests];
-      audit = [{ id: `AUD-${Date.now()}`, requestId: request.id, action: "submitted", actor: request.requester, at: submittedAt, note: "Material receiving approval submitted" }, ...audit];
-      return { ...request };
-    },
-    async decide(id, decision, note) {
-      const request = requests.find((item) => item.id === id);
-      if (!request) throw new Error("OA request not found");
-      request.status = decision;
-      const event: OaAuditEvent = { id: `AUD-${Date.now()}`, requestId: id, action: decision, actor: "Current user", at: new Date().toISOString().slice(0, 16).replace("T", " "), note };
-      audit = [event, ...audit];
-      return { request: { ...request }, audit: event };
-    },
-  };
+export interface OaInstanceDetail extends OaInstanceSummary {
+  def_name_vi?: string | null;
+  form_data?: Record<string, unknown> | null;
+  form_schema?: unknown;
+  flow_nodes?: unknown;
+  tasks?: OaTask[];
+  ccs?: Array<Record<string, unknown>>;
+  logs?: Array<Record<string, unknown>>;
 }
 
-export const oaRepository = createOaMockRepository();
+export interface OaStatsOverview {
+  byStatus: Array<{ status: OaInstanceStatus; n: number }>;
+  byDef: Array<{ id: number; code: string; name: string; name_vi: string | null; category: string | null; n: number }>;
+  todo: number;
+  recent: Array<{
+    id: number | string;
+    instance_no: string;
+    title: string;
+    status: OaInstanceStatus;
+    created_at: string;
+    def_name: string;
+    applicant_name: string | null;
+  }>;
+  statusCounts: Partial<Record<OaInstanceStatus, number>>;
+  announcementUnread: number;
+  calendarTodoCount: number;
+}
 
-export interface OaSignatureStep {
-  id?: number;
-  stepNo: number;
-  signerUserId?: number | null;
-  signerUsername: string;
-  signerName?: string | null;
-  signerRole?: string | null;
-  slaHours: number;
+export interface OaNotification {
+  id: number | string;
+  title: string;
+  content: string | null;
+  link: string | null;
+  category: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface OaAnnouncement {
+  id: number | string;
+  title: string;
+  title_vi?: string | null;
+  content: string | null;
+  content_vi?: string | null;
+  category?: string | null;
+  status?: string | null;
+  publisher_name?: string | null;
+  publish_at?: string | null;
+  created_at: string;
+  is_read?: boolean;
+  read_count?: number;
+  top?: boolean;
+}
+
+export interface OaDepartment {
+  id: number | string;
+  name: string;
+  name_en?: string | null;
+  code?: string | null;
+  parent_id?: number | string | null;
+  leader_name?: string | null;
+  user_count?: number;
+  sort_order?: number | null;
+}
+
+export interface OaInstanceQuery extends Record<string, unknown> {
+  tab?: "todo" | "mine" | "cc" | "done" | "flow";
   status?: string;
-  dueAt?: string | null;
-  decidedBy?: string | null;
-  decidedAt?: string | null;
-  decisionNote?: string | null;
+  definitionId?: number | string;
+  keyword?: string;
+  page?: number;
+  size?: number;
 }
 
-export interface OaProcessRequest {
-  id: number;
-  requestNo: string;
-  entityType: string;
-  entityId: number;
-  entityNo: string;
-  title: string;
-  requesterUsername?: string;
-  requesterName?: string;
-  status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED";
-  currentStep: number;
-  totalSteps: number;
-  submittedAt: string;
-  package: {
-    content: Array<{ materialCode?: string; materialName?: string; quantity?: number; unit?: string; remarks?: string }>;
-    issuedBy?: string;
-    department?: string;
-    issuedAt?: string;
-    approvalDueAt?: string;
-    priority?: "NORMAL" | "URGENT" | "CRITICAL";
-    itemLink?: string;
-    itemLinkDescription?: string;
-    attachments: Array<{
-      name: string;
-      kind: "document" | "photo" | "video" | "audio" | "signature" | "other";
-      url?: string;
-      mimeType?: string;
-      sizeBytes?: number;
-      uploadedBy?: string;
-      uploadedAt?: string;
-      signedBy?: string;
-      checksumSha256?: string;
-      requiredSignerRoles?: string[];
-    }>;
-    summary?: string;
-    responses?: Array<{ signer: string; decision: string; comments?: string; respondedAt?: string; signatureAttachmentName?: string }>;
-  };
-  steps: OaSignatureStep[];
-}
+export type OaApproveAction = "approve" | "reject";
 
-export interface OaMaterialRequisitionProcess {
-  id: number;
-  processCode: string;
-  processName: string;
-  active: boolean;
-  steps: OaSignatureStep[];
-}
-export interface OaProcessSummary { id: number; processCode: string; processName: string; entityType: string; active: boolean; stepCount: number; }
+export const oaApi = {
+  statsOverview: () => apiClient.get<OaStatsOverview>("/api/stats/overview"),
 
-export const oaProcessApi = {
-  listRequests: (status = "PENDING") => apiClient.get<{ items: OaProcessRequest[]; total: number }>(`/api/oa/process-requests?status=${encodeURIComponent(status)}`),
-  decide: (id: number, decision: "APPROVE" | "REJECT", note: string, signedAttachmentNames: string[]) =>
-    apiClient.post(`/api/oa/process-requests/${id}/decision`, { decision, note, signedAttachmentNames }),
-  getMaterialRequisition: () =>
-    apiClient.get<OaMaterialRequisitionProcess>("/api/oa/processes/material-requisition"),
-  saveMaterialRequisition: (steps: OaSignatureStep[], active = true) =>
-    apiClient.put("/api/oa/processes/material-requisition", { active, steps }),
-  listProcesses: () => apiClient.get<{ items: OaProcessSummary[]; total: number }>("/api/oa/processes"),
-  getProcess: (processCode: string) => apiClient.get<OaMaterialRequisitionProcess>(`/api/oa/processes/${encodeURIComponent(processCode)}`),
-  saveProcess: (processCode: string, steps: OaSignatureStep[], active = true) => apiClient.put(`/api/oa/processes/${encodeURIComponent(processCode)}`, { active, steps }),
+  instances: (query: OaInstanceQuery = {}) => apiClient.get<OaPaged<OaInstanceSummary>>("/api/instances", query),
+
+  instance: (id: number | string) => apiClient.get<OaInstanceDetail>(`/api/instances/${id}`),
+
+  approveTask: (taskId: number | string, body: { action?: OaApproveAction; comment?: string }) =>
+    apiClient.post<{ status: string; waiting?: boolean; required?: number; approved?: number }>(
+      `/api/tasks/${taskId}/approve`,
+      body,
+    ),
+
+  batchApprove: (body: { taskIds: Array<number | string>; action?: OaApproveAction; comment?: string }) =>
+    apiClient.post<{ success: unknown[]; failed: unknown[] }>("/api/tasks/batch-approve", body),
+
+  instanceAction: (
+    id: number | string,
+    action: "return" | "terminate" | "withdraw" | "urge",
+    body: { comment?: string } = {},
+  ) => apiClient.post<unknown>(`/api/instances/${id}/${action}`, body),
+
+  notifications: (limit = 20, offset = 0) =>
+    apiClient.get<{ list: OaNotification[]; unread: number }>("/api/notifications", { limit, offset }),
+
+  markNotificationsRead: (ids: Array<number | string>) =>
+    apiClient.post<{ updated: number }>("/api/notifications/read", { ids }),
+
+  announcements: (query: { keyword?: string; category?: string; page?: number; pageSize?: number } = {}) =>
+    apiClient.get<OaPaged<OaAnnouncement>>("/api/announcements", query),
+
+  departments: () => apiClient.get<OaDepartment[]>("/api/departments"),
 };

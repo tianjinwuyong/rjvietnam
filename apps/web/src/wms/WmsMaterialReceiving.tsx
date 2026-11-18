@@ -6,7 +6,6 @@ import { apiClient, type ListEnvelope } from "../api/client";
 import { wmsApi } from "../api/wms";
 import * as XLSX from "xlsx";
 import QRCode from "qrcode";
-import { oaRepository, type OaRequest } from "../oa/oaApi";
 import { WmsReceivingEmployeeCommunication } from "./WmsReceivingEmployeeCommunication";
 import { resolveReceivingPackageIdentity } from "./receivingPackageScan";
 
@@ -92,8 +91,6 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     const timer = window.setInterval(loadRegisteredReceivingPdas, 10000);
     return () => window.clearInterval(timer);
   }, []);
-  const [oaRequest, setOaRequest] = useState<OaRequest | null>(null);
-  const [oaBusy, setOaBusy] = useState(false);
   type Certificate = { id: string; fileName: string; dataUrl: string; category: "DELIVERY_SHEET" | "QUALITY_CERTIFICATE" | "INSPECTION_REPORT" | "OTHER"; notes: string };
   const [certificates, setCertificates] = useState<Certificate[]>([]);
   const [boundMaterials, setBoundMaterials] = useState<Array<Record<string, any>>>([]);
@@ -811,39 +808,7 @@ export function WmsMaterialReceiving({ locale }: { locale: Locale }) {
     setGeneratedCaseQr(value);
     setGeneratedCaseQrImage(await QRCode.toDataURL(value, { width: 180, margin: 1, errorCorrectionLevel: "M" }));
   };
-  const resolveLocation = async () => { if (!locationQr.trim()) return; const token = sessionStorage.getItem("auth_token"); const headers = token ? { Authorization: `Bearer ${token}` } : {}; const value = encodeURIComponent(locationQr.trim()); const response = await fetch(`/api/wms/storage-locations/resolve?qr=${value}`, { headers }); if (!response.ok) { setLocationCapacity(null); setPdaStatus(tx("仓位 QR 未在 WMS 登记或不可用于绑定", "Location QR is not registered or cannot be used for binding", "QR vị trí chưa đăng ký hoặc không thể liên kết")); return; } const result = await response.json(); const data = result.data || result; setLocationQr(data.qrCode || locationQr.trim()); setAreaQr(String(data.area || data.areaName || data.areaCode || "")); setLocationCapacity({ capacity: Number(data.capacity || 0), occupied: Number(data.occupied || 0), name: data.nameZh || data.nameEn || data.nameVi || data.code }); };
-  const submitMaterialReceivingOa = async () => {
-    if (!materialCode.trim() || !lot.trim() || !receivedQty.trim() || !locationQr.trim()) {
-      setPdaStatus(tx("收料前必须填写物料、批次、数量并绑定仓位", "Material, lot, quantity and location are required", "Can vat lieu, lo, so luong va vi tri"));
-      return;
-    }
-    setOaBusy(true);
-    try {
-      const request = await oaRepository.submit({
-        title: `物料收料审批 · ${lot.trim()}`,
-        type: "material_receiving",
-        requester: sessionStorage.getItem("username") || "WMS Receiver",
-        department: "Warehouse / IQC",
-        dueAt: receiptDate,
-        summary: `申请对批次 ${lot.trim()} 执行收料、QR绑定及IQC前入库流程。`,
-        details: [
-          { label: "Vietnam material code", value: materialCode.trim() },
-          { label: "Ruijing material code", value: ruijingMaterialCode.trim() || "-" },
-          { label: "Lot / batch", value: lot.trim() },
-          { label: "Received quantity", value: `${receivedQty.trim()} ${unit}` },
-          { label: "Box count", value: caseCount.trim() || "-" },
-          { label: "MSD level", value: msdLevel.trim() || "-" },
-          { label: "Storage location", value: locationQr.trim() || "-" },
-        ],
-      });
-      setOaRequest(request);
-      const url = new URL(window.location.href);
-      url.searchParams.set("view", "oa");
-      sessionStorage.setItem("oa:return-target", JSON.stringify({ view: "wms", wmsTab: "materialReceiving" }));
-      window.history.pushState({}, "", url);
-      window.dispatchEvent(new CustomEvent("factory:navigate", { detail: { view: "oa", requestId: request.id, returnView: "wms", returnWmsTab: "materialReceiving" } }));
-    } finally { setOaBusy(false); }
-  };
+  const resolveLocation = async () => { if (!locationQr.trim()) return; const token = sessionStorage.getItem("auth_token"); const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}; const value = encodeURIComponent(locationQr.trim()); const response = await fetch(`/api/wms/storage-locations/resolve?qr=${value}`, { headers }); if (!response.ok) { setLocationCapacity(null); setPdaStatus(tx("仓位 QR 未在 WMS 登记或不可用于绑定", "Location QR is not registered or cannot be used for binding", "QR vị trí chưa đăng ký hoặc không thể liên kết")); return; } const result = await response.json(); const data = result.data || result; setLocationQr(data.qrCode || locationQr.trim()); setAreaQr(String(data.area || data.areaName || data.areaCode || "")); setLocationCapacity({ capacity: Number(data.capacity || 0), occupied: Number(data.occupied || 0), name: data.nameZh || data.nameEn || data.nameVi || data.code }); };
   const [submitting, setSubmitting] = useState(false);
   const submitReceiving = async () => {
     if (!materialCode.trim() || !lot.trim() || !locationQr.trim() || boxQrs.length === 0) {
