@@ -72,6 +72,7 @@ import autoLineRouter from "./src/routes/auto-line.js";
 import manuLineRouter from "./src/routes/manu-line.js";
 import { createStationPassRouter } from "./src/routes/station-pass.js";
 import { createOqcAqlRouter } from "./src/routes/oqc-aql.js";
+import { createMesrjRouter } from "./src/routes/mesrj.js";
 import { canonicalLineCode, canonicalStationCode } from "./src/shared/station-identity.js";
 import { evaluateVisualInspection, DEFAULT_POLICY as VISUAL_INSPECTION_POLICY } from "./src/visual-inspection.js";
 import { evaluateProductGate } from "./src/product-gate.js";
@@ -9263,6 +9264,8 @@ api.use("/mes/manu-line",   manuLineRouter);
 api.use("/mes/station-pass", createStationPassRouter({ authenticateJWT, requirePermission }));
 // OQC AQL 出货抽检（Z1.4 抽样方案 + CR/MA/MI 判定 + 处置）
 api.use("/qms/oqc-aql", createOqcAqlRouter({ authenticateJWT, requirePermission }));
+// MES-ruijing 移植（W2 基座：sys/md/basic + CRUD 引擎；设备接口走 X-Api-Key）
+api.use("/mesrj", createMesrjRouter({ authenticateJWT }));
 
 // ── Finance Routes ─────────────────────────────────────────────────────────
 // GET /api/finance/ar-invoices
