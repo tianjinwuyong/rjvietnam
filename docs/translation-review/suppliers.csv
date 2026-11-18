@@ -1,0 +1,354 @@
+id,code,name_zh,name_en,name_vi
+1,SUP-HN-PCB,河内 PCB 供应商,Hanoi PCB Supplier,Nhà cung cấp PCB Hà Nội
+2,SUP-TPE-RES,台北电阻供应商,Taipei Resistor Supplier,Nhà cung cấp điện trở Đài Bắc
+3,SUP-SZ-CAP,深圳电容供应商,Shenzhen Capacitor Supplier,Nhà cung cấp tụ Đặng
+4,SUP-SZ-IC,深圳 IC 供应商,Shenzhen IC Supplier,Nhà cung cấp IC Thâm Quyến
+5,SUP-SH-CAP,上海电容供应商,Shanghai Cap Supplier,Nhà cung cấp tụ Thượng Hải
+6,SUP-KR-CONN,韩国连接器供应商,Korea Connector Supplier,Nhà cung cấp connector Hàn Quốc
+7,SUP-VN-SOLDER,越南锡膏供应商,Vietnam Solder Paste,Nhà cung cấp thiếc hàn Việt Nam
+356,A.967,揭西县东聚电子科技有限公司,"Dezhou East Gathering Electronic Technology Co., Ltd.",Đề Xuôi Đông Chu Electronic Công ty Cổ phần
+357,A.122,无锡泰威电子有限公司,"Wuxi Taiwei Electronic Co., Ltd.","Công ty Điện tử Thái Vui, Wuxi"
+358,E.017,深圳市华港电子有限公司,"Shenzhen Huaqiang Electronic Co., Ltd.","Công ty Điện tử Huaqiang, Thâm Quyến"
+359,D.077,惠州凯盛电线电缆有限公司,"Huizhou Kaijing Cable and Wire Co., Ltd.","Công ty Cables và电线 Kế盛, Huế"
+360,A.957,惠州市长瑞智造电子有限公司,"Huizhou Changrui Intelligent Manufacturing Electronic Co., Ltd.","Công ty Cổ phần Đào tạo và Công nghệ智造, Huế"
+361,A.960,深圳市泓芯微电子有限公司,"Shenzhen Hongxin Microelectronics Co., Ltd.","Công ty TNHH Microelectronics Hongxin, Thanh Hóa"
+362,C.016,深圳市宇佳达塑胶制品有限公司,"Shenzhen Yujiada Plastic Products Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh sản phẩm nhựa, Thanh Hóa"
+363,G.271,深圳市嘉多宝科技有限公司,"Shenzhen Jutubo Technology Co., Ltd.","Công ty TNHH Kỹ thuật và Công nghệ Jutubo, Thanh Hóa"
+364,A.939,江西美希电子有限公司,"Jiangxi Meixi Electronic Co., Ltd.","Công ty TNHH Công nghệ và Kỹ thuật Meixi, Ninh Bình"
+365,A.869,湖南省金莱特科技有限公司,"Hunan Jinleite Technology Co., Ltd.","Công ty TNHH Công nghệ và Kỹ thuật Jinleite, Thanh Hóa"
+366,D.066,东莞市迈智包装材料有限公司,"Zhuhai Meiji Packaging Materials Co., Ltd.",Công ty sản xuất vật liệu đóng gói东莞市迈智包装材料有限公司
+367,A.737,安徽翔胜科技有限公司,"Anhui Xiangsong Technology Co., Ltd.","Công ty sản xuất công nghệ Anhui Xiangsong Technology Co., Ltd."
+368,A.251,深圳市益欣电路板有限公司,"Shenzhen Yixin Circuit Board Co., Ltd.",Công ty sản xuất bảng mạch điện tử tại Thâm Quyến
+369,A.578,东莞市达孚电子科技有限公司,"Dafa Electronic Technology Co., Ltd., Dongguan",Công ty sản xuất电子产品 tại东莞市
+370,E.089,深圳市兴达源吸塑制品有限公司,"Shenzhen Xindar Source Plastic Products Co., Ltd.",Công ty sản xuất sản phẩm in nhựa tại Thâm Quyến
+371,E.52,深圳市嘉泰欣实业有限公司,"Shenzhen Jateixin Real Estate Co., Ltd.",Công ty sản xuất và kinh doanh tại Thâm Quyến
+372,A.136,东莞市东红鑫电子有限公司,"Donghongxin Electronic Co., Ltd.",Công ty sản xuất电子产品 tại东莞市
+373,E.101,昆山星空印刷制品有限公司,"Shenzhen Star Sky Printing Products Co., Ltd.",Công ty sản xuất sản phẩm in tại Kiến Thức
+374,A.199,无锡艾立德智能科技有限公司,"Wuxi Ai Lei Intelligent Technology Co., Ltd.",Công ty sản xuất công nghệ tại无锡
+375,A.711,深圳市新中元电子有限公司,"Shenzhen Xinzhongyuan Electronic Co., Ltd.",Công ty sản xuất电子产品 tại Thâm Quyến
+376,A.1019,重庆平伟半导体股份有限公司,"Chongqing Pingwei Semiconductor Co., Ltd.",Công ty sản xuất半导体股份有限公司 tại Chongqing
+377,A.1007,深圳市虹杰电子科技有限公司,"Shenzhen Hongjie Electronic Technology Co., Ltd.",Công ty sản xuất电子产品 tại Thâm Quyến
+378,A.796,东莞市泓达电子科技有限公司,"Dongguan Hongda Electronic Technology Co., Ltd.",Công ty sản xuất电子产品 tại东莞市
+379,E.002,深圳市和通包装制品有限公司,"Shenzhen He Tong Packaging Products Co., Ltd.",Công ty sản xuất sản phẩm in tại Thâm Quyến
+380,D.102,瑞天泰（惠州）科技有限公司,"Ruitian Tai (Huizhou) Technology Co., Ltd.",Công ty sản xuất công nghệ tại惠州
+381,A.539,深圳市星拓电子有限公司,"Shenzhen Startop Electronic Co., Ltd.",Công ty sản xuất电子产品 tại Thâm Quyến
+382,D.092,郴州环亚电子有限公司,"Chengdu Huanya Electronic Co., Ltd.",Công ty sản xuất电子产品 tại郴州
+383,E.006,深圳市金源泰不干胶制品有限公司,"Shenzhen JinYuanTai Adhesive Products Co., Ltd.",Công ty sản xuất sản phẩm in tại Thâm Quyến
+384,C.129,东莞市亚琪五金塑胶科技有限公司,"Dongguan Yaqi Hardware Plastic Technology Co., Ltd.",Công ty sản xuất sản phẩm五金塑胶 tại东莞市
+385,A.755,深圳市宏百顺科技有限公司,"Shenzhen Hongbaoshun Technology Co., Ltd.",Công ty sản xuất sản phẩm tại Thâm Quyến
+386,A.936,东莞市峰越电子有限公司,"Dongguan Fengyu Electronic Co., Ltd.",Công ty sản xuất电子产品 tại东莞市
+387,A.307,万星光电子（东莞）有限公司,"Wanxingguanglight Electronic (Dongguan) Co., Ltd.",Công ty sản xuất电子产品 tại东莞市
+388,D.101,深圳市欣宏亚电子股份有限公司,"Shenzhen Xinhongyao Electronic Co., Ltd., Shenzhen",Công ty sản xuất电子产品 tại Thâm Quyến
+389,B.150,东莞市昇炀技术有限公司,"Dongguan Shengyang Technology Co., Ltd.",Công ty sản xuất công nghệ tại东莞市
+390,A.560,深圳市吉利通电子有限公司,"Shenzhen Jilutong Electronic Co., Ltd.",Công ty sản xuất电子产品 tại Thâm Quyến
+391,A.836,上海颉生机电有限公司,"Shanghai Jiabei Electric Co., Ltd.",Công ty sản xuất điện tử tại Shanghai
+392,A.050,东莞市贝特电子科技股份有限公司,"Dongguan Bet Technology Co., Ltd.",Công ty sản xuất công nghệ tại东莞市
+393,A.397,厦门埃尔华进出口有限公司,"Xiamen Erhua Import and Export Co., Ltd.",Công ty nhập khẩu và xuất khẩu tại厦门
+394,D.013,深圳市亚太电子有限公司,"Shenzhen Apac Electronic Co., Ltd.",Công ty sản xuất电子产品 tại Thâm Quyến
+395,A.871,揭阳市揭东区新美得福电子有限公司,"Jieyang Jiedong New Meidufu Electronic Co., Ltd.",Công ty sản xuất电子产品 tại Thanh Hóa
+396,A.416,深圳市富临通实业股份有限公司,"Shenzhen Fu Ling Tong Real Estate Co., Ltd.",Công ty sản xuất sản phẩm tại Thâm Quyến
+397,A.931,河南海正电子科技有限公司,"Hunan Heshan Electronic Technology Co., Ltd.",Công ty sản xuất công nghệ tại Hồ Bắc
+398,G.009,深圳市泽云山焊锡科技有限公司,"Shenzhen Zeyunshan Soldering Technology Co., Ltd.",Công ty sản xuất sản phẩm tại Thâm Quyến
+399,G.004,深圳市同方电子新材料有限公司,"Shenzhen Tongfang Electronic New Materials Co., Ltd.",Công ty sản xuất sản phẩm tại Thâm Quyến
+400,A.1016,扬州康虹半导体有限公司,"Yangzhou Kang Hong Semiconductor Co., Ltd.",Công ty sản xuất半导体 tại扬州
+401,A.1023,深圳世纪元盛科技有限公司,"Shenzhen Siyuansheng Technology Co., Ltd.",Công ty sản xuất công nghệ tại Thâm Quyến
+402,A.1008,广东松田电子实业股份有限公司,"Guangdong Songtian Electronic Industry Co., Ltd.",Công ty sản xuất sản phẩm tại Quảng Đông
+403,B.091,深圳市亿达利五金制品有限公司,"Shenzhen Yida Li Hardware Products Co., Ltd.",Công ty sản xuất sản phẩm tại Thâm Quyến
+404,A.538,深圳市碧绿天科技有限公司,"Shenzhen Qilue Tian Technology Co., Ltd.",Công ty sản xuất sản phẩm tại Thâm Quyến
+405,A.896,深圳深爱半导体股份有限公司,"Shenzhen Shenai Semiconductor Co., Ltd., Shenzhen",Công ty sản xuất半导体股份有限公司 tại Thâm Quyến
+406,B.166,广东创辉诚科技有限公司,"Guangdong Chuanghui Cheng Technology Co., Ltd.",Công ty TNHH Công nghệ Chuanghui
+407,E.34,东莞市万正包装材料有限公司,"Wanzheng Packaging Materials Co., Ltd., Dongguan",Công ty TNHH Sản xuất và kinh doanh sản phẩm vật liệu đóng gói Wanzheng
+408,A.204,深圳市大年华电子有限公司,"Shenzhen Da Nianhua Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất电子产品 Da Nianhua
+409,A.101,深圳市创润达科技有限公司,"Shenzhen Chuangrun Da Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Chuangrun
+410,A.733,广东汇万电子科技有限公司,"Guangdong Huimian Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Huimian
+411,A.995,厦门华信安电子科技有限公司,"Xiamen Huixin An Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Huixin An
+412,A.1015,东莞市首伟电子科技有限公司,"Dongguan Shouwei Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shouwei
+413,C.161,福建咏嘉俊精密科技有限公司,"Fujian Yongjiajun Precision Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Fujian
+414,C.165,惠州市源泰鑫电子科技有限公司,"Huizhou Yuan Tai Xin Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Huizhou
+415,A.926,桂林至敏电子科技有限公司,"Guilin Ziteng Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Guilin
+416,D.064,东莞市鑫百汇电子有限公司,"Dongguan Xingbai Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Dongguan
+417,A.888,深圳前海绿宝石科技开发有限公司,"Shenzhen Qianhai Green Gemstone Technology Development Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+418,A.946,深圳市金牛鑫科技有限公司,"Shenzhen Jinlongxin Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+419,B.148,东莞市鑫宏盛五金制品有限公司,"Dongguan Xinghongsheng五金 Products Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Dongguan
+420,A.856,深圳市阳和通电子有限公司,"Shenzhen Yanghe Tong Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+421,A.008,深圳市爱维讯电子有限公司,"Shenzhen Aiweixin Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+422,D.079,深圳市洪锴电子科技有限公司,"Shenzhen Hongjian Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+423,A.257,深圳市超利维实业有限公司,"Shenzhen Chuiliwei Real Estate Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+424,C.073,东莞市绿科塑胶制品有限公司,"Dongguan Greenke Plastic Products Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Dongguan
+425,C.167,广西贵港雅达科技有限公司,"Guiyang Hejiang Yada Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Guiyang
+426,A.305,深圳市铎深电子有限公司,"Shenzhen Duzhen Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+427,A.831,安顺市伏特电子有限公司,"Anshun City Volt Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Anshun
+428,A.748,深圳铭星科创股份有限公司,"Shenzhen Mingxing Science and Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+429,H.111,深圳市龙岗区鸿文达文具店,Shenzhen Longgang District Hongwen Da Office Supplies Store,Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+430,A.112,深圳市北高智电子有限公司,"Hubei Yiyou Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Hubei
+431,A.977,湖北伊欧电子有限公司,"Hubei Yiyou Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Hubei
+432,A.520,深圳市鹏达诚科技股份有限公司,"Shenzhen Pidao Cheng Science and Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+433,A.654,深圳市领先微电子有限公司,"Shenzhen Leading Microelectronics Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+434,A.259,深圳市嘉莹达电子有限公司,"Shenzhen Jiaoyingda Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+435,E.091,深圳市安特威包装制品有限公司,"Shenzhen Antiewei Packaging Products Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+436,A.363,厦门信和达电子有限公司,"Xiamen Xinhe Da Electronic Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Xiamen
+437,A.993,南京创倍希科技有限公司,"Nanjing Chuangbeshi Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Nanjing
+438,A.376,东莞市成希电子有限公司,"Dongguan Chengxi Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Dongguan
+439,A.697,东莞市承兴电子有限公司,"Dongguan Chengxing Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Dongguan
+440,A.834,扬州扬杰电子科技股份有限公司,"Yangzhou Yangjiao Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Yangzhou
+441,A.571,东莞市安敏电子有限公司,"Dongguan Anmin Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Dongguan
+442,A.518,深圳市泛立电子有限公司,"Shenzhen Fanli Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+443,A.652,亿曼丰科技（深圳）有限公司,"Yimenfeng Technology (Shenzhen) Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+444,A.683,广州盛中电子有限公司,"Guangzhou Shengzhong Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Guangzhou
+445,A.822,深圳市开创电子科技有限公司,"Shenzhen Kuanrong Electronic Technology Co., Ltd.",Công ty TNHH Công nghệ và sản xuất công nghệ Shenzhen
+446,A.959,旭程电子（深圳）有限公司,"Xu Cheng Electronic (Shenzhen) Co., Ltd.",Xu Cheng (Shenzhen) Công ty Cổ phần
+447,A.555,东莞市盛上泰实业有限公司,"Shenzhen Shengshangtai Industrial Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh盛上泰, Thâm Quyến"
+448,A.191,深圳市龙晶微电子有限公司,"Shenzhen Longqing Microelectronics Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Microelectronics Longqing, Thâm Quyến"
+449,A.106,深圳南丰电子股份有限公司,"Shenzhen Nanfeng Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Nanfeng, Thâm Quyến"
+450,A.794,重庆平伟实业股份有限公司,"Chongqing Pingwei Industrial Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Industrial Pingwei, Chongqing"
+451,G.294,东莞市佳迪新材料有限公司,"Shenzhen Jiedi New Materials Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Jiedi New Materials, Thâm Quyến"
+452,C.162,新崧塑胶（东莞）有限公司,"Xin Song Plastics (Dongguan) Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Plastics Xin Song (Dongguan), Thâm Quyến"
+453,E.36,东莞市汉联实业有限公司,"Dongguan Hanlian Industrial Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Industrial Hanlian, Thâm Quyến"
+454,A.541,深圳迈鼎电子有限公司,"Shenzhen Meideng Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Meideng, Thâm Quyến"
+455,A.252,深圳市良胜电子有限公司,"Shenzhen Liansheng Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Liansheng, Thâm Quyến"
+456,A.556,赣州和信诚电子有限公司,"Ganzhou Hexincheng Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Ganzhou Hexincheng, Ganzhou"
+457,A.414,深圳市凯恩杰科技有限公司,"Shenzhen Kaienjie Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Kaienjie, Thâm Quyến"
+458,A.847,东莞市泓泰电子有限公司,"Shenzhen Hongtai Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Hongtai, Thâm Quyến"
+459,A.763,东莞市诚润电子科技有限公司,"Shenzhen Chengrun Electronic Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Chengrun, Thâm Quyến"
+460,B.092,深圳金富联科技有限公司,"Shenzhen Jinhuo Link Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Jinhuo Link, Thâm Quyến"
+461,A.396,深圳市卓勤电子科技有限公司,"Shenzhen Zhuojing Electronic Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Zhuojing Electronic, Thâm Quyến"
+462,C.158,深圳市利帆塑胶模具有限公司,"Shenzhen Li Fan Plastic Mold Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Plastic Mold Li Fan, Thâm Quyến"
+463,A.600,广西新未来信息产业股份有限公司,"Guangxi New Future Information Industry Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Information Industry New Future, Quảng Tây"
+464,A.549,广东慧芯电子科技有限公司,"Guangdong Huixin Electronic Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Huixin Electronic, Thâm Quyến"
+465,A.634,东莞市南华电子有限公司,"Shenzhen Nanhua Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Nanhua, Thâm Quyến"
+466,B.147,联基精密电子股份有限公司,"Ling Ji Precision Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Ling Ji, Thâm Quyến"
+467,A.496,深圳思睿通电子有限公司,"Shenzhen Siritong Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Siritong, Thâm Quyến"
+468,G.304,东莞市博翔电子材料有限公司,"Shenzhen Boxiao Electronic Materials Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Materials Boxiao, Thâm Quyến"
+469,A.407,深圳市乐雅电子有限公司,"Shenzhen Le Ya Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Le Ya, Thâm Quyến"
+470,E.035,东莞华讯胶粘制品有限公司,"Dongguan Huanshen Adhesive Products Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Adhesive Products Huanshen, Thâm Quyến"
+471,A.872,长阳安品源电子科技有限公司,"Changyang Anpin Yuan Electronic Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Changyang Anpin Yuan, Changyuan"
+472,A.900,深圳市安欣美电子科技有限公司,"Shenzhen Anxin Mei Electronic Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Anxin Mei, Thâm Quyến"
+473,C.069,东莞市华顶精密塑胶模具有限公司,"Dongguan Huadong Precision Plastic Mold Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Plastic Mold Huadong Precision, Thâm Quyến"
+474,A.427,东莞市仙桥电子科技有限公司,"Dongguan Xianqiao Electronic Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Xianqiao, Thâm Quyến"
+475,E.088,东莞盛益塑胶制品有限公司,"Dongguan Shengyi Plastic Products Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Plastic Products Shengyi, Thâm Quyến"
+476,B.076,深圳市天坤塑胶五金制品有限公司,"Shenzhen Tiankun Plastic and Hardware Products Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Plastic and Hardware Products Tiankun, Thâm Quyến"
+477,A.276,深圳市格瑞安电子有限公司,"Shenzhen Gejian Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Gejian, Thâm Quyến"
+478,A.857,深圳市蓝宝安科电子有限公司,"Shenzhen Lianba Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Lianba, Thâm Quyến"
+479,A.992,南京深立创科技有限公司,"Nanjing Shengli Chuang Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Shengli Chuang, Ninh Bình"
+480,E.090,东莞市宗生包装科技有限公司,"Sichuan Hangyu Microelectronics Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Hangyu Microelectronics, Sichuan"
+481,A.938,四川航昱微电子科技有限公司,"Sichuan Hangyu Microelectronics Technology Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Technology Hangyu Microelectronics, Sichuan"
+482,A.935,广西利顺电子有限公司,"Guangxi Li Shun Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Li Shun, Quảng Tây"
+483,B.158,苏州神宙晨达电子有限公司,"Suqian Shengzi Chen Da Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Shengzi Chen Da, Suqian"
+484,A.581,深圳市明乐电子有限公司,"Shenzhen Mingle Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Mingle, Thâm Quyến"
+485,D.100,昆山景致电子有限公司,"Kinshan Jingzhi Electronic Co., Ltd.","Công ty TNHH Sản xuất và kinh doanh Electronic Jingzhi, Kinshan"
+486,E.50,深圳市裕同包装科技股份有限公司,"Shenzhen YuTong Packaging Technology Co., Ltd.","Công ty Cổ Phần Packaging Thùng Xuống Tự Chia Lợi - YuTong Packaging Technology Co., Ltd."
+487,A.899,深圳市常春电子有限公司,"Shenzhen ChangChun Electronics Co., Ltd.",Công ty Cổ Phần Electronics ChangChun
+488,A.255,深圳市金联通电子有限公司,"Shenzhen JinTongGong Electronics Co., Ltd.",Công ty Cổ Phần Electronics JinTongGong
+489,E.100,广东旺盈环保包装实业有限公司,"Guangdong WangYing Environmental Packaging Industrial Co., Ltd.",Công ty Cổ Phần Xây Dựng và Kinh Doanh Sản Xuất Sản Phẩm Bảo Vệ Môi Trường
+490,C.156,东莞市恒森电子有限公司,"Dongguan HengSong Electronics Co., Ltd.",Công ty Cổ Phần Điện Tử HengSong
+491,B.120,深圳市福兴达五金制品有限公司,"Shenzhen FuXingDa五金制品 Co., Ltd.",Công ty Cổ Phần Sản Xuất Vật Phù Hợp Vật Liệu
+492,E.39,深圳市零度新材料科技有限公司,"Shenzhen ZeroNew Materials Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+493,A.1027,深圳市衡喻丰华科技有限公司,"Shenzhen HengYiFengHua Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+494,E.084,深圳市森棋鑫纸品包装有限公司,"Shenzhen ShenQiXin Paper Products Packaging Co., Ltd.",Công ty Cổ Phần Sản Xuất Sản Phẩm Bao Vệ Môi Trường
+495,A.1000,上海译枢通信技术有限公司,"Shanghai Yiliuzhuan Communication Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+496,A.684,深圳市柏瑞凯电子科技股份有限公司,"Shenzhen BeriKai Electronics Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+497,A.979,上海派思微电子有限公司,"Shanghai PeiSiMicroelectronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+498,B.136,东莞市久照五金电子制品有限公司,"Dongguan JiuZhu五金电子制品 Co., Ltd.",Công ty Cổ Phần Sản Xuất Vật Phù Hợp Vật Liệu
+499,A.580,深圳市颖华泰电子科技有限公司,"Shenzhen YingHuaTai Electronic Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+500,A.982,苏州施耐朗电子有限公司,"Suqiao ShengNan Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+501,A.1022,深圳市巨航电子有限公司,"Shenzhen JiuHang Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+502,E.098,苏州小草电子科技有限公司,"Suqiao XiaCao Electronic Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+503,E.103,昆山铨丰印刷科技有限公司,"Kinshan RanFeng Printing Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+504,A.709,深圳市昔诺达科技有限公司,"Shenzhen SiYeDa Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+505,G.019,深圳市科利泰实业有限公司,"Shenzhen KeliTai Industrial Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+506,A.045,深圳市深华星电子有限公司,"Shenzhen ShenHuaXing Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+507,B.052,东莞市骏裕五金制品有限公司,"Dongguan JuNiuJinVatery Co., Ltd.",Công ty Cổ Phần Sản Xuất Vật Phù Hợp Vật Liệu
+508,B.162,东莞市博远电子制品有限公司,"Dongguan BoYuan Electronic Products Co., Ltd.",Công ty Cổ Phần Sản Xuất Vật Phù Hợp Vật Liệu
+509,A.981,南京泽文电子科技有限公司,"Nanjing ZeWen Electronics Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+510,A.622,深圳市华宇腾电子有限公司,"Shenzhen HuayuTen Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+511,A.501,深圳市毫欧电子有限公司,"Shenzhen HeiEu Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+512,A.424,深圳市金硕源科技有限公司,"Shenzhen JinShuoYuan Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+513,A.1025,深圳市华天微电子有限公司,"Shenzhen HuatianMicroelectronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+514,A.404,湖南艾华集团股份有限公司,"Hunan AiHua Group Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+515,E.107,深圳市冰彩包装制品有限公司,"Shenzhen BinhAi Packaging Products Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+516,B.057,深圳市创益通技术股份有限公司,"Shenzhen ChuangYiTong Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+517,A.1001,深圳市亚奇科技有限公司,"Shenzhen YaQi Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+518,G.310,深圳市新亚兴达电子有限公司,"Shenzhen XinYaXingDa Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+519,A.638,佛山市皓华电子有限公司,"Foshan HaoHua Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+520,E.097,东莞市安晟精密科技有限公司,"Dongguan AnSheng Precision Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+521,E.099,深圳市诺丰电子科技有限公司,"Shenzhen NongFei Electronics Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+522,A.984,上海久势电子科技有限公司,"Shanghai JuShi Electronics Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+523,D.098,深圳市鼎兴瑞科技有限公司,"Shenzhen DingXingRui Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+524,A.989,南京富聚科技有限公司,"Nanjing FuJu Technology Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+525,A.432,惠州市德立电子有限公司,"Huizhou DeLi Electronics Co., Ltd.",Công ty Cổ Phần Khoa Học Công Nghệ và Sản Xuất Sản Phẩm
+526,A.859,深圳市卓芯微科技有限公司,"Shenzhen Zhexin Microelectronics Co., Ltd.","Công ty Cổ Phần Kỹ Thuật và Công Nghệ Zhexin Microelectronics, Thành Phố Thanh Đảo, Jiangsu"
+527,A.990,南京江智科技有限公司,"Nanjing Jiangzhi Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Jiangzhi, Thành Phố Nanjiao, Jiangsu"
+528,E.096,昆山诚意智能科技有限公司,"Kunshan Xinyi Intelligent Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Intelligent Technology Xinyi, Thành Phố Khuynh Thành, Jiangsu"
+529,A.902,河南科一诺电子科技有限公司,"Henan Kexiuno Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Kexiuno, Thành Phố Bắc Kinh, Henan"
+530,A.985,上海研尚电子科技有限公司,"Shanghai Ruxiang Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Ruxiang, Thành Phố Shanghai, Anh Tân"
+531,D.091,深圳市宽途电子有限公司,"Shenzhen KuanTu Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ KuanTu, Thành Phố Thanh Đảo, Guangdong"
+532,A.1004,东莞市威庆电子有限公司,"Dongguan Weiqing Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Weiqing, Thành Phố Đài Loan, Anh Tân"
+533,E.106,东莞市凯达科技有限公司,"Dongguan KaiDa Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ KaiDa, Thành Phố Đài Loan, Anh Tân"
+534,A.1018,东莞市容奥电子有限公司,"Dongguan Rongao Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Rongao, Thành Phố Đài Loan, Anh Tân"
+535,A.986,中为秋创（北京）科技有限公司,"Zhongwei Qiuchuang (Beijing) Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Zhongwei Qiuchuang, Thành Phố Bắc Kinh, Anh Tân"
+536,A.321,深圳市顺粤晶磁电子有限公司,"Shenzhen Shunyu Crystal Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Shunyu Crystal, Thành Phố Thanh Đảo, Anh Tân"
+537,B.159,东莞市协辰精密五金有限公司,"Dongguan Xiechen Precision Metal Co., Ltd.","Công ty Cổ Phần Công Nghệ Xiechen Precision Metal, Thành Phố Đài Loan, Anh Tân"
+538,D.096,东莞市永家兴电业有限公司,"Dongguan Yongjiaxing Electric Co., Ltd.","Công ty Cổ Phần Công Nghệ Yongjiaxing, Thành Phố Đài Loan, Anh Tân"
+539,E.067,深圳市美雅包装制品有限公司,"Shenzhen Meiyao Packaging Products Co., Ltd.","Công ty Cổ Phần Công Nghệ Meiyao Packaging Products, Thành Phố Thanh Đảo, Anh Tân"
+540,B.156,东莞市万誉达五金有限公司,Dongguan Wanyouda五金有限公司,"Công ty Cổ Phần Công Nghệ Wanyouda五金, Thành Phố Đài Loan, Anh Tân"
+541,A.1014,深圳玲辉科技股份有限公司,"Shenzhen Linghui Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Linghui, Thành Phố Thanh Đảo, Anh Tân"
+542,A.1021,东莞市松盛电子有限公司,"Dongguan Songsheng Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Songsheng, Thành Phố Đài Loan, Anh Tân"
+543,A.913,南通三鑫电子科技股份有限公司,"Nantong Sanxin Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Sanxin, Thành Phố Nantong, Anh Tân"
+544,A.944,东莞市铭邦电子有限公司,"Dongguan Mingbang Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Mingbang, Thành Phố Đài Loan, Anh Tân"
+545,B.164,东莞市德英通达科技有限公司,"Dongguan Deyingtongda Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Deyingtongda, Thành Phố Đài Loan, Anh Tân"
+546,B.161,东莞市铭恩五金电子有限公司,Dongguan Lingen五金电子有限公司,"Công ty Cổ Phần Công Nghệ Lingen五金电子, Thành Phố Đài Loan, Anh Tân"
+547,A.949,深圳柠芯电子技术有限公司,"Shenzhen Liming Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Liming, Thành Phố Thanh Đảo, Anh Tân"
+548,B.125,东莞市春科五金电子有限公司,Dongguan Chunke五金电子有限公司,"Công ty Cổ Phần Công Nghệ Chunke五金电子, Thành Phố Đài Loan, Anh Tân"
+549,A.966,东莞市军康电子科技有限公司,"Dongguan Junkang Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Junkang, Thành Phố Đài Loan, Anh Tân"
+550,A.334,深圳市福伯特电子有限公司,"Shenzhen Fubo Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Fubo, Thành Phố Thanh Đảo, Anh Tân"
+551,A.887,深圳市亘美电子有限公司,"Shenzhen Gengmei Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Gengmei, Thành Phố Thanh Đảo, Anh Tân"
+552,H.190,东莞远岱五金塑胶有限公司,Dongguan Yuanzhi五金塑胶有限公司,"Công ty Cổ Phần Công Nghệ Yuanzhi五金塑胶, Thành Phố Đài Loan, Anh Tân"
+553,A.743,四川特锐祥科技股份有限公司,"Sichuan Tertongxiang Science and Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Tertongxiang, Thành Phố Bắc Kinh, Anh Tân"
+554,A.898,济南晶恒电子有限责任公司深圳分公司,"Shenzhen Branch of Ji'nan Jingheng Electronic Co., Ltd.","Chi nhánh Công Ty Cổ Phần Công Nghệ Jingheng, Thành Phố Bắc Kinh, Anh Tân"
+555,C.119,东莞市盈合精密塑胶有限公司,"Dongguan Yinghe Precision Plastic Co., Ltd.","Công ty Cổ Phần Công Nghệ Yinghe Precision Plastic, Thành Phố Đài Loan, Anh Tân"
+556,A.452,深圳市昇捷科技有限公司,"Shenzhen Xiangjie Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Xiangjie, Thành Phố Thanh Đảo, Anh Tân"
+557,A.921,深圳市谊联科技有限公司,"Shenzhen Yiliang Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Yiliang, Thành Phố Thanh Đảo, Anh Tân"
+558,A.528,东莞市兆邦电子科技有限公司,"Dongguan Zhaobang Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Zhaobang, Thành Phố Đài Loan, Anh Tân"
+559,A.151,东莞市易利嘉电子有限公司,"Dongguan Yiliqiao Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Yiliqiao, Thành Phố Đài Loan, Anh Tân"
+560,A.290,深圳市金碧电子科技有限公司,"Shenzhen Jinbo Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Jinbo, Thành Phố Thanh Đảo, Anh Tân"
+561,A.753,深圳市宏闻电子科技有限公司,"Shenzhen Hongwen Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Hongwen, Thành Phố Thanh Đảo, Anh Tân"
+562,E.102,东莞市祥发包装制品有限公司,"Dongguan Xiangfa Packaging Products Co., Ltd.","Công ty Cổ Phần Công Nghệ Xiangfa Packaging Products, Thành Phố Đài Loan, Anh Tân"
+563,A.352,深圳市梵博电子科技有限公司,"Shenzhen Banbo Electronic Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Banbo, Thành Phố Thanh Đảo, Anh Tân"
+564,A.998,深圳华晨科电子有限公司,"Shenzhen Huaxuanke Electronic Co., Ltd.","Công ty Cổ Phần Công Nghệ Huaxuanke, Thành Phố Thanh Đảo, Anh Tân"
+565,A.950,深圳誉光信息技术有限公司,"Shenzhen Yuyang Information Technology Co., Ltd.","Công ty Cổ Phần Công Nghệ Yuyang, Thành Phố Thanh Đảo, Anh Tân"
+566,A.980,江苏精微特电子股份有限公司,"Jiangsu Jingwei Special Electronic Co., Ltd.",Công ty Cổ Phần Điện tử Tự Động Đa Phương Tiêu Chuẩn JSG
+567,B.152,深圳市凯拓林电子科技有限公司,"Shenzhen Kai Tou Lin Electronic Technology Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật KTL
+568,A.746,深圳市捷迅通电子有限公司,"Shenzhen Ji Xun Tong Electronic Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật JXT
+569,A.786,东莞市嘉雄精密电子科技有限公司,"Zhuhai Jiaxiong Precision Electronic Technology Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật JX
+570,A.1020,苏州凯而高电子有限公司,"Shanghai Kai Jia Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật KJ
+571,B.157,深圳市金盈佳五金有限公司东莞分公司,"Shenzhen Jin Ying Jia五金 Manufacturing Co., Ltd. (Dongguan Branch)",Công ty Cổ Phần Kỹ Thuật Kỹ Sách JY
+572,A.832,天津东盛泰和电子有限公司深圳分公司,"Tianjin Dongsheng Taihe Electronic Co., Ltd. (Shenzhen Branch)",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách DT
+573,A.658,安升电子（深圳）有限公司,"Ansheng Electronic (Shenzhen) Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách AS
+574,C.164,东莞市勤博塑胶制品有限公司,"Zhuhai Qinbo Plastic Products Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật QP
+575,A.972,深圳市立联芯电子有限公司,"Shenzhen Liulanxin Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách LLY
+576,G.315,广东佐成新材料有限公司,"Guangdong Zhaozeng New Materials Co., Ltd.",Công ty Cổ Phần Kỹ Thuật Kỹ Sách ZK
+577,E.082,东莞市丽锦手袋制品有限公司,"Zhuhai Li Jin Handbag Products Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật LJ
+578,E.105,东莞市东雄节能科技有限公司,"Zhuhai Dongxiu Energy Technology Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật DX
+579,B.165,东莞市巨升电子科技有限公司,"Zhuhai Jiusheng Electronic Technology Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật JX
+580,A.491,苏州荣采电子有限公司,"Shanghai Rongcai Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách RC
+581,B.160,东莞市东晓五金制品有限公司,"Zhuhai Dong Xiao五金 Manufacturing Co., Ltd.",Công ty Cổ Phần Công Nghệ Điện Kỹ Thuật DX
+582,A.265,深圳市昂拓纳科技有限公司,"Shenzhen Anton Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách AT
+583,G.311,广东剑鑫科技股份有限公司,"Guangdong Jianxin Science and Technology Co., Ltd.",Công ty Cổ Phần Kỹ Thuật Kỹ Sách JX
+584,A.1006,益阳市明正宏电子有限公司,"Yiyang Mingzhen Hong Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách MZ
+585,B.049,深圳市昌荣发科技发展有限公司,"Shenzhen Changrongfa Science and Technology Development Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách CR
+586,B.151,惠州市懿准智造有限公司,"Huizhou Yi Jin智造 Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách YJ
+587,A.457,深圳市京鸿志电子有限公司,"Shenzhen Jing Hongzhi Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách JH
+588,A.258,江苏钧茂电子有限公司,"Jiangsu Junmou Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách JM
+589,A.1010,深圳市嘉业电子有限公司,"Shenzhen Jia Ye Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách JY
+590,E.044,深圳市佳汇印刷有限公司,"Shenzhen Jia Hui Printing Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách JH
+591,A.1011,广东建亚电子有限公司,"Guangdong Jianya Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách JY
+592,D.094,山东佰旺鸿电子有限公司,"Shandong Baiwang Hong Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách BH
+593,D.056,东莞市杰帅电子有限公司,"Kunshan Rugui Industrial Materials Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách KR
+594,G.314,昆山儒威工业材料有限公司,"Kunshan Rugui Industrial Materials Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách KR
+595,A.473,深圳市虞氏路腾科技有限公司,"Shenzhen Yu Shi Lu Ten Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách YST
+596,D.095,滁州科利科技发展有限公司,"Chuzhou Keli Science and Technology Development Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách KLD
+597,A.283,深圳市红炬科技有限公司,"Shenzhen Hong Jun Science and Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách HJ
+598,A.418,东莞市升扬电子有限公司,"Zhuhai Sheng Yang Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách SY
+599,D.054,深圳市艾之恒科技有限公司,"Shenzhen Ai Zhiheng Science and Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách AZ
+600,A.357,安徽省昌盛电子有限公司,"Anhui Changsheng Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách CS
+601,A.969,深圳市勤迈电子技术有限公司,"Shenzhen Qimen Electronic Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách QMT
+602,A.597,湖南安克电子科技有限公司,"Hunan Anke Electronic Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách AN
+603,B.163,南京华亿精密弹簧有限公司,"Nanjing Huayi Precision Spring Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách PH
+604,A.1012,江西泰容电子科技有限公司,"Jiangxi Tai Rong Electronic Technology Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách TR
+605,A.713,深圳市同创鑫电子有限公司,"Shenzhen Tong Chuangxin Electronic Co., Ltd.",Công ty Cổ Phần Điện Kỹ Thuật Kỹ Sách TC
+606,A.557,东莞市冠晶电子有限公司,"Zhuhai Guanjing Electronic Co., Ltd.","Công ty TNHH Vật liệu và Công nghệ Khang Ji, Thanh Đảo"
+607,A.356,东莞市原伸微电子科技有限公司,"Zhuhai Yuanshen Microelectronics Technology Co., Ltd.","Công ty TNHH Công nghệ Microelectronics, Thanh Đảo"
+608,E.58,东莞市中嘉集成新材料科技有限公司,"Zhuhai Zhongjia Integrated New Materials Technology Co., Ltd.","Công ty TNHH Công nghệ mới về vật liệu, Thanh Đảo"
+609,A.829,湖北海成电子有限公司,"Hubei Haicheng Electronic Co., Ltd.","Công ty TNHH Điện tử Hải Thành, Hồ Bắc"
+610,A.924,深圳市亿通芯技术有限公司,"Shenzhen Yingtongxin Technology Co., Ltd.","Công ty TNHH Công nghệ Điện tử, Thanh Đảo"
+611,B.069,东莞市将诚富五金电子有限公司,Zhuhai Jixingfu五金电子有限公司,"Công ty TNHH Vật liệu và Công nghệ五金, Thanh Đảo"
+612,A.466,深圳市东旭恒科技有限公司,"Shenzhen Dongyuhe Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+613,D.099,江西昕海霖科技有限公司,"Jiangxi Xinghaolin Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Jiangxi"
+614,A.933,湖南旺城行电子有限公司,"Hunan Wanchengxing Electronic Co., Ltd.","Công ty TNHH Điện tử, Hồ Chí Minh"
+615,C.050,东莞市金点模具塑胶有限公司,"Zhuhai Jinjianmould Plastic Co., Ltd.","Công ty TNHH Vật liệu và Công nghệ Khang Ji, Thanh Đảo"
+616,G.309,惠州市斯泰尔科技有限公司,"Huizhou Steer Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Huizhou"
+617,A.1013,东莞市合创电子有限公司,"Zhuhai Hecong Electronic Co., Ltd.","Công ty TNHH Điện tử, Thanh Đảo"
+618,A.994,深圳泰科源商贸有限公司,"Shenzhen Taikeyuan Trading Co., Ltd.","Công ty TNHH Thương mại và Dịch vụ, Thanh Đảo"
+619,A.462,深圳市宏溢天诚科技有限公司,"Shenzhen Hongyihe Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+620,E.59,东莞市昆保达纸塑包装制品有限公司,"Zhuhai Kunbao Da Paper Plastic Packaging Products Co., Ltd.","Công ty TNHH Vật liệu và Công nghệ Khang Ji, Thanh Đảo"
+621,A.679,深圳市辰丰达科技有限公司,"Shenzhen Chenfengda Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+622,D.071,东莞市洪业祥实业有限公司,"Zhuhai HongyeXiang Real Estate Co., Ltd.","Công ty TNHH Vật liệu và Công nghệ Khang Ji, Thanh Đảo"
+623,A.635,深圳市国王科技有限公司,"Shenzhen King Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+624,A.945,深圳市亚世欧实业有限公司,"Shenzhen Yishao Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+625,H.31,深圳市苏杭科技有限公司,"Shenzhen Sujiang Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+626,H.116,深圳市金良拓展科技有限公司,"Shenzhen Jinlang Expansion Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+627,C.140,泰睿智造（东莞）科技有限公司,"Tairui Manufacturing (Dongguan) Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+628,A.402,深圳市旺年华电子有限公司,"Shenzhen Wangnianhua Electronic Co., Ltd.","Công ty TNHH Điện tử, Thanh Đảo"
+629,A.413,苏州合雅盟电子有限公司,"Suqiao Huyaoyuan Electronic Co., Ltd.","Công ty TNHH Điện tử, Thành phố Hồ Chí Minh"
+630,A.962,深圳市安倍特自控科技有限公司,"Shenzhen Aibei Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+631,A.861,丰宾电子科技股份有限公司,"Fengbin Electronic Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+632,F.040,深圳市启源昌科技有限公司,"Shenzhen Qiuren Chang Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+633,A.592,深圳市华麒嘉电子有限公司,"Shenzhen Huaruijia Electronic Co., Ltd.","Công ty TNHH Điện tử, Thanh Đảo"
+634,E.072,上海博应信息技术有限公司,"Shanghai Bohui Information Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+635,A.1009,广东澳迪亚电子股份有限公司,"Guangdong Aodiya Electronic Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+636,A.472,深圳市赫兴科电子有限公司,"Shenzhen Huxingke Electronic Co., Ltd.","Công ty TNHH Điện tử, Thanh Đảo"
+637,A.850,江西威尔高电子股份有限公司,"Jiangxi Weiwei High Electronic Co., Ltd.","Công ty TNHH Điện tử, Jiangxi"
+638,A.883,深圳市昱光电子有限公司,"Shenzhen Yuzhong Electronic Co., Ltd.","Công ty TNHH Điện tử, Thanh Đảo"
+639,B.045,惠州市立丰精密电子有限公司,"Huizhou Liufeng Precision Electronic Co., Ltd.","Công ty TNHH Điện tử, Huizhou"
+640,A.463,深圳市天地无限科技实业有限公司,"Shenzhen Tianyihe Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+641,A.947,深圳市罗湖区虹杰电子商行（个体工商户）,Shenzhen Luohu Huijie Electronic Shop (Individual Business),"Công ty TNHH Thương mại và Dịch vụ, Thanh Đảo"
+642,G.312,东莞奕合新材料科技有限公司,"Dongguan Yihe New Materials Technology Co., Ltd.","Công ty TNHH Vật liệu và Công nghệ Khang Ji, Thanh Đảo"
+643,A.281,深圳康鸿微电子有限公司,"Shenzhen Kangong Microelectronics Co., Ltd.","Công ty TNHH Điện tử, Thanh Đảo"
+644,C.163,东莞市兰轩鞋材有限公司,"Zhuhai Lanxuan Shoe Materials Co., Ltd.","Công ty TNHH Vật liệu và Công nghệ Khang Ji, Thanh Đảo"
+645,B.139,深圳市赛金科技有限公司,"Shenzhen Saijin Technology Co., Ltd.","Công ty TNHH Công nghệ Công nghệ, Thanh Đảo"
+646,A.535,汕头保税区松田电子科技有限公司,"Shantou BaoTian Electronic Technology Co., Ltd.","Công ty TNHH Công nghệ điện tử Thanh Tuyền, Thượng Hải, Quảng Đông"
+647,D.097,东莞市井岗电子有限公司,"Dongguan Ji Gang Electronic Co., Ltd.","Công ty TNHH Điện tử Giồng Giồng, Đồng Nai"
+648,E.056,东莞市众诚绝缘材料有限公司,"Dongguan Zhong Cheng Insulation Materials Co., Ltd.","Công ty TNHH Công nghiệp điện tử绝缘, Đồng Nai"
+649,A.301,东莞市创盟电器科技有限公司,"Dongguan Chuang Miao Electrical Technology Co., Ltd.","Công ty TNHH Công nghệ điện tử, Đồng Nai"
+651,E.67,深圳市昌源泰业工贸有限公司,"Shenzhen Chuang Yuan Tai Ye Trading Co., Ltd.","Công ty TNHH Thương mại và Dịch vụ Công nghiệp, Thâm Quyến"
+652,E.48,深圳市威利纸品有限公司,"Shenzhen Wei Li Paper Products Co., Ltd.","Công ty TNHH Sản xuất và Dịch vụ Giấy, Thâm Quyến"
+653,A.996,深圳市鼎视普锐科技有限公司,"Shenzhen Ding Sheng Pu Rui Technology Co., Ltd.","Công ty TNHH Công nghệ viễn thông và sản xuất, Thâm Quyến"
+654,A.1002,云柯智能（深圳）有限公司,"Yunke Intelligent (Shenzhen) Co., Ltd.","Công ty TNHH Công nghệ thông tin (Yunke), Thâm Quyến"
+655,A.1003,柔微智能科技（苏州）有限公司,"Ruhui Intelligent Technology (Suzhou) Co., Ltd.","Công ty TNHH Công nghệ thông tin (Ruhui), Quảng Đông"
+656,A.1005,广西福高电子产品有限公司,"Guangxi Fu Gao Electronics Co., Ltd.","Công ty TNHH Sản xuất và Dịch vụ Điện tử, Quảng Đông"
+657,E.104,东莞市时宇包装制品有限公司,"Dongguan Shi Yu Packaging Products Co., Ltd.","Công ty TNHH Sản xuất và Dịch vụ Bao bì, Đồng Nai"
+658,B.127,惠州市磁源磁性材料有限公司,"Huizhou Magnetic Source Magnetic Materials Co., Ltd.","Công ty TNHH Sản xuất và Dịch vụ Nguyên liệu, Quảng Đông"
+659,G.224,东莞市沛祺电子科技有限公司,"Dongguan Pei Qi Electronic Technology Co., Ltd.","Công ty TNHH Công nghệ điện tử, Đồng Nai"
+660,D.090,东莞市讯升电子有限公司,"Dongguan Xun Sheng Electronic Co., Ltd.","Công ty TNHH Điện tử, Đồng Nai"
+661,A.920,深圳润泽晖电子科技有限公司,"Shenzhen Run Ze Hui Electronic Technology Co., Ltd.","Công ty TNHH Công nghệ điện tử, Thâm Quyến"
+662,A.929,深圳市睿立科技有限公司,"Shenzhen Ruili Technology Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+663,G.305,东莞市博恩复合材料有限公司,"Dongguan Boen Composite Materials Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Đồng Nai"
+664,G.300,深圳市旭坤科技有限公司,"Shenzhen Xue Kun Technology Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+665,A.885,深圳市玲辉科技有限公司,"Shenzhen Ling Hui Technology Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+666,A.717,惠州市板桥电子有限公司,"Huizhou Bang Qiao Electronic Co., Ltd.","Công ty TNHH Điện tử, Quảng Đông"
+667,C.153,东莞市裕鼎纳米科技有限公司,"Dongguan Yu Ding Nanometer Technology Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Đồng Nai"
+668,A.498,深圳市明利威科技电子有限公司,"Shenzhen Ming Li Wei Technology Co., Ltd.","Công ty TNHH Công nghệ điện tử, Thâm Quyến"
+669,A.999,深圳市伯乐马电子有限公司,"Shenzhen Bo Le Ma Electronic Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+670,A.975,广东乔顿电子有限公司,"Guangdong Jiotong Electronic Co., Ltd.","Công ty TNHH Điện tử, Quảng Đông"
+671,G.307,深圳诚立胜新材料科技有限公司,"Shenzhen Cheng Li Sheng New Materials Technology Co., Ltd.","Công ty TNHH Công nghiệp mới và sản xuất, Thâm Quyến"
+672,A.668,深圳市通亿科技有限公司,"Shenzhen Tongyi Technology Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+673,E.57,深圳市时利达科技有限公司,"Shenzhen Shi Li Da Technology Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+674,A.839,江苏洲旭电路科技有限公司,"Jiangsu Zhong Zhuo Circuit Technology Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Jiangsu"
+675,A.838,横店集团东磁股份有限公司,"Hengdian Group Dong Ma Joint Stock Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Quảng Đông"
+676,A.553,深圳市奥特高科电子有限公司,"Shenzhen Ao Tie Gao Ke Electronic Co., Ltd.","Công ty TNHH Công nghệ điện tử, Thâm Quyến"
+677,B.098,东莞市誉扬五金制品有限公司,"Daiya Qutian Electronic Technology (Shenzhen) Co., Ltd.","Công ty TNHH Công nghệ điện tử, Thâm Quyến"
+678,A.840,大亚秋田电子科技（深圳）有限公司,"Daiya Qutian Electronic Technology (Shenzhen) Co., Ltd.","Công ty TNHH Công nghệ điện tử, Thâm Quyến"
+679,A.886,岑科科技（深圳）集团有限公司,"Cenke Technology (Shenzhen) Group Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Thâm Quyến"
+680,A.987,苏州芯欣微电子有限公司,"Suzhou Xing Xin Microelectronics Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Quảng Đông"
+681,A.988,广东塑镕电容器有限公司,"Guangdong Sheng You Electro Capacitor Co., Ltd.","Công ty TNHH Sản xuất và Dịch vụ Điện tử, Quảng Đông"
+682,E.70,深圳市汉华热管理科技有限公司,"Shenzhen Hanhua Thermal Management Technology Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Thâm Quyến"
+683,E.087,深圳市晨杰纸品有限公司,"Shenzhen Cheng Ji Paper Products Co., Ltd.","Công ty TNHH Sản xuất và Dịch vụ Giấy, Thâm Quyến"
+684,A.525,深圳市东奥科技有限公司,"Shenzhen Dong Ao Technology Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+685,A.509,深圳市欧亚达电子有限公司,"Shenzhen Eu Ya Da Electronic Co., Ltd.","Công ty TNHH Công nghệ thông tin, Thâm Quyến"
+686,A.721,东莞市聚源精密科技有限公司,"Dongguan Ju Yuan Precision Technology Co., Ltd.","Công ty TNHH Công nghiệp điện tử, Đồng Nai"
+687,C.047,东莞市翔通塑胶制品有限公司,"Shenzhen Xiangtong Plastic Products Co., Ltd.",Công ty sản xuất đồ nhựa东莞市翔通塑胶制品有限公司
+688,E.062,深圳市耀隆彩色印刷有限公司,"Shenzhen Yuliang Color Printing Co., Ltd.",Công ty sản xuất in màu sắc tại Thâm Quyến
+689,E.051,志海精密配件（深圳）有限公司,"Zhaihai Precision Parts (Shenzhen) Co., Ltd.",Công ty sản xuất phụ kiện điện tử (Thái Lan)
+690,A.479,深圳市康荿电子有限公司,"Shenzhen Kangjiao Electronic Co., Ltd.",Công ty sản xuất điện tử tại Thâm Quyến
+691,A.934,深圳市兴瑞利科技有限公司,"Shenzhen Xingril Technology Co., Ltd.",Công ty sản xuất công nghệ tại Thâm Quyến
+692,G.291,深圳市东信硅材料有限公司,"Shenzhen Dongxin Silicon Materials Co., Ltd.",Công ty sản xuất vật liệu silicon tại Thâm Quyến
+693,E.068,东莞市兴旺泰环保包装制品有限公司,"Dongguan Xiangmingtai Environmental Packaging Products Co., Ltd.",Công ty sản xuất sản phẩm đóng gói環保 tại Thâm Quyến
+694,E.095,东莞市周全印刷有限公司,"Dongguan Zhouquan Printing Co., Ltd.",Công ty sản xuất in tại Thâm Quyến
+695,C.157,深圳市霸王卓越精密电子有限公司,"Shenzhen Doubaosou Excellence Precision Electronics Co., Ltd.",Công ty sản xuất điện tử tại Thâm Quyến
+696,B.153,深圳市泰普生科技有限公司,"Shenzhen Taipingsheng Technology Co., Ltd.",Công ty sản xuất công nghệ tại Thâm Quyến
+698,A.616,南京商络电子股份有限公司,"Nanjing Shangluo Electronic Co., Ltd.",Công ty cổ phần điện tử tại Thành phố Thương Khê
+699,E.066,东莞市千亿包装科技有限公司,"Dongguan Qianqi Packaging Technology Co., Ltd.",Công ty sản xuất công nghệ tại Thâm Quyến
+700,B.080,东莞市金佳电子有限公司,"Dongguan Jinjia Electronic Co., Ltd.",Công ty sản xuất điện tử tại Thâm Quyến
+701,B.154,东莞市智峰精密五金有限公司,"Dongguan Zhi Feng Precision五金 Co., Ltd.",Công ty sản xuất phụ kiện điện tử tại Thâm Quyến
+702,A.062,东莞市文茂电子科技有限公司,"Dongguan Wenmou Electronic Technology Co., Ltd.",Công ty sản xuất công nghệ tại Thâm Quyến
+703,A.927,北京远大创新科技有限公司,"Beijing Yuanma Innovation Technology Co., Ltd.",Công ty sản xuất công nghệ tại Bắc Kinh

@@ -53,6 +53,12 @@ import { mysqlQuery, mysqlGetOne, psQuery, psGetOne } from "./src/mysql.js";
 import { TtlCache } from "./src/_shared/cache.js";
 import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
 import { envelope, listEnvelope, mutateEnvelope, errorEnvelope } from "./src/shared/helpers.js";
+import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
+import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
+import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
+import { registerRjvnPickingRoutes } from "./src/rjvn-picking.js";
+import { registerRjvnDocFlowRoutes } from "./src/rjvn-docflow.js";
+import { registerCanonicalDataRoutes } from "./src/rjvn-canonical-api.js";
 import manualLineRouter from "./src/routes/manual-line.js";
 import autoLineRouter from "./src/routes/auto-line.js";
 import manuLineRouter from "./src/routes/manu-line.js";
@@ -33880,6 +33886,130 @@ api.post("/lifecycle/pg", async (req, res) => {
 // MOVED to before /mes/events to fix req.user not set for requirePermission() routes
 // (authenticateJWT now applied inline on /mes/events route)
 app.use(authenticateJWT);
+
+// ── rjvn WMS mirror — read-only ───────────────────────────────────
+// The public.rjvn_* tables are a 1:1 mirror of the source `wms` database.
+// They are reference data only: every write still goes to the canonical smt
+// tables. Table names are validated against pg_tables and identifiers are
+// quoted, so no user input is ever interpolated as raw SQL.
+const RJVN_SUMMARY_TABLES = [
+  "rjvn_material", "rjvn_supplier", "rjvn_bom", "rjvn_receipt_order",
+  "rjvn_iqc_lot", "rjvn_iqc_report", "rjvn_inventory", "rjvn_iqc_lot_receipt",
+];
+
+app.get("/rjvn-wms/summary", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const out = {};
+    for (const t of RJVN_SUMMARY_TABLES) {
+      const r = await pgPool.query(`select count(*)::int as n from public."${t}"`);
+      out[t.replace(/^rjvn_/, "")] = r.rows[0].n;
+    }
+    res.json({ success: true, data: out });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get("/rjvn-wms/tables", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const { rows } = await pgPool.query(`
+      select c.relname as name, greatest(c.reltuples::bigint, 0)::int as approx_rows
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r' and c.relname like 'rjvn\\_%'
+      order by c.relname`);
+    res.json({ success: true, data: rows });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get("/rjvn-wms/data/:table", requirePermission("wms.view"), async (req, res) => {
+  const table = String(req.params.table || "");
+  if (!/^rjvn_[a-z0-9_]+$/.test(table)) {
+    return res.status(400).json({ success: false, error: "Invalid table name" });
+  }
+  try {
+    const exists = await pgPool.query(
+      `select 1 from pg_tables where schemaname='public' and tablename=$1`, [table]);
+    if (!exists.rowCount) return res.status(404).json({ success: false, error: "Table not found" });
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const q = String(req.query.q || "").slice(0, 200);
+
+    const colRes = await pgPool.query(
+      `select column_name, data_type from information_schema.columns
+       where table_schema='public' and table_name=$1 order by ordinal_position`, [table]);
+    const columns = colRes.rows;
+    const textCols = columns
+      .filter((c) => ["text", "character varying", "citext"].includes(c.data_type))
+      .map((c) => `"${c.column_name}"`);
+
+    const where = q && textCols.length
+      ? ` where (${textCols.map((c) => `coalesce(${c}::text,'') ilike $1`).join(" or ")})`
+      : "";
+    const params = q && textCols.length ? [`%${q}%`] : [];
+
+    const [count, data] = await Promise.all([
+      pgPool.query(`select count(*)::int as n from public."${table}"${where}`, params),
+      pgPool.query(`select * from public."${table}"${where} order by 1 limit $${params.length + 1} offset $${params.length + 2}`,
+        [...params, limit, offset]),
+    ]);
+    res.json({ success: true, data: {
+      rows: data.rows, total: count.rows[0].n, limit, offset,
+      columns: columns.map((c) => c.column_name),
+    } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Aggregate KPIs over the mirrored IQC lots — the source system's IQC module
+// is the dominant workflow, so expose its pass rate and top offenders directly.
+app.get("/rjvn-wms/iqc/overview", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const [totals, bySupplier, byMaterial, byMonth, defects] = await Promise.all([
+      pgPool.query(`
+        select count(*)::int as lots,
+               count(*) filter (where lower(inspection_result) = 'pass')::int as passed,
+               count(*) filter (where lower(inspection_result) = 'pending')::int as pending,
+               count(*) filter (where lower(inspection_result) in ('fail','reject','hold'))::int as failed
+        from public.rjvn_iqc_lot`),
+      pgPool.query(`
+        select coalesce(s.supplier_name, l.supplier_id::text) as name,
+               count(*)::int as lots,
+               count(*) filter (where lower(l.inspection_result) = 'pass')::int as passed
+        from public.rjvn_iqc_lot l
+        left join public.rjvn_supplier s on s.id = l.supplier_id
+        group by 1 order by lots desc limit 10`),
+      pgPool.query(`
+        select coalesce(m.material_name, l.material_id::text) as name,
+               count(*)::int as lots,
+               count(*) filter (where lower(l.inspection_result) = 'pass')::int as passed
+        from public.rjvn_iqc_lot l
+        left join public.rjvn_material m on m.id = l.material_id
+        group by 1 order by lots desc limit 10`),
+      pgPool.query(`
+        select to_char(date_trunc('month', receipt_date), 'YYYY-MM') as month,
+               count(*)::int as lots
+        from public.rjvn_iqc_lot where receipt_date is not null
+        group by 1 order by 1 desc limit 12`),
+      pgPool.query(`
+        select coalesce(defect_type, 'unspecified') as name, count(*)::int as lots
+        from public.rjvn_iqc_lot group by 1 order by lots desc limit 10`),
+    ]);
+    res.json({ success: true, data: {
+      totals: totals.rows[0],
+      bySupplier: bySupplier.rows,
+      byMaterial: byMaterial.rows,
+      byMonth: byMonth.rows,
+      defects: defects.rows,
+    } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── rjvn IQC core logic (ported from NestJS) ──────────────────────
+// Registered AFTER app.use(authenticateJWT) and the read-only rjvn-wms routes.
+registerRjvnIqcRoutes(app, pgPool, requirePermission);
+registerRjvnReceiptRoutes(app, pgPool, requirePermission);
+registerRjvnInventoryRoutes(app, pgPool, requirePermission);
+registerRjvnPickingRoutes(app, pgPool, requirePermission);
+registerRjvnDocFlowRoutes(app, pgPool, requirePermission);
+registerCanonicalDataRoutes(app, pgPool, requirePermission);
 
 // ── Stagnation / 产品呆滞 ─────────────────────────────────────────
 

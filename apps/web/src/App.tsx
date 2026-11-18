@@ -91,7 +91,7 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
 import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
@@ -1836,6 +1836,13 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
   const renderActiveView = () => {
     switch (activeTab) {
       case "dashboard": return <WmsDashboard locale={locale} />;
+      case "rjvnData": return <WmsRjvnData locale={locale} />;
+      case "rjvnIqc": return <WmsRjvnIqc locale={locale} />;
+      case "rjvnReceipt": return <WmsRjvnReceipt locale={locale} />;
+      case "rjvnInventory": return <WmsRjvnInventory locale={locale} />;
+      case "rjvnPicking": return <WmsRjvnPicking locale={locale} />;
+      case "rjvnDocFlow": return <WmsRjvnDocFlow locale={locale} />;
+      case "rjvnCanonical": return <WmsCanonicalData locale={locale} />;
       case "receiving": return <WmsReceiving locale={locale} />;
       case "returnReceive": return <WmsReturnReceiving locale={locale} />;
       case "supplierReturn": return <WmsSupplierReturn locale={locale} />;
