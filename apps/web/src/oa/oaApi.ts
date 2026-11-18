@@ -108,12 +108,56 @@ export interface OaAnnouncement {
   content_vi?: string | null;
   category?: string | null;
   status?: string | null;
+  publisher_id?: number | string | null;
   publisher_name?: string | null;
   publish_at?: string | null;
+  expire_at?: string | null;
   created_at: string;
+  updated_at?: string | null;
   is_read?: boolean;
   read_count?: number;
   top?: boolean;
+}
+
+export interface OaAnnouncementReadRow {
+  user_id: number | string;
+  real_name?: string | null;
+  dept_name?: string | null;
+  read_at: string;
+}
+
+export interface OaAnnouncementUnreadRow {
+  user_id: number | string;
+  real_name?: string | null;
+  dept_name?: string | null;
+}
+
+export interface OaAnnouncementListResult {
+  list: OaAnnouncement[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface OaAnnouncementSaveBody {
+  title: string;
+  titleVi?: string | null;
+  content?: string | null;
+  contentVi?: string | null;
+  category?: string;
+  top?: boolean;
+  publishAt?: string | null;
+  expireAt?: string | null;
+  status?: "draft" | "published";
+}
+
+export interface OaProfile {
+  id: number | string;
+  username: string;
+  real_name?: string | null;
+  isAdmin?: boolean;
+  permissions?: string[];
+  counts?: { todo: number; drafts: number; cc: number; notifications: number };
 }
 
 export interface OaDepartment {
@@ -202,8 +246,18 @@ export interface OaUserOption {
   real_name: string;
   employee_no?: string | null;
   position?: string | null;
+  position_code?: string | null;
   dept_name?: string | null;
   department_id?: number | string | null;
+  email?: string | null;
+  phone?: string | null;
+  organization?: string | null;
+  is_admin?: boolean;
+  is_external?: boolean;
+  is_system?: boolean;
+  manager_name?: string | null;
+  hire_date?: string | null;
+  last_login_at?: string | null;
 }
 
 export interface OaUploadResult {
@@ -267,7 +321,11 @@ export const oaApi = {
   submitDraft: (id: number | string, comment?: string) =>
     apiClient.post<unknown>(`/api/instances/${id}/submit`, comment ? { comment } : {}),
 
-  users: () => apiClient.get<OaUserOption[]>("/api/users"),
+  users: (query: { keyword?: string; departmentId?: number | string; organization?: string; scope?: string } = {}) =>
+    apiClient.get<OaUserOption[]>("/api/users", query),
+
+  /** 当前用户档案（isAdmin / permissions，用于管理员功能显隐） */
+  profile: () => apiClient.get<OaProfile>("/api/auth/profile"),
 
   /** 暂存上传（返回 tempRelPath），随后用 addAttachment 关联到单据 */
   upload: (file: File) => {
@@ -304,8 +362,27 @@ export const oaApi = {
   markNotificationsRead: (ids: Array<number | string>) =>
     apiClient.post<{ updated: number }>("/api/notifications/read", { ids }),
 
-  announcements: (query: { keyword?: string; category?: string; page?: number; pageSize?: number } = {}) =>
-    apiClient.get<OaPaged<OaAnnouncement>>("/api/announcements", query),
+  announcements: (query: { keyword?: string; status?: string; category?: string; page?: number; pageSize?: number } = {}) =>
+    apiClient.get<OaAnnouncementListResult>("/api/announcements", query),
+
+  announcement: (id: number | string) => apiClient.get<OaAnnouncement>(`/api/announcements/${id}`),
+
+  createAnnouncement: (body: OaAnnouncementSaveBody) =>
+    apiClient.post<OaAnnouncement>("/api/announcements", body),
+
+  updateAnnouncement: (id: number | string, body: OaAnnouncementSaveBody) =>
+    apiClient.put<OaAnnouncement>(`/api/announcements/${id}`, body),
+
+  publishAnnouncement: (id: number | string) =>
+    apiClient.post<{ id: number | string; status: string; alreadyPublished?: boolean }>(`/api/announcements/${id}/publish`, {}),
+
+  deleteAnnouncement: (id: number | string) => apiClient.delete<{ id: number | string }>(`/api/announcements/${id}`),
+
+  markAnnouncementRead: (id: number | string) => apiClient.post<unknown>(`/api/announcements/${id}/read`, {}),
+
+  /** 阅读回执明细（仅发布者/管理员）：已读人员 + 未读人员 */
+  announcementReads: (id: number | string) =>
+    apiClient.get<{ read: OaAnnouncementReadRow[]; unread: OaAnnouncementUnreadRow[] }>(`/api/announcements/${id}/reads`),
 
   departments: () => apiClient.get<OaDepartment[]>("/api/departments"),
 };
