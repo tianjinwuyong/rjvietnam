@@ -67,11 +67,11 @@ export function WmsRjvnInventory({ locale }: { locale: Locale }) {
     }
   }, [q, status]);
 
-  useEffect(() => { void load(); }, [load]);
+  // Single debounced load; load already depends on q/status.
   useEffect(() => {
-    const timer = setTimeout(() => { void load(); }, 300);
+    const timer = setTimeout(() => { void load(); }, q || status ? 300 : 0);
     return () => clearTimeout(timer);
-  }, [q, status]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [load, q, status]);
 
   const act = useCallback(async (fn: () => Promise<unknown>, okMsg: string) => {
     setBusy(true); setFeedback("");

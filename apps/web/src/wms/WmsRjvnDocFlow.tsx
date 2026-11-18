@@ -48,9 +48,12 @@ export function WmsRjvnDocFlow({ locale }: { locale: Locale }) {
     finally { setLoading(false); }
   }, [kind, q, status]);
 
-  useEffect(() => { void load(); }, [load]);
   useEffect(() => { setSelected(null); setDetail(null); setQ(""); setStatus(""); setFeedback(""); }, [kind]);
-  useEffect(() => { const tm = setTimeout(() => void load(), 300); return () => clearTimeout(tm); }, [q, status]); // eslint-disable-line
+  // Single debounced load; load already depends on kind/q/status.
+  useEffect(() => {
+    const tm = setTimeout(() => void load(), q || status ? 300 : 0);
+    return () => clearTimeout(tm);
+  }, [load, q, status]);
 
   const openDetail = useCallback(async (id: string) => {
     setSelected(id); setDetail(null);

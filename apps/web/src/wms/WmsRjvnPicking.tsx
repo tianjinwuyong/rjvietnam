@@ -42,8 +42,11 @@ export function WmsRjvnPicking({ locale }: { locale: Locale }) {
     finally { setLoading(false); }
   }, [q, status]);
 
-  useEffect(() => { void load(); }, [load]);
-  useEffect(() => { const tm = setTimeout(() => void load(), 300); return () => clearTimeout(tm); }, [q, status]); // eslint-disable-line
+  // Single debounced load; load already depends on q/status.
+  useEffect(() => {
+    const tm = setTimeout(() => void load(), q || status ? 300 : 0);
+    return () => clearTimeout(tm);
+  }, [load, q, status]);
 
   const openDetail = useCallback(async (id: string) => {
     setSelected(id); setDetail(null); setFeedback("");
