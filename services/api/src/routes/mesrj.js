@@ -45,6 +45,9 @@ import {
   guessSnType, checkSnFormat, pickRoute, snapshotRouteSteps,
   restoreTempRoute, activeTempRoute, ensureMoRoute,
   adoptFromAoi, adoptWsAoiPass, doPassInner, moAfterPass, BLOCK_STATUS,
+  // W6c 维修 / 报废 / 设备健康 / 良率 / 返修列表 / 工单物料 / AI 工位 / 老化 / 物料追溯
+  repairRegister, scrapRegister, deviceHealth, yieldStats, repairList,
+  moMaterials, aiStations, agingWip, agingDetail, traceMaterialBySn, traceMaterialByMaterial,
 } from "../mesrj/domain.js";
 
 /** 源 util.ok(data, msg) */
@@ -3693,6 +3696,252 @@ export function createMesrjRouter({ authenticateJWT }) {
     const [sn, err] = await snAlloc(snType);
     if (!sn) return fail(res, err);
     return ok(res, { sn, sn_type: snType, warn });
+  });
+
+  // ── SN 池查询（分页，支持 mo_no / status / station_code / keyword 过滤）──
+  router.get("/exec/sn/pool", async (req, res) => {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const size = Math.min(500, Math.max(1, Number(req.query.size || 50)));
+    const off = (page - 1) * size;
+    const where = [];
+    const args = [];
+    const moNo = (req.query.mo_no || "").trim();
+    if (moNo) { args.push(moNo); where.push(`mo_no=$${args.length}`); }
+    const status = (req.query.status || "").trim();
+    if (status) { args.push(status); where.push(`status=$${args.length}`); }
+    const st = (req.query.station_code || "").trim();
+    if (st) { args.push(st); where.push(`cur_station=$${args.length}`); }
+    const kw = (req.query.keyword || "").trim();
+    if (kw) { args.push(`%${kw}%`); where.push(`(sn ILIKE $${args.length} OR product_code ILIKE $${args.length})`); }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const total = Number((await query(
+      `SELECT COUNT(*)::int AS n FROM prd_sn ${clause}`, args)).rows[0]?.n || 0);
+    const rows = (await query(
+      `SELECT sn, sn_type, product_code, mo_no, line_code, cur_station, cur_seq, status,
+              created_at, updated_at, sn_note
+       FROM prd_sn ${clause} ORDER BY created_at DESC LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+      [...args, size, off])).rows;
+    return ok(res, { rows, total, page, size });
+  });
+
+  // ── SN 规则列表 ──
+  router.get("/exec/sn/rule", async (req, res) => {
+    const rows = (await query(
+      `SELECT id, sn_type, prefix, year_digits, seq_digits, check_digit, format_pattern,
+              is_active, description, created_at
+       FROM cfg_sn_rule ORDER BY id`)).rows;
+    return ok(res, rows);
+  });
+
+  // ── SN 批次汇总（按 mo_no） ──
+  router.get("/exec/sn/batch", async (req, res) => {
+    const moNo = (req.query.mo_no || "").trim();
+    if (!moNo) return fail(res, "缺少 mo_no");
+    const rows = (await query(
+      `SELECT mo_no, COUNT(*)::int AS sn_total,
+              COUNT(*) FILTER (WHERE status='在制')::int AS wip,
+              COUNT(*) FILTER (WHERE status='完成')::int AS done,
+              COUNT(*) FILTER (WHERE status='报废')::int AS scrapped,
+              MIN(created_at) AS first_sn, MAX(created_at) AS last_sn
+       FROM prd_sn WHERE mo_no=$1 GROUP BY mo_no`, [moNo])).rows;
+    return ok(res, rows);
+  });
+
+  // ── SN 作废 ──
+  router.post("/exec/sn/void", requireMesrjPerm("prod.void"), async (req, res) => {
+    const d = req.body || {};
+    const sn = (d.sn || "").trim();
+    const reason = (d.reason || "").trim();
+    if (!sn) return fail(res, "SN 必填");
+    if (!reason) return fail(res, "作废必须填原因");
+    const r = (await query("SELECT id, status FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    if (!r) return fail(res, `SN 不存在：${sn}`, 404);
+    if (r.status === "报废") return fail(res, "SN 已作废，无需重复操作");
+    const u = req.mesrjUser || {};
+    await query("UPDATE prd_sn SET status='报废', updated_at=$1 WHERE sn=$2", [nowStr(), sn]);
+    await audit(u.login_name, "生产执行", "SN 作废", sn, reason, req.ip);
+    return ok(res, { sn, status: "报废" }, `SN ${sn} 已作废`);
+  });
+
+  // ── SN 详情（基础 + 过站记录 + 不良记录） ──
+  router.get("/exec/sn/detail", async (req, res) => {
+    const sn = (req.query.sn || "").trim();
+    if (!sn) return fail(res, "缺少 sn");
+    const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    if (!snRow) return fail(res, `SN 不存在：${sn}`, 404);
+    const passes = (await query(
+      "SELECT station_code, result, ng_code, operator, pass_time, mark FROM prd_pass WHERE sn=$1 ORDER BY pass_time",
+      [sn])).rows;
+    const defects = (await query(
+      "SELECT defect_code, station_code, process_code, root_cause, handle, defect_time FROM prd_defect_rec WHERE sn=$1 ORDER BY defect_time",
+      [sn])).rows;
+    return ok(res, { sn: snRow, passes, defects });
+  });
+
+  // ── SN 测试记录（AOI + 过站） ──
+  router.get("/exec/sn/test", async (req, res) => {
+    const sn = (req.query.sn || "").trim();
+    if (!sn) return fail(res, "缺少 sn");
+    const aoi = (await query(
+      "SELECT final_result, test_time, device_name, project_name, file_name FROM prd_aoi_board WHERE board_sn=$1 ORDER BY test_time DESC",
+      [sn])).rows;
+    const passes = (await query(
+      "SELECT station_code, result, ng_code, pass_time, mark FROM prd_pass WHERE sn=$1 ORDER BY pass_time DESC",
+      [sn])).rows;
+    return ok(res, { sn, aoi, passes });
+  });
+
+  // ── 工位下一站（给定 SN，返回下一待过站工位） ──
+  router.get("/exec/station/next", async (req, res) => {
+    const sn = (req.query.sn || "").trim();
+    const stationCode = (req.query.station_code || "").trim();
+    if (!sn) return fail(res, "缺少 sn");
+    const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    if (!snRow) return fail(res, `SN 不存在：${sn}`, 404);
+    const [steps] = await ensureMoRoute(snRow.mo_no || "", snRow.product_code || "");
+    if (!steps.length) return ok(res, { sn, next_station: null });
+    const next = stationCode
+      ? await next_station(steps, stationCode)
+      : await next_pending_station(steps, sn);
+    return ok(res, { sn, mo_no: snRow.mo_no, next_station: next });
+  });
+
+  // ── 工位待处理（指定工位当前待过站的 SN 列表） ──
+  router.get("/exec/station/pending", async (req, res) => {
+    const stationCode = (req.query.station_code || "").trim();
+    if (!stationCode) return fail(res, "缺少 station_code");
+    const st = (await query("SELECT * FROM md_station WHERE station_code=$1", [stationCode])).rows[0];
+    if (!st) return fail(res, `工位不存在：${stationCode}`, 404);
+    const rows = (await query(
+      "SELECT sn, product_code, mo_no, cur_station, cur_seq, status, created_at FROM prd_sn "
+      + "WHERE cur_station=$1 AND status='在制' ORDER BY created_at", [stationCode])).rows;
+    return ok(res, { station_code: stationCode, station_name: st.station_name, rows });
+  });
+
+  // ── 过站列表（prd_pass 分页查询） ──
+  router.get("/exec/pass/list", async (req, res) => {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const size = Math.min(500, Math.max(1, Number(req.query.size || 50)));
+    const off = (page - 1) * size;
+    const where = [];
+    const args = [];
+    const sn = (req.query.sn || "").trim();
+    if (sn) { args.push(sn); where.push(`sn=$${args.length}`); }
+    const moNo = (req.query.mo_no || "").trim();
+    if (moNo) { args.push(moNo); where.push(`mo_no=$${args.length}`); }
+    const stationCode = (req.query.station_code || "").trim();
+    if (stationCode) { args.push(stationCode); where.push(`station_code=$${args.length}`); }
+    const result = (req.query.result || "").trim();
+    if (result) { args.push(result); where.push(`result=$${args.length}`); }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const total = Number((await query(
+      `SELECT COUNT(*)::int AS n FROM prd_pass ${clause}`, args)).rows[0]?.n || 0);
+    const rows = (await query(
+      `SELECT id, sn, station_code, result, ng_code, operator, pass_time, mark FROM prd_pass ${clause} ORDER BY pass_time DESC LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+      [...args, size, off])).rows;
+    return ok(res, { rows, total, page, size });
+  });
+
+  // ── 面板预览（工位面板布局配置） ──
+  router.get("/exec/panel/preview", async (req, res) => {
+    const stationCode = (req.query.station_code || "").trim();
+    if (!stationCode) return fail(res, "缺少 station_code");
+    const rows = (await query(
+      "SELECT panel_key, panel_type, config_json, is_active FROM cfg_panel_layout WHERE station_code=$1 ORDER BY panel_key",
+      [stationCode])).rows;
+    return ok(res, { station_code: stationCode, panels: rows });
+  });
+
+  // ── 过站面板（综合看板：各工位 OK/NG/总数） ──
+  router.get("/exec/pass/panel", async (req, res) => {
+    const lineCode = (req.query.line_code || "").trim();
+    const where = [];
+    const args = [];
+    if (lineCode) { args.push(lineCode); where.push(`p.line_code=$${args.length}`); }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const rows = (await query(
+      `SELECT p.station_code, s.station_name, p.line_code,
+              COUNT(*) FILTER (WHERE p.result='OK')::int AS pass_ok,
+              COUNT(*) FILTER (WHERE p.result='NG')::int AS pass_ng,
+              COUNT(DISTINCT p.sn)::int AS sn_total
+       FROM prd_pass p JOIN md_station s ON s.station_code=p.station_code
+       ${clause} GROUP BY p.station_code, s.station_name, p.line_code ORDER BY p.station_code`,
+      args)).rows;
+    return ok(res, rows);
+  });
+
+  // ── W6c：返修登记 ──
+  router.post("/exec/repair", requireMesrjPerm("prod.repair"), async (req, res) => {
+    try {
+      const d = await repairRegister(req.body || {});
+      const u = req.mesrjUser || {};
+      await audit(u.login_name, "生产执行", "SN 返修", d.sn, `返修次数：${d.repair_times}`, req.ip);
+      return ok(res, d, "返修登记完成");
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：报废登记 ──
+  router.post("/exec/scrap", requireMesrjPerm("prod.scrap"), async (req, res) => {
+    try {
+      const d = await scrapRegister(req.body || {});
+      const u = req.mesrjUser || {};
+      await audit(u.login_name, "生产执行", "SN 报废", d.sn, `原因：${(req.body || {}).reason || ""}`, req.ip);
+      return ok(res, d, "报废登记完成");
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：设备健康 ──
+  router.get("/exec/device/health", async (req, res) => {
+    try { return ok(res, await deviceHealth()); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：良率报表 ──
+  router.get("/exec/yield", async (req, res) => {
+    try { return ok(res, await yieldStats(req.query)); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：返修列表（分页） ──
+  router.get("/exec/repair/list", async (req, res) => {
+    try { return ok(res, await repairList(req.query)); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：工单物料 ──
+  router.get("/exec/mo/materials", async (req, res) => {
+    try { return ok(res, await moMaterials(req.query)); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：AI 工位 ──
+  router.get("/exec/ai/stations", async (req, res) => {
+    try { return ok(res, await aiStations()); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：老化分析 ──
+  router.get("/exec/aging", async (req, res) => {
+    try { return ok(res, await agingWip()); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：老化明细 ──
+  router.get("/exec/aging/detail", async (req, res) => {
+    try { return ok(res, await agingDetail(req.query)); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：物料追溯（按 SN） ──
+  router.get("/exec/trace/material", async (req, res) => {
+    try { return ok(res, await traceMaterialBySn(req.query)); }
+    catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ── W6c：物料追溯（按物料） ──
+  router.get("/exec/trace/material/sns", async (req, res) => {
+    try { return ok(res, await traceMaterialByMaterial(req.query)); }
+    catch (ex) { return fail(res, ex.message); }
   });
 
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════

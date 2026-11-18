@@ -204,6 +204,61 @@ export const MENU = [
         "name": "跳站放行单"
       },
       {
+        "code": "exec.snpool",
+        "name": "SN 池管理",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.snrule",
+        "name": "SN 规则",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.snbatch",
+        "name": "SN 批次",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.snvoid",
+        "name": "SN 作废",
+        "perm": "prod.void"
+      },
+      {
+        "code": "exec.sndetail",
+        "name": "SN 详情",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.sntest",
+        "name": "SN 测试",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.stationnext",
+        "name": "工位下一站",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.stationpending",
+        "name": "工位待处理",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.passlist",
+        "name": "过站记录",
+        "perm": "prod.trace"
+      },
+      {
+        "code": "exec.panelpreview",
+        "name": "面板预览",
+        "perm": "prod.pass"
+      },
+      {
+        "code": "exec.passpanel",
+        "name": "过站看板",
+        "perm": "prod.trace"
+      },
+      {
         "code": "exec.bind",
         "name": "绑码（转码）"
       },
@@ -219,6 +274,61 @@ export const MENU = [
       {
         "code": "exec.pallet",
         "name": "栈板绑码"
+      },
+      {
+        "code": "exec.repair",
+        "name": "返修登记",
+        "perm": "prod.repair"
+      },
+      {
+        "code": "exec.scrap",
+        "name": "报废登记",
+        "perm": "prod.scrap"
+      },
+      {
+        "code": "exec.devicehealth",
+        "name": "设备健康",
+        "perm": "prod.view"
+      },
+      {
+        "code": "exec.yield",
+        "name": "良率报表",
+        "perm": "prod.trace"
+      },
+      {
+        "code": "exec.repairlist",
+        "name": "返修列表",
+        "perm": "prod.trace"
+      },
+      {
+        "code": "exec.momaterials",
+        "name": "工单物料",
+        "perm": "prod.view"
+      },
+      {
+        "code": "exec.aistations",
+        "name": "AI 工位",
+        "perm": "prod.view"
+      },
+      {
+        "code": "exec.aging",
+        "name": "老化分析",
+        "perm": "prod.trace"
+      },
+      {
+        "code": "exec.agingdetail",
+        "name": "老化明细",
+        "perm": "prod.trace"
+      },
+      {
+        "code": "exec.tracesn",
+        "name": "物料追溯(SN)",
+        "perm": "prod.trace"
+      },
+      {
+        "code": "exec.tracematerial",
+        "name": "物料追溯(物料)",
+        "perm": "prod.trace"
       }
     ]
   },

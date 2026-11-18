@@ -9,6 +9,10 @@ import { crudViews } from "./resources";
 import { BomImportView, BomTreeView, IssueView, MoView, PlanBoardView, PlanLoadView } from "./views-w4";
 import { ModelProcessView } from "./views-w5";
 import { ExecScanView, ExecMoRouteView, ExecReleaseView } from "./views-w6a";
+import { SnPoolView, SnRuleView, SnBatchView, SnVoidView, SnDetailView, SnTestView,
+  StationNextView, StationPendingView, PassListView, PanelPreviewView, PassPanelView } from "./views-w6b";
+import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoMaterialsView,
+  AiStationsView, AgingView, AgingDetailView, TraceMaterialBySnView, TraceMaterialByMaterialView } from "./views-w6c";
 
 interface SysInfo {
   sys_name: string;
@@ -91,6 +95,30 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "exec.scan") return <ExecScanView locale={locale} />;
     if (active === "exec.moroute") return <ExecMoRouteView locale={locale} />;
     if (active === "exec.release") return <ExecReleaseView locale={locale} />;
+    // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
+    if (active === "exec.snpool") return <SnPoolView locale={locale} />;
+    if (active === "exec.snrule") return <SnRuleView locale={locale} />;
+    if (active === "exec.snbatch") return <SnBatchView locale={locale} />;
+    if (active === "exec.snvoid") return <SnVoidView locale={locale} />;
+    if (active === "exec.sndetail") return <SnDetailView locale={locale} />;
+    if (active === "exec.sntest") return <SnTestView locale={locale} />;
+    if (active === "exec.stationnext") return <StationNextView locale={locale} />;
+    if (active === "exec.stationpending") return <StationPendingView locale={locale} />;
+    if (active === "exec.passlist") return <PassListView locale={locale} />;
+    if (active === "exec.panelpreview") return <PanelPreviewView locale={locale} />;
+    if (active === "exec.passpanel") return <PassPanelView locale={locale} />;
+    // W6c 维修 / 报废 / 设备健康 / 良率 / 返修列表 / 工单物料 / AI 工位 / 老化 / 物料追溯
+    if (active === "exec.repair") return <RepairView locale={locale} />;
+    if (active === "exec.scrap") return <ScrapView locale={locale} />;
+    if (active === "exec.devicehealth") return <DeviceHealthView locale={locale} />;
+    if (active === "exec.yield") return <YieldView locale={locale} />;
+    if (active === "exec.repairlist") return <RepairListView locale={locale} />;
+    if (active === "exec.momaterials") return <MoMaterialsView locale={locale} />;
+    if (active === "exec.aistations") return <AiStationsView locale={locale} />;
+    if (active === "exec.aging") return <AgingView locale={locale} />;
+    if (active === "exec.agingdetail") return <AgingDetailView locale={locale} />;
+    if (active === "exec.tracesn") return <TraceMaterialBySnView locale={locale} />;
+    if (active === "exec.tracematerial") return <TraceMaterialByMaterialView locale={locale} />;
     if (active === "mo" && activeView) {
       return <MoView key={activeView.code} locale={locale}
         fields={activeView.fields} filters={activeView.filters} />;

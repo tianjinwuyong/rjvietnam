@@ -3294,3 +3294,202 @@ export async function moAfterPass(moNo, steps, stationCode, result) {
   await query(`UPDATE ord_mo SET ${sets} WHERE mo_no=$${keys.length + 1}`,
     [...keys.map(k => upd[k]), moNo]);
 }
+
+// ════════════════════════════════════════════════════════════════════════════════
+// W6c 维修 / 报废 / 设备健康 / 良率 / 返修列表 / 工单物料 / AI 工位 / 老化 / 物料追溯
+// 源 api/exec.py 3753-5250 + report.py
+// ═════════════════════════════════════════════════════════════════════════════════
+
+/** 返修登记：插入 prd_repair，更新 prd_sn 状态与返修次数 */
+export async function repairRegister(d = {}) {
+  const sn = (d.sn || "").trim();
+  if (!sn) throw new Error("SN 必填");
+  const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+  if (!snRow) throw new Error("SN 不存在");
+  const stationCode = (d.station_code || snRow.cur_station || "").trim();
+  const repairTimes = Number(snRow.repair_times || 0) + 1;
+  await query(
+    `INSERT INTO prd_repair (sn, repair_times, station_code, defect_code, root_cause, action, result, repair_by, remark)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [sn, repairTimes, stationCode,
+     (d.defect_code || "").trim(), (d.root_cause || "").trim(), (d.action || "").trim(),
+     (d.result || "").trim(), (d.repair_by || "").trim(), (d.remark || "").trim()]);
+  await query(
+    "UPDATE prd_sn SET repair_times=$1, cur_station=$2, updated_at=$3 WHERE sn=$4",
+    [repairTimes, stationCode, nowStr(), sn]);
+  return { sn, repair_times: repairTimes, station_code: stationCode };
+}
+
+/** 报废登记：插入 prd_scrap，更新 prd_sn 状态为报废 */
+export async function scrapRegister(d = {}) {
+  const sn = (d.sn || "").trim();
+  if (!sn) throw new Error("SN 必填");
+  const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+  if (!snRow) throw new Error("SN 不存在");
+  const stationCode = (d.station_code || snRow.cur_station || "").trim();
+  await query(
+    `INSERT INTO prd_scrap (sn, scrap_code, reason, station_code, mo_no, approved_by)
+     VALUES ($1,$2,$3,$4,$5,$6)`,
+    [sn, (d.scrap_code || "").trim(), (d.reason || "").trim(), stationCode,
+     (d.mo_no || snRow.mo_no || "").trim(), (d.approved_by || "").trim()]);
+  await query(
+    "UPDATE prd_sn SET status='报废', cur_station=$1, updated_at=$2 WHERE sn=$3",
+    [stationCode, nowStr(), sn]);
+  return { sn, status: "报废" };
+}
+
+/** 设备健康：查询 iot_device_registry，判断是否在心跳有效期内（5 分钟） */
+export async function deviceHealth() {
+  const rows = (await query(
+    `SELECT device_id, device_name, device_type, status, last_heartbeat_at, registered_at
+     FROM iot_device_registry ORDER BY device_id`)).rows;
+  const now = Date.now();
+  return rows.map(r => {
+    const hb = r.last_heartbeat_at ? new Date(r.last_heartbeat_at).getTime() : 0;
+    return {
+      ...r,
+      healthy: r.status === "ACTIVE" && hb > 0 && (now - hb) < 5 * 60 * 1000,
+    };
+  });
+}
+
+/** 良率报表：按工位/产线统计 OK/NG 及良率 */
+export async function yieldStats(d = {}) {
+  const where = [];
+  const args = [];
+  const lineCode = (d.line_code || "").trim();
+  const stationCode = (d.station_code || "").trim();
+  const from = (d.from || "").trim();
+  const to = (d.to || "").trim();
+  if (lineCode) { args.push(lineCode); where.push(`p.line_code=$${args.length}`); }
+  if (stationCode) { args.push(stationCode); where.push(`p.station_code=$${args.length}`); }
+  if (from) { args.push(from); where.push(`p.pass_time>=$${args.length}`); }
+  if (to) { args.push(to); where.push(`p.pass_time<=$${args.length}`); }
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  return (await query(
+    `SELECT p.station_code, s.station_name, p.line_code,
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE p.result='OK')::int AS ok_cnt,
+            COUNT(*) FILTER (WHERE p.result='NG')::int AS ng_cnt,
+            ROUND(100.0 * COUNT(*) FILTER (WHERE p.result='OK') / NULLIF(COUNT(*),0), 2) AS yield_pct
+     FROM prd_pass p
+     LEFT JOIN md_station s ON s.station_code=p.station_code
+     ${clause}
+     GROUP BY p.station_code, s.station_name, p.line_code
+     ORDER BY p.station_code`,
+    args)).rows;
+}
+
+/** 返修列表（分页，支持 sn / station_code / result / 时间范围 过滤） */
+export async function repairList(d = {}) {
+  const page = Math.max(1, Number(d.page || 1));
+  const size = Math.min(500, Math.max(1, Number(d.size || 20)));
+  const where = [];
+  const args = [];
+  const sn = (d.sn || "").trim();
+  const stationCode = (d.station_code || "").trim();
+  const result = (d.result || "").trim();
+  const from = (d.from || "").trim();
+  const to = (d.to || "").trim();
+  if (sn) { args.push(`%${sn}%`); where.push(`sn ILIKE $${args.length}`); }
+  if (stationCode) { args.push(stationCode); where.push(`station_code=$${args.length}`); }
+  if (result) { args.push(result); where.push(`result=$${args.length}`); }
+  if (from) { args.push(from); where.push(`repair_time>=$${args.length}`); }
+  if (to) { args.push(to); where.push(`repair_time<=$${args.length}`); }
+  const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+  const count = Number((await query(
+    `SELECT COUNT(*)::int AS n FROM prd_repair ${clause}`, args)).rows[0]?.n || 0);
+  const off = (page - 1) * size;
+  const rows = (await query(
+    `SELECT id, sn, repair_times, station_code, defect_code, root_cause, action, result, repair_by, repair_time, remark
+     FROM prd_repair ${clause}
+     ORDER BY repair_time DESC
+     LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+    [...args, size, off])).rows;
+  return { total: count, page, size, rows };
+}
+
+/** 工单物料：查询 MO 下发的物料清单（关联 BOM 段信息） */
+export async function moMaterials(d = {}) {
+  const moNo = (d.mo_no || "").trim();
+  if (!moNo) throw new Error("缺少 mo_no");
+  return (await query(
+    `SELECT ii.material_code, ii.material_name, ii.spec, ii.unit, ii.qty, ii.line_seq,
+            COALESCE(b.segment,'') AS segment, COALESCE(b.item_type,'') AS item_type
+     FROM ord_issue_item ii
+     JOIN ord_issue o ON o.issue_no=ii.issue_no
+     LEFT JOIN bom_item b ON b.material_code=ii.material_code AND b.product_code=o.product_code
+     WHERE o.mo_no=$1
+     ORDER BY ii.line_seq`,
+    [moNo])).rows;
+}
+
+/** AI 工位：查询属于 AI 段（WS-AI* 或 process_code=01）的工位 */
+export async function aiStations() {
+  return (await query(
+    `SELECT station_code, station_name, line_code, process_code, type_code
+     FROM md_station
+     WHERE station_code LIKE 'WS-AI%' OR process_code='01'
+     ORDER BY station_code`)).rows;
+}
+
+/** 老化分析（WIP 滞留）：按当前工位统计在制/待修 SN 滞留时长 */
+export async function agingWip() {
+  return (await query(
+    `SELECT cur_station AS station_code, s.station_name,
+            COUNT(*)::int AS sn_cnt,
+            MAX(created_at) AS earliest_in,
+            ROUND(EXTRACT(EPOCH FROM (now() - MIN(created_at)))/3600, 2) AS max_hours
+     FROM prd_sn
+     LEFT JOIN md_station s ON s.station_code=cur_station
+     WHERE status IN ('在制','待修')
+     GROUP BY cur_station, s.station_name
+     ORDER BY max_hours DESC NULLS LAST`)).rows;
+}
+
+/** 老化明细：单个工位下滞留的 SN 详情 */
+export async function agingDetail(d = {}) {
+  const where = [];
+  const args = [];
+  const stationCode = (d.station_code || "").trim();
+  if (stationCode) { args.push(stationCode); where.push(`cur_station=$${args.length}`); }
+  const clause = where.length ? `WHERE ${where.join(" AND ")} AND` : "WHERE";
+  return (await query(
+    `SELECT sn, product_code, mo_no, cur_station, cur_seq, status, created_at,
+            ROUND(EXTRACT(EPOCH FROM (now() - created_at))/3600, 2) AS hours
+     FROM prd_sn
+     ${clause} status IN ('在制','待修')
+     ORDER BY hours DESC`),
+    args).rows;
+}
+
+/** 物料追溯（按 SN）：查询该 SN 所属工单的物料清单 */
+export async function traceMaterialBySn(d = {}) {
+  const sn = (d.sn || "").trim();
+  if (!sn) throw new Error("缺少 sn");
+  const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+  if (!snRow) throw new Error("SN 不存在");
+  const materials = (await query(
+    `SELECT ii.material_code, ii.material_name, ii.segment, ii.qty, ii.unit
+     FROM ord_issue_item ii
+     JOIN ord_issue o ON o.issue_no=ii.issue_no
+     WHERE o.mo_no=$1
+     ORDER BY ii.line_seq`,
+    [snRow.mo_no])).rows;
+  return { sn, mo_no: snRow.mo_no, product_code: snRow.product_code, materials };
+}
+
+/** 物料追溯（按物料）：查询使用该物料的所有 SN */
+export async function traceMaterialByMaterial(d = {}) {
+  const materialCode = (d.material_code || "").trim();
+  if (!materialCode) throw new Error("缺少 material_code");
+  const rows = (await query(
+    `SELECT DISTINCT p.sn, p.mo_no, p.cur_station, p.status
+     FROM ord_issue_item ii
+     JOIN ord_issue o ON o.issue_no=ii.issue_no
+     JOIN prd_sn p ON p.mo_no=o.mo_no
+     WHERE ii.material_code=$1
+     ORDER BY p.sn`,
+    [materialCode])).rows;
+  return { material_code: materialCode, sn_rows: rows };
+}
