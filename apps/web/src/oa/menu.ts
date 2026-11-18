@@ -60,7 +60,17 @@ export type OaViewId =
   // 公共盘（原版 single:"/drive"：组头即链接）
   | "drive"
   // 知识共享（原版 single:"/knowledge"：组头即链接）
-  | "knowledge";
+  | "knowledge"
+  // 设备管理组（5 页）
+  | "equipment"
+  | "equipStocktake"
+  | "equipTasks"
+  | "equipCalib"
+  | "equipAlerts"
+  // 系统管理组（流程设计/系统设置暂留建设中）
+  | "ledger"
+  | "flowVersions"
+  | "customField";
 
 export const OA_MENU: OaMenuGroup[] = [
   {
@@ -123,11 +133,11 @@ export const OA_MENU: OaMenuGroup[] = [
   {
     titleKey: "menu.equipmentMgr",
     items: [
-      { titleKey: "menu.equipment" },
-      { titleKey: "menu.equipStocktake" },
-      { titleKey: "menu.equipTasks" },
-      { titleKey: "menu.equipCalib" },
-      { titleKey: "menu.equipAlerts" },
+      { titleKey: "menu.equipment", view: "equipment" },
+      { titleKey: "menu.equipStocktake", view: "equipStocktake" },
+      { titleKey: "menu.equipTasks", view: "equipTasks" },
+      { titleKey: "menu.equipCalib", view: "equipCalib" },
+      { titleKey: "menu.equipAlerts", view: "equipAlerts" },
     ],
   },
   {
@@ -191,9 +201,9 @@ export const OA_MENU: OaMenuGroup[] = [
   {
     titleKey: "menu.sysMgr",
     items: [
-      { titleKey: "menu.ledger" },
-      { titleKey: "menu.flowVersions" },
-      { titleKey: "customField.manageTitle" },
+      { titleKey: "menu.ledger", view: "ledger" },
+      { titleKey: "menu.flowVersions", view: "flowVersions" },
+      { titleKey: "customField.manageTitle", view: "customField" },
       { titleKey: "menu.flowDesign", adminOnly: true },
       { titleKey: "menu.system", adminOnly: true },
     ],

@@ -18,6 +18,8 @@ import { OrgView } from "./OrgView";
 import { DocsView, type DocsSubView } from "./DocsView";
 import { DriveView } from "./DriveView";
 import { KnowledgeView } from "./KnowledgeView";
+import { SysView } from "./SysView";
+import { EquipmentView } from "./EquipmentView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
 
 /**
@@ -341,6 +343,10 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <DriveView locale={locale} />
   ) : view === "knowledge" ? (
     <KnowledgeView locale={locale} />
+  ) : view === "ledger" || view === "flowVersions" || view === "customField" ? (
+    <SysView locale={locale} sub={view} />
+  ) : view === "equipment" || view === "equipStocktake" || view === "equipTasks" || view === "equipCalib" || view === "equipAlerts" ? (
+    <EquipmentView locale={locale} sub={view} />
   ) : view === "notifications" ? (
     loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
       <>
