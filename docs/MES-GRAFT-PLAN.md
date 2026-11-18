@@ -53,7 +53,7 @@ SMT 现有 `apps/web/src/mes/`（Product Gate 架构）与 `services/api` statio
 | W4 | bom（4 页）+ ord（po/mo/issue）+ pln（3 页） | ~10 页 | ✅ 8b229f4 |
 | W5 | proc 工艺 + cfg 配置中心 19 页 | ~22 页 | ✅ ad25ee5 |
 | W6 | exec 执行域（scan/pass/bind/pack/pallet/trace/defect/repair/release） | ~31 页 | 🔄 拆三段 |
-| W6a | 过站引擎：do_pass 主流程 + 守卫/放行/路线锁换 + SN 取号 + /exec/pass 等 10 路由 | exec.py 1-2760 | 🔄 进行中 |
+| W6a | 过站引擎：do_pass 主流程 + 守卫/放行/路线锁换 + SN 取号 + /exec/pass 等 11 路由 | exec.py 1-2760 | ✅ 本次 |
 | W6b | SN 池/激光拼板/工位看板：laser×9、sn rules/batch/pool/void/detail/test、station next/pending、pass list、panel_preview/pass_panel | exec.py 2674-3896 | ⬜ |
 | W6c | 维修/报废/报表：repair、scrap、device_health、yield、repair/list、mo/materials、ai_stations、aging×2、trace/material×2 | exec.py 3753-5250 + report.py | ⬜ |
 | W7 | 设备接口（DeviceConfig/StationPass/MachineData/Packing）+ itf 日志 | ~60 路由 | ⬜ |

@@ -1885,3 +1885,1412 @@ export async function decorateAoi(rows) {
   for (const r of rows) r.sn_count = m[r.id] ?? 0;
   return rows;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// MES-ruijing W6a 过站引擎（源 api/exec.py 守卫 + 路线 + SN 取号 + do_pass_inner）
+// 全部基于 pg query，供 mesrj.js /exec/* 路由层调用。SQLite 语法已转 PG：
+//   ? → $N, IFNULL → COALESCE, substr → substring, datetime('now') → nowStr()
+// ════════════════════════════════════════════════════════════════════════════
+
+/** 参数读写（源 util.get_param / set_param，domain.js 本地复制，避免跨模块依赖） */
+async function _getParam(key, dflt = "") {
+  const r = await query("SELECT param_val FROM sys_param WHERE param_key=$1", [key]);
+  return r.rows[0] && r.rows[0].param_val != null ? r.rows[0].param_val : dflt;
+}
+
+/** 防错规则开关（源 cfg_pokayoke） */
+export async function rule_on(key) {
+  const r = await query("SELECT enabled FROM cfg_pokayoke WHERE rule_key=$1", [key]);
+  return !!(r.rows[0] && Number(r.rows[0].enabled || 0) === 1);
+}
+
+/** 阈值（源 cfg_threshold） */
+export async function th(key, defaultVal = 0.0) {
+  const r = await query("SELECT th_value, enabled FROM cfg_threshold WHERE th_key=$1", [key]);
+  if (!r.rows[0] || Number(r.rows[0].enabled || 0) !== 1) return Number(defaultVal) || 0;
+  return Number(r.rows[0].th_value || 0);
+}
+
+/** 某工位挂的特殊规则（源 proc_station_rule） */
+export async function station_rules(station_code) {
+  const rows = await query(
+    "SELECT rule_type FROM proc_station_rule WHERE station_code=$1 AND enabled=1",
+    [station_code]);
+  return new Set(rows.rows.map(x => x.rule_type));
+}
+
+/** station_rules 但返回 rule_type → rule_value 映射（供 RETEST_VIA 等带参数规则用） */
+export async function station_rule_map(station_code) {
+  const rows = await query(
+    "SELECT rule_type, rule_value FROM proc_station_rule WHERE station_code=$1 AND enabled=1",
+    [station_code]);
+  const out = {};
+  for (const r of rows.rows) out[r.rule_type] = r.rule_value || "";
+  return out;
+}
+
+/** NG 后是否必须先回指定工位（RETEST_VIA）。返回 (blocked, msg) */
+export async function retest_via_check(sn, station_code, codes = null) {
+  if (!(await rule_on("RETEST_VIA"))) return [false, ""];
+  const rm = await station_rule_map(station_code);
+  const target_raw = ((rm["RETEST_VIA"] || "").trim());
+  if (!target_raw) return [false, ""];
+  const ng = (await query(
+    "SELECT id, defect_time FROM prd_defect_rec WHERE sn=$1 AND station_code=$2 ORDER BY id DESC LIMIT 1",
+    [sn, station_code])).rows[0];
+  if (!ng || !ng.defect_time) return [false, ""];
+  const targets = target_raw.split(",").map(x => x.trim()).filter(Boolean);
+  const codeList = (codes || (await related_sns(sn)) || [sn]).filter(Boolean);
+  const ph = codeList.map((_, i) => `$${i + 1}`).join(",");
+  const ph2 = targets.map((_, i) => `$${codeList.length + i + 1}`).join(",");
+  const back = (await query(
+    `SELECT id, station_code, pass_time FROM prd_pass WHERE sn IN (${ph}) `
+    + `AND station_code IN (${ph2}) AND result='OK' AND pass_time > $${codeList.length + targets.length + 1} `
+    + "ORDER BY pass_time DESC LIMIT 1",
+    [...codeList, ...targets, ng.defect_time])).rows[0];
+  if (back) return [false, ""];
+  const nm = (await query(
+    "SELECT station_name FROM md_station WHERE station_code=$1", [targets[0]])).rows[0];
+  return [true,
+    `SN ${sn} 在${station_code} 于 ${ng.defect_time} NG。本工位要求先回${nm?.station_name || targets[0]}重新处理并过站 OK，才允许重测`];
+}
+
+/** 工位 key：(process_code, type_code)，带进程内缓存 */
+const _ST_KEY = {};
+export async function station_key(code) {
+  code = (code || "").trim();
+  if (!code) return null;
+  if (_ST_KEY[code] !== undefined) return _ST_KEY[code];
+  let k = null;
+  try {
+    const r = (await query(
+      "SELECT process_code, type_code FROM md_station WHERE station_code=$1", [code])).rows[0];
+    if (r) k = [(r.process_code || ""), (r.type_code || "")];
+  } catch { k = null; }
+  _ST_KEY[code] = k;
+  return k;
+}
+
+/** 两个工位编码是不是同一工艺位置（只比工序段+工位类型，不比产线） */
+export async function same_step(a, b) {
+  if (a === b) return true;
+  const ka = await station_key(a), kb = await station_key(b);
+  return !!(ka && kb && kb[1] && ka[0] === kb[0] && ka[1] === kb[1]);
+}
+
+/** 在步骤列表中按工位码查找（支持跨产线同工艺位置匹配） */
+export async function step_of(steps, station_code) {
+  for (const s of steps) {
+    if (s.station_code === station_code) return s;
+  }
+  for (const s of steps) {
+    if (await same_step(s.station_code, station_code)) return s;
+  }
+  return null;
+}
+
+/** 抽检站标记（源 md_station.is_sampling，带缓存） */
+const _SAMPLING_CACHE = {};
+export async function is_sampling(station_code) {
+  const code = station_code || "";
+  if (_SAMPLING_CACHE[code] !== undefined) return _SAMPLING_CACHE[code] === 1;
+  let v = 0;
+  try {
+    const r = (await query(
+      "SELECT COALESCE(is_sampling,0) AS v FROM md_station WHERE station_code=$1", [code])).rows[0];
+    v = Number(r?.v || 0);
+  } catch { v = 0; }
+  _SAMPLING_CACHE[code] = v;
+  return v === 1;
+}
+
+/** 这套工单里当前单之后还有没有下一道工序的单（返回下一工单号，无则空字符串） */
+export async function _has_next_segment(mo_no) {
+  mo_no = (mo_no || "").trim();
+  if (!mo_no) return "";
+  const moRow = (await query("SELECT process_code FROM ord_mo WHERE mo_no=$1", [mo_no])).rows[0];
+  if (moRow !== undefined && !(moRow.process_code || "").trim()) return "";
+  if (mo_no.length < 11) return "";
+  const proc = (moRow?.process_code || "") || mo_no.slice(9, 11);
+  if (!proc) return "";
+  const r = (await query(
+    "SELECT mo_no FROM ord_mo WHERE substring(mo_no,1,9)=$1 AND process_code>$2 "
+    + "AND status IN ('待排产','已排产','待下发','生产中') ORDER BY process_code LIMIT 1",
+    [mo_no.slice(0, 9), proc])).rows[0];
+  return r ? r.mo_no : "";
+}
+
+/** 这颗 SN 在路线上第一个还没过 OK 的站（跳过抽检站） */
+export async function next_pending_station(steps, sn, after_seq = null) {
+  const done = await done_stations(sn);
+  const sorted = [...steps].sort((a, b) => Number(a.seq_no || 0) - Number(b.seq_no || 0));
+  for (const s of sorted) {
+    if (after_seq !== null && Number(s.seq_no || 0) <= Number(after_seq)) continue;
+    if (done.has(s.station_code)) continue;
+    if (await is_sampling(s.station_code)) continue;
+    if (/REPAIR/i.test(s.station_code || "")) continue;
+    return s;
+  }
+  return null;
+}
+
+/** 路线上这个工位的下一站（跳过抽检站） */
+export async function next_station(steps, station_code) {
+  const cur = await step_of(steps, station_code);
+  if (!cur) return null;
+  for (const s of steps) {
+    if (Number(s.seq_no || 0) > Number(cur.seq_no || 0) && !(await is_sampling(s.station_code))) {
+      return s;
+    }
+  }
+  return null;
+}
+
+/** 找一张「已批准、未过期、没用完」的放行单 */
+export async function find_release(mo_no, sn, station_code) {
+  const today = todayStr();
+  const rows = await query(
+    "SELECT * FROM prd_pass_release WHERE station_code=$1 AND status='已批准' AND used_times < max_times "
+    + "AND (valid_from='' OR valid_from<=$2) AND (valid_to='' OR valid_to>=$3) "
+    + "AND ((scope='按SN' AND sn=$4) OR (scope='按工单' AND mo_no=$5)) "
+    + "ORDER BY id DESC",
+    [station_code, today, today, sn, mo_no]);
+  return rows.rows[0] || null;
+}
+
+/** 这个 SN 在这一站有没有跳过记录 */
+export async function has_skip(sn, station_code) {
+  const r = (await query(
+    "SELECT id, skip_type, reason, operator FROM prd_skip_log WHERE sn=$1 AND station_code=$2 ORDER BY id DESC LIMIT 1",
+    [sn, station_code])).rows[0];
+  return r || null;
+}
+
+/** 一次性取出该 SN 所有跳过过的工位 */
+export async function skip_set(sn) {
+  const rows = await query("SELECT DISTINCT station_code FROM prd_skip_log WHERE sn=$1", [sn]);
+  return new Set(rows.rows.map(x => x.station_code));
+}
+
+/** 一次性取出该 SN/工单可用的放行单，返回 {station_code: row} */
+export async function release_map(mo_no, sn) {
+  const today = todayStr();
+  const rows = await query(
+    "SELECT * FROM prd_pass_release WHERE status='已批准' AND used_times < max_times "
+    + "AND (valid_from='' OR valid_from<=$1) AND (valid_to='' OR valid_to>=$2) "
+    + "AND ((scope='按SN' AND sn=$3) OR (scope='按工单' AND mo_no=$4)) ORDER BY id DESC",
+    [today, today, sn, mo_no]);
+  const out = {};
+  for (const r of rows.rows) out[r.station_code] = out[r.station_code] || r;
+  return out;
+}
+
+/** 用「跳站放行单」给还没建档的 SN 开口子，从入口站开始记 */
+export async function open_entry_by_release(sn, mo_no, entry_station, rel, operator, remote_addr = "") {
+  if (!(sn && entry_station && rel)) return false;
+  try {
+    const exist = (await query(
+      "SELECT id FROM prd_skip_log WHERE sn=$1 AND station_code=$2", [sn, entry_station])).rows[0];
+    if (!exist) {
+      await query(
+        `INSERT INTO prd_skip_log (sn, station_code, mo_no, skip_type, release_no, reason, operator, skip_time)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [sn, entry_station, mo_no || "", "放行单", rel.release_no || "",
+          "未建档从后段建档，入口站放行单：" + (rel.reason || ""), operator || "", nowStr()]);
+    }
+    const used = Number(rel.used_times || 0) + 1;
+    const mx = Number(rel.max_times || 1);
+    await query(
+      "UPDATE prd_pass_release SET used_times=$1, status=$2 WHERE id=$3",
+      [used, used >= mx ? "已用完" : (rel.status || "已批准"), Number(rel.id)]);
+    return true;
+  } catch (e) {
+    console.log("[建档放行] 留痕失败:", e);
+    return false;
+  }
+}
+
+/** SN 是否有未处理的不良。返回出问题的工位短名，无则 null */
+export async function guard_open_ng(sn) {
+  sn = (sn || "").trim();
+  if (!sn) return null;
+  const _short = (code) => ((code || "").split("-").pop() || (code || ""));
+  const seen = new Set();
+  for (const r of (await query(
+    "SELECT station_code, result FROM prd_pass WHERE sn=$1 ORDER BY id DESC", [sn])).rows) {
+    const st = r.station_code || "";
+    if (seen.has(st)) continue;
+    seen.add(st);
+    if (/^(NG|FAIL)$/i.test((r.result || "").trim().toUpperCase())) return _short(st);
+  }
+  const seen2 = new Set();
+  for (const r of (await query(
+    "SELECT station_code, pass_ng FROM prd_machine_data WHERE sn=$1 ORDER BY id DESC", [sn])).rows) {
+    const st = r.station_code || "";
+    if (seen2.has(st)) continue;
+    seen2.add(st);
+    if (/^(NG|FAIL)$/i.test((r.pass_ng || "").trim().toUpperCase())) return _short(st);
+  }
+  const d = (await query(
+    "SELECT station_code FROM prd_defect_rec WHERE sn=$1 AND handle='待处理' LIMIT 1", [sn])).rows[0];
+  if (d) return _short(d.station_code || "不良");
+  return null;
+}
+
+/** 这颗码 + 它的母码关联（最多 5 层、20 个，防环） */
+export async function related_sns(sn) {
+  sn = (sn || "").trim();
+  if (!sn) return [];
+  const out = [sn], seen = new Set([sn]);
+  const queue = [[sn, 0]];
+  while (queue.length) {
+    const [cur, lv] = queue.shift();
+    if (lv >= 5 || out.length >= 20) continue;
+    const rows = await query(
+      "SELECT parent_sn FROM prd_sn_rel WHERE child_sn=$1 AND COALESCE(is_active,1)=1 AND COALESCE(parent_sn,'')<>'' ORDER BY id DESC",
+      [cur]);
+    for (const r of rows.rows) {
+      const p = (r.parent_sn || "").trim();
+      if (!p || seen.has(p)) continue;
+      seen.add(p);
+      out.push(p);
+      queue.push([p, lv + 1]);
+    }
+  }
+  return out;
+}
+
+/** 这颗码（含母码）已经 OK 的工位集合 */
+export async function done_stations(sn) {
+  const rel = await related_sns(sn);
+  if (!rel.length) return new Set();
+  const ph = rel.map((_, i) => `$${i + 1}`).join(",");
+  const rows = await query(
+    `SELECT DISTINCT station_code FROM prd_pass WHERE sn IN (${ph}) AND result='OK'`, rel);
+  return new Set(rows.rows.map(x => x.station_code));
+}
+
+/** SN 在进 station_code 之前，还有哪些必过工序没做（跳站检查）。返回 [(code, name), ...] */
+export async function guard_missing_steps(sn, station_code, mo_no = "", product_code = "", strict = null) {
+  sn = (sn || "").trim();
+  if (!sn) return [];
+  if (strict == null) {
+    strict = ((await _getParam("prod.strict_route", "0")) || "0").trim() === "1";
+  }
+  if (!mo_no || !product_code) {
+    const r = (await query("SELECT mo_no, product_code FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    if (r) {
+      mo_no = mo_no || (r.mo_no || "");
+      product_code = product_code || (r.product_code || "");
+    }
+  }
+  if (!mo_no) return [];
+  let steps;
+  try {
+    [steps] = await ensure_mo_route(mo_no, product_code);
+  } catch { return []; }
+  if (!steps.length) return [];
+  const cur = await step_of(steps, station_code);
+  if (!cur) return [];
+  const cur_seq = Number(cur.seq_no || 0);
+  const done = await done_stations(sn);
+  const skips = await skip_set(sn);
+  const rels = await release_map(mo_no, sn);
+  const miss = [];
+  for (const s of [...steps].sort((a, b) => Number(a.seq_no || 0) - Number(b.seq_no || 0))) {
+    const seq = Number(s.seq_no || 0);
+    if (seq >= cur_seq) continue;
+    if (!strict && Number(s.is_must_pass || 0) !== 1) continue;
+    const code = s.station_code;
+    if (/REPAIR|维修|SỬA/i.test((code + " " + (s.station_name || "")).toUpperCase())) continue;
+    if (done.has(code)) continue;
+    if (skips.has(code)) continue;
+    if (rels[code]) continue;
+    const wk = await station_key(code);
+    if (wk && ((/WS-AOI/i.test(wk[1] || "")) || (/AOI/i.test(wk[1] || "") && /WS/i.test(wk[1] || "")))) {
+      const ad = await _adopt_wsaoi_pass(sn, code, mo_no);
+      if (ad) { done.add(code); continue; }
+    }
+    miss.push([code, s.station_name || code]);
+  }
+  return miss;
+}
+
+/** SN 是否缺少关键工位的测试记录（未经检验；源 guard_untested） */
+export async function guard_untested(sn, keywords = null) {
+  sn = (sn || "").trim();
+  if (!sn) return [];
+  const kws = keywords !== null
+    ? (keywords || "").split(",").map(x => x.trim()).filter(Boolean)
+    : ((await _getParam("guard.require_stations", "ICT,FCT")) || "")
+      .split(",").map(x => x.trim()).filter(Boolean);
+  if (!kws.length) return [];
+  const rel = await related_sns(sn);
+  const ph = rel.map((_, i) => `$${i + 1}`).join(",");
+  const miss = [];
+  for (const kw of kws) {
+    const like = `%${kw}%`;
+    const hit = (await query(
+      `SELECT id FROM prd_pass WHERE sn IN (${ph}) AND station_code ILIKE $${rel.length + 1} `
+      + "AND UPPER(result) IN ('OK','NG','FAIL','PASS') LIMIT 1",
+      [...rel, like])).rows[0];
+    if (hit) continue;
+    const hit2 = (await query(
+      "SELECT id FROM prd_machine_data WHERE sn=$1 AND station_code ILIKE $2 LIMIT 1",
+      [sn, like])).rows[0];
+    if (hit2) continue;
+    miss.push(kw);
+  }
+  return miss;
+}
+
+// ── 放行单号（源 _gen_release_no）───────────────────────────────────────────
+export async function genReleaseNo() {
+  const prefix = "FS" + todayStr().replace(/-/g, "").slice(2);
+  const r = await query(
+    "SELECT MAX(CAST(substring(release_no from 9) AS INTEGER)) AS mx FROM prd_pass_release "
+    + "WHERE release_no LIKE $1", [`${prefix}%`]);
+  const mx = Number(r.rows[0]?.mx || 0);
+  return `${prefix}${String(mx + 1).padStart(3, "0")}`;
+}
+
+// ── SN 取号（源 api/exec.py 第四节）─────────────────────────────────────────
+const SN_LABEL = { "PCBA": "PCBSN", "外壳": "外壳SN", "铭牌": "铭牌SN", "整机": "整机SN" };
+const SN_ALSO = {
+  "PCBA": "PCB 镭雕的板级码", "外壳": "底壳镭雕码", "铭牌": "整机铭牌码", "整机": "整机码",
+};
+/** 段名里含这些字时，FIX 段自动填类型码（源 TYPE_SEG_HINT） */
+const TYPE_SEG_HINT = ["类型", "类别", "机型", "板型", "型号", "产品"];
+
+export function snLabel(snType) {
+  const t = (snType || "").trim();
+  return SN_LABEL[t] || `${t}SN`;
+}
+export function snFull(snType, bits = null) {
+  const t = (snType || "").trim();
+  const name = SN_LABEL[t] || `${t}SN`;
+  const parts = [];
+  if (SN_ALSO[t]) parts.push(SN_ALSO[t]);
+  if (bits) parts.push(`${bits} 位`);
+  return parts.length ? `${name}（${parts.join(" · ")}）` : name;
+}
+
+/** 类型码（源 _sn_type_code） */
+function _snTypeCode(snType) {
+  const map = { "PCBA": "P", "外壳": "C", "铭牌": "N", "整机": "M" };
+  return map[(snType || "").trim()] || ((snType || "").trim().slice(0, 1).toUpperCase() || "");
+}
+
+/** 某类型当日/周期内已发数量（源 _sn_count） */
+async function _snCount(snType, resetCycle) {
+  const t = (snType || "").trim();
+  const c = (resetCycle || "").trim();
+  let start = null;
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  if (c === "年") start = `${d.getFullYear()}-01-01`;
+  else if (c === "月") start = `${d.getFullYear()}-${p(d.getMonth() + 1)}-01`;
+  else if (c === "周") {
+    const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const day = (dt.getDay() + 6) % 7;           // 周一为一周之始
+    dt.setDate(dt.getDate() - day);
+    start = `${dt.getFullYear()}-${p(dt.getMonth() + 1)}-${p(dt.getDate())}`;
+  }
+  if (start === null) {
+    const r = await query(
+      "SELECT COUNT(*)::int AS n FROM prd_sn WHERE sn_type=$1 AND date(created_at)=date($2)",
+      [t, todayStr()]);
+    return Number(r.rows[0]?.n || 0);
+  }
+  const r = await query(
+    "SELECT COUNT(*)::int AS n FROM prd_sn WHERE sn_type=$1 AND date(created_at)>=date($2)",
+    [t, start]);
+  return Number(r.rows[0]?.n || 0);
+}
+
+/** 日期段（源 util.sn_date_part） */
+function _snDatePart(fmt, len) {
+  const d = new Date();
+  const p = n => String(n).padStart(2, "0");
+  const yy = String(d.getFullYear()).slice(2);
+  const mm = p(d.getMonth() + 1);
+  const dd = p(d.getDate());
+  // ISO 周
+  const tmp = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const wday = (tmp.getDay() + 6) % 7;
+  tmp.setDate(tmp.getDate() - wday + 3);          // 该周周四
+  const firstThu = new Date(tmp.getFullYear(), 0, 4);
+  const fwday = (firstThu.getDay() + 6) % 7;
+  firstThu.setDate(firstThu.getDate() - fwday + 3);
+  const week = 1 + Math.round((tmp - firstThu) / (7 * 86400000));
+  const ww = String(week).padStart(2, "0");
+  const F = (fmt || "").toUpperCase();
+  const table = {
+    YY: yy, WW: ww, MM: mm, DD: dd,
+    YYWW: yy + ww, YYMMDD: yy + mm + dd, YYYYMMDD: String(d.getFullYear()) + mm + dd,
+  };
+  if (table[F]) return table[F];
+  // 缺省按长度推断
+  if (len <= 2) return yy;
+  if (len === 4) return yy + ww;
+  if (len === 6) return yy + mm + dd;
+  if (len === 8) return String(d.getFullYear()) + mm + dd;
+  return yy + mm + dd;
+}
+
+/** 流水段（源 util.sn_seq_part）：alpha=true 时字母段进位（A0001→Z9999） */
+function _snSeqPart(len, seq, alpha) {
+  seq = Number(seq || 0);
+  if (!alpha) return String(seq).padStart(len, "0").slice(-len);
+  // 字母段进位：位宽 len-数字位
+  const cap = Math.pow(10, len) - 1;
+  seq = ((seq - 1) % cap) + 1;
+  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const total = Math.pow(26, 2) * 10000;  // AA0000 起
+  let n = seq;
+  const digitWidth = len - 2 >= 1 ? len - 2 : 1;
+  const digits = String(n % Math.pow(10, digitWidth)).padStart(digitWidth, "0");
+  let idx = Math.floor(n / Math.pow(10, digitWidth));
+  let l1 = letters[idx % 26];
+  let l2 = idx >= 26 ? letters[Math.floor(idx / 26) % 26] : "";
+  return `${l2}${l1}${digits}`;
+}
+
+/** 按规则拼一个 SN（源 build_sn）；返回 [sn, err] */
+export async function buildSn(snType = "PCBA") {
+  let rule = (await query(
+    "SELECT * FROM cfg_sn_rule WHERE sn_type=$1 AND enabled=1 ORDER BY id LIMIT 1",
+    [snType])).rows[0];
+  if (!rule) {
+    rule = (await query(
+      "SELECT * FROM cfg_sn_rule WHERE enabled=1 ORDER BY id LIMIT 1")).rows[0];
+  }
+  if (!rule) return [null, "没有可用的 SN 规则，请到「配置中心 → SN 规则」配置"];
+  let segs = [];
+  try { segs = JSON.parse(rule.segments || "[]"); } catch { segs = []; }
+  if (!Array.isArray(segs) || !segs.length) return [null, "SN 规则的段定义是空的"];
+  const fixed = rule.prefix || "";
+  const tcode = _snTypeCode(snType);
+  const cnt = await _snCount(snType, rule.reset_cycle);
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const seq = cnt + 1 + attempt;
+    let out = "", fi = 0;
+    for (const s of segs) {
+      const t = (s.type || "").toUpperCase();
+      const n = Number(s.len || 0);
+      if (n <= 0) continue;
+      if (t === "FIX") {
+        let v = s.value || s.val || "";
+        if (!v && tcode && TYPE_SEG_HINT.some(h => (s.name || "").includes(h))) v = tcode;
+        if (!v) { v = fixed.slice(fi, fi + n); fi += n; }
+        out += (v || "0".repeat(n)).slice(0, n).padEnd(n, "0");
+      } else if (t === "DATE") {
+        out += _snDatePart(s.fmt || "", n).slice(0, n).padEnd(n, "0");
+      } else if (t === "SEQ") {
+        out += _snSeqPart(n, seq, !!s.alpha);
+      } else if (t === "FIXED") {
+        out += String(s.value || s.val || "").padStart(n, "0");
+      } else {
+        out += "0".repeat(n);
+      }
+    }
+    if (!out) continue;
+    const hit = (await query("SELECT id FROM prd_sn WHERE sn=$1", [out])).rows[0];
+    if (!hit) return [out, ""];
+  }
+  return [null, "SN 取号失败：连续 200 次都撞号，请检查「配置中心 → SN 规则」"];
+}
+
+/** 取号 + 立刻占位（原子；源 _sn_alloc）。extra 可带 mo_no / product_code / batch_no */
+export async function snAlloc(snType = "PCBA", extra = null, tries = 6) {
+  let last = "";
+  for (let i = 0; i < Math.max(1, tries); i++) {
+    const [sn, err] = await buildSn(snType);
+    if (!sn) return [null, err];
+    const row = {
+      sn, sn_type: snType, product_code: "", mo_no: "", line_code: "",
+      cur_station: "", cur_seq: 0, status: "已发放", repair_times: 0,
+    };
+    if (extra) Object.assign(row, extra);
+    try {
+      await query(
+        `INSERT INTO prd_sn (sn, sn_type, product_code, mo_no, line_code, cur_station,
+         cur_seq, status, repair_times) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+        [row.sn, row.sn_type, row.product_code, row.mo_no, row.line_code,
+          row.cur_station, row.cur_seq, row.status, row.repair_times]);
+      return [sn, ""];
+    } catch (e) {
+      last = String(e?.message || e);
+      if (!/UNIQUE|duplicate/i.test(last)) return [null, `取号写库失败：${last}`];
+    }
+  }
+  return [null, `取号失败：连续 ${tries} 次撞号（${last}），请检查「配置中心 → SN 规则」`];
+}
+
+/** SN 规则是否自洽：段长合计必须 = 总长（源 sn_rule_ok） */
+export async function snRuleOk(snType) {
+  const rule = (await query(
+    "SELECT * FROM cfg_sn_rule WHERE sn_type=$1 AND enabled=1 ORDER BY id LIMIT 1",
+    [snType])).rows[0];
+  if (!rule) return [false, `没有启用「${snType}」的 SN 规则，请到「配置中心 → SN 规则」配置`];
+  let segs = [];
+  try { segs = JSON.parse(rule.segments || "[]"); } catch { segs = []; }
+  const total = Number(rule.total_len || 0);
+  const n = (Array.isArray(segs) ? segs : []).reduce((a, x) => a + Number(x.len || 0), 0);
+  if (!n) return [false, `「${snType}」规则的段定义是空的`];
+  if (total && n !== total) {
+    return [false, `「${snType}」规则段长合计 ${n} 位，但总长写的 ${total} 位 —— `
+      + `生成的号会被过站校验拦掉。请到「配置中心 → SN 规则」把各段长度改到合计 ${total} 位`];
+  }
+  return [true, ""];
+}
+
+/** 发码前的风险提示（只提示不拦截；源 sn_generate_warn） */
+export function snGenerateWarn(snType) {
+  if ((snType || "").trim() !== "PCBA") return "";
+  return "PCBA 镭雕码现场通常是镭雕机自己取号（序列连续递增）。"
+    + "如果这台设备也会自增，MES 再发一遍会和它撞号 —— 发之前先确认设备是怎么取号的。"
+    + "发出去的号如果没用完，作废即可，不会重号。";
+}
+
+/** 按长度+前缀猜码类型（只用于报错说明；源 guess_sn_type） */
+export async function guessSnType(code) {
+  code = (code || "").trim().toUpperCase();
+  if (!code) return "";
+  const rules = (await query("SELECT sn_type, total_len, prefix FROM cfg_sn_rule WHERE enabled=1")).rows;
+  const cands = rules.filter(r => Number(r.total_len || 0) === code.length);
+  for (const r of cands) {
+    const pfx = (r.prefix || "").trim().toUpperCase();
+    if (pfx && code.startsWith(pfx)) return r.sn_type;
+  }
+  if (cands.length === 1) return cands[0].sn_type;
+  return "";
+}
+
+/** 码格式校验：长度必须等于规则总长（源 check_sn_format） */
+export async function checkSnFormat(sn, snType) {
+  const rule = (await query(
+    "SELECT * FROM cfg_sn_rule WHERE sn_type=$1 AND enabled=1 ORDER BY id LIMIT 1",
+    [snType])).rows[0];
+  if (!rule) return [true, ""];
+  const total = Number(rule.total_len || 0);
+  if (total && String(sn).length !== total) {
+    const got = await guessSnType(sn);
+    if (got && got !== snType) {
+      return [false, `扫错码了：这里要「${snFull(snType, total)}」，你扫的「${snFull(got, String(sn).length)}」：${sn}`];
+    }
+    return [false, `${snFull(snType, total)} 位数不对：规则要 ${total} 位，你扫的是 ${String(sn).length} 位（${sn}）`];
+  }
+  return [true, ""];
+}
+
+// ── 工艺路线选取（源 api/exec.py pick_route / snapshot_route）────────────────
+// 工序 → 产线族前缀
+const PROC_LINE_FAMILY = { "01": "SMT", "02": "DIP", "03": "ASSY", "04": "PACK" };
+
+/** 机型 token（EPS18R1G → EPS18，用于匹配路线名里的机型提示） */
+async function _modelToken(productCode) {
+  if (!productCode) return "";
+  const r = (await query("SELECT product_model FROM md_product WHERE product_code=$1",
+    [productCode])).rows[0];
+  const m = (r?.product_model || "");
+  const hit = /^([A-Za-z]+\d+)/.exec(m.trim());
+  return hit ? hit[0].toUpperCase() : "";
+}
+
+/**
+ * 挑工艺路线：线别 > 工序 > 机型专用 > 机型 > 通用（源 pick_route）。
+ * 注意源注释里的坑：`-SYNC` 路线只在同分时加权，实际应停用非 SYNC 的路线。
+ */
+export async function pickRoute(productCode, processCode = "", lineCode = "", moNo = "") {
+  if ((!processCode || !lineCode) && moNo) {
+    const mo = (await query("SELECT process_code, line_code FROM ord_mo WHERE mo_no=$1",
+      [moNo])).rows[0];
+    if (mo) {
+      processCode = processCode || (mo.process_code || "");
+      lineCode = lineCode || (mo.line_code || "");
+    }
+  }
+  const proc = (processCode || "").trim();
+  const line = (lineCode || "").trim().toUpperCase();
+  const family = PROC_LINE_FAMILY[proc] || "";
+  const token = await _modelToken(productCode);
+  let modelCode = "";
+  if (productCode) {
+    const p = (await query("SELECT product_model FROM md_product WHERE product_code=$1",
+      [productCode])).rows[0];
+    if (p) modelCode = modelSlug(p.product_model || "");
+  }
+  const stepCnt = {};
+  for (const r of (await query(
+    "SELECT route_code, COUNT(*)::int AS n FROM proc_step GROUP BY route_code")).rows) {
+    stepCnt[r.route_code] = r.n;
+  }
+  // 产线编码互为前缀（ASSY-L02 与 ASSY-L02-1），必须最长匹配才算本线
+  const allLines = (await query("SELECT line_code FROM md_line WHERE line_code<>''")).rows
+    .map(x => x.line_code).sort((a, b) => b.length - a.length);
+  const routeLineOf = (code) => {
+    for (const ln of allLines) {
+      if (code === ln.toUpperCase() || code.startsWith(`${ln.toUpperCase()}-`)) return ln.toUpperCase();
+    }
+    return "";
+  };
+  let best = null, bestScore = -1;
+  const routes = (await query("SELECT * FROM proc_route WHERE status='生效' ORDER BY id DESC")).rows;
+  for (const r of routes) {
+    const code = (r.route_code || "").toUpperCase();
+    const name = (r.route_name || "").toUpperCase();
+    let score = 0;
+    const rline = routeLineOf(code);
+    if (line && rline === line) score += 100;
+    else if (line && rline) score -= 60;
+    if (family && code.startsWith(`${family}-`)) score += 50;
+    if (modelCode && line && code === `${line}-${modelCode}`) score += 90;
+    if (token && name.includes(token)) score += 25;
+    if (code.endsWith("-SYNC")) score += 15;
+    if (productCode && (r.product_code || "") === productCode) score += 10;
+    score += Math.min(3, (stepCnt[r.route_code] || 0) * 0.1);
+    if (score > bestScore) { best = r; bestScore = score; }
+  }
+  if (best && bestScore >= 50) return best;
+  const r2 = (await query(
+    "SELECT * FROM proc_route WHERE product_code=$1 AND status='生效' ORDER BY id DESC LIMIT 1",
+    [productCode || ""])).rows[0];
+  if (r2) return r2;
+  return (await query(
+    "SELECT * FROM proc_route WHERE product_code='' AND status='生效' ORDER BY id DESC LIMIT 1"
+  )).rows[0] || null;
+}
+
+/** 路线步骤快照（源 snapshot_route） */
+export async function snapshotRouteSteps(routeCode) {
+  const rows = (await query(
+    "SELECT * FROM proc_step WHERE route_code=$1 ORDER BY seq_no", [routeCode])).rows;
+  if (!rows.length) return [];
+  const fields = ["seq_no", "process_code", "station_code", "station_name",
+    "is_must_pass", "allow_retest", "max_retest", "is_key_station", "remark"];
+  return applyStationRetest(rows.map(r => {
+    const o = {};
+    for (const f of fields) o[f] = r[f];
+    return o;
+  }));
+}
+
+/** 把工单路线恢复成临时变更前的快照（源 _restore_temp_route） */
+export async function restoreTempRoute(moNo, changeId, by, reason) {
+  const row = (await query("SELECT * FROM prd_route_change WHERE id=$1 AND mo_no=$2",
+    [changeId, moNo])).rows[0];
+  if (!row || row.status !== "生效中") return null;
+  const snap = row.old_snapshot || "";
+  if (!snap) return null;
+  let n = 0;
+  try { n = JSON.parse(snap).length; } catch { n = 0; }
+  if (!n) return null;
+  const oldRt = (await query("SELECT * FROM proc_route WHERE route_code=$1",
+    [row.old_route || ""])).rows[0];
+  await query(
+    `UPDATE prd_mo_route SET route_code=$1, route_name=$2, version=$3, snapshot=$4,
+     step_count=$5, is_locked=1, locked_by=$6, locked_at=$7, remark=$8 WHERE mo_no=$9`,
+    [row.old_route || "", oldRt?.route_name || "恢复原路线", oldRt?.version || "",
+      snap, n, by, nowStr(), `临时路线恢复：${reason}`, moNo]);
+  await query("UPDATE prd_route_change SET status=$1, restored_at=$2 WHERE id=$3",
+    [by === "system" ? "已过期" : "已恢复", nowStr(), changeId]);
+  return row;
+}
+
+/** 取生效中的临时路线；到期的自动恢复（源 _active_temp_route） */
+export async function activeTempRoute(moNo) {
+  const row = (await query(
+    "SELECT * FROM prd_route_change WHERE mo_no=$1 AND is_temp=1 AND status='生效中' "
+    + "ORDER BY id DESC LIMIT 1", [moNo])).rows[0];
+  if (!row) return null;
+  const exp = (row.expire_at || "").trim();
+  if (exp && exp <= nowStr()) {
+    await restoreTempRoute(moNo, row.id, "system", "有效期到，自动恢复");
+    return null;
+  }
+  return row;
+}
+
+/**
+ * 取工单的路线快照。返回 [steps, meta]
+ * 读取顺序（源 ensure_mo_route）：
+ *   1) 组快照 prd_mo_group_route（一张总工单存完整工艺，分工单各取自己那段）
+ *   2) 单级快照 prd_mo_route
+ *   3) 都没有 → 按产线/机型工艺锁一份
+ */
+export async function ensureMoRoute(moNo, productCode = "") {
+  await activeTempRoute(moNo);
+  const gk = groupKeyOf(moNo);
+  let proc = "";
+  const moRow = (await query("SELECT process_code FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+  if (moRow) proc = moRow.process_code || "";
+  const gr = (await query("SELECT * FROM prd_mo_group_route WHERE group_key=$1", [gk])).rows[0];
+  if (gr && gr.snapshot) {
+    let allSteps = [];
+    try { allSteps = JSON.parse(gr.snapshot) || []; } catch { allSteps = []; }
+    if (allSteps.length) {
+      const seg = !proc ? allSteps
+        : allSteps.filter(x => (x.process_code || "") === proc);
+      if (seg.length) {
+        return [seg, {
+          mo_no: moNo, route_code: gr.route_code, route_name: gr.route_name,
+          version: gr.version, step_count: seg.length, is_locked: 1,
+          locked_by: gr.locked_by, locked_at: gr.locked_at, remark: gr.remark,
+          group_key: gk, group_total: gr.step_count,
+        }];
+      }
+    }
+  }
+  const mr = (await query("SELECT * FROM prd_mo_route WHERE mo_no=$1", [moNo])).rows[0];
+  if (mr && mr.snapshot) {
+    try {
+      const steps = JSON.parse(mr.snapshot) || [];
+      if (steps.length) return [steps, mr];
+    } catch { /* 落到自动锁 */ }
+  }
+  const rt = await pickRoute(productCode, "", "", moNo);
+  if (!rt) return [[], null];
+  const steps = await snapshotRouteSteps(rt.route_code);
+  if (!steps.length) return [[], null];
+  const data = {
+    mo_no: moNo, route_code: rt.route_code, route_name: rt.route_name,
+    version: rt.version, snapshot: JSON.stringify(steps), step_count: steps.length,
+    is_locked: 1, locked_by: "system", locked_at: nowStr(), remark: "首次过站时自动锁定",
+  };
+  if (mr) {
+    await query(
+      `UPDATE prd_mo_route SET route_code=$1, route_name=$2, version=$3, snapshot=$4,
+       step_count=$5, is_locked=1, locked_by=$6, locked_at=$7, remark=$8 WHERE mo_no=$9`,
+      [data.route_code, data.route_name, data.version, data.snapshot,
+        data.step_count, data.locked_by, data.locked_at, data.remark, moNo]);
+  } else {
+    await query(
+      `INSERT INTO prd_mo_route (mo_no, route_code, route_name, version, snapshot,
+       step_count, is_locked, locked_by, locked_at, remark)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [data.mo_no, data.route_code, data.route_name, data.version, data.snapshot,
+        data.step_count, data.is_locked, data.locked_by, data.locked_at, data.remark]);
+  }
+  const after = (await query("SELECT * FROM prd_mo_route WHERE mo_no=$1", [moNo])).rows[0];
+  return [steps, after];
+}
+
+// ── 过站引擎（源 api/exec.py do_pass_inner）──────────────────────────────────
+/** 这些状态的 SN 不允许正常过站（源 BLOCK_STATUS） */
+export const BLOCK_STATUS = {
+  "报废": "SN 已报废，禁止过站",
+  "待修": "SN 待修，须先完成维修才能继续",
+  "待判定": "SN 已由维修员建议报废，等品质主管判定后才能动",
+  "已解码": "SN 已解码，须重新建档",
+};
+
+/**
+ * AOI / SPI 设备数据自动补建档案（源 _adopt_from_aoi）。
+ * SMT 段 AOI/SPI 是设备自动上传、现场不扫过站台；不补档会让整张单卡在起点。
+ * 只补「第一个必过站」这一枪（且该站必须是 AOI/SPI 类）。
+ * 返回 [是否已补, 说明]
+ */
+export async function adoptFromAoi(sn, moNo, mo, steps) {
+  if (!sn || !steps || !steps.length) return [false, ""];
+  let rows = [];
+  try {
+    // ⚠ 必须按 test_time 倒序，不能按 b.id 倒序（2026-11-04 现场坑）
+    rows = (await query(
+      "SELECT b.final_result, b.test_time, r.project_name, r.device_name, "
+      + "r.pcb_sn, r.file_name FROM prd_aoi_board b "
+      + "JOIN prd_aoi_result r ON r.id=b.aoi_id WHERE b.board_sn=$1 "
+      + "ORDER BY b.test_time DESC, b.id DESC LIMIT 60", [sn])).rows;
+  } catch (e) {
+    console.log("[AOI补档] 查询失败:", e);
+    return [false, ""];
+  }
+  if (!rows.length) return [false, ""];
+  const p = (await query("SELECT product_model FROM md_product WHERE product_code=$1",
+    [mo?.product_code || ""])).rows[0];
+  const want = (p?.product_model || "").trim();
+  // 逐条归一：跳过总装段 WS-* 设备（那是后段，拿它当 SMT 入口等于凭空跳站）
+  const cands = rows.filter(r => !(r.device_name || "").trim().toUpperCase().startsWith("WS-"));
+  if (!cands.length) return [false, ""];
+  // 机型归一：程序名 → 机型（W6a 不移植 aoi_model 的映射表，按程序名首段判定）
+  const progModel = (prog) => {
+    const m = /^([A-Za-z]+\d+)/.exec((prog || "").trim());
+    return m ? m[0].toUpperCase() : "";
+  };
+  const wantToken = want ? progModel(want) : "";
+  let chosen = null, weak = "";
+  if (want) {
+    for (const c of cands) {
+      const pm = progModel(c.project_name);
+      if (pm && wantToken && pm === wantToken) { chosen = c; break; }
+    }
+    if (!chosen) {
+      // 认不出机型：程序名首段与本工单机型同系列 → 放行留痕；否则硬拦
+      for (const c of cands) {
+        const pm = progModel(c.project_name);
+        if (wantToken && pm && pm.startsWith(wantToken)) {
+          chosen = c;
+          weak = `程序「${c.project_name || "(空)"}」未维护机型映射，按系列判定同属 ${want}`;
+          break;
+        }
+      }
+    }
+    if (!chosen) {
+      const r0 = cands[0];
+      const pm = progModel(r0.project_name);
+      if (!pm) {
+        return [false, `最近一次检测是程序「${r0.project_name || ""}」，认不出属于哪个机型，`
+          + `也不在「${want}」系列里`];
+      }
+      return [false, `最近一次检测是程序「${r0.project_name}」（${pm}），不属于本工单机型 ${want}`];
+    }
+  } else {
+    chosen = cands[0];
+    weak = `工单未维护机型，程序「${chosen.project_name || "(空)"}」无从核对，已按本工单建档`;
+  }
+  const dev = (chosen.device_name || "").trim();
+  if ((chosen.final_result || "").toUpperCase() === "FAIL") {
+    return [false, `AOI 判定 NG（${dev || "AOI"} ${(chosen.test_time || "").slice(0, 16)}）`];
+  }
+  // 只补「第一个必过站」，且它必须是 AOI / SPI 类
+  const must0 = steps.filter(x => Number(x.is_must_pass || 0) === 1);
+  const first = (must0.length ? must0 : steps)
+    .reduce((a, b) => (Number(a.seq_no || 0) <= Number(b.seq_no || 0) ? a : b));
+  const fcode = first.station_code || "";
+  const st = (await query(
+    "SELECT line_code, type_code, station_name FROM md_station WHERE station_code=$1",
+    [fcode])).rows[0];
+  const kind = `${first.station_name || ""} ${fcode} ${st?.type_code || ""}`.toUpperCase();
+  if (!kind.includes("AOI") && !kind.includes("SPI")) return [false, ""];
+  const now = nowStr();
+  let pt = (chosen.test_time || "").slice(0, 19) || now;
+  if (pt > now) pt = now;
+  const line = st?.line_code || mo?.line_code || "";
+  try {
+    await query(
+      `INSERT INTO prd_sn (sn, sn_type, product_code, mo_no, line_code, cur_station,
+       cur_seq, status, created_at, updated_at, sn_note)
+       VALUES ($1,'PCBA',$2,$3,$4,$5,$6,'在制',$7,$7,$8)
+       ON CONFLICT (sn) DO NOTHING`,
+      [sn, mo.product_code || "", moNo, line, fcode, Number(first.seq_no || 0), now,
+        `AOI 设备数据自动建档${weak ? `（${weak}）` : ""}`]);
+    await query(
+      `INSERT INTO prd_pass (sn, station_code, line_code, track_code, process_code,
+       seq_no, mo_no, result, operator, pass_time, created_at, mark)
+       VALUES ($1,$2,$3,'',$4,$5,$6,'OK',$7,$8,$9,$10)`,
+      [sn, fcode, line, first.process_code || "", Number(first.seq_no || 0), moNo,
+        "系统（设备数据）", pt, now,
+        `${dev || "AOI"} 设备数据补录（${chosen.project_name || ""} ${chosen.file_name || ""}）`
+        + (weak ? `（${weak}）` : "")]);
+  } catch (e) {
+    console.log("[AOI补档] 写库失败:", e);
+    return [false, ""];
+  }
+  return [true, `${sn} 已在 ${dev || "AOI"} 检测过（${pt} ${chosen.final_result || "PASS"}），`
+    + `已自动补记「${first.station_name || fcode}」${weak ? `（${weak}）` : ""}`];
+}
+
+/**
+ * WS-AOI 这一站：检测数据有记录但没扫码过站时，用检测数据自动补过站
+ * （源 _adopt_wsaoi_pass）。判结果口径按源 2026-11-07 拍板：
+ *   默认（aoi.send_repair 关）：FAIL 也判 OK；开：TRUE FAIL 判 NG 转维修。
+ * 返回 [是否已补, 说明]
+ */
+export async function adoptWsAoiPass(sn, wsCode, moNo) {
+  sn = (sn || "").trim();
+  wsCode = (wsCode || "").trim();
+  if (!sn || !wsCode) return [false, ""];
+  const wk = await station_key(wsCode);
+  if (!wk) return [false, ""];
+  const tc = (wk[1] || "").toUpperCase();
+  if (!tc.includes("WS-AOI") && !(tc.includes("AOI") && tc.includes("WS"))) return [false, ""];
+  const already = (await query(
+    "SELECT COUNT(*)::int AS n FROM prd_pass WHERE sn=$1 AND station_code=$2",
+    [sn, wsCode])).rows[0];
+  if (Number(already?.n || 0)) return [false, ""];
+  const rel = await related_sns(sn);
+  const ph = rel.map((_, i) => `$${i + 1}`).join(",");
+  let row = null;
+  try {
+    row = (await query(
+      `SELECT r.final_result, r.robot_result, r.test_time, r.device_name,
+       r.pcb_sn, r.file_name FROM prd_aoi_result r WHERE r.pcb_sn IN (${ph})
+       AND r.device_name LIKE 'WS-AOI%' ORDER BY r.test_time DESC, r.id DESC LIMIT 1`,
+      rel)).rows[0];
+  } catch (e) {
+    console.log("[WS-AOI补档] 查询失败:", e);
+    return [false, ""];
+  }
+  if (!row) return [false, ""];
+  const fin = (row.final_result || "").trim().toUpperCase();
+  const sendRepair = ((await _getParam("aoi.send_repair", "0")) || "0").trim() === "1";
+  const result = sendRepair && fin === "FAIL" ? "NG" : "OK";
+  let defectCode = "";
+  if (result === "NG") {
+    const c = (await query(
+      "SELECT robot_code FROM prd_aoi_comp WHERE pcb_sn=$1 "
+      + "AND COALESCE(robot_result,'')<>'PASS' ORDER BY id LIMIT 1", [sn])).rows[0];
+    defectCode = (c?.robot_code || "").trim() || "NDF";
+  }
+  const now = nowStr();
+  let pt = (row.test_time || "").slice(0, 19) || now;
+  if (pt > now) pt = now;
+  try {
+    const st = (await query(
+      "SELECT line_code, track_code, process_code FROM md_station WHERE station_code=$1",
+      [wsCode])).rows[0];
+    const mo = (await query("SELECT line_code FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    const line = st?.line_code || mo?.line_code || "";
+    let seq = 0;
+    try {
+      const [steps] = await ensureMoRoute(moNo);
+      const s = await step_of(steps, wsCode);
+      seq = s ? Number(s.seq_no || 0) : 0;
+    } catch { seq = 0; }
+    await query(
+      `INSERT INTO prd_pass (sn, station_code, line_code, track_code, process_code,
+       seq_no, mo_no, result, ng_code, operator, pass_time, created_at, mark)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+      [sn, wsCode, line, st?.track_code || "", st?.process_code || "", seq, moNo,
+        result, result === "NG" ? defectCode : "", "系统（WS-AOI设备数据）", pt, now,
+        `WS-AOI 设备数据自动补录（${row.device_name || "WS-AOI"} ${row.final_result || "-"} ${row.file_name || ""}）`]);
+    if (result === "NG") {
+      await query(
+        `INSERT INTO prd_defect_rec (sn, defect_code, station_code, process_code,
+         mo_no, root_cause, handle, repair_times, operator, defect_time)
+         VALUES ($1,$2,$3,$4,$5,'','待处理',0,$6,$7)`,
+        [sn, defectCode, wsCode, st?.process_code || "", moNo, "系统（WS-AOI设备数据）", now]);
+    }
+  } catch (e) {
+    console.log("[WS-AOI补档] 写库失败:", e);
+    return [false, ""];
+  }
+  return [true, `${sn} 在 WS-AOI 检测过（${row.final_result || "-"}），已自动补过站（${result}）`];
+}
+
+/**
+ * 过站主引擎（源 do_pass_inner）。
+ * 校验链：基础校验 → 禁止人工放行 → 定位/建档 SN → 工位归一 → SN 格式 →
+ *         SN 状态 → 上游 NG → 返修次数 → 防重复 → 跳站检查 → ECN → 记账。
+ * 返回 {ok:true, data, msg} 或 {ok:false, msg}（由路由层转信封）。
+ */
+export async function doPassInner(d = {}, user = null, remoteAddr = "") {
+  const u = {
+    login_name: user?.login_name || "system",
+    emp_name: user?.emp_name || user?.login_name || "system",
+    id: user?.id || 0,
+    emp_no: user?.emp_no || "",
+  };
+  const src = (d.source || "").trim().toLowerCase();
+  let stationCode = (d.station_code || "").trim();
+  let result = (d.result || "OK").trim().toUpperCase();
+  const snType = (d.sn_type || "PCBA").trim();
+  let moNo = (d.mo_no || "").trim();
+  let operator = (d.operator || u.emp_name || u.login_name).trim();
+  let sn = (d.sn || "").trim();
+  const defectCodeIn = (d.defect_code || "").trim();
+
+  // ---------- 0. 基础校验 ----------
+  if (!stationCode) return { ok: false, msg: "工位号必填" };
+  if (result !== "OK" && result !== "NG") return { ok: false, msg: "result 只能是 OK 或 NG" };
+  const st = (await query("SELECT * FROM md_station WHERE station_code=$1", [stationCode])).rows[0];
+  if (!st) return { ok: false, msg: `工位不存在：${stationCode}` };
+  if (Number(st.status || 0) !== 1) return { ok: false, msg: `工位已停用：${stationCode}` };
+  if (result === "NG" && !defectCodeIn) return { ok: false, msg: "NG 必须填不良代码（defect_code）" };
+
+  // ---------- 0.5 禁止人工放行（ATE1 / 老化 / 高压 / ATE2 这类功能工位）------
+  const isDevice = src === "machine" || src === "device" || src === "equip" || src === "auto";
+  if (Number(st.deny_manual_pass || 0) === 1 && !isDevice && result === "OK") {
+    const nm0 = st.short_name || st.station_code;
+    const m0 = `「${nm0}」是功能测试站，测试结论必须由设备上传。人工不能判良品放行 —— `
+      + `请先在设备上跑完测试让它自动上传；设备故障请找班长处理。`;
+    return {
+      ok: true,
+      data: {
+        accepted: false, allow: false, blocked: true, rule: "MANUAL_PASS_DENIED",
+        msg: m0, sn, station_code: stationCode, mo_no: moNo,
+        hint: "不良品请照实填 NG（判 NG 不受此限制），系统会拉去维修",
+      },
+      msg: m0,
+    };
+  }
+
+  // ---------- 1. 定位 SN ----------
+  const isPlaceholder = (row) => !!row && (row.status || "") === "已发放";
+  let snRow = sn ? (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0] : null;
+  let createdSn = false;
+
+  if (!snRow || isPlaceholder(snRow)) {
+    if (!sn && d.auto_sn) {
+      const [nsn, nerr] = await snAlloc(snType);
+      if (!nsn) return { ok: false, msg: nerr };
+      sn = nsn;
+      snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    }
+    if (!sn) return { ok: false, msg: "SN 必填（本工位非起始站时不能自动取号）" };
+    if (!moNo) return { ok: false, msg: "SN 首次建档必须带工单号（mo_no）" };
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    if (!mo) return { ok: false, msg: `工单不存在：${moNo}` };
+    const [steps0] = await ensureMoRoute(moNo, mo.product_code);
+    // AOI / SPI 设备数据补档
+    let adoptWhy = "";
+    if (!snRow && steps0.length) {
+      const [adopted, why] = await adoptFromAoi(sn, moNo, mo, steps0);
+      if (adopted) {
+        snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+        createdSn = true;
+      } else if (why) adoptWhy = why;
+    }
+    if (!snRow && steps0.length) {
+      // 强制路线的入口 = 第一个「必过」工位
+      const strictRoute = steps0.some(x => Number(x.is_must_pass || 0) === 1);
+      const must0 = steps0.filter(x => Number(x.is_must_pass || 0) === 1);
+      const first = (must0.length ? must0 : steps0)
+        .reduce((a, b) => (Number(a.seq_no || 0) <= Number(b.seq_no || 0) ? a : b));
+      const cur0 = await step_of(steps0, stationCode);
+      if (strictRoute && cur0 && Number(cur0.seq_no || 0) > Number(first.seq_no || 0)) {
+        // 放行单兜底：板子物理上已到后段，用已批准的跳站放行单开口子
+        const rel0 = await find_release(moNo, sn, first.station_code);
+        if (rel0) {
+          await open_entry_by_release(sn, moNo, first.station_code, rel0, operator, remoteAddr);
+        } else {
+          const extra = adoptWhy ? `（设备数据也补不了：${adoptWhy}）` : "";
+          const m = `SN 未建档。本工单的第一个校验点是「${first.station_code} ${first.station_name}」，`
+            + `请先从它或它之前的工位开始扫${extra}`;
+          return {
+            ok: true,
+            data: {
+              accepted: false, allow: false, blocked: true, rule: "SN_NOT_REGISTERED",
+              sn, station_code: stationCode, mo_no: moNo, msg: m,
+              hint: "SMT-AOI 是设备自动上传的站，如果这块板在 AOI 上测过，系统会自动建档；"
+                + "没测过就要先送到它前面的工位。如果这板确实已经做到这里（数据补不了），"
+                + "请开了「跳站放行单」再来扫",
+            },
+            msg: m,
+          };
+        }
+      }
+    }
+    if (isPlaceholder(snRow)) {
+      // 批量预发的号已经绑了工单，必须对得上
+      const phMo = snRow?.mo_no || "";
+      if (phMo && phMo !== moNo) {
+        const pm = (await query("SELECT process_code FROM ord_mo WHERE mo_no=$1", [phMo])).rows[0];
+        const pc = pm?.process_code || "";
+        const pn = { "01": "SMT", "02": "DIP", "03": "组装", "04": "包装" }[pc] || "";
+        let where = `请先用工单 ${phMo} 投产，再到它的首站扫码`;
+        try {
+          const [psteps] = await ensureMoRoute(phMo);
+          if (psteps.length) {
+            where = `请到「工单 ${phMo}（${pn || "?"} 段）· 工位 ${psteps[0].station_name || ""} `
+              + `${psteps[0].station_code}」扫码`;
+          }
+        } catch { /* 用默认文案 */ }
+        return { ok: false, msg: `SN ${sn} 是给工单 ${phMo}（${pn || "?"} 段）预发的号，还没投产，`
+          + `不能用在工单 ${moNo}。${where}` };
+      }
+      await query(
+        `UPDATE prd_sn SET sn_type=$1, product_code=$2, mo_no=$3, line_code=$4,
+         cur_station='', cur_seq=0, status='在制', repair_times=0, updated_at=$5 WHERE sn=$6`,
+        [snType, mo.product_code || "", moNo, st.line_code || "", nowStr(), sn]);
+    } else if (!snRow) {
+      await query(
+        `INSERT INTO prd_sn (sn, sn_type, product_code, mo_no, line_code, cur_station,
+         cur_seq, status, repair_times) VALUES ($1,$2,$3,$4,$5,'',0,'在制',0)`,
+        [sn, snType, mo.product_code || "", moNo, st.line_code || ""]);
+    }
+    snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    createdSn = true;
+  } else {
+    if (!moNo) moNo = snRow.mo_no || "";
+    else if (snRow.mo_no && snRow.mo_no !== moNo) {
+      // 一个产品 4 张工序工单：前 9 位相同 = 同一套 → 允许流转
+      const a0 = snRow.mo_no || "", b0 = moNo;
+      if (a0.length >= 9 && b0.length >= 9 && a0.slice(0, 9) === b0.slice(0, 9)) {
+        await query("UPDATE prd_sn SET mo_no=$1, updated_at=$2 WHERE sn=$3", [b0, nowStr(), sn]);
+        snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+      } else {
+        return { ok: false, msg: `SN ${sn} 属于工单 ${snRow.mo_no}，与传入的 ${moNo} 不是同一套（前 9 位不同）` };
+      }
+    }
+  }
+
+  const productCode = snRow.product_code || "";
+  if (!moNo) return { ok: false, msg: `SN ${sn} 没有关联工单，无法判断工艺路线` };
+
+  const [steps, routeMeta] = await ensureMoRoute(moNo, productCode);
+  if (!steps.length) {
+    return { ok: false, msg: `工单 ${moNo} 找不到可用工艺路线（产品 ${productCode} 没有生效路线）` };
+  }
+  const step = await step_of(steps, stationCode);
+  if (!step) {
+    let hint = "";
+    try {
+      const off = (await query(
+        "SELECT model FROM cfg_model_process WHERE station_code=$1 AND COALESCE(enabled,1)=0 LIMIT 1",
+        [stationCode])).rows[0];
+      if (off) hint = `（该工位在机型 ${off.model} 的工艺里已「停用」，如需使用请先到「工艺路线」启用）`;
+    } catch { /* 无表则不给提示 */ }
+    return { ok: false, msg: `工位 ${stationCode} 不在工单 ${moNo} 的工艺路线里${hint}` };
+  }
+
+  // ---------- 归一化到「工艺位置」 ----------
+  const actualStation = stationCode;
+  if (step.station_code !== stationCode) stationCode = step.station_code;
+
+  const sRules = await station_rules(stationCode);
+  const isRepairStation = st.station_type === "维修";
+
+  const blocked = (rule, msg, extra = null) => ({
+    ok: true,
+    data: {
+      accepted: false, allow: false, blocked: true, rule, msg, sn,
+      station_code: stationCode, mo_no: moNo, sn_status: snRow.status,
+      ...(extra || {}),
+    },
+    msg,
+  });
+
+  // ---------- 1.5 员工资质（考核不合格 / 证件过期不能操作该工位）----------
+  // W6a 不移植 core/emp：资质检查由 SMT 侧 HR 模块承担，此处只留 operator_no。
+  const empNo = (d.operator_no || u.emp_no || "").trim();
+
+  // ---------- 1.8 WS-AOI 检测数据自动判定过站结果 ----------
+  const wsk2 = await station_key(stationCode);
+  const tc2 = (wsk2?.[1] || "").toUpperCase();
+  if (tc2.includes("WS-AOI") || (tc2.includes("AOI") && tc2.includes("WS"))) {
+    const wsRow = (await query(
+      "SELECT final_result, robot_result, test_time, device_name FROM prd_aoi_result "
+      + "WHERE pcb_sn=$1 AND device_name LIKE 'WS-AOI%' "
+      + "ORDER BY test_time DESC, id DESC LIMIT 1", [sn])).rows[0];
+    if (wsRow) {
+      const fin = (wsRow.final_result || "").trim().toUpperCase();
+      const sendRepair = ((await _getParam("aoi.send_repair", "0")) || "0").trim() === "1";
+      if (sendRepair && fin === "FAIL") {
+        result = "NG";
+        const cc = (await query(
+          "SELECT robot_code FROM prd_aoi_comp WHERE pcb_sn=$1 "
+          + "AND COALESCE(robot_result,'')<>'PASS' ORDER BY id LIMIT 1", [sn])).rows[0];
+        d.defect_code = (cc?.robot_code || "").trim() || "NDF";
+      } else {
+        result = "OK";
+      }
+      d.mark = `${d.mark || ""}｜WS-AOI 检测数据判定（${result} ${wsRow.final_result || "-"}）`;
+    }
+  }
+
+  // ---------- 2. SN 格式校验 ----------
+  if (await rule_on("SN_FORMAT")) {
+    const [okFmt, msgFmt] = await checkSnFormat(sn, snRow.sn_type);
+    if (!okFmt) return blocked("SN_FORMAT", msgFmt);
+  }
+
+  // ---------- 3. SN 状态校验（NG 品拦截） ----------
+  if (await rule_on("NG_PASS") && !isRepairStation) {
+    if (BLOCK_STATUS[snRow.status]) return blocked("NG_PASS", BLOCK_STATUS[snRow.status]);
+  }
+  if (snRow.status === "完工" && !(await is_sampling(stationCode))) {
+    const doneHere = (await query(
+      "SELECT COUNT(*)::int AS n FROM prd_pass WHERE sn=$1 AND mo_no=$2 AND result='OK'",
+      [sn, moNo])).rows[0];
+    if (Number(doneHere?.n || 0)) return blocked("NG_PASS", "SN 已完工，不能重复过站");
+    // 上一段做完过来的：恢复「在制」
+    await query("UPDATE prd_sn SET status='在制', updated_at=$1 WHERE sn=$2", [nowStr(), sn]);
+    snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+  }
+
+  // ---------- 3.5 兜底：上游有未处理的 NG 不许流到下游 ----------
+  if (await rule_on("NG_PASS") && !isRepairStation) {
+    const ngSt = await guard_open_ng(sn);
+    if (ngSt) {
+      const curShort = (stationCode || "").split("-").pop().toUpperCase();
+      if (ngSt.toUpperCase() !== curShort) {
+        return blocked("NG_UPSTREAM", `上游 ${ngSt} NG 未处理 · 请先送维修`);
+      }
+    }
+  }
+
+  // ---------- 4. 返修次数锁控 ----------
+  if (await rule_on("REPAIR_LIMIT") && !isRepairStation) {
+    const limit = Number(await th("MAX_REPAIR_TIMES", 3));
+    if (limit && Number(snRow.repair_times || 0) >= limit) {
+      return blocked("REPAIR_LIMIT",
+        `SN 累计返修 ${Number(snRow.repair_times || 0)} 次，已达上限 ${limit} 次，只能报废或特批`);
+    }
+  }
+
+  // ---------- 5. 防重复过站 ----------
+  let isRetest = false;
+  if (await rule_on("DUP_SN")) {
+    const done = (await query(
+      "SELECT COUNT(*)::int AS n FROM prd_pass WHERE sn=$1 AND station_code=$2 AND result='OK'",
+      [sn, stationCode])).rows[0];
+    if (Number(done?.n || 0)) {
+      // 良品不能重测；只有最后一枪是 NG（返修回来重测）才允许
+      const last = (await query(
+        "SELECT result, pass_time FROM prd_pass WHERE sn=$1 AND station_code=$2 "
+        + "ORDER BY id DESC LIMIT 1", [sn, stationCode])).rows[0];
+      if ((last?.result || "") === "OK" && !(await find_release(moNo, sn, stationCode))) {
+        return blocked("DUP_SN",
+          `SN ${sn} 在 ${stationCode} 已经过站 OK（${last?.pass_time || ""}），不能重复过站。`
+          + `如果确实要重测，请先登记返修或开「跳站放行单」`);
+      }
+      isRetest = true;
+    }
+  }
+
+  // ---------- 6. 跳站检查（前置必过工序未做） ----------
+  if (await rule_on("SKIP_CHECK")) {
+    const miss = await guard_missing_steps(sn, stationCode, moNo, productCode);
+    if (miss.length) {
+      const list = miss.map(x => `${x[0]} ${x[1]}`).join("、");
+      return blocked("SKIP_CHECK",
+        `跳站拦截：前置工序还没过（${list}）。请先补过这些工位，或开「跳站放行单」`);
+    }
+  }
+
+  // ---------- 7. 记录过站 ----------
+  const passTime = nowStr();
+  const seqNo = Number(step.seq_no || 0);
+  await query(
+    `INSERT INTO prd_pass (sn, station_code, actual_station, line_code, track_code,
+     process_code, seq_no, mo_no, mark, result, ng_code, operator, operator_no,
+     pass_time, forwarded, forward_msg)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,0,'')`,
+    [sn, stationCode, actualStation !== stationCode ? actualStation : "",
+      st.line_code || "", st.track_code || "", st.process_code || "", seqNo, moNo,
+      d.mark || "", result, result === "NG" ? defectCodeIn : "", operator, empNo, passTime]);
+
+  // 测试数据
+  for (const t of (d.test_data || [])) {
+    if (!t || typeof t !== "object") continue;
+    await query(
+      `INSERT INTO prd_test (sn, equip_code, station_code, mo_no, param_key, param_val,
+       result, test_time) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+      [sn, d.equip_code || "", stationCode, moNo, t.k || "", String(t.v ?? ""),
+        t.r || "", passTime]);
+  }
+
+  let newStatus = snRow.status;
+  let action = "放行";
+
+  if (result === "NG") {
+    await query(
+      `INSERT INTO prd_defect_rec (sn, defect_code, station_code, process_code, mo_no,
+       root_cause, handle, repair_times, operator, operator_no, defect_time)
+       VALUES ($1,$2,$3,$4,$5,$6,'待处理',$7,$8,$9,$10)`,
+      [sn, defectCodeIn, stationCode, st.process_code || "", moNo, d.root_cause || "",
+        Number(snRow.repair_times || 0), operator, empNo, passTime]);
+    if (sRules.has("NG_TERMINAL")
+      || (await rule_on("NG_TERMINAL") && Number(step.is_key_station || 0) === 1)) {
+      newStatus = "报废";
+      action = "NG 终态（关键工位）→ 报废";
+      await query(
+        `INSERT INTO prd_scrap (sn, scrap_code, reason, station_code, mo_no,
+         approved_by, scrap_time) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [sn, d.defect_code || "", "关键工位 NG，按 NG 终态规则报废", stationCode, moNo,
+          operator, passTime]);
+    } else {
+      newStatus = "待修";
+      action = "NG → 转维修";
+    }
+  } else {
+    newStatus = "在制";
+  }
+
+  const nxt = await next_station(steps, stationCode);
+  if (!nxt && result === "OK") {
+    const nseg = await _has_next_segment(moNo);
+    if (nseg) {
+      newStatus = "在制";
+      action = `本段完成 → ${nseg}`;
+    } else {
+      newStatus = "完工";
+      action = "末站完成（整机）";
+    }
+  }
+  if (await is_sampling(stationCode) && snRow.status === "完工" && result === "OK") {
+    newStatus = "完工";
+    if (action === "放行") action = "抽检（已完工品）";
+  }
+
+  await query(
+    `UPDATE prd_sn SET cur_station=$1, cur_seq=$2, status=$3, line_code=$4, updated_at=$5
+     WHERE sn=$6`,
+    [stationCode, seqNo, newStatus, st.line_code || snRow.line_code, nowStr(), sn]);
+
+  // 工单侧：刷新产出 / 记完工时间
+  try {
+    await moAfterPass(moNo, steps, stationCode, result);
+  } catch (e) {
+    console.log("[过站] 工单侧产出刷新失败（不影响过站）:", e?.message || e);
+  }
+
+  let msg = `${sn}（${result}）@ ${st.station_name || stationCode}`;
+  if (actualStation !== stationCode) {
+    msg += `（按工艺位「${stationCode}」记账）`;
+  }
+  if (result === "OK" && nxt) {
+    msg += `　→ 下一站：${nxt.station_name || ""} ${nxt.station_code}`;
+  }
+  return {
+    ok: true,
+    data: {
+      accepted: true, allow: result === "OK", blocked: false, rule: "",
+      sn, sn_status: newStatus, station_code: stationCode, station_name: st.station_name,
+      mo_no: moNo, result, is_retest: isRetest, created_sn: createdSn, action,
+      next_station: (result === "OK" && nxt)
+        ? { station_code: nxt.station_code, station_name: nxt.station_name, seq_no: nxt.seq_no }
+        : null,
+      route: {
+        route_code: routeMeta?.route_code || "", route_name: routeMeta?.route_name || "",
+        step_count: steps.length,
+      },
+      msg,
+    },
+    msg,
+  };
+}
+
+/**
+ * 过站成功后顺带维护工单：自动开工 + 刷新产出 + 记完工时间（源 _mo_after_pass）。
+ * 口径：
+ *   · 开工自愈 —— 这张单第一次过站成功即算开工（状态转「生产中」+ actual_start）
+ *   · 产出按完工 SN 数 —— prd_sn.status='完工'（末站 OK 才变完工），天然去重，
+ *     不受「末站是哪个站 / OQC 抽检」影响
+ *   · 完工不自动改状态 —— 产出达到计划量只记 actual_end，状态留给班长确认
+ */
+export async function moAfterPass(moNo, steps, stationCode, result) {
+  if (!moNo) return;
+  const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+  if (!mo) return;
+  const now = nowStr();
+  const upd = {};
+  if (["待排产", "已排产", "待下发"].includes(mo.status || "")) {
+    upd.status = "生产中";
+    if (!mo.actual_start) upd.actual_start = now;
+  }
+  // 做到「末站」（后面没有非抽检站了）才刷新产出
+  if (result === "OK" && !(await next_station(steps, stationCode))) {
+    const nseg = await _has_next_segment(moNo);
+    if (nseg) {
+      // 不是最后一段：产出 = 本单末站过了多少颗（按 SN 去重），不写完工时间
+      const n = (await query(
+        "SELECT COUNT(DISTINCT sn)::int AS n FROM prd_pass "
+        + "WHERE mo_no=$1 AND station_code=$2 AND result='OK'", [moNo, stationCode])).rows[0];
+      upd.out_qty = Number(n?.n || 0);
+    } else {
+      const n = (await query(
+        "SELECT COUNT(*)::int AS n FROM prd_sn WHERE mo_no=$1 AND status='完工'", [moNo])).rows[0];
+      upd.out_qty = Number(n?.n || 0);
+      const plan = Number(mo.plan_qty || 0);
+      if (plan && Number(n?.n || 0) >= plan && !mo.actual_end) upd.actual_end = now;
+    }
+  }
+  if (!Object.keys(upd).length) return;
+  upd.updated_at = now;
+  const keys = Object.keys(upd);
+  const sets = keys.map((k, i) => `${k}=$${i + 1}`).join(", ");
+  await query(`UPDATE ord_mo SET ${sets} WHERE mo_no=$${keys.length + 1}`,
+    [...keys.map(k => upd[k]), moNo]);
+}

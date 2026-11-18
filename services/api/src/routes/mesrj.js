@@ -36,6 +36,15 @@ import {
   mergeRows, aggBomItems, aggBomBySeg, writeIssueItems, nextIssueBase, createIssueForMo,
   segMapForMo, backfillIssueSegments,
   decorateMo, decorateItemVn, checkPo, buildIssueDoc,
+  // W6a 过站引擎（源 api/exec.py）
+  rule_on, th, station_rules, station_rule_map, retest_via_check,
+  station_key, same_step, step_of, next_pending_station, next_station,
+  find_release, has_skip, skip_set, release_map, open_entry_by_release,
+  guard_open_ng, related_sns, done_stations, guard_missing_steps, guard_untested,
+  genReleaseNo, snLabel, snFull, buildSn, snAlloc, snRuleOk, snGenerateWarn,
+  guessSnType, checkSnFormat, pickRoute, snapshotRouteSteps,
+  restoreTempRoute, activeTempRoute, ensureMoRoute,
+  adoptFromAoi, adoptWsAoiPass, doPassInner, moAfterPass, BLOCK_STATUS,
 } from "../mesrj/domain.js";
 
 /** 源 util.ok(data, msg) */
@@ -3256,6 +3265,434 @@ export function createMesrjRouter({ authenticateJWT }) {
       d.model = model;
     }
     return ok(res, d);
+  });
+
+  // ═══ W6a 生产执行 · 过站校验引擎（源 api/exec.py）══════════════════════════
+  // 源 exec.py 全部 44 条路由；本波移植核心 10 条：
+  //   POST /exec/pass                      过站（校验链全在这里）
+  //   POST /exec/skip                      临时跳站（需权限 + 必填原因）
+  //   POST /exec/release                   开跳站放行单
+  //   POST /exec/release/:releaseNo/approve 审批放行单
+  //   POST /exec/route/lock                给工单锁定路线快照
+  //   POST /exec/route/change              临时变更工单路线（记审计）
+  //   GET  /exec/route/temp                工单的临时路线（生效中 + 历史）
+  //   POST /exec/route/restore             恢复标准路线
+  //   GET  /exec/mo/:moNo/route            工单当前路线 + 每站完成情况 + drift
+  //   GET  /exec/sn/next                   镭码机取号
+  // 剩余（/exec/sn/:sn 履历、/exec/station/next|pending、/exec/repair|scrap、
+  //       /exec/laser/*、/exec/device/health、/exec/aging、/exec/trace、/exec/report）
+  // 归入 W6b / W6c 波次。
+
+  /** 过站操作者（源 g.user） */
+  const execUser = (req) => {
+    const u = req.mesrjUser || {};
+    return {
+      id: u.id, login_name: u.login_name, emp_name: u.emp_name || u.login_name,
+      emp_no: u.emp_no || "",
+    };
+  };
+
+  // ── 过站 ──────────────────────────────────────────────────────────────────
+  router.post("/exec/pass", requireMesrjPerm("prod.pass"), async (req, res) => {
+    const d = req.body || {};
+    // 人工扫码入口：设备侧（mesapi/StationPass）走 source=machine
+    d.source = d.source || "manual";
+    const r = await doPassInner(d, execUser(req), req.ip);
+    if (!r.ok) return fail(res, r.msg);
+    return ok(res, r.data, r.msg);
+  });
+
+  // ── 临时跳站 ──────────────────────────────────────────────────────────────
+  router.post("/exec/skip", requireMesrjPerm("prod.skip"), async (req, res) => {
+    const d = req.body || {};
+    const sn = (d.sn || "").trim();
+    const stationCode = (d.station_code || "").trim();
+    const reason = (d.reason || "").trim();
+    if (!sn || !stationCode) return fail(res, "SN 与工位号必填");
+    if (!reason) return fail(res, "跳站必须填原因（会记入审计日志）");
+    const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    if (!snRow) return fail(res, `SN 不存在：${sn}`);
+    const st = (await query("SELECT * FROM md_station WHERE station_code=$1",
+      [stationCode])).rows[0];
+    if (!st) return fail(res, `工位不存在：${stationCode}`);
+    const [steps] = await ensureMoRoute(snRow.mo_no || "", snRow.product_code || "");
+    const step = await step_of(steps, stationCode);
+    if (!step) {
+      return fail(res, `工位 ${stationCode} 不在工单 ${snRow.mo_no} 的工艺路线里`);
+    }
+    const dup = (await query(
+      "SELECT id FROM prd_skip_log WHERE sn=$1 AND station_code=$2", [sn, stationCode])).rows[0];
+    if (dup) return fail(res, "该 SN 在这一站已经跳过过了");
+    const u = req.mesrjUser || {};
+    const operator = (d.operator || u.emp_name || u.login_name || "").trim();
+    await query(
+      `INSERT INTO prd_skip_log (sn, station_code, mo_no, skip_type, release_no,
+       reason, operator, skip_time) VALUES ($1,$2,$3,'扫码跳过','',$4,$5,$6)`,
+      [sn, stationCode, snRow.mo_no || "", reason, operator, nowStr()]);
+    await audit(u.login_name, "生产执行", "临时跳站", sn,
+      `跳过 ${stationCode}（${st.station_name}）：${reason}`, req.ip);
+    return ok(res, { sn, station_code: stationCode },
+      `已记录跳过：${st.station_name} ${stationCode}`);
+  });
+
+  // ── 跳站放行单 ────────────────────────────────────────────────────────────
+  router.post("/exec/release", requireMesrjPerm("prod.release"), async (req, res) => {
+    const d = req.body || {};
+    const scope = (d.scope || "按SN").trim();
+    const moNo = (d.mo_no || "").trim();
+    const sn = (d.sn || "").trim();
+    const stationCode = (d.station_code || "").trim();
+    const reason = (d.reason || "").trim();
+    if (scope !== "按SN" && scope !== "按工单") {
+      return fail(res, "放行范围只能是「按SN」或「按工单」");
+    }
+    if (scope === "按SN" && !sn) return fail(res, "按SN放行必须填SN");
+    if (scope === "按工单" && !moNo) return fail(res, "按工单放行必须填工单号");
+    if (!stationCode) return fail(res, "必须指定被允许跳过的工位");
+    if (!reason) return fail(res, "必须填放行原因");
+    const st = (await query("SELECT id FROM md_station WHERE station_code=$1",
+      [stationCode])).rows[0];
+    if (!st) return fail(res, `工位不存在：${stationCode}`);
+    const no = await genReleaseNo();
+    const u = req.mesrjUser || {};
+    const who = u.emp_name || u.login_name || "";
+    const auto = d.auto_approve ? 1 : 0;
+    await query(
+      `INSERT INTO prd_pass_release (release_no, scope, mo_no, sn, station_code,
+       valid_from, valid_to, max_times, used_times, reason, apply_by, approve_by, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,0,$9,$10,$11,$12)`,
+      [no, scope, moNo, sn, stationCode, d.valid_from || todayStr(), d.valid_to || "",
+        Number(d.max_times || 1), reason, who, auto ? who : "", auto ? "已批准" : "待审"]);
+    await audit(u.login_name, "生产执行", "开跳站放行单", no,
+      `${scope} / ${sn || moNo} / ${stationCode} / ${reason}`, req.ip);
+    return ok(res, { release_no: no, status: auto ? "已批准" : "待审" },
+      `放行单 ${no} 已创建（${auto ? "已批准" : "待审"}）`);
+  });
+
+  router.post("/exec/release/:releaseNo/approve", requireMesrjPerm("prod.release"),
+    async (req, res) => {
+      const releaseNo = (req.params.releaseNo || "").trim();
+      const d = req.body || {};
+      const status = (d.status || "已批准").trim();
+      if (status !== "已批准" && status !== "已驳回") {
+        return fail(res, "审批结果只能是「已批准」或「已驳回」");
+      }
+      const r = (await query("SELECT * FROM prd_pass_release WHERE release_no=$1",
+        [releaseNo])).rows[0];
+      if (!r) return fail(res, "放行单不存在", 404);
+      const u = req.mesrjUser || {};
+      await query("UPDATE prd_pass_release SET status=$1, approve_by=$2 WHERE release_no=$3",
+        [status, u.emp_name || u.login_name || "", releaseNo]);
+      await audit(u.login_name, "生产执行", "审批跳站放行单", releaseNo, status, req.ip);
+      return ok(res, null, `放行单 ${releaseNo} → ${status}`);
+    });
+
+  // 放行单列表（前端「跳站放行单」页用；源 exec.py 无此端点，为 UI 补）
+  router.get("/exec/pass_release/list", async (req, res) => {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const size = Math.min(500, Math.max(1, Number(req.query.size || 50)));
+    const off = (page - 1) * size;
+    const where = [];
+    const args = [];
+    const st = (req.query.status || "").toString().trim();
+    if (st) { args.push(st); where.push(`status=$${args.length}`); }
+    const kw = (req.query.keyword || "").toString().trim();
+    if (kw) {
+      args.push(`%${kw}%`);
+      where.push(`(release_no ILIKE $${args.length} OR sn ILIKE $${args.length} `
+        + `OR mo_no ILIKE $${args.length} OR station_code ILIKE $${args.length})`);
+    }
+    const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const total = Number((await query(
+      `SELECT COUNT(*)::int AS n FROM prd_pass_release ${clause}`, args)).rows[0]?.n || 0);
+    const rows = (await query(
+      `SELECT * FROM prd_pass_release ${clause} ORDER BY id DESC LIMIT $${args.length + 1} `
+      + `OFFSET $${args.length + 2}`, [...args, size, off])).rows;
+    return ok(res, { rows, total, page, size });
+  });
+
+  // ── 工单路线：锁定 / 变更 / 临时 / 恢复 ───────────────────────────────────
+  router.post("/exec/route/lock", requireMesrjPerm("prod.route.change"), async (req, res) => {
+    const d = req.body || {};
+    const moNo = (d.mo_no || "").trim();
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    if (!mo) return fail(res, `工单不存在：${moNo}`);
+    const routeCode = (d.route_code || "").trim();
+    let rt = null;
+    if (routeCode) {
+      rt = (await query("SELECT * FROM proc_route WHERE route_code=$1", [routeCode])).rows[0];
+      if (!rt) return fail(res, `工艺路线不存在：${routeCode}`);
+    } else {
+      rt = await pickRoute(mo.product_code, mo.process_code, mo.line_code, moNo);
+      if (!rt) return fail(res, `产品 ${mo.product_code} 没有生效的工艺路线`);
+    }
+    const steps = await snapshotRouteSteps(rt.route_code);
+    if (!steps.length) return fail(res, `路线 ${rt.route_code} 没有工序步骤`);
+    const u = req.mesrjUser || {};
+    const old = (await query("SELECT * FROM prd_mo_route WHERE mo_no=$1", [moNo])).rows[0];
+    const data = {
+      route_code: rt.route_code, route_name: rt.route_name, version: rt.version,
+      snapshot: JSON.stringify(steps), step_count: steps.length, is_locked: 1,
+      locked_by: u.login_name, locked_at: nowStr(), remark: d.remark || "手动锁定",
+    };
+    if (old) {
+      await query(
+        `UPDATE prd_mo_route SET route_code=$1, route_name=$2, version=$3, snapshot=$4,
+         step_count=$5, is_locked=1, locked_by=$6, locked_at=$7, remark=$8 WHERE mo_no=$9`,
+        [data.route_code, data.route_name, data.version, data.snapshot,
+          data.step_count, data.locked_by, data.locked_at, data.remark, moNo]);
+    } else {
+      await query(
+        `INSERT INTO prd_mo_route (mo_no, route_code, route_name, version, snapshot,
+         step_count, is_locked, locked_by, locked_at, remark)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [moNo, data.route_code, data.route_name, data.version, data.snapshot,
+          data.step_count, 1, data.locked_by, data.locked_at, data.remark]);
+    }
+    if (old && old.route_code !== rt.route_code) {
+      await query(
+        `INSERT INTO prd_route_change (mo_no, change_type, old_route, new_route,
+         old_snapshot, new_snapshot, reason, apply_by, approve_by, status,
+         is_temp, expire_at, restored_at)
+         VALUES ($1,'切换路线',$2,$3,$4,$5,$6,$7,$8,'已生效',0,'','')`,
+        [moNo, old.route_code || "", rt.route_code, old.snapshot || "",
+          data.snapshot, d.reason || "手动重锁", u.login_name, u.login_name]);
+    }
+    await audit(u.login_name, "生产执行", "锁定工单路线", moNo,
+      `${rt.route_code} / ${steps.length} 步`, req.ip);
+    return ok(res, { route_code: rt.route_code, steps: steps.length },
+      `工单 ${moNo} 已锁定路线（${rt.route_code}，${steps.length} 步）`);
+  });
+
+  router.post("/exec/route/change", requireMesrjPerm("prod.route.change"), async (req, res) => {
+    const d = req.body || {};
+    const moNo = (d.mo_no || "").trim();
+    const reason = (d.reason || "").trim();
+    if (!moNo) return fail(res, "工单号必填");
+    if (!reason) return fail(res, "变更工艺路线必须填原因（会记入审计日志）");
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    if (!mo) return fail(res, `工单不存在：${moNo}`);
+    const u = req.mesrjUser || {};
+    const old = (await query("SELECT * FROM prd_mo_route WHERE mo_no=$1", [moNo])).rows[0];
+    const hrs = Number(d.expire_hours || 0) || 0;
+    const wantTemp = !!(d.is_temp || d.bypass_stations || hrs > 0);
+    if (wantTemp) {
+      const act = await activeTempRoute(moNo);
+      if (act) {
+        return fail(res, `该工单已有生效中的临时路线（${act.change_type || "临时变更"}），`
+          + `请先「恢复标准路线」再变更`);
+      }
+    }
+    let steps = null;
+    let newCode = "", newName = "", newVer = "";
+
+    if (d.new_route_code) {
+      const rt = (await query("SELECT * FROM proc_route WHERE route_code=$1",
+        [d.new_route_code])).rows[0];
+      if (!rt) return fail(res, `工艺路线不存在：${d.new_route_code}`);
+      steps = await snapshotRouteSteps(rt.route_code);
+      newCode = rt.route_code; newName = rt.route_name; newVer = rt.version;
+      if (!steps.length) return fail(res, `路线 ${rt.route_code} 没有工序步骤`);
+    } else if (Array.isArray(d.bypass_stations) && d.bypass_stations.length && old) {
+      // 设备异常：把指定工位临时摘掉，其它步骤原样保留
+      try { steps = JSON.parse(old.snapshot || "[]"); } catch { steps = []; }
+      if (!steps.length) return fail(res, "该工单还没有路线快照，无法跳过工位");
+      const picked = new Set(d.bypass_stations.map(x => (x || "").trim()));
+      const kept = steps.filter(st => !picked.has(st.station_code));
+      if (!kept.length) return fail(res, "不能把所有工位都跳过");
+      if (kept.length === steps.length) return fail(res, "选中的工位不在当前路线里");
+      steps = kept;
+      newCode = old.route_code;
+      newName = `${old.route_name || old.route_code}（临时跳过工位）`;
+      newVer = `TEMP-${todayStr().replace(/-/g, "")}`;
+    } else if (Array.isArray(d.steps) && d.steps.length) {
+      steps = [];
+      for (let i = 0; i < d.steps.length; i++) {
+        const s = d.steps[i];
+        const sc = (s?.station_code || "").trim();
+        if (!sc) continue;
+        const stt = (await query("SELECT * FROM md_station WHERE station_code=$1",
+          [sc])).rows[0];
+        if (!stt) return fail(res, `工位不存在：${sc}`);
+        steps.push({
+          seq_no: (i + 1) * 10,
+          process_code: stt.process_code || "",
+          station_code: sc,
+          station_name: stt.station_name || "",
+          is_must_pass: [1, "1", true].includes(s.is_must_pass ?? 1) ? 1 : 0,
+          allow_retest: [1, "1", true].includes(s.allow_retest ?? 1) ? 1 : 0,
+          max_retest: Number(s.max_retest || 2),
+          is_key_station: [1, "1", true].includes(s.is_key_station ?? 0) ? 1 : 0,
+          remark: s.remark || "",
+        });
+      }
+      if (!steps.length) return fail(res, "提交的步骤里没有有效工位");
+      newCode = old?.route_code || "CUSTOM";
+      newName = `${old?.route_name || "临时路线"}（工单专用）`;
+      newVer = `TEMP-${todayStr().replace(/-/g, "")}`;
+    } else {
+      return fail(res, "请提供 new_route_code / bypass_stations / steps");
+    }
+
+    const snapshot = JSON.stringify(steps);
+    if (old) {
+      await query(
+        `UPDATE prd_mo_route SET route_code=$1, route_name=$2, version=$3, snapshot=$4,
+         step_count=$5, is_locked=1, locked_by=$6, locked_at=$7, remark=$8 WHERE mo_no=$9`,
+        [newCode, newName, newVer, snapshot, steps.length, u.login_name, nowStr(),
+          `临时变更：${reason}`, moNo]);
+    } else {
+      await query(
+        `INSERT INTO prd_mo_route (mo_no, route_code, route_name, version, snapshot,
+         step_count, is_locked, locked_by, locked_at, remark)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [moNo, newCode, newName, newVer, snapshot, steps.length, 1, u.login_name, nowStr(),
+          `临时变更：${reason}`]);
+    }
+    const isTemp = wantTemp ? 1 : 0;
+    let expireAt = "";
+    if (isTemp && hrs > 0) {
+      const t = new Date(Date.now() + hrs * 3600 * 1000);
+      const p = n => String(n).padStart(2, "0");
+      expireAt = `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())} `
+        + `${p(t.getHours())}:${p(t.getMinutes())}:${p(t.getSeconds())}`;
+    }
+    const changeType = d.bypass_stations ? "临时跳过工位"
+      : (isTemp ? "临时切换路线" : (d.new_route_code ? "切换路线" : "改步骤"));
+    await query(
+      `INSERT INTO prd_route_change (mo_no, change_type, old_route, new_route,
+       old_snapshot, new_snapshot, reason, apply_by, approve_by, status,
+       is_temp, expire_at, restored_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'')`,
+      [moNo, changeType, old?.route_code || "", newCode, old?.snapshot || "", snapshot,
+        reason, u.login_name, u.login_name, isTemp ? "生效中" : "已生效",
+        isTemp, expireAt]);
+    await audit(u.login_name, "生产执行", "变更工单路线", moNo,
+      `「${newCode}」(${steps.length} 步）原因：${reason}`, req.ip);
+    const tail = isTemp
+      ? (expireAt ? `，有效期至 ${expireAt} 自动恢复` : "，处理完请手动恢复标准路线")
+      : "";
+    return ok(res, { route_code: newCode, steps: steps.length, is_temp: isTemp, expire_at: expireAt },
+      `工单 ${moNo} 的工艺路线已变更（${steps.length} 步）${tail}`);
+  });
+
+  router.get("/exec/route/temp", async (req, res) => {
+    const moNo = (req.query.mo_no || "").toString().trim();
+    if (!moNo) return fail(res, "缺少工单号");
+    const act = await activeTempRoute(moNo);
+    const rows = (await query(
+      "SELECT id, mo_no, change_type, old_route, new_route, reason, apply_by, status, "
+      + "is_temp, expire_at, restored_at, created_at FROM prd_route_change "
+      + "WHERE mo_no=$1 AND is_temp=1 ORDER BY id DESC LIMIT 20", [moNo])).rows;
+    return ok(res, { mo_no: moNo, active: act, rows, now: nowStr() });
+  });
+
+  router.post("/exec/route/restore", requireMesrjPerm("prod.route.change"), async (req, res) => {
+    const d = req.body || {};
+    const moNo = (d.mo_no || "").trim();
+    if (!moNo) return fail(res, "缺少工单号");
+    const act = await activeTempRoute(moNo);
+    if (!act) return fail(res, "没有生效中的临时路线（可能已到期自动恢复）");
+    const u = req.mesrjUser || {};
+    const reason = (d.reason || "设备恢复，手动恢复标准路线").trim();
+    await restoreTempRoute(moNo, act.id, u.login_name, reason);
+    await audit(u.login_name, "生产执行", "恢复工单路线", moNo,
+      `从临时路线「${act.new_route}」恢复「${act.old_route}」（${reason}）`, req.ip);
+    return ok(res, { mo_no: moNo, route_code: act.old_route },
+      `已恢复标准路线「${act.old_route}」`);
+  });
+
+  // 工单当前路线 + 每站完成情况 + 与当前工艺的差异（drift）
+  router.get("/exec/mo/:moNo/route", async (req, res) => {
+    const moNo = (req.params.moNo || "").trim();
+    const mo = (await query(
+      "SELECT mo_no, product_code, fg_code, plan_qty, status, process_code "
+      + "FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0];
+    if (!mo) return fail(res, "工单不存在", 404);
+    const [steps, meta] = await ensureMoRoute(moNo, mo.product_code);
+    const temp = (await query(
+      "SELECT id, change_type, reason, expire_at, apply_by, created_at, old_route "
+      + "FROM prd_route_change WHERE mo_no=$1 AND is_temp=1 AND status='生效中' "
+      + "ORDER BY id DESC LIMIT 1", [moNo])).rows[0] || null;
+    if (!steps.length) {
+      return ok(res, { mo, route: null, steps: [], temp, drift: null, model_process: null,
+        group: null, sn_total: 0 });
+    }
+    // 每站过了多少 SN
+    const stat = {};
+    for (const r of (await query(
+      "SELECT station_code, result, COUNT(*)::int AS c FROM prd_pass "
+      + "WHERE mo_no=$1 GROUP BY station_code, result", [moNo])).rows) {
+      const d = stat[r.station_code] || (stat[r.station_code] = { ok: 0, ng: 0 });
+      if (r.result === "OK") d.ok += r.c; else d.ng += r.c;
+    }
+    const out = steps.map(s => {
+      const d = stat[s.station_code] || { ok: 0, ng: 0 };
+      return { ...s, pass_ok: d.ok, pass_ng: d.ng };
+    });
+    // ── 快照 vs 当前工艺（drift）──
+    let drift = null, mp = null;
+    try {
+      const pm = (await query("SELECT product_model FROM md_product WHERE product_code=$1",
+        [mo.fg_code || mo.product_code])).rows[0];
+      const model = (pm?.product_model || "").trim();
+      if (model) {
+        const [live] = await modelProcessLive(model);
+        const proc = (mo.process_code || "").trim();
+        const cur = !proc ? live : live.filter(x => (x.process_code || "") === proc);
+        if (cur.length) {
+          const procName = !proc ? "整单"
+            : (Object.fromEntries(PROC_SEGMENTS.map(p => [p[0], p[1]])))[proc] || proc;
+          mp = {
+            model, process_code: proc, process_name: procName, steps: cur.length,
+            route_code: !proc ? `MP-${modelSlug(model)}` : `MP-${modelSlug(model)}-${proc}`,
+          };
+          const liveCodes = cur.map(x => x.station_code);
+          const snapCodes = steps.map(y => y.station_code);
+          if (liveCodes.join("|") !== snapCodes.join("|")) {
+            drift = {
+              model, model_steps: liveCodes.length, snapshot_steps: snapCodes.length,
+              missing: liveCodes.filter(c => !snapCodes.includes(c)),
+              extra: snapCodes.filter(c => !liveCodes.includes(c)),
+            };
+          }
+        }
+      }
+    } catch { drift = null; mp = null; }
+    // ── 组信息 ──
+    let group = null;
+    try {
+      const gk = groupKeyOf(moNo);
+      const gr = (await query("SELECT * FROM prd_mo_group_route WHERE group_key=$1",
+        [gk])).rows[0];
+      if (gr) {
+        const members = (await query(
+          "SELECT mo_no, process_code, status FROM ord_mo WHERE substring(mo_no,1,$1)=$2 "
+          + "ORDER BY mo_no", [gk.length, gk])).rows;
+        group = {
+          key: gk, model: gr.model, route_code: gr.route_code,
+          total_steps: gr.step_count, locked_at: gr.locked_at, locked_by: gr.locked_by,
+          members,
+        };
+      }
+    } catch { group = null; }
+    const snTotal = (await query(
+      "SELECT COUNT(*)::int AS n FROM prd_sn WHERE mo_no=$1", [moNo])).rows[0];
+    return ok(res, {
+      mo, route: meta, steps: out, temp, drift, model_process: mp, group,
+      sn_total: Number(snTotal?.n || 0),
+    });
+  });
+
+  // ── 镭码机取号（取号即预留：写占位行 status='已发放'）──────────────────────
+  router.get("/exec/sn/next", requireMesrjPerm("prod.pass"), async (req, res) => {
+    const snType = (req.query.sn_type || "PCBA").toString().trim();
+    const [okRule, msgRule] = await snRuleOk(snType);
+    if (!okRule) return fail(res, msgRule);
+    const warn = snGenerateWarn(snType);
+    const [sn, err] = await snAlloc(snType);
+    if (!sn) return fail(res, err);
+    return ok(res, { sn, sn_type: snType, warn });
   });
 
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════
