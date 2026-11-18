@@ -17,6 +17,7 @@ import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoM
 import { DeviceConfigView, StationPassView, MachineDataView, PackingView, ItfLogView } from "./views-w7";
 import { EcNView } from "./views-w9";
 import { SmtaView, FeederSlotView, TimesView } from "./views-w10";
+import { PackView } from "./views-w11";
 
 interface SysInfo {
   sys_name: string;
@@ -108,6 +109,8 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "exec.smta") return <SmtaView locale={locale} />;
     if (active === "cfg.feederslot") return <FeederSlotView locale={locale} />;
     if (active === "cfg.times") return <TimesView locale={locale} />;
+    // W11：外箱绑码（装箱站）
+    if (active === "exec.pack") return <PackView locale={locale} />;
     // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
     if (active === "exec.snpool") return <SnPoolView locale={locale} />;
     if (active === "exec.snrule") return <SnRuleView locale={locale} />;

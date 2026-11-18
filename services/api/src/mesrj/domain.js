@@ -2216,6 +2216,52 @@ export async function guard_missing_steps(sn, station_code, mo_no = "", product_
   return miss;
 }
 
+/**
+ * 出货/装箱前的完整性检查：路线里**所有必过工序**是否都完成了（源 guard_route_incomplete）。
+ *
+ * 与 guard_missing_steps 的区别：那个看"当前站之前"，这个看"整条路线"，
+ * 用于装箱、栈板、出货这类"终点动作"。
+ * `exclude` 排除「本次动作自己对应的工位」（例如装箱＝包装站本身，
+ * 不能要求它先完成，否则永远做不了 —— 装箱前先判包装没做，死循环）。
+ * 返回 [[station_code, station_name], ...]，空表示齐了。
+ */
+export async function guard_route_incomplete(sn, mo_no = "", product_code = "", strict = null, exclude = []) {
+  sn = (sn || "").trim();
+  if (!sn) return [];
+  const ex = new Set(exclude || []);
+  if (strict == null) {
+    strict = ((await _getParam("prod.strict_route", "0")) || "0").trim() === "1";
+  }
+  if (!mo_no || !product_code) {
+    const r = (await query("SELECT mo_no, product_code FROM prd_sn WHERE sn=$1", [sn])).rows[0];
+    if (r) {
+      mo_no = mo_no || (r.mo_no || "");
+      product_code = product_code || (r.product_code || "");
+    }
+  }
+  if (!mo_no) return [];
+  let steps;
+  try {
+    [steps] = await ensure_mo_route(mo_no, product_code);
+  } catch { return []; }
+  if (!steps.length) return [];
+  // 已过站 = 本码 + 母码：铭牌/外壳这类整机码，前段 SMT/DIP 的记录挂在 PCBSN 上
+  const done = await done_stations(sn);
+  const skips = await skip_set(sn);
+  const miss = [];
+  for (const s of [...steps].sort((a, b) => Number(a.seq_no || 0) - Number(b.seq_no || 0))) {
+    if (!strict && Number(s.is_must_pass || 0) !== 1) continue;
+    const code = s.station_code;
+    if (/REPAIR|维修|SỬA/i.test((code + " " + (s.station_name || "")).toUpperCase())) continue;
+    if (ex.has(code)) continue;          // 本次动作自己的工位（装箱＝包装）
+    if (done.has(code)) continue;
+    if (skips.has(code)) continue;
+    if (await find_release(mo_no, sn, code)) continue;
+    miss.push([code, s.station_name || code]);
+  }
+  return miss;
+}
+
 /** SN 是否缺少关键工位的测试记录（未经检验；源 guard_untested） */
 export async function guard_untested(sn, keywords = null) {
   sn = (sn || "").trim();
