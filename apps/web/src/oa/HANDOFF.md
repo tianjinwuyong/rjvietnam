@@ -23,7 +23,7 @@
 |---|---|---|
 | 巡线提报/首件提报 | `QcFill.tsx`（QcFillForm，ipqc/fai 共用骨架） | `POST /api/ipqc/records` / `/api/fai/records`；abnormal 提交后端自动开品质异常单 |
 | 点检填写 | `QualityView.tsx` InspectFillPage | `GET /api/equipment/tasks`（pending）+ `POST /api/equipment/tasks/:id/done` |
-| 会议发起 | `HrView.tsx` MeetingCreatePage | `POST /api/meeting`（v1 不含议程 jsonb 编辑，可在详情补） |
+| 会议发起 | `HrView.tsx` MeetingCreatePage | `POST /api/meeting`（含议程编辑器：`agenda_items` 条目 `{text, text_vi}` 双语，可增删排序） |
 | 组织导入 | `OrgImportView.tsx` | 模板下载/导出（客户端 xlsx）、岗位字典 CRUD、上传预览（⚙ 自动工号 / ✕ 岗位不匹配）、150/批分批导入 |
 | 流程设计 | `FlowDesignView.tsx` | 节点/字段/高级三页签；条件装配与原版语义一致（field+op 才生成 condition，value_ref 走 ref 源）；`PUT /api/flows/:id/config` 保存即出版本快照；`POST /api/flows` 新建 |
 
