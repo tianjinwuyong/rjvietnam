@@ -15,6 +15,7 @@ import { FlowForm } from "./FlowForm";
 import { InstanceDetail } from "./InstanceDetail";
 import { Announcements } from "./Announcements";
 import { OrgView } from "./OrgView";
+import { DocsView, type DocsSubView } from "./DocsView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
 
 /**
@@ -332,6 +333,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <Announcements locale={locale} />
   ) : view === "org" ? (
     <OrgView locale={locale} />
+  ) : view === "docs" || view === "docNew" || view === "docLedger" || view === "docIssueRecord" || view === "docObsolete" || view === "docExternal" ? (
+    <DocsView locale={locale} sub={view as DocsSubView} onNavigate={s => { setWipKey(null); setView(s); }} />
   ) : view === "notifications" ? (
     loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
       <>
@@ -425,9 +428,25 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
           }
           return (
             <div key={group.titleKey} style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted, #64748b)", padding: "6px 10px 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                {menuText(group.titleKey, locale)}
-              </div>
+              {group.homeView ? (
+                <button
+                  onClick={() => { setWipKey(null); openItem({ titleKey: group.titleKey, view: group.homeView }); }}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left", padding: "6px 10px 4px",
+                    fontSize: 12, fontWeight: 700, borderRadius: 6, cursor: "pointer",
+                    textTransform: "uppercase", letterSpacing: 0.4,
+                    border: !wipKey && view === group.homeView ? "1px solid #0f766e" : "1px solid transparent",
+                    background: !wipKey && view === group.homeView ? "#ecfdf5" : "transparent",
+                    color: "var(--text-muted, #64748b)",
+                  }}
+                >
+                  {menuText(group.titleKey, locale)}
+                </button>
+              ) : (
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted, #64748b)", padding: "6px 10px 4px", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                  {menuText(group.titleKey, locale)}
+                </div>
+              )}
               {visibleItems.map(item => (
                 <MenuLeaf
                   key={item.titleKey}

@@ -386,3 +386,163 @@ export const oaApi = {
 
   departments: () => apiClient.get<OaDepartment[]>("/api/departments"),
 };
+
+// ---- 体系文件（doc.js 路由） ----
+
+export interface OaDocRow {
+  id: number | string;
+  code: string;
+  title: string;
+  title_vi?: string | null;
+  level?: number | null;
+  category?: string | null;
+  status?: string | null;
+  current_version?: number | string | null;
+  security_level?: string | null;
+  code_state?: string | null;
+  issue_date?: string | null;
+  next_review_date?: string | null;
+  product_scope?: boolean | null;
+  created_by_name?: string | null;
+  owner_dept?: string | null;
+  version_count?: number;
+  updated_at?: string;
+}
+
+export interface OaDocListResult {
+  list: OaDocRow[];
+  total: number;
+}
+
+export interface OaDocVersionRow {
+  id: number | string;
+  version: number | string;
+  status?: string | null;
+  change_log?: string | null;
+  editor_name?: string | null;
+  published_at?: string | null;
+  has_zh?: boolean;
+  has_vi?: boolean;
+}
+
+export interface OaDocLangRow {
+  lang: "zh" | "vi";
+  file_id?: number | string | null;
+  sealed_file_id?: number | string | null;
+  content?: string | null;
+  change_summary?: string | null;
+  file_name?: string | null;
+  file_path?: string | null;
+  sealed_file_name?: string | null;
+  sealed_file_path?: string | null;
+}
+
+export interface OaDocRelationRow {
+  id: number | string;
+  related_doc_id: number | string;
+  relation_type?: string | null;
+  code?: string | null;
+  title?: string | null;
+  title_vi?: string | null;
+  status?: string | null;
+}
+
+export interface OaDocDetail extends OaDocRow {
+  content?: string | null;
+  content_vi?: string | null;
+  versions: OaDocVersionRow[];
+  currentLang: { zh: OaDocLangRow | null; vi: OaDocLangRow | null };
+  langUsed?: string;
+  missingLang?: boolean;
+  relations: OaDocRelationRow[];
+  lock?: { user?: { id: number | string; real_name?: string | null } | null } | null;
+  [key: string]: unknown;
+}
+
+export interface OaDocAttachmentRow {
+  id: number | string;
+  file_name: string;
+  file_path: string;
+  file_size?: number | string | null;
+  mime_type?: string | null;
+  created_at?: string;
+  uploader_name?: string | null;
+}
+
+export interface OaLedgerColumn {
+  key: string;
+  label: string;
+  label_vi?: string | null;
+}
+
+export interface OaLedgerResult {
+  type: string;
+  label: string;
+  labelVi?: string | null;
+  columns: OaLedgerColumn[];
+  list: Array<Record<string, unknown>>;
+  total: number;
+  page: number;
+  size: number;
+}
+
+export interface OaDocDraft {
+  id: number | string;
+  title?: string | null;
+  title_vi?: string | null;
+  category?: string | null;
+  level?: number | null;
+  security_level?: string | null;
+  owner_dept_id?: number | string | null;
+  content?: string | null;
+  content_vi?: string | null;
+  updated_at?: string;
+  [key: string]: unknown;
+}
+
+export const oaDocApi = {
+  docs: (query: { level?: number | string; category?: string; status?: string; security?: string; keyword?: string; page?: number; size?: number } = {}) =>
+    apiClient.get<OaDocListResult>("/api/docs", query),
+
+  doc: (id: number | string, lang = "zh") => apiClient.get<OaDocDetail>(`/api/docs/${id}`, { lang }),
+
+  docAttachments: (id: number | string) => apiClient.get<OaDocAttachmentRow[]>(`/api/docs/${id}/attachments`),
+
+  /** 台账（7 类：controlled/issue/obsolete/destroy/borrow/external/review） */
+  ledger: (type: string, query: { keyword?: string; from?: string; to?: string; dept?: string; status?: string; page?: number; size?: number } = {}) =>
+    apiClient.get<OaLedgerResult>(`/api/docs/ledger/${type}`, query),
+
+  /** 编号预览（只读，不消耗序号） */
+  nextCode: (query: { level?: number | string; category?: string; deptId?: number | string }) =>
+    apiClient.get<{ code: string; rule?: string; preview: boolean }>("/api/docs/next-code", query),
+
+  /** 新建文档（doc:edit；正式取号） */
+  createDoc: (body: { title: string; titleVi?: string | null; code?: string | null; level?: number | null; category?: string | null; ownerDeptId?: number | string | null; content?: string | null; securityLevel?: string | null; draftId?: number | string | null }) =>
+    apiClient.post<OaDocRow>("/api/docs", body),
+
+  /** 我的草稿列表 */
+  docDrafts: (query: { page?: number; size?: number } = {}) =>
+    apiClient.get<{ list: OaDocDraft[]; total: number }>("/api/doc-drafts", query),
+
+  /** 借阅归还登记（doc:manage） */
+  borrowReturn: (recordId: number | string) =>
+    apiClient.post<unknown>(`/api/docs/borrow/${recordId}/return`, {}),
+
+  /** 暂存上传后绑定到文档（biz_type='doc'） */
+  addDocAttachment: (docId: number | string, body: { fileName: string; filePath: string; fileSize?: number; mimeType?: string }) =>
+    apiClient.post<OaDocAttachmentRow>(`/api/docs/${docId}/attachments`, body),
+};
+
+/** 附件下载/预览 URL：新窗口场景走 query token（见 oa/middleware/index.js）；不传时自动读当前登录 token */
+export function oaFileUrl(filePath: string, token?: string | null): string {
+  const base = typeof window !== "undefined"
+    ? `${window.location.protocol}//${window.location.hostname}:8080`
+    : "http://127.0.0.1:8080";
+  const url = `${base}/api/files/${filePath}`;
+  const tk = token === undefined
+    ? (typeof window !== "undefined"
+      ? window.sessionStorage.getItem("auth_token") || window.localStorage.getItem("token")
+      : null)
+    : token;
+  return tk ? `${url}?token=${encodeURIComponent(tk)}` : url;
+}

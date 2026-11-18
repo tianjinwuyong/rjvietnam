@@ -35,6 +35,8 @@ export interface OaMenuGroup {
   items: OaMenuItem[];
   /** 原版 sections 结构（品质/人事组） */
   sections?: OaMenuSection[];
+  /** 组头即入口（原版 /docs 组首页：组头链接到文档库） */
+  homeView?: OaViewId;
 }
 
 export type OaViewId =
@@ -46,7 +48,15 @@ export type OaViewId =
   | "cc"
   | "notifications"
   | "announcements"
-  | "org";
+  | "org"
+  // 体系文件（原版 /docs 组首页 + 三个独立台账入口页；
+  // /doc-ledger、/docs/new 原版不在侧边栏，由文档库页内按钮进入）
+  | "docs"
+  | "docNew"
+  | "docLedger"
+  | "docIssueRecord"
+  | "docObsolete"
+  | "docExternal";
 
 export const OA_MENU: OaMenuGroup[] = [
   {
@@ -64,11 +74,13 @@ export const OA_MENU: OaMenuGroup[] = [
   },
   {
     titleKey: "menu.docSystem",
-    // 原版 hidden: /doc-ledger、/docs/new；/docs 是组首页（组头即入口），不重复列为菜单项
+    homeView: "docs",
+    // 原版 hidden: /doc-ledger、/docs/new（由文档库页内「新建文件」「台账」按钮进入）；
+    // /docs 是组首页（组头即入口），不重复列为菜单项
     items: [
-      { titleKey: "menu.docIssueRecord" },
-      { titleKey: "menu.docObsolete" },
-      { titleKey: "menu.docExternal" },
+      { titleKey: "menu.docIssueRecord", view: "docIssueRecord" },
+      { titleKey: "menu.docObsolete", view: "docObsolete" },
+      { titleKey: "menu.docExternal", view: "docExternal" },
     ],
   },
   // 原版 single:"/drive"、single:"/knowledge"：组头即链接，无子项
