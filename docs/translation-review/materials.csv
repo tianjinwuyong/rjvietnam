@@ -6,7 +6,7 @@ id,code,name_zh,name_en,name_vi
 6,42,贴片电容 1nF ±10％ 50V X7R 0603 102K CL10B102KB8NNNC 无卤 品牌：三星,"Surface Mount Capacitor 1nF ±10% 50V X7R 0603 102K CL10B102KB8NNNC Halogen-Free, Brand: Samsung","Cáp điện tử 1nF ±10% 50V X7R 0603 102K CL10B102KB8NNNC không khói, thương hiệu: Samsung"
 7,R0101-01001,面壳 62*34.5*43mm PC UL94V-0 冷灰1C 表面晒纹：VDI21 LOGO抛光处理 符合RoHS REACH 6P CP65 最新环保要求 无红磷 亚琪,Faceplate 62*34.5*43mm PC UL94V-0 Cold Grey 1C Surface Textured: VDI21 Logo Polishing Treatment Compliant with RoHS REACH 6P CP65 Latest Environmental Requireme,Mặt phẳng 62*34.5*43mm PC UL94V-0 Nhiệt độ lạnh 1C Mặt phẳng: VDI21 Logo xử lý bằng cách polish
 8,R0101-01002,面壳 133*59*15.75mm PC UL94V-0 COOL GREY 3C 表面晒纹：VDI-37  符合RoHS REACH 6P CP65 最新环保要求 品牌：越南东明,"Shell 133*59*15.75mm PC UL94V-0 Cool Grey 3C Surface Texturing: VDI-37, RoHS REACH 6P CP65 Latest Environmental Requirements Brand: Vietnam Dongming","Mặt bao 133*59*15.75mm PC UL94V-0 Cool Grey 3C Surface Texturing: VDI-37, RoHS REACH 6P CP65 Latest Environmental Requirements Brand: Vietnam Dongming"
-9,R0102-01001,"底壳 61.15*32.8*3.6mm PC UL94V-0 冷灰3C 表面晒纹：VDI21+NEMA 1-15P美规金属PIN脚 （来料铆压好弹片：SUS301-3/4H T=0.25mm 16.75*7.8*4.6mm 用量：2PCS,铆压后开口尺寸：≥6.15mm） 符合RoHS REACH CP65 最新环保要",Base Shell 61.15*32.8*3.6mm PC UL94V-0 Cold Grey 3C Surface Texturing: VDI21+NEMA 1-15P US Spec Metal Pin (Incoming Parts with Pressed On Pins: SUS301-3/4H T=0.,Đế bao 61.15*32.8*3.6mm PC UL94V-0 Cold Grey 3C Surface Texturing: VDI21+NEMA 1-15P Mỹ Spec Pin (Những零件进料铆压好弹片: SUS301-3/4H T=0.25mm 16.75*7.8*4.6mm Số lượng: 
+9,R0102-01001,"底壳 61.15*32.8*3.6mm PC UL94V-0 冷灰3C 表面晒纹：VDI21+NEMA 1-15P美规金属PIN脚 （来料铆压好弹片：SUS301-3/4H T=0.25mm 16.75*7.8*4.6mm 用量：2PCS,铆压后开口尺寸：≥6.15mm） 符合RoHS REACH CP65 最新环保要",Base Shell 61.15*32.8*3.6mm PC UL94V-0 Cold Grey 3C Surface Texturing: VDI21+NEMA 1-15P US Spec Metal Pin (Incoming Parts with Pressed On Pins: SUS301-3/4H T=0.,Đế bao 61.15*32.8*3.6mm PC UL94V-0 Cold Grey 3C Surface Texturing: VDI21+NEMA 1-15P Mỹ Spec Pin (Nhữnglinh kiện có lò xo đã rivet: SUS301-3/4H T=0.25mm 16.75*7.
 10,R0102-01002,底壳 133*59*15.25mm PC UL94V-0 COOL GREY 3C 表面晒纹：VDI-37  符合RoHS REACH 6P CP65 最新环保要求 品牌：越南东明,"Base Shell 133*59*15.25mm PC UL94V-0 Cool Grey 3C Surface Texturing: VDI-37, RoHS REACH 6P CP65 Latest Environmental Requirements Brand: Vietnam Dongming","Đế bao 133*59*15.25mm PC UL94V-0 Cool Grey 3C Surface Texturing: VDI-37, RoHS REACH 6P CP65 Latest Environmental Requirements Brand: Vietnam Dongming"
 11,R0103-01001,锡线 无铅锡线 Φ1.2mm 品牌:荷花,Sn 1.2mm Lead-free Tin Wire Brand: Hua Hua,Cable tin 1.2mm không chì thương hiệu: Hua Hua
 12,R0104-01001,无铅锡条 无铅锡条 Sn99.3/Cu0.7 品牌:泽云山,Lead-free Tin Strip Sn99.3/Cu0.7 Brand: Zhe Yun Shan,Cable tin không chì 99.3/0.7 thương hiệu: Zhe Yun Shan
@@ -15,7 +15,7 @@ id,code,name_zh,name_en,name_vi
 15,R0105-01002,助焊剂 TF-9000-5 无铅 品牌：同方,Solder Aid TF-9000-5 Lead-Free Brand: Tongfang,Sản phẩm hỗ trợ nhiệt sấy TF-9000-5 không chì thương hiệu: Tongfang
 16,R0106-01001,抹机水 TF-120 无色透明 同方,Machine Cleaner TF-120 Colorless Transparent Tongfang,Máy móc nước TF-120 màu sắc không phai Tongfang
 17,R0107-01001,螺丝 螺丝SCREW CROSS M3*5mm 圆头 平尾 NI 耐落 RoHS REACH,Screw SCREW CROSS M3*5mm Round Head Flat Tail NI RoHS REACH,Gỗ đinh SCREW CROSS M3*5mm đầu tròn mặt phẳng NI RoHS REACH
-18,R0107-01002,十字沉头螺丝 KB2.0*6.0mm 十字槽 自攻牙 加硬处理 镀镍(RoHS),Cross Head Self-tapping Screw KB2.0*6.0mm Cross Slot Hardened Nickel (RoHS),Gỗ đinh tự vít十字 KB2.0*6.0mm Mặt đinh tự vít mặt ngang Hardened Nickel (RoHS)
+18,R0107-01002,十字沉头螺丝 KB2.0*6.0mm 十字槽 自攻牙 加硬处理 镀镍(RoHS),Cross Head Self-tapping Screw KB2.0*6.0mm Cross Slot Hardened Nickel (RoHS),Gỗ đinh tự vítchữ thập KB2.0*6.0mm Mặt đinh tự vít mặt ngang Hardened Nickel (RoHS)
 19,R0107-01003,平头螺丝 3*5mm 扁头厚度0.9mm 十字槽 机丝牙 镀镍,Flat Head 3*5mm Flat Head Thickness 0.9mm Cross Slot Machine Thread Nickel,Gỗ đinh 3*5mm Mặt phẳng chiều dày 0.9mm Mặt đinh mặt ngang Mặt đinh bằng phẳng Nickel
 20,R0108-01001,不干胶 不干胶 KO 810 品牌：嘉多宝,Adhesive KO 810 Brand: Jadambo,Băng dính không cần khô KO 810 thương hiệu: Jadambo
 21,R0108-01002,不干胶 不干胶品牌:高金浩,Adhesive Brand: Gao Jin Hao,Băng dính không cần khô thương hiệu: Gao Jin Hao
@@ -31,32 +31,32 @@ id,code,name_zh,name_en,name_vi
 31,R0113-01001,清洗剂 清洗剂 TF-2000-8 无色透明 无卤 同方,Cleaning Agent Cleaning Agent TF-2000-8 Colorless Transparent No Halogen Tongfang,"Sản phẩm làm sạch Cleaning Agent Cleaning Agent TF-2000-8 màu sắc không phai, không chì Tongfang"
 32,R0114-01001,弹片 锰钢镀镍/银白色 18.2*4.4*7.5mm T=0.25mm (RoHS REACH CP65) 品牌：骏裕,Spring Steel Nickel/Gold White 18.2*4.4*7.5mm T=0.25mm (RoHS REACH CP65) Brand: Jin Yu,Spring Steel Mangan chì/Gold White 18.2*4.4*7.5mm T=0.25mm (RoHS REACH CP65) thương hiệu: Jin Yu
 33,R0115-01001,美日规插脚 25.25*16.4*7mm 黑色 LG 铜喷砂镀金刚镍+PC 晒纹 素材：要加抗紫外线、抗黄添加剂、抗脆化 100%原料 模内注塑 PIN距:12.7mm (RoHS REACH CP65) 品牌：久照,Mojave Regulations 25.25*16.4*7mm Black LG Copper Sprayed Nickel+PC UV Resistance+PC Anti-UV Additive+PC Anti-Yellow Additive+PC Anti-Deformation 100% Raw Mater,Gỗ đinh Mojave 25.25*16.4*7mm màu đen LG Copper Sprayed Nickel+PC UV Resistance+PC Anti-UV Additive+PC Anti-Yellow Additive+PC Anti-Deformation 100% Raw Materia
-34,R0116-01001,主体壳 70*34*60mm PC UL94-0 原材料：黑色 哑面 24号晒纹 局部光面（参考色板） LOGO：ANKER 光面效果 IQ3丝印：pantone 2995C 接口C：PT 2995C (RoHS REACH CP65) 品牌：绿科,Main Body 70*34*60mm PC UL94-0 Materials: Black Thickness:哑面 24号 Textured (Reference Colorboard) LOGO:ANKER Light Surface Effect IQ3 Printing: Pantone 2995C Int,Mặt phẳng 70*34*60mm PC UL94-0 Materials: Black Thickness:哑面 24号 Textured (Reference Colorboard) LOGO:ANKER Light Surface Effect IQ3 Printing: Pantone 2995C Int
-35,R0117-01001,下盖 67.3*31.3*10.95mm PC UL94-0 原材料：黑色 表面哑面 24号晒纹(参考色板) (RoHS REACH CP65) 品牌：绿科,Base 67.3*31.3*10.95mm PC UL94-0 Materials: Black Surface:哑面 24号 Textured (Reference Colorboard) (RoHS REACH CP65) Brand: Green Kexue,Mặt phẳng 67.3*31.3*10.95mm PC UL94-0 Materials: Black Surface:哑面 24号 Textured (Reference Colorboard) (RoHS REACH CP65) thương hiệu: Green Kexue
+34,R0116-01001,主体壳 70*34*60mm PC UL94-0 原材料：黑色 哑面 24号晒纹 局部光面（参考色板） LOGO：ANKER 光面效果 IQ3丝印：pantone 2995C 接口C：PT 2995C (RoHS REACH CP65) 品牌：绿科,Main Body 70*34*60mm PC UL94-0 Materials: Black Thickness:matte 24No. Textured (Reference Colorboard) LOGO:ANKER Light Surface Effect IQ3 Printing: Pantone 2995,Mặt phẳng 70*34*60mm PC UL94-0 Materials: Black Thickness:mờ 24số Textured (Reference Colorboard) LOGO:ANKER Light Surface Effect IQ3 Printing: Pantone 2995C In
+35,R0117-01001,下盖 67.3*31.3*10.95mm PC UL94-0 原材料：黑色 表面哑面 24号晒纹(参考色板) (RoHS REACH CP65) 品牌：绿科,Base 67.3*31.3*10.95mm PC UL94-0 Materials: Black Surface:matte 24No. Textured (Reference Colorboard) (RoHS REACH CP65) Brand: Green Kexue,Mặt phẳng 67.3*31.3*10.95mm PC UL94-0 Materials: Black Surface:mờ 24số Textured (Reference Colorboard) (RoHS REACH CP65) thương hiệu: Green Kexue
 36,R0118-01001,插脚压紧支架 19.8*19.4*8.69mm PC UL94-0 原材料：黑色 (RoHS REACH CP65) 品牌：绿科,Plug Pressing Support 19.8*19.4*8.69mm PC UL94-0 Materials: Black (RoHS REACH CP65) Brand: Green Kexue,Gỗ đinh 19.8*19.4*8.69mm Mặt phẳng PC UL94-0 Materials: Black (RoHS REACH CP65) thương hiệu: Green Kexue
 37,R0119-01001,导热硅胶 尺寸：L58.94*W51.6 T=2.2 导热系数2.0W 灰色 品牌：零度,Thermal Conductive Silicone Size: L58.94*W51.6 T=2.2 Thermal Conductivity 2.0W Brand: Zero,Sản phẩm dẫn nhiệt Silicone kích thước: L58.94*W51.6 T=2.2 Thermal Conductivity 2.0W thương hiệu: Zero
-38,R0120-01001,硅胶线 UL3239 22# 17*0.16 L=27mm 黑色线 一头剥皮扭线浸锡2.5mm 一头剥皮扭线浸锡3.5mm（含锡头）RoHS 亚太,Silicone Wire UL3239 22# 17*0.16 L=27mm Black Wire One End剥皮扭线浸锡2.5mm One End剥皮扭线浸锡3.5mm (Including Tin Head) RoHS APAC,Cable silicon 22# 17*0.16 L=27mm màu đen Wire Một đầu bị gỡ bỏ và gội lông 2.5mm Một đầu bị gỡ bỏ và gội lông 3.5mm (bao gồm đầu gội lông) RoHS APAC
-39,R0120-01002,硅胶线 UL3239 22# 17*0.16 L=25mm 红色线 一头剥皮扭线浸锡2.5mm 一头剥皮扭线浸锡3.5mm（含锡头）RoHS 亚太,Silicone Wire UL3239 22# 17*0.16 L=25mm Red Wire One End剥皮扭线浸锡2.5mm One End剥皮扭线浸锡3.5mm (Including Tin Head) RoHS APAC,Cable silicon 22# 17*0.16 L=25mm màu đỏ Wire Một đầu bị gỡ bỏ và gội lông 2.5mm Một đầu bị gỡ bỏ và gội lông 3.5mm (bao gồm đầu gội lông) RoHS APAC
-40,R0121-01001,铁氟龙套管 Φ1.0 125℃ 无色透明 管壁厚=0.1mm,Teflon套管 Φ1.0 125℃ No Color Transparent Wall Thickness=0.1mm,Thiết bị Teflon套管 Φ1.0 125℃ Không màu sắc Tấm mỏng=0.1mm
+38,R0120-01001,硅胶线 UL3239 22# 17*0.16 L=27mm 黑色线 一头剥皮扭线浸锡2.5mm 一头剥皮扭线浸锡3.5mm（含锡头）RoHS 亚太,Silicone Wire UL3239 22# 17*0.16 L=27mm Black Wire One Endstrip/twist/tin-dip2.5mm One Endstrip/twist/tin-dip3.5mm (Including Tin Head) RoHS APAC,Cable silicon 22# 17*0.16 L=27mm màu đen Wire Một đầu bị gỡ bỏ và gội lông 2.5mm Một đầu bị gỡ bỏ và gội lông 3.5mm (bao gồm đầu gội lông) RoHS APAC
+39,R0120-01002,硅胶线 UL3239 22# 17*0.16 L=25mm 红色线 一头剥皮扭线浸锡2.5mm 一头剥皮扭线浸锡3.5mm（含锡头）RoHS 亚太,Silicone Wire UL3239 22# 17*0.16 L=25mm Red Wire One Endstrip/twist/tin-dip2.5mm One Endstrip/twist/tin-dip3.5mm (Including Tin Head) RoHS APAC,Cable silicon 22# 17*0.16 L=25mm màu đỏ Wire Một đầu bị gỡ bỏ và gội lông 2.5mm Một đầu bị gỡ bỏ và gội lông 3.5mm (bao gồm đầu gội lông) RoHS APAC
+40,R0121-01001,铁氟龙套管 Φ1.0 125℃ 无色透明 管壁厚=0.1mm,Teflonsleeve Φ1.0 125℃ No Color Transparent Wall Thickness=0.1mm,Thiết bị Teflonống gen Φ1.0 125℃ Không màu sắc Tấm mỏng=0.1mm
 41,R0121-01002,"热缩套管 Φ8mm,125℃,黑色,热缩套管,管壁厚=0.1mm","Thermal Shrink Sleeve Φ8mm,125℃,Black, Thermal Shrink Sleeve, Wall Thickness=0.1mm","Thiết bị thermal shrink Sleeve Φ8mm,125℃, màu đen, Thermal Shrink Sleeve, tấm mỏng=0.1mm"
 42,R0122-01001,触点润滑脂 JDBEC02-2触点润滑脂 品牌：菲尔特,Contact Lubricating Grease JDBEC02-2 Brand: Felt,Sản phẩm làm sạch Contact Lubricating Grease JDBEC02-2 thương hiệu: Felt
 43,R0123-01001,固定胶 VS-790 改性溶解胶 1K/罐 品牌：博翔,Fixing Adhesive VS-790 Modified Solvent Adhesive 1K/Can Brand: Boxing,Sản phẩm làm sạch VS-790 Fixing Adhesive 1K/Can thương hiệu: Boxing
-44,R0201-01001,DC线 Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC 冷灰3C UL1571 22AWG(17/0.16mm+45/0.1) L=6feet(1.828M) OD:3.2mm 30V 80℃ SR镀锡处打端子 无印字 RoHS REACH 6P CP65 凯,DC Line Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC Cold Grey 3C UL1571 22AWG(17/0.16mm+45/0.1) L=6feet(1.828M) OD:3.2mm 30V 80℃ SR镀锡处打端子 No Logo RoHS,Cable DC Line Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC Cold Grey 3C UL1571 22AWG(17/0.16mm+45/0.1) L=6feet(1.828M) OD:3.2mm 30V 80℃ SR镀锡处 ghi nhãn 
-45,R0201-01002,DC线 2PIN POWER PLUG(Genesis P/N: 173-10030-08) L=1.2192M UL1571 17AWG(52/0.16+52/0.16) VW-1 80℃ +磁环(φ10.5*L20*φ5.5mm) SR镀锡处打端子 灰色（PANTONE COOL GREY 3C） RoHS REA,DC Line 2PIN POWER PLUG(Genesis P/N: 173-10030-08) L=1.2192M UL1571 17AWG(52/0.16+52/0.1) VW-1 80℃ +Magnet Ring(φ10.5*L20*φ5.5mm) SR镀锡处 ghi nhãn 灰色 (PANTONE COO,Cable DC Line 2PIN POWER PLUG(Genesis P/N: 173-10030-08) L=1.2192M UL1571 17AWG(52/0.16+52/0.1) VW-1 80℃ +Magnet Ring(φ10.5*L20*φ5.5mm) SR镀锡处 ghi nhãn 灰色 (PANTO
+44,R0201-01001,DC线 Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC 冷灰3C UL1571 22AWG(17/0.16mm+45/0.1) L=6feet(1.828M) OD:3.2mm 30V 80℃ SR镀锡处打端子 无印字 RoHS REACH 6P CP65 凯,DC Line Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC Cold Grey 3C UL1571 22AWG(17/0.16mm+45/0.1) L=6feet(1.828M) OD:3.2mm 30V 80℃ SRterminal at tinned ,Cable DC Line Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC Cold Grey 3C UL1571 22AWG(17/0.16mm+45/0.1) L=6feet(1.828M) OD:3.2mm 30V 80℃ SRvùng mạ thiếc
+45,R0201-01002,DC线 2PIN POWER PLUG(Genesis P/N: 173-10030-08) L=1.2192M UL1571 17AWG(52/0.16+52/0.16) VW-1 80℃ +磁环(φ10.5*L20*φ5.5mm) SR镀锡处打端子 灰色（PANTONE COOL GREY 3C） RoHS REA,DC Line 2PIN POWER PLUG(Genesis P/N: 173-10030-08) L=1.2192M UL1571 17AWG(52/0.16+52/0.1) VW-1 80℃ +Magnet Ring(φ10.5*L20*φ5.5mm) SRtinned area ghi nhãn grey (P,Cable DC Line 2PIN POWER PLUG(Genesis P/N: 173-10030-08) L=1.2192M UL1571 17AWG(52/0.16+52/0.1) VW-1 80℃ +Magnet Ring(φ10.5*L20*φ5.5mm) SRvùng mạ thiếc ghi nhãn
 46,R0202-01001,DC插头 Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) 铜镀镍 黑色绝缘环 UL94-V0 无印字 RoHS REACH 6P CP65 Genesis,DC Plug Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) Copper Plated Nickel Black Insulated Ring UL94-V0 No Logo RoHS REACH 6P CP65 Genesis,Cable DC Plug Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) Copper Plated Nickel Black Insulated Ring UL94-V0 không nhãn RoHS REACH 6P CP65 Genesis
 47,R0202-01002,DC插头 DC插头 2 PIN POWER PLUG (Genesis P/N: 173-10030-08) 灰色 备注：内含八件套 品牌：Genesis,Transformer Transformer EE17 PC95 or Equivalent Material Core 1150uH Five Winding+Core Ground RoHs REACH No Phosphorus GSEC-8124033 Brand: Jinmot,Transformer Transformer EE17 PC95 hoặc vật liệu tương đương Core 1150uH 5 Winding+Core Ground RoHs REACH Không chì GSEC-8124033 thương hiệu: Jinmot
 48,R0203-01001,变压器 Transformer EE17 PC95或同等材质磁芯 1150uH 五个绕组+磁芯接地 RoHs REACH 无红磷 GSEC-8124033 品牌：金莫特,Transformer Transformer EE17 PC95 or Equivalent Material Core 1150uH Five Winding+Core Ground RoHs REACH No Phosphorus GSEC-8124033 Brand: Jinmot,Transformer Transformer EE17 PC95 hoặc vật liệu tương đương Core 1150uH 5 Winding+Core Ground RoHs REACH Không chì GSEC-8124033 thương hiệu: Jinmot
 49,R0203-01002,变压器 PQ2620(6+4) 标签:EPS48R1-36 RoHS REACH 无红磷,Transformer PQ2620(6+4) Label:EPS48R1-36 RoHS REACH No Phosphorus,Transformer PQ2620(6+4) Nhãn hiệu:EPS48R1-36 RoHS REACH Không chì
-50,R0203-01003,变压器 A2672 6个绕组；磁芯:ATQ28/18.4 HC96 AE;154mm²,Transformer A2672 with 6 windings; Core: ATQ28/18.4 HC96 AE; 154mm²,变压器 A2672 có 6 đường chuyền; Mạng: ATQ28/18.4 HC96 AE; 154mm²
+50,R0203-01003,变压器 A2672 6个绕组；磁芯:ATQ28/18.4 HC96 AE;154mm²,Transformer A2672 with 6 windings; Core: ATQ28/18.4 HC96 AE; 154mm²,biến áp A2672 có 6 đường chuyền; Mạng: ATQ28/18.4 HC96 AE; 154mm²
 51,R0204-01001,PCB 单面板 22F 1OZ 56.6*38.3*1.2mm 94V-0 130℃ RoHS REACH 无红磷,PCB Single Layer 22F 1oz 56.6*38.3*1.2mm 94V-0 130℃ RoHS REACH without phosphorus,PCB Mặt phẳng đơn lẻ 22F 1oz 56.6*38.3*1.2mm 94V-0 130℃ RoHS REACH không có phốt
 52,R0204-01002,PCB 双面板 FR-4 1OZ 15*18*1.0mm 94V-0 130℃ RoHS REACH 无红磷,PCB Double Layer FR-4 1oz 15*18*1.0mm 94V-0 130℃ RoHS REACH without phosphorus,PCB Mặt phẳng kép FR-4 1oz 15*18*1.0mm 94V-0 130℃ RoHS REACH không có phốt
 53,R0204-01003,PCB 单面板 10Z 22F 126.5*52.4*1.2mm 94V-0 130℃ ROHS REACH 无红磷,PCB Single Layer 10Z 22F 126.5*52.4*1.2mm 94V-0 130℃ ROHS REACH without phosphorus,PCB Mặt phẳng đơn lẻ 10Z 22F 126.5*52.4*1.2mm 94V-0 130℃ ROHS REACH không có phốt
-54,R0204-01004,PCB1 FR-4 双面板 2OZ 板厚1.2mm±0.1mm 63.8*55*1.2mm(A2672  CD专用) 品牌:益欣,PCB1 Double Layer FR-4 2oz thickness 1.2mm±0.1mm 63.8*55*1.2mm (A2672 CD专用) Brand: Yixin,PCB1 Mặt phẳng kép FR-4 2oz độ dày 1.2mm±0.1mm 63.8*55*1.2mm (A2672 CD专用) Brand: Yixin
-55,R0204-01005,PCB2 FR-4 四面板 外2内1OZ 板厚1.2mm±0.1mm 22.5*32*1.2mm (A2672 CD专用) 品牌:益欣,PCB2 Double Layer FR-4 4oz thickness 1.2mm±0.1mm 22.5*32*1.2mm (A2672 CD专用) Brand: Yixin,PCB2 Mặt phẳng kép FR-4 4oz độ dày 1.2mm±0.1mm 22.5*32*1.2mm (A2672 CD专用) Brand: Yixin
+54,R0204-01004,PCB1 FR-4 双面板 2OZ 板厚1.2mm±0.1mm 63.8*55*1.2mm(A2672  CD专用) 品牌:益欣,PCB1 Double Layer FR-4 2oz thickness 1.2mm±0.1mm 63.8*55*1.2mm (A2672 CDdedicated) Brand: Yixin,PCB1 Mặt phẳng kép FR-4 2oz độ dày 1.2mm±0.1mm 63.8*55*1.2mm (A2672 CDchuyên dụng) Brand: Yixin
+55,R0204-01005,PCB2 FR-4 四面板 外2内1OZ 板厚1.2mm±0.1mm 22.5*32*1.2mm (A2672 CD专用) 品牌:益欣,PCB2 Double Layer FR-4 4oz thickness 1.2mm±0.1mm 22.5*32*1.2mm (A2672 CDdedicated) Brand: Yixin,PCB2 Mặt phẳng kép FR-4 4oz độ dày 1.2mm±0.1mm 22.5*32*1.2mm (A2672 CDchuyên dụng) Brand: Yixin
 56,R0205-01001,AC线 PCV 冷灰3C UL 18AWG 2*0.824mm2 L=1.8288M VW-1 105℃ 300V SR尾  NISPT-2 RoHS REACH 6P CP65 SR镀锡处打端子 鑫百汇,"AC Line PCV Cold Grey 3C UL 18AWG 2*0.824mm² L=1.8288M VW-1 105℃ 300V SR tail NISPT-2 RoHS REACH 6P CP65 SR Tin-plated end of the terminal, Xingbaihu","AC dây PCV Nhiệt lạnh 3C UL 18AWG 2*0.824mm² L=1.8288M VW-1 105℃ 300V SR đuôi  NISPT-2 RoHS REACH 6P CP65 SR gáy đầu của dây dẫn, Xingbaihu"
 57,R0206-01001,共模电感 SQ1010 立式 12mH min MX-SQ101000G140 品牌：美希,Common Mode Inductor SQ1010 Vertical 12mH min MX-SQ101000G140 Brand: Meixi,Chống nhiễu điện cảm SQ1010 Mặt đứng 12mH min MX-SQ101000G140 Brand: Meixi
-58,R0206-01002,共模电感 HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) 三层绝缘F级 加套管 品牌:泓泰,Common Mode Inductor HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) Three-layer insulation F grade with bushing Brand: Hongtai,Chống nhiễu điện cảm HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) 三层绝缘 F grade với bộ phận phụ trợ Brand: Hongtai
-59,R0206-01003,共模电感 HT9-5-3-350uH Min (A2672) 三层绝缘F级 包胶带 品牌:泓泰,Common Mode Inductor HT9-5-3-350uH Min (A2672) Three-layer insulation F grade with tape Brand: Hongtai,Chống nhiễu điện cảm HT9-5-3-350uH Min (A2672) 三层绝缘 F grade với bộ phận phụ trợ Brand: Hongtai
+58,R0206-01002,共模电感 HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) 三层绝缘F级 加套管 品牌:泓泰,Common Mode Inductor HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) Three-layer insulation F grade with bushing Brand: Hongtai,Chống nhiễu điện cảm HT16*9*5-3.6mH Min φ0.75*19.5TS (A2672) cách điện ba lớp F grade với bộ phận phụ trợ Brand: Hongtai
+59,R0206-01003,共模电感 HT9-5-3-350uH Min (A2672) 三层绝缘F级 包胶带 品牌:泓泰,Common Mode Inductor HT9-5-3-350uH Min (A2672) Three-layer insulation F grade with tape Brand: Hongtai,Chống nhiễu điện cảm HT9-5-3-350uH Min (A2672) cách điện ba lớp F grade với bộ phận phụ trợ Brand: Hongtai
 60,R0207-01001,光电耦合器 EL817 200≤CTR≤400 脚距=10mm DIP-4 无卤 品牌：亿光,Photocoupler EL817 200≤CTR≤400 Lead spacing=10mm DIP-4 Halogen-free Brand: Yilun,Cơ hợp lưu ánh sáng EL817 200≤CTR≤400 Khoảng cách đầu=10mm DIP-4 không có phốt Brand: Yilun
 61,R0208-01001,插件固态电容 E-CAP 470uF 20V 105℃ Ф6.3*12mm PIN距2.5mm 脚长3.2±0.3mm RoHS REACH 无红磷 PBC020M471E120RR1B 品牌：绿宝石,Surface Mount Solid State Capacitor E-CAP 470uF 20V 105℃ Ф6.3*12mm Pin spacing 2.5mm Lead length 3.2±0.3mm RoHS REACH without red phosphorus PBC020M471E120RR1B ,Cáp điện tử mặt phẳng không gỉ E-CAP 470uF 20V 105℃ Ф6.3*12mm Khoảng cách đầu 2.5mm Dài đầu 3.2±0.3mm RoHS REACH không có phốt PBC020M471E120RR1B Brand: Green G
 62,R0208-01002,插件固态电容 820uF 20V ±20% 105℃ Ф8*16mm P:3.5mm 脚长：3±0.3mm 20000hrs RC=5000mA(Output RC below 16V meets 7000mA)(PBL020M821F160C41B) RoHS REACH 无红磷 BL系列 品牌：绿宝石/BERYL,Surface Mount Solid State Capacitor 820uF 20V ±20% 105℃ Ф8*16mm P:3.5mm Lead length:3±0.3mm 20000hrs RC=5000mA(Output RC below 16V meets 7000mA)(PBL020M821F160C,Cáp điện tử mặt phẳng không gỉ 820uF 20V ±20% 105℃ Ф8*16mm P:3.5mm Dài đầu:3±0.3mm 20000hrs RC=5000mA(Output RC dưới 16V đáp ứng 7000mA)(PBL020M821F160C41B) RoH
@@ -87,46 +87,46 @@ id,code,name_zh,name_en,name_vi
 87,R0210-01019,贴片电阻 150Ω ±5% 0805 1/8W 0805W8J0151T5E 无卤 品牌：厚声,"Surface Mount Resistor 150Ω ±5% 0805 1/8W 0805W8J0151T5E Halogen-free, Brand: Huosheng","Resistor 150Ω ±5% 0805 1/8W 0805W8J0151T5E không khói, thương hiệu: Huosheng"
 88,R0210-01020,贴片电阻 0.82Ω ±1% 1206 1/4W 1206W4F820LT5E 无卤 品牌：厚声,"Surface Mount Resistor 0.82Ω ±1% 1206 1/4W 1206W4F820LT5E Halogen-free, Brand: Huosheng","Resistor 0.82Ω ±1% 1206 1/4W 1206W4F820LT5E không khói, thương hiệu: Huosheng"
 89,R0210-01021,贴片电阻 1KΩ ±1% 0603 1/10W 0603WAF1001T5E 无卤 品牌：厚声,"Surface Mount Resistor 1KΩ ±1% 0603 1/10W 0603WAF1001T5E Halogen-free, Brand: Huosheng","Resistor 1KΩ ±1% 0603 1/10W 0603WAF1001T5E không khói, thương hiệu: Huosheng"
-90,R0210-01022,贴片电阻 0Ω ±1% 0805 1/8W 0805W8F0000T5E 无卤 品牌：厚声,Surface Mount Resistor 0Ω ±1% 0805 1/8W 0805W8F0000T5E Halogen-Free Brand: ThickSound,电阻 0Ω ±1% 0805 1/8W 0805W8F0000T5E 无卤 品牌：厚声
-91,R0210-01023,贴片电阻 10Ω ±5% 0805 1/8W 0805W8J0100T5E 无卤 品牌:厚声,Surface Mount Resistor 10Ω ±5% 0805 1/8W 0805W8J0100T5E Halogen-Free Brand: ThickSound,电阻 10Ω ±5% 0805 1/8W 0805W8J0100T5E 无卤 品牌：厚声
-92,R0210-01024,贴片电阻 100Ω ±5% 0805 1/8W 0805W8J0101T5E 无卤 品牌：厚声,Surface Mount Resistor 100Ω ±5% 0805 1/8W 0805W8F2003T5E Halogen-Free Brand: ThickSound,电阻 100Ω ±5% 0805 1/8W 0805W8F2003T5E 无卤 品牌：厚声
-93,R0210-01025,贴片电阻 200KΩ ±1% 0805 1/8W 0805W8F2003T5E 无卤 品牌:厚声,Surface Mount Resistor 200KΩ ±1% 0805 1/8W 0805W8F2003T5E Halogen-Free Brand: ThickSound,电阻 200KΩ ±1% 0805 1/8W 0805W8F2003T5E 无卤 品牌：厚声
-94,R0210-01026,贴片电阻 36Ω ±1% 0805 1/8W 0805W8F360JT5E 无卤 品牌:厚声,Surface Mount Resistor 36Ω ±1% 0805 1/8W 0805W8F360JT5E Halogen-Free Brand: ThickSound,电阻 36Ω ±1% 0805 1/8W 0805W8F360JT5E 无卤 品牌：厚声
-95,R0210-01027,贴片电阻 120Ω ±5% 0805 1/8W 0805W8J0121T5E 无卤 品牌：厚声,Surface Mount Resistor 120Ω ±5% 0805 1/8W 0805W8J0121T5E Halogen-Free Brand: ThickSound,电阻 120Ω ±5% 0805 1/8W 0805W8J0121T5E 无卤 品牌：厚声
-96,R0210-01028,贴片电阻 1.1Ω ±1% 1206 1/4W 1206W4F110KT5E 无卤 品牌:厚声,Surface Mount Resistor 1.1Ω ±1% 1206 1/4W 1206W4F110KT5E Halogen-Free Brand: ThickSound,电阻 1.1Ω ±1% 1206 1/4W 1206W4F110KT5E 无卤 品牌：厚声
-97,R0210-01029,贴片电阻 10Ω ±5% 1206 1/4W 1206W4J0100T5E 无卤 品牌:厚声,Surface Mount Resistor 10Ω ±5% 1206 1/4W 1206W4J0100T5E Halogen-Free Brand: ThickSound,电阻 10Ω ±5% 1206 1/4W 1206W4J0100T5E 无卤 品牌：厚声
-98,R0210-01030,贴片电阻 30Ω ±5% 1206 1/4W 1206W4J0300T5E 无卤 品牌：厚声,Surface Mount Resistor 30Ω ±5% 1206 1/4W 1206W4J0300T5E Halogen-Free Brand: ThickSound,电阻 30Ω ±5% 1206 1/4W 1206W4J0300T5E 无卤 品牌：厚声
-99,R0210-01031,贴片电阻 300Ω ±5% 1206 1/4W 1206W4J0301T5E 无卤 品牌：厚声,Surface Mount Resistor 300Ω ±5% 1206 1/4W 1206W4J0301T5E Halogen-Free Brand: ThickSound,电阻 300Ω ±5% 1206 1/4W 1206W4J0301T5E 无卤 品牌：厚声
-100,R0210-01032,贴片电阻 150Ω ±5% 1206 1/4W 1206W4J0151T5E 无卤 品牌：厚声,Surface Mount Resistor 150Ω ±5% 1206 1/4W 1206W4J0151T5E Halogen-Free Brand: ThickSound,电阻 150Ω ±5% 1206 1/4W 1206W4J0151T5E 无卤 品牌：厚声
-101,R0210-01033,贴片电阻 4.7MΩ ±5% 1206 1/4W 1206W4J0475T5E 无卤 品牌：厚声,Surface Mount Resistor 4.7MΩ ±5% 1206 1/4W 1206W4J0475T5E Halogen-Free Brand: ThickSound,电阻 4.7MΩ ±5% 1206 1/4W 1206W4J0475T5E 无卤 品牌：厚声
-102,R0210-01034,贴片电阻 270KΩ ±5% 1206 1/4W 1206W4J0274T5E 无卤 品牌：厚声,Surface Mount Resistor 270KΩ ±5% 1206 1/4W 1206W4J0274T5E Halogen-Free Brand: ThickSound,电阻 270KΩ ±5% 1206 1/4W 1206W4J0274T5E 无卤 品牌：厚声
-103,R0210-01035,贴片电阻 15MΩ ±5% 1206 1/4W 1206W4J0156T5E 无卤 品牌：厚声,Surface Mount Resistor 15MΩ ±5% 1206 1/4W 1206W4J0156T5E Halogen-Free Brand: ThickSound,电阻 15MΩ ±5% 1206 1/4W 1206W4J0156T5E 无卤 品牌：厚声
-104,R0210-01036,贴片电阻 2.4KΩ ±1% 0603 1/10W 0603WAF2401T5E 无卤 品牌：厚声,Surface Mount Resistor 2.4KΩ ±1% 0603 1/10W 0603WAF2401T5E Halogen-Free Brand: ThickSound,电阻 2.4KΩ ±1% 0603 1/10W 0603WAF2401T5E 无卤 品牌：厚声
-105,R0210-01037,贴片电阻 75KΩ ±1% 0603 1/10W 0603WAF7502T5E 无卤 品牌:厚声,Surface Mount Resistor 75KΩ ±1% 0603 1/10W 0603WAF7502T5E Halogen-Free Brand: ThickSound,电阻 75KΩ ±1% 0603 1/10W 0603WAF7502T5E 无卤 品牌：厚声
-106,R0210-01038,贴片电阻 10.5KΩ ±1% 0603 1/10W 0603WAF1052T5E 无卤 品牌：厚声,Surface Mount Resistor 10.5KΩ ±1% 0603 1/10W 0603WAF1052T5E Halogen-Free Brand: ThickSound,电阻 10.5KΩ ±1% 0603 1/10W 0603WAF1052T5E 无卤 品牌：厚声
-107,R0210-01039,贴片电阻 39KΩ ±1% 0603 1/10W 0603WAF3902T5E 无卤 品牌：厚声,Surface Mount Resistor 39KΩ ±1% 0603 1/10W 0603WAF3902T5E Halogen-Free Brand: ThickSound,电阻 39KΩ ±1% 0603 1/10W 0603WAF3902T5E 无卤 品牌：厚声
-108,R0210-01040,贴片电阻 560Ω ±5% 0603 1/10W 0603WAJ0561T5E 无卤 品牌：厚声,Surface Mount Resistor 560Ω ±5% 0603 1/10W 0603WAJ0561T5E Halogen-Free Brand: ThickSound,电阻 560Ω ±5% 0603 1/10W 0603WAJ0561T5E 无卤 品牌：厚声
-109,R0210-01041,贴片电阻 2.2KΩ ±5% 0603 1/10W 0603WAJ0222T5E 无卤 品牌：厚声,Surface Mount Resistor 2.2KΩ ±5% 0603 1/10W 0603WAJ0222T5E Halogen-Free Brand: ThickSound,电阻 2.2KΩ ±5% 0603 1/10W 0603WAJ0222T5E 无卤 品牌：厚声
-110,R0210-01042,贴片电阻 0Ω ±5% 1206 1/4W 1206W4J0000T5E 无卤 品牌：厚声,Surface Mount Resistor 0Ω ±5% 1206 1/4W 1206W4J0000T5E Halogen-Free Brand: ThickSound,电阻 0Ω ±5% 1206 1/4W 1206W4J0000T5E 无卤 品牌：厚声
-111,R0210-01043,贴片电阻 5.1KΩ ±1% 1206 1/4W 无卤 品牌：国巨,Surface Mount Resistor 5.1KΩ ±1% 1206 1/4W Halogen-Free Brand: Guomai,电阻 5.1KΩ ±1% 1206 1/4W 无卤 品牌：国巨
-112,R0210-01044,贴片电阻 200Ω ±5% 1206 1/4W RC1206JR-07200RL 无卤 品牌：国巨,Surface Mount Resistor 200Ω ±5% 1206 1/4W RC1206JR-07200RL Halogen-Free Brand: Guomai,电阻 200Ω ±5% 1206 1/4W RC1206JR-07200RL 无卤 品牌：国巨
-113,R0210-01045,贴片电阻 620KΩ ±5% 1206 1/4W 无卤 品牌：国巨,Surface Mount Resistor 620KΩ ±5% 1206 1/4W Halogen-Free Brand: Guomai,电阻 620KΩ ±5% 1206 1/4W 无卤 品牌：国巨
-114,R0210-01046,贴片电阻 0.68Ω ±1% 1206 1/4W 1206W4F680LT5E 无卤 品牌：厚声,Surface Mount Resistor 0.68Ω ±1% 1206 1/4W 1206W4F680LT5E Halogen-Free Brand: ThickSound,电阻 0.68Ω ±1% 1206 1/4W 1206W4F680LT5E 无卤 品牌：厚声
-115,R0210-01047,贴片电阻 2.7KΩ ±5% 1206 1/4W 无卤 品牌:国巨,Surface Mount Resistor 2.7KΩ ±1% 1206 1/4W Halogen-Free Brand: ThickSound,电阻 2.7KΩ ±1% 1206 1/4W 无卤 品牌：厚声
-116,R0210-01048,贴片电阻 10Ω ±5% 0603 1/10W 0603WAJ0100T5E 无卤 品牌:厚声,Surface Mount Resistor 10Ω ±5% 0603 1/10W 0603WAJ0100T5E Halogen-Free Brand: ThickSound,电阻 10Ω ±5% 0603 1/10W 0603WAJ0100T5E 无卤 品牌：厚声
-117,R0210-01049,贴片电阻 3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E 无卤 品牌：厚声,Surface Mount Resistor 3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E Halogen-Free Brand: ThickSound,电阻 3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E 无卤 品牌：厚声
-118,R0210-01050,贴片电阻 7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L 无卤 品牌:国巨,Surface Mount Resistor 7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L Halogen-Free Brand: Guomai,电阻 7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L 无卤 品牌：国巨
-119,R0210-01051,贴片电阻 100KΩ ±1% 0603 1/10W 0603WAF1003T5E  无卤 品牌：厚声,Surface Mount Resistor 100KΩ ±1% 0603 1/10W 0603WAF1003T5E Halogen-Free Brand: ThickSound,电阻 100KΩ ±1% 0603 1/10W 0603WAF1003T5E 无卤 品牌：厚声
-120,R0210-01052,贴片电阻 120KΩ ±1% 0603 1/10W 0603WAF1203T5E 无卤 品牌：厚声,Surface Mount Resistor 120KΩ ±1% 0603 1/10W 0603WAF1203T5E Halogen-Free Brand: ThickSound,电阻 120KΩ ±1% 0603 1/10W 0603WAF1203T5E 无卤 品牌：厚声
-121,R0210-01054,贴片电阻 0Ω ±1% 0603 1/10W 0603WAF0000T5E 无卤 品牌：厚声,Surface Mount Resistor 0Ω ±1% 0603 1/10W 0603WAF0000T5E Halogen-Free Brand: ThickSound,电阻 0Ω ±1% 0603 1/10W 0603WAF0000T5E 无卤 品牌：厚声
-122,R0210-01055,贴片电阻 100KΩ ±1% 0402 1/16W 0402WGF1003TCE 无卤 品牌:厚声,Surface Mount Resistor 100KΩ ±1% 0402 1/16W 0402WGF1003TCE Halogen-Free Brand: ThickSound,电阻 100KΩ ±1% 0402 1/16W 0402WGF1003TCE 无卤 品牌：厚声
-123,R0210-01056,贴片电阻 100Ω ±1% 0402 1/16W 0402WGF1000TCE 无卤 品牌：厚声,Surface Mount Resistor 100Ω ±1% 0402 1/16W 0402WGF1000TCE Halogen-Free Brand: ThickSound,电阻 100Ω ±1% 0402 1/16W 0402WGF1000TCE 无卤 品牌：厚声
-124,R0210-01057,贴片电阻 33Ω ±1% 0402 1/16W 无卤 品牌：厚声,Surface Mount Resistor 33Ω ±1% 0402 1/16W Halogen-Free Brand: ThickSound,电阻 33Ω ±1% 0402 1/16W 无卤 品牌：厚声
-125,R0210-01058,贴片电阻 68Ω ±1% 0402 1/16W 无卤 品牌：厚声,Surface Mount Resistor 68Ω ±1% 0402 1/16W Halogen-Free Brand: ThickSound,电阻 68Ω ±1% 0402 1/16W 无卤 品牌：厚声
-126,R0211-01001,贴片热敏电阻 NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT 无卤 品牌：仙桥,NTC Thermistor NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT Halogen-Free Brand: Xianqiao,热敏电阻 NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT 无卤 品牌：仙桥
-127,R0211-01002,热敏电阻 HNP2X5MIBC35Q 2.5Ω 5A 内弯脚 F5.0*0.8mm L：3.5±0.5mm 绿色 品牌:至敏,HNP2X5MIBC35Q 2.5Ω 5A Inner Bend Foot F5.0*0.8mm L: 3.5±0.5mm Green Brand: Zhi Sensing,热敏电阻 HNP2X5MIBC35Q 2.5Ω 5A 内弯脚 F5.0*0.8mm L: 3.5±0.5mm 绿色 品牌:至敏
-128,R0211-01003,贴片热敏电阻 NTC 100KΩ ±1% 0603 B4100 品牌:仙桥,NTC Thermistor NTC 100KΩ ±1% 0603 B4100 Brand: Xianqiao,热敏电阻 NTC 100KΩ ±1% 0603 B4100 品牌:仙桥
-129,R0212-01001,贴片电容 100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 无卤 品牌：国巨,Surface Mount Capacitor 100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 Halogen-Free Brand: Guomai,电容 100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 无卤 品牌：国巨
+90,R0210-01022,贴片电阻 0Ω ±1% 0805 1/8W 0805W8F0000T5E 无卤 品牌：厚声,Surface Mount Resistor 0Ω ±1% 0805 1/8W 0805W8F0000T5E Halogen-Free Brand: ThickSound,điện trở 0Ω ±1% 0805 1/8W 0805W8F0000T5E không halogen nhãn hiệu：Housheng
+91,R0210-01023,贴片电阻 10Ω ±5% 0805 1/8W 0805W8J0100T5E 无卤 品牌:厚声,Surface Mount Resistor 10Ω ±5% 0805 1/8W 0805W8J0100T5E Halogen-Free Brand: ThickSound,điện trở 10Ω ±5% 0805 1/8W 0805W8J0100T5E không halogen nhãn hiệu：Housheng
+92,R0210-01024,贴片电阻 100Ω ±5% 0805 1/8W 0805W8J0101T5E 无卤 品牌：厚声,Surface Mount Resistor 100Ω ±5% 0805 1/8W 0805W8F2003T5E Halogen-Free Brand: ThickSound,điện trở 100Ω ±5% 0805 1/8W 0805W8F2003T5E không halogen nhãn hiệu：Housheng
+93,R0210-01025,贴片电阻 200KΩ ±1% 0805 1/8W 0805W8F2003T5E 无卤 品牌:厚声,Surface Mount Resistor 200KΩ ±1% 0805 1/8W 0805W8F2003T5E Halogen-Free Brand: ThickSound,điện trở 200KΩ ±1% 0805 1/8W 0805W8F2003T5E không halogen nhãn hiệu：Housheng
+94,R0210-01026,贴片电阻 36Ω ±1% 0805 1/8W 0805W8F360JT5E 无卤 品牌:厚声,Surface Mount Resistor 36Ω ±1% 0805 1/8W 0805W8F360JT5E Halogen-Free Brand: ThickSound,điện trở 36Ω ±1% 0805 1/8W 0805W8F360JT5E không halogen nhãn hiệu：Housheng
+95,R0210-01027,贴片电阻 120Ω ±5% 0805 1/8W 0805W8J0121T5E 无卤 品牌：厚声,Surface Mount Resistor 120Ω ±5% 0805 1/8W 0805W8J0121T5E Halogen-Free Brand: ThickSound,điện trở 120Ω ±5% 0805 1/8W 0805W8J0121T5E không halogen nhãn hiệu：Housheng
+96,R0210-01028,贴片电阻 1.1Ω ±1% 1206 1/4W 1206W4F110KT5E 无卤 品牌:厚声,Surface Mount Resistor 1.1Ω ±1% 1206 1/4W 1206W4F110KT5E Halogen-Free Brand: ThickSound,điện trở 1.1Ω ±1% 1206 1/4W 1206W4F110KT5E không halogen nhãn hiệu：Housheng
+97,R0210-01029,贴片电阻 10Ω ±5% 1206 1/4W 1206W4J0100T5E 无卤 品牌:厚声,Surface Mount Resistor 10Ω ±5% 1206 1/4W 1206W4J0100T5E Halogen-Free Brand: ThickSound,điện trở 10Ω ±5% 1206 1/4W 1206W4J0100T5E không halogen nhãn hiệu：Housheng
+98,R0210-01030,贴片电阻 30Ω ±5% 1206 1/4W 1206W4J0300T5E 无卤 品牌：厚声,Surface Mount Resistor 30Ω ±5% 1206 1/4W 1206W4J0300T5E Halogen-Free Brand: ThickSound,điện trở 30Ω ±5% 1206 1/4W 1206W4J0300T5E không halogen nhãn hiệu：Housheng
+99,R0210-01031,贴片电阻 300Ω ±5% 1206 1/4W 1206W4J0301T5E 无卤 品牌：厚声,Surface Mount Resistor 300Ω ±5% 1206 1/4W 1206W4J0301T5E Halogen-Free Brand: ThickSound,điện trở 300Ω ±5% 1206 1/4W 1206W4J0301T5E không halogen nhãn hiệu：Housheng
+100,R0210-01032,贴片电阻 150Ω ±5% 1206 1/4W 1206W4J0151T5E 无卤 品牌：厚声,Surface Mount Resistor 150Ω ±5% 1206 1/4W 1206W4J0151T5E Halogen-Free Brand: ThickSound,điện trở 150Ω ±5% 1206 1/4W 1206W4J0151T5E không halogen nhãn hiệu：Housheng
+101,R0210-01033,贴片电阻 4.7MΩ ±5% 1206 1/4W 1206W4J0475T5E 无卤 品牌：厚声,Surface Mount Resistor 4.7MΩ ±5% 1206 1/4W 1206W4J0475T5E Halogen-Free Brand: ThickSound,điện trở 4.7MΩ ±5% 1206 1/4W 1206W4J0475T5E không halogen nhãn hiệu：Housheng
+102,R0210-01034,贴片电阻 270KΩ ±5% 1206 1/4W 1206W4J0274T5E 无卤 品牌：厚声,Surface Mount Resistor 270KΩ ±5% 1206 1/4W 1206W4J0274T5E Halogen-Free Brand: ThickSound,điện trở 270KΩ ±5% 1206 1/4W 1206W4J0274T5E không halogen nhãn hiệu：Housheng
+103,R0210-01035,贴片电阻 15MΩ ±5% 1206 1/4W 1206W4J0156T5E 无卤 品牌：厚声,Surface Mount Resistor 15MΩ ±5% 1206 1/4W 1206W4J0156T5E Halogen-Free Brand: ThickSound,điện trở 15MΩ ±5% 1206 1/4W 1206W4J0156T5E không halogen nhãn hiệu：Housheng
+104,R0210-01036,贴片电阻 2.4KΩ ±1% 0603 1/10W 0603WAF2401T5E 无卤 品牌：厚声,Surface Mount Resistor 2.4KΩ ±1% 0603 1/10W 0603WAF2401T5E Halogen-Free Brand: ThickSound,điện trở 2.4KΩ ±1% 0603 1/10W 0603WAF2401T5E không halogen nhãn hiệu：Housheng
+105,R0210-01037,贴片电阻 75KΩ ±1% 0603 1/10W 0603WAF7502T5E 无卤 品牌:厚声,Surface Mount Resistor 75KΩ ±1% 0603 1/10W 0603WAF7502T5E Halogen-Free Brand: ThickSound,điện trở 75KΩ ±1% 0603 1/10W 0603WAF7502T5E không halogen nhãn hiệu：Housheng
+106,R0210-01038,贴片电阻 10.5KΩ ±1% 0603 1/10W 0603WAF1052T5E 无卤 品牌：厚声,Surface Mount Resistor 10.5KΩ ±1% 0603 1/10W 0603WAF1052T5E Halogen-Free Brand: ThickSound,điện trở 10.5KΩ ±1% 0603 1/10W 0603WAF1052T5E không halogen nhãn hiệu：Housheng
+107,R0210-01039,贴片电阻 39KΩ ±1% 0603 1/10W 0603WAF3902T5E 无卤 品牌：厚声,Surface Mount Resistor 39KΩ ±1% 0603 1/10W 0603WAF3902T5E Halogen-Free Brand: ThickSound,điện trở 39KΩ ±1% 0603 1/10W 0603WAF3902T5E không halogen nhãn hiệu：Housheng
+108,R0210-01040,贴片电阻 560Ω ±5% 0603 1/10W 0603WAJ0561T5E 无卤 品牌：厚声,Surface Mount Resistor 560Ω ±5% 0603 1/10W 0603WAJ0561T5E Halogen-Free Brand: ThickSound,điện trở 560Ω ±5% 0603 1/10W 0603WAJ0561T5E không halogen nhãn hiệu：Housheng
+109,R0210-01041,贴片电阻 2.2KΩ ±5% 0603 1/10W 0603WAJ0222T5E 无卤 品牌：厚声,Surface Mount Resistor 2.2KΩ ±5% 0603 1/10W 0603WAJ0222T5E Halogen-Free Brand: ThickSound,điện trở 2.2KΩ ±5% 0603 1/10W 0603WAJ0222T5E không halogen nhãn hiệu：Housheng
+110,R0210-01042,贴片电阻 0Ω ±5% 1206 1/4W 1206W4J0000T5E 无卤 品牌：厚声,Surface Mount Resistor 0Ω ±5% 1206 1/4W 1206W4J0000T5E Halogen-Free Brand: ThickSound,điện trở 0Ω ±5% 1206 1/4W 1206W4J0000T5E không halogen nhãn hiệu：Housheng
+111,R0210-01043,贴片电阻 5.1KΩ ±1% 1206 1/4W 无卤 品牌：国巨,Surface Mount Resistor 5.1KΩ ±1% 1206 1/4W Halogen-Free Brand: Guomai,điện trở 5.1KΩ ±1% 1206 1/4W không halogen nhãn hiệu：Yageo
+112,R0210-01044,贴片电阻 200Ω ±5% 1206 1/4W RC1206JR-07200RL 无卤 品牌：国巨,Surface Mount Resistor 200Ω ±5% 1206 1/4W RC1206JR-07200RL Halogen-Free Brand: Guomai,điện trở 200Ω ±5% 1206 1/4W RC1206JR-07200RL không halogen nhãn hiệu：Yageo
+113,R0210-01045,贴片电阻 620KΩ ±5% 1206 1/4W 无卤 品牌：国巨,Surface Mount Resistor 620KΩ ±5% 1206 1/4W Halogen-Free Brand: Guomai,điện trở 620KΩ ±5% 1206 1/4W không halogen nhãn hiệu：Yageo
+114,R0210-01046,贴片电阻 0.68Ω ±1% 1206 1/4W 1206W4F680LT5E 无卤 品牌：厚声,Surface Mount Resistor 0.68Ω ±1% 1206 1/4W 1206W4F680LT5E Halogen-Free Brand: ThickSound,điện trở 0.68Ω ±1% 1206 1/4W 1206W4F680LT5E không halogen nhãn hiệu：Housheng
+115,R0210-01047,贴片电阻 2.7KΩ ±5% 1206 1/4W 无卤 品牌:国巨,Surface Mount Resistor 2.7KΩ ±1% 1206 1/4W Halogen-Free Brand: ThickSound,điện trở 2.7KΩ ±1% 1206 1/4W không halogen nhãn hiệu：Housheng
+116,R0210-01048,贴片电阻 10Ω ±5% 0603 1/10W 0603WAJ0100T5E 无卤 品牌:厚声,Surface Mount Resistor 10Ω ±5% 0603 1/10W 0603WAJ0100T5E Halogen-Free Brand: ThickSound,điện trở 10Ω ±5% 0603 1/10W 0603WAJ0100T5E không halogen nhãn hiệu：Housheng
+117,R0210-01049,贴片电阻 3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E 无卤 品牌：厚声,Surface Mount Resistor 3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E Halogen-Free Brand: ThickSound,điện trở 3.6KΩ ±1% 0603 1/10W 0603WAF3601T5E không halogen nhãn hiệu：Housheng
+118,R0210-01050,贴片电阻 7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L 无卤 品牌:国巨,Surface Mount Resistor 7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L Halogen-Free Brand: Guomai,điện trở 7.5KΩ ±1% 0603 1/10W RC0603FR-077K5L không halogen nhãn hiệu：Yageo
+119,R0210-01051,贴片电阻 100KΩ ±1% 0603 1/10W 0603WAF1003T5E  无卤 品牌：厚声,Surface Mount Resistor 100KΩ ±1% 0603 1/10W 0603WAF1003T5E Halogen-Free Brand: ThickSound,điện trở 100KΩ ±1% 0603 1/10W 0603WAF1003T5E không halogen nhãn hiệu：Housheng
+120,R0210-01052,贴片电阻 120KΩ ±1% 0603 1/10W 0603WAF1203T5E 无卤 品牌：厚声,Surface Mount Resistor 120KΩ ±1% 0603 1/10W 0603WAF1203T5E Halogen-Free Brand: ThickSound,điện trở 120KΩ ±1% 0603 1/10W 0603WAF1203T5E không halogen nhãn hiệu：Housheng
+121,R0210-01054,贴片电阻 0Ω ±1% 0603 1/10W 0603WAF0000T5E 无卤 品牌：厚声,Surface Mount Resistor 0Ω ±1% 0603 1/10W 0603WAF0000T5E Halogen-Free Brand: ThickSound,điện trở 0Ω ±1% 0603 1/10W 0603WAF0000T5E không halogen nhãn hiệu：Housheng
+122,R0210-01055,贴片电阻 100KΩ ±1% 0402 1/16W 0402WGF1003TCE 无卤 品牌:厚声,Surface Mount Resistor 100KΩ ±1% 0402 1/16W 0402WGF1003TCE Halogen-Free Brand: ThickSound,điện trở 100KΩ ±1% 0402 1/16W 0402WGF1003TCE không halogen nhãn hiệu：Housheng
+123,R0210-01056,贴片电阻 100Ω ±1% 0402 1/16W 0402WGF1000TCE 无卤 品牌：厚声,Surface Mount Resistor 100Ω ±1% 0402 1/16W 0402WGF1000TCE Halogen-Free Brand: ThickSound,điện trở 100Ω ±1% 0402 1/16W 0402WGF1000TCE không halogen nhãn hiệu：Housheng
+124,R0210-01057,贴片电阻 33Ω ±1% 0402 1/16W 无卤 品牌：厚声,Surface Mount Resistor 33Ω ±1% 0402 1/16W Halogen-Free Brand: ThickSound,điện trở 33Ω ±1% 0402 1/16W không halogen nhãn hiệu：Housheng
+125,R0210-01058,贴片电阻 68Ω ±1% 0402 1/16W 无卤 品牌：厚声,Surface Mount Resistor 68Ω ±1% 0402 1/16W Halogen-Free Brand: ThickSound,điện trở 68Ω ±1% 0402 1/16W không halogen nhãn hiệu：Housheng
+126,R0211-01001,贴片热敏电阻 NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT 无卤 品牌：仙桥,NTC Thermistor NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT Halogen-Free Brand: Xianqiao,điện trở nhiệt NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT không halogen nhãn hiệu：Xianqiao
+127,R0211-01002,热敏电阻 HNP2X5MIBC35Q 2.5Ω 5A 内弯脚 F5.0*0.8mm L：3.5±0.5mm 绿色 品牌:至敏,HNP2X5MIBC35Q 2.5Ω 5A Inner Bend Foot F5.0*0.8mm L: 3.5±0.5mm Green Brand: Zhi Sensing,điện trở nhiệt HNP2X5MIBC35Q 2.5Ω 5A chân cong trong F5.0*0.8mm L: 3.5±0.5mm màu xanh nhãn hiệu:nhạy
+128,R0211-01003,贴片热敏电阻 NTC 100KΩ ±1% 0603 B4100 品牌:仙桥,NTC Thermistor NTC 100KΩ ±1% 0603 B4100 Brand: Xianqiao,điện trở nhiệt NTC 100KΩ ±1% 0603 B4100 nhãn hiệu:Xianqiao
+129,R0212-01001,贴片电容 100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 无卤 品牌：国巨,Surface Mount Capacitor 100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 Halogen-Free Brand: Guomai,tụ điện 100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 không halogen nhãn hiệu：Yageo
 130,R0212-01002,贴片电容 470pF ±10％ 50V X7R 0603 471K CC0603KRX7R9BB471 无卤 品牌：国巨,"Surface Mount Capacitor 470pF ±10% 50V X7R 0603 471K CC0603KRX7R9BB471 Halogen-Free, Brand: KCG","Đèn capacitor mặt phẳng 470pF ±10% 50V X7R 0603 471K CC0603KRX7R9BB471 Halogen-Free, thương hiệu: KCG"
 131,R0212-01003,贴片电容 470pF ±10％ 100V X7R 0603 471K  CC0603KRX7R0BB471 无卤 品牌：国巨,"Surface Mount Capacitor 470pF ±10% 100V X7R 0603 471K CC0603KRX7R0BB471 Halogen-Free, Brand: KCG","Đèn capacitor mặt phẳng 470pF ±10% 100V X7R 0603 471K CC0603KRX7R0BB471 Halogen-Free, thương hiệu: KCG"
 132,R0212-01004,贴片电容 10nF ±10％ 50V X7R 0603 103K (0.01uF) CC0603KRX7R9BB103 无卤 品牌：国巨,"Surface Mount Capacitor 10nF ±10% 50V X7R 0603 103K (0.01uF) CC0603KRX7R9BB103 Halogen-Free, Brand: KCG","Đèn capacitor mặt phẳng 10nF ±10% 50V X7R 0603 103K (0.01uF) CC0603KRX7R9BB103 Halogen-Free, thương hiệu: KCG"
@@ -161,11 +161,11 @@ id,code,name_zh,name_en,name_vi
 161,R0213-01001,贴片桥堆 ABS1510 1000V 1.5A ABS REACH RoHS 无红磷 品牌：平伟,"Surface Mount Bridge 1510 1000V 1.5A ABS REACH RoHS Halogen-Free, Brand: Pingwei","Đèn bridge mặt phẳng ABS1510 1000V 1.5A ABS REACH RoHS Halogen-Free, thương hiệu: Pingwei"
 162,R0214-01001,贴片二极管 A7(1N4007 1A 1000V) SOD-123FL 品牌：晶导微,Surface Mount Diode A7(1N4007 1A 1000V) SOD-123FL Brand: Jinggang Micro,Đèn diode mặt phẳng A7(1N4007 1A 1000V) SOD-123FL thương hiệu: Jinggang Micro
 163,R0214-01002,贴片二极管 BAV21WS 250V SOD-323 品牌:晶导微,Surface Mount Diode BAV21WS 250V SOD-323 Brand: Jinggang Micro,Đèn diode mặt phẳng BAV21WS 250V SOD-323 thương hiệu: Jinggang Micro
-164,R0214-01003,贴片二极管 SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS 无红磷 晶导,Surface Mount Diode SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS Halogen-Free 晶导,Đèn diode mặt phẳng SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS Halogen-Free 晶导
-165,R0214-01004,贴片二极管 SMD二极管SMD DIODE 1N4148WS 0.3A 100V SOD-323 编带 ROHS REACH 无红磷 晶导微,Surface Mount Diode SMD DIODE 1N4148WS 0.3A 100V SOD-323 编带 ROHS REACH Halogen-Free 晶导微,Đèn diode mặt phẳng SMD DIODE 1N4148WS 0.3A 100V SOD-323 编带 ROHS REACH Halogen-Free 晶导微
+164,R0214-01003,贴片二极管 SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS 无红磷 晶导,Surface Mount Diode SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS Halogen-Free Jingdao,Đèn diode mặt phẳng SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS Halogen-Free Jingdao
+165,R0214-01004,贴片二极管 SMD二极管SMD DIODE 1N4148WS 0.3A 100V SOD-323 编带 ROHS REACH 无红磷 晶导微,Surface Mount Diode SMD DIODE 1N4148WS 0.3A 100V SOD-323 tape ROHS REACH Halogen-Free Jingdaowei,Đèn diode mặt phẳng SMD DIODE 1N4148WS 0.3A 100V SOD-323 băng đóng gói ROHS REACH Halogen-Free Jingdaowei
 166,R0214-01005,贴片二极管 SMD二极管SMD DIODE RS07M 1A 1KV SOD-123FL 编带 PINGWEI REACH RoHS 无红磷 无卤,"SMD Diode SMD DIODE RS07M 1A 1KV SOD-123FL, RoHS, No Phosphorus, No Halogen","Đèn LED SMD SMD DIODE RS07M 1A 1KV SOD-123FL, RoHS, không phốt, không khói"
 167,R0214-01006,贴片二极管 RS2MBF SMBF 2A 1000V 品牌：晶导微,Surface Mount Diode RS2MBF SMBF 2A 1000V Brand: Jinggang Micro,Đèn diode mặt phẳng RS2MBF SMBF 2A 1000V thương hiệu: Jinggang Micro
-168,R0214-01007,贴片二极管 二极管/贴片二极管 1N4148 0.3A 75V SOD-323FL 编带盘装(RoHS2.0) 品牌：南京中宝,Surface Mount Diode 1N4148 0.3A 75V SOD-323FL 编带盘装(RoHS2.0) Brand: Nanjing Zhongbao,Đèn diode mặt phẳng 1N4148 0.3A 75V SOD-323FL 编带盘装(RoHS2.0) thương hiệu: Nanjing Zhongbao
+168,R0214-01007,贴片二极管 二极管/贴片二极管 1N4148 0.3A 75V SOD-323FL 编带盘装(RoHS2.0) 品牌：南京中宝,Surface Mount Diode 1N4148 0.3A 75V SOD-323FL tape and reel(RoHS2.0) Brand: Nanjing Zhongbao,Đèn diode mặt phẳng 1N4148 0.3A 75V SOD-323FL băng và cuộn(RoHS2.0) thương hiệu: Nanjing Zhongbao
 169,R0214-01008,贴片二极管 RS3MBF 3A 1KV SMB-FL 品牌：平伟,Surface Mount Diode RS3MBF 3A 1KV SMB-FL Brand: Pingwei,Đèn diode mặt phẳng RS3MBF 3A 1KV SMB-FL thương hiệu: Pingwei
 170,R0215-01001,贴片肖特基二极管 SS10U100 10A/100V TO-277 品牌：扬杰,Surface Mount Schottky Diode SS10U100 10A/100V TO-277 Brand: YJ,Đèn Schottky mặt phẳng SS10U100 10A/100V TO-277 thương hiệu: YJ
 171,R0216-01001,集成电路 SMD IC LD5523NGL SOT-26 ROHS REACH 无红磷 Leadtrend,Surface Mount Integrated Circuit SMD IC LD5523NGL SOT-26 ROHS REACH No Lead Red Phosphorus Leadtrend,Định tuyến SMD IC LD5523NGL SOT-26 ROHS REACH Không có kim loại đỏ Leadtrend
@@ -178,23 +178,23 @@ id,code,name_zh,name_en,name_vi
 178,R0218-01001,压敏电阻 V391K14HX 10% 125℃ Φ14mm D(17.5mm Max)*T(5.8mm Max) PIN距7.5mm 外弯脚 立式AI编带  ROHS REACH 无红磷 V391K14HXAFD7H808 品牌：汇万,Voltage Dependent Resistor V391K14HX 10% 125℃ Φ14mm D(17.5mm Max)*T(5.8mm Max) PIN Distance 7.5mm Stand-up AI Tape ROHS REACH No Lead Red Phosphorus V391K14HXAF,Đèn cảm ứng điện áp V391K14HX 10% 125℃ Φ14mm D(17.5mm Max)*T(5.8mm Max) PIN Distance 7.5mm Stand-up AI Tape ROHS REACH Không có kim loại đỏ V391K14HXAFD7H808 th
 179,R0219-01001,插件热敏电阻 MF72-7D11 7Ω 3A ±20% PIN=5.0mm 打外K脚 硅树脂 绿色本体 立式AI编带 D(12.0mm MAX)*T(5.50mm MAX) ROHS REACH 无红磷 MF72 7D11-5.0 绿硅编带 品牌：南京时恒,Plug-in Thermistor MF72-7D11 7Ω 3A ±20% PIN=5.0mm External K Foot Silicon Resin Green Body Stand-up AI Tape D(12.0mm MAX)*T(5.50mm MAX) ROHS REACH No Lead Red P,Đèn cảm nhiệt MF72-7D11 7Ω 3A ±20% PIN=5.0mm External K Foot Silicon Resin Green Body Stand-up AI Tape D(12.0mm MAX)*T(5.50mm MAX) ROHS REACH Không có kim loại 
 180,R0219-01002,插件热敏电阻 MF72 5D9 5Ω 3A ±20% D(10.0mm Max)*T(5.5mm Max) PIN=5.0mm 打外K脚 硅树脂 绿色本体 立式AI编带 ROHS REACH 无红磷  绿硅编带 品牌：南京时恒,Plug-in Thermistor MF72 5D9 5Ω 3A ±20% D(10.0mm Max)*T(5.5mm Max) PIN=5.0mm External K Foot Silicon Resin Green Body Stand-up AI Tape ROHS REACH No Lead Red Pho,Đèn cảm nhiệt MF72 5D9 5Ω 3A ±20% D(10.0mm Max)*T(5.5mm Max) PIN=5.0mm External K Foot Silicon Resin Green Body Stand-up AI Tape ROHS REACH Không có kim loại đỏ
-181,R0220-01001,电解电容 E-CAP 47uF 250V 105℃ Ф12.5*20mm PIN距5mm 立式AI编带  12000hrs 980mA/100KHz RoHS REACH 无红磷 BXC系列 250BXC47MEFCG12.5X20 品牌：红宝石,Electrolytic Capacitor E-CAP 47uF 250V 105℃ Ф12.5*20mm Pin Distance 5mm Stand-up AI Tape 12000hrs 980mA/100KHz RoHS REACH No Lead Red Phosphorus BXC Series 250B,Định tuyến电解 capacitor E-CAP 47uF 250V 105℃ Ф12.5*20mm Pin Distance 5mm Stand-up AI Tape 12000hrs 980mA/100KHz RoHS REACH Không có kim loại đỏ BXC Series 250BXC
-182,R0220-01002,电解电容 22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA 立式AI编带 RoHS REACH 无红磷 YXM系列 50YXM22MEFRT5X11 品牌：,Electrolytic Capacitor 22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA Stand-up AI Tape RoHS REACH No Lead Red Phosphorus YXM Series 50YXM22MEFRT5X11 Brand:,Định tuyến电解 capacitor 22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA Stand-up AI Tape RoHS REACH Không có kim loại đỏ YXM Series 50YXM22MEFRT5X11 thương hiệu:
-183,R0220-01003,电解电容 180uF 250V +20% 105℃ Ф16*32mm P:7.5mm 12000hrs 1110mA 长脚 RoHS REACH 无红磷(UCY2E181MHDAZX) CY系列 品牌：尼吉康/nichicon,Electrolytic Capacitor 180uF 250V +20% 105℃ Ф16*32mm P:7.5mm 12000hrs 1110mA Long Foot RoHS REACH No Lead Red Phosphorus (UCY2E181MHDAZX) CY Series Brand: Nichi,Định tuyến电解 capacitor 180uF 250V +20% 105℃ Ф16*32mm P:7.5mm 12000hrs 1110mA Long Foot RoHS REACH Không có kim loại đỏ (UCY2E181MHDAZX) CY Series thương hiệu: N
-184,R0220-01004,电解电容 E-CAP 470uF 16V 105℃ Ф8*11.5mm PIN距3.5mm ZLH系列 8000hrs 945mA/100KHz 立式AI编带 RoHS REACH 无红磷 16ZLH470MEFCT78X11.5 品牌：红宝石,Electrolytic Capacitor E-CAP 470uF 16V 105℃ Ф8*11.5mm Pin Distance 3.5mm ZLH Series 8000hrs 945mA/100KHz Stand-up AI Tape RoHS REACH No Lead Red Phosphorus 16ZL,Định tuyến电解 capacitor E-CAP 470uF 16V 105℃ Ф8*11.5mm Pin Distance 3.5mm ZLH Series 8000hrs 945mA/100KHz Stand-up AI Tape RoHS REACH Không có kim loại đỏ 16ZLH4
-185,R0220-01005,电解电容 10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max）长脚 寿命2000H GF系列 品牌:新中元,Electrolytic Capacitor 10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max) Long Foot Lifespan 2000H GF Series Brand: Xinzhong Yuan,Định tuyến电解 capacitor 10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max) Long Foot Lifespan 2000H GF Series thương hiệu: Xinzhong Yuan
-186,R0220-01006,电解电容 12uF 400V ±20% 105℃ 6.3*19mm 2000H 脚距:2.5±0.5mm 脚长:2.5±0.3mm 品牌：中元,Electrolytic Capacitor 12uF 400V ±20% 105℃ 6.3*19mm Lifespan: 2000H Lead Spacing: 2.5±0.5mm Lead Length: 2.5±0.3mm Brand: Zhong Yuan,Định tuyến电解 capacitor 12uF 400V ±20% 105℃ 6.3*19mm Lifespan: 2000H Lead Spacing: 2.5±0.5mm Lead Length: 2.5±0.3mm thương hiệu: Zhong Yuan
-187,R0220-01007,电解电容 180uF 400V ±20% 105℃ 22*27mmMax 2000H 脚距:10±0.5mm 长脚 泰威,Electrolytic Capacitor 180uF 400V ±20% 105℃ 22*27mm Max Lifespan: 2000H Lead Spacing: 10±0.5mm Long Foot Taiwei,Định tuyến电解 capacitor 180uF 400V ±20% 105℃ 22*27mm Max Lifespan: 2000H Lead Spacing: 10±0.5mm Long Foot thương hiệu: Taiwei
+181,R0220-01001,电解电容 E-CAP 47uF 250V 105℃ Ф12.5*20mm PIN距5mm 立式AI编带  12000hrs 980mA/100KHz RoHS REACH 无红磷 BXC系列 250BXC47MEFCG12.5X20 品牌：红宝石,Electrolytic Capacitor E-CAP 47uF 250V 105℃ Ф12.5*20mm Pin Distance 5mm Stand-up AI Tape 12000hrs 980mA/100KHz RoHS REACH No Lead Red Phosphorus BXC Series 250B,Định tuyếnđiện giải capacitor E-CAP 47uF 250V 105℃ Ф12.5*20mm Pin Distance 5mm Stand-up AI Tape 12000hrs 980mA/100KHz RoHS REACH Không có kim loại đỏ BXC Series
+182,R0220-01002,电解电容 22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA 立式AI编带 RoHS REACH 无红磷 YXM系列 50YXM22MEFRT5X11 品牌：,Electrolytic Capacitor 22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA Stand-up AI Tape RoHS REACH No Lead Red Phosphorus YXM Series 50YXM22MEFRT5X11 Brand:,Định tuyếnđiện giải capacitor 22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA Stand-up AI Tape RoHS REACH Không có kim loại đỏ YXM Series 50YXM22MEFRT5X11 thươn
+183,R0220-01003,电解电容 180uF 250V +20% 105℃ Ф16*32mm P:7.5mm 12000hrs 1110mA 长脚 RoHS REACH 无红磷(UCY2E181MHDAZX) CY系列 品牌：尼吉康/nichicon,Electrolytic Capacitor 180uF 250V +20% 105℃ Ф16*32mm P:7.5mm 12000hrs 1110mA Long Foot RoHS REACH No Lead Red Phosphorus (UCY2E181MHDAZX) CY Series Brand: Nichi,Định tuyếnđiện giải capacitor 180uF 250V +20% 105℃ Ф16*32mm P:7.5mm 12000hrs 1110mA Long Foot RoHS REACH Không có kim loại đỏ (UCY2E181MHDAZX) CY Series thương 
+184,R0220-01004,电解电容 E-CAP 470uF 16V 105℃ Ф8*11.5mm PIN距3.5mm ZLH系列 8000hrs 945mA/100KHz 立式AI编带 RoHS REACH 无红磷 16ZLH470MEFCT78X11.5 品牌：红宝石,Electrolytic Capacitor E-CAP 470uF 16V 105℃ Ф8*11.5mm Pin Distance 3.5mm ZLH Series 8000hrs 945mA/100KHz Stand-up AI Tape RoHS REACH No Lead Red Phosphorus 16ZL,Định tuyếnđiện giải capacitor E-CAP 470uF 16V 105℃ Ф8*11.5mm Pin Distance 3.5mm ZLH Series 8000hrs 945mA/100KHz Stand-up AI Tape RoHS REACH Không có kim loại đỏ
+185,R0220-01005,电解电容 10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max）长脚 寿命2000H GF系列 品牌:新中元,Electrolytic Capacitor 10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max) Long Foot Lifespan 2000H GF Series Brand: Xinzhong Yuan,Định tuyếnđiện giải capacitor 10uF 100V 105℃ Φ4*11mm(RC:90mA;ESR≤3Ω Max) Long Foot Lifespan 2000H GF Series thương hiệu: Xinzhong Yuan
+186,R0220-01006,电解电容 12uF 400V ±20% 105℃ 6.3*19mm 2000H 脚距:2.5±0.5mm 脚长:2.5±0.3mm 品牌：中元,Electrolytic Capacitor 12uF 400V ±20% 105℃ 6.3*19mm Lifespan: 2000H Lead Spacing: 2.5±0.5mm Lead Length: 2.5±0.3mm Brand: Zhong Yuan,Định tuyếnđiện giải capacitor 12uF 400V ±20% 105℃ 6.3*19mm Lifespan: 2000H Lead Spacing: 2.5±0.5mm Lead Length: 2.5±0.3mm thương hiệu: Zhong Yuan
+187,R0220-01007,电解电容 180uF 400V ±20% 105℃ 22*27mmMax 2000H 脚距:10±0.5mm 长脚 泰威,Electrolytic Capacitor 180uF 400V ±20% 105℃ 22*27mm Max Lifespan: 2000H Lead Spacing: 10±0.5mm Long Foot Taiwei,Định tuyếnđiện giải capacitor 180uF 400V ±20% 105℃ 22*27mm Max Lifespan: 2000H Lead Spacing: 10±0.5mm Long Foot thương hiệu: Taiwei
 188,R0221-01001,方形保险丝 T6.3A 250V 2010 方型保险丝 UL 慢断 立式AI编带 RoHS REACH 无红磷 品牌：华德,Square Fuse T6.3A 250V 2010 Square Fuse UL Slow Break Stand-up AI Tape RoHS REACH No Lead Red Phosphorus Brand: Hua De,Đèn bảo vệ hình vuông T6.3A 250V 2010 Đèn bảo vệ hình vuông UL Slow Break Stand-up AI Tape RoHS REACH Không có kim loại đỏ thương hiệu: Hua De
 189,R0222-01001,贴片MOS管 JCS5N50RC 500V 5A TO-252 RoHS REACH 无红磷 品牌:吉林华微,Surface Mount MOSFET JCS5N50RC 500V 5A TO-252 RoHS REACH No Lead Red Phosphorus Brand: Jilin Huawei,Định tuyến MOSFET mặt phẳng JCS5N50RC 500V 5A TO-252 RoHS REACH Không có kim loại đỏ thương hiệu: Jilin Huawei
 190,R0222-01002,"贴片MOS管 VS3698AP 30V/105A N-Channel Advanced Power MOSFET RDS(on),TYP@ VGS=4.5V 4.5m? PDFN5x6 品牌:威兆","Surface Mount MOSFET VS3698AP 30V/105A N-Channel Advanced Power MOSFET RDS(on),TYP@ VGS=4.5V 4.5m? PDFN5x6 Brand: Wiztek","Định tuyến MOSFET mặt phẳng VS3698AP 30V/105A N-Channel Advanced Power MOSFET RDS(on),TYP@ VGS=4.5V 4.5m? PDFN5x6 thương hiệu: Wiztek"
 191,R0222-01003,贴片MOS管 N-Channel MOSFET 2N7002KW VDS 60V SOT-323 品牌：格瑞宝,Surface Mount N-Channel MOSFET 2N7002KW VDS 60V SOT-323 Brand: Grabet,Định tuyến MOSFET mặt phẳng N-Channel MOSFET 2N7002KW VDS 60V SOT-323 thương hiệu: Grabet
 192,R0222-01004,贴片MOS AKG10N046GL 100V 4.6mΩ PDFN5X6-8L 品牌：瑶芯/ATALLA,Surface Mount MOSFET AKG10N046GL 100V 4.6mΩ PDFN5X6-8L Brand: Yaoxin/ATALLA,Định tuyến MOSFET mặt phẳng AKG10N046GL 100V 4.6mΩ PDFN5X6-8L thương hiệu: Yaoxin/ATALLA
 193,R0223-01001,插件桥堆 桥堆 GBP410 4A 1KV IFSM120A 84mil GBP  RoHS REACH 无红磷 平伟,Plug-in Bridge Stack GBP410 4A 1KV IFSM120A 84mil GBP RoHS REACH No Lead Red Phosphorus Pangu,Đèn bảo vệ hình vuông GBP410 4A 1KV IFSM120A 84mil GBP RoHS REACH Không có kim loại đỏ thương hiệu: Pangu
-194,R0224-01001,共模电感 SQ电感INDUCTOR IN-00152 SQUC1515 一体式骨架 13mHMIN 0.15W*1.5T*50TS P:10*7.5 L:3.0±0.3mm BASE RoHS REACH 无红磷 美希,Common Mode Inductor SQ电感INDUCTOR IN-00152 SQUC1515一体式骨架 13mHMIN 0.15W*1.5T*50TS P:10*7.5 L:3.0±0.3mm BASE RoHS REACH No Lead Red Phosphorus Meishi,Đèn cảm ứng điện áp SQ电感INDUCTOR IN-00152 SQUC1515一体式骨架 13mHMIN 0.15W*1.5T*50TS P:10*7.5 L:3.0±0.3mm BASE RoHS REACH Không có kim loại đỏ thương hiệu: Meishi
-195,R0224-01002,"共模电感 T9*5*3-200uH Min,白色底座,玖鑫的磁环,HS-1247,RoHS REACH 无红磷,品牌:弘昇","Common Mode Inductor T9*5*3-200uH Min,white base,玖鑫's magnet ring,HS-1247, RoHS REACH No Lead Red Phosphorus, Brand: Hongsheng","Đèn cảm ứng điện áp T9*5*3-200uH Min,base màu trắng,đế magnet của Nine Xin,HS-1247, RoHS REACH Không có kim loại đỏ thương hiệu: Hongsheng"
-196,R0225-01001,插件MOS管 低压MOS (SVG076R5NT）100A/70V/5.4mΩ/156W 封装：TO220 RoHS REACH 无红磷,Plug-in MOSFET低压MOS (SVG076R5NT) 100A/70V/5.4mΩ/156W封装：TO220 RoHS REACH No Lead Red Phosphorus,Định tuyến MOSFET mặt phẳng低压 MOS (SVG076R5NT) 100A/70V/5.4mΩ/156W封装：TO220 RoHS REACH Không có kim loại đỏ
-197,R0225-01002,插件MOS管 MOS 9A 500V RDS(ON)=0.65Ω SIF9N50F 封装:TO-220FPL塑封 RoHS REACH 无红磷 品牌：深爱,Plug-in MOSFET MOS 9A 500V RDS(ON)=0.65Ω SIF9N50F封装：TO-220FPL塑封 RoHS REACH No Lead Red Phosphorus Brand: Shenzhen Love,Định tuyến MOSFET mặt phẳng MOS 9A 500V RDS(ON)=0.65Ω SIF9N50F封装：TO-220FPL塑封 RoHS REACH Không có kim loại đỏ thương hiệu: Shenzhen Love
+194,R0224-01001,共模电感 SQ电感INDUCTOR IN-00152 SQUC1515 一体式骨架 13mHMIN 0.15W*1.5T*50TS P:10*7.5 L:3.0±0.3mm BASE RoHS REACH 无红磷 美希,Common Mode Inductor SQinductorINDUCTOR IN-00152 SQUC1515integrated bobbin 13mHMIN 0.15W*1.5T*50TS P:10*7.5 L:3.0±0.3mm BASE RoHS REACH No Lead Red Phosphorus M,Đèn cảm ứng điện áp SQcuộn cảmINDUCTOR IN-00152 SQUC1515lõi tích hợp 13mHMIN 0.15W*1.5T*50TS P:10*7.5 L:3.0±0.3mm BASE RoHS REACH Không có kim loại đỏ thương hi
+195,R0224-01002,"共模电感 T9*5*3-200uH Min,白色底座,玖鑫的磁环,HS-1247,RoHS REACH 无红磷,品牌:弘昇","Common Mode Inductor T9*5*3-200uH Min,white base,Jiuxin's magnet ring,HS-1247, RoHS REACH No Lead Red Phosphorus, Brand: Hongsheng","Đèn cảm ứng điện áp T9*5*3-200uH Min,base màu trắng,đế magnet của Nine Xin,HS-1247, RoHS REACH Không có kim loại đỏ thương hiệu: Hongsheng"
+196,R0225-01001,插件MOS管 低压MOS (SVG076R5NT）100A/70V/5.4mΩ/156W 封装：TO220 RoHS REACH 无红磷,Plug-in MOSFETlow voltageMOS (SVG076R5NT) 100A/70V/5.4mΩ/156Wpackage：TO220 RoHS REACH No Lead Red Phosphorus,Định tuyến MOSFET mặt phẳngđiện áp thấp MOS (SVG076R5NT) 100A/70V/5.4mΩ/156Wđóng gói：TO220 RoHS REACH Không có kim loại đỏ
+197,R0225-01002,插件MOS管 MOS 9A 500V RDS(ON)=0.65Ω SIF9N50F 封装:TO-220FPL塑封 RoHS REACH 无红磷 品牌：深爱,Plug-in MOSFET MOS 9A 500V RDS(ON)=0.65Ω SIF9N50Fpackage：TO-220FPLmolded RoHS REACH No Lead Red Phosphorus Brand: Shenzhen Love,Định tuyến MOSFET mặt phẳng MOS 9A 500V RDS(ON)=0.65Ω SIF9N50Fđóng gói：TO-220FPLép nhựa RoHS REACH Không có kim loại đỏ thương hiệu: Shenzhen Love
 198,R0226-01001,散热片1 HEATSINK FOR Q1 51*44*20mm T=2.0mm 铝 铆接PIN脚 孔攻M3螺纹,Heat Sink 1 FOR Q1 51*44*20mm T=2.0mm Aluminum Soldered PINs Threaded M3 Screws,Đèn tán nhiệt 1 FOR Q1 51*44*20mm T=2.0mm Aluminum Soldered PINs Threaded M3 Screws
 199,R0226-01002,散热片2 HEATSINK FOR Q2 24.4*14*20mm T=2.0mm 铝 铆接PIN脚 孔攻M3螺纹,Heat Sink 2 FOR Q2 24.4*14*20mm T=2.0mm Aluminum Soldered PINs Threaded M3 Screws,Đèn tán nhiệt 2 FOR Q2 24.4*14*20mm T=2.0mm Aluminum Soldered PINs Threaded M3 Screws
 200,R0226-01003,散热片 尺寸：L65.17*W50.8*H23.71mm T=0.5mm 材质：铝 (RoHS REACH CP65) 引脚镀镍可焊锡 U型 品牌：春科,Heat Sink Size: L65.17*W50.8*H23.71mm T=0.5mm Material: Aluminum (RoHS REACH CP65) Nickel Plated and Tin Coated U-shaped Brand: Chunke,Đèn tán nhiệt kích thước: L65.17*W50.8*H23.71mm T=0.5mm Material: Aluminum (RoHS REACH CP65) Nickel Plated and Tin Coated U-shaped thương hiệu: Chunke
@@ -207,49 +207,49 @@ id,code,name_zh,name_en,name_vi
 207,R0230-01001,散热铜箔 65*50mm T=0.35mm 单面背胶 周圈包边 黑色+黄色 品牌：零度,Heat Sink Copper Foil 65*50mm T=0.35mm Single Side Back Adhesive Edge Wrapped Black + Yellow Brand: Zero Degree,Cuộn nhiệt tán nhiệt 65*50mm T=0.35mm mặt trước không bao quanh mặt sau mặt sau có bao quanh mặt sau màu đen + màu vàng thương hiệu: Zero Degree
 208,R0231-01001,整流桥堆 Fast Recovery Bridge Rectifiers RD8UB100 D3K 品牌:扬杰,Bridge Rectifier Fast Recovery Bridge Rectifiers RD8UB100 D3K Brand: YJ,Đèn cảm ứng điện áp Fast Recovery Bridge Rectifiers RD8UB100 D3K thương hiệu: YJ
 209,R0232-01001,差模电感 T6852A-45.0uH±15%  φ0.8*28.5TS(A2672) 品牌:泓泰,Common Mode Inductor T6852A-45.0uH±15% φ0.8*28.5TS(A2672) Brand: Hongtai,Đèn cảm ứng điện áp T6852A-45.0uH±15%  φ0.8*28.5TS(A2672) thương hiệu: Hongtai
-210,R0233-01001,"保险管 31TC T5A250V 3.6*10mm 陶瓷慢断双帽保险丝,立式套管,脚长3.0±0.5mm,脚距7±2mm 防爆 品牌:泓达","31TC T5A250V 3.6*10mm Ceramic Slow-Dissipating Double Capillary Fuse, Standby Enclosure, Lead Length 3.0±0.5mm, Lead Spacing 7±2mm Explosion Proof, Brand: Hongd","Đèn chìa khóa 31TC T5A250V 3.6*10mm 陶瓷 chậm tiêu tán, khung đứng, đường kính 3.6mm, chiều dài 10mm, chống nổ, thương hiệu: Hongda"
+210,R0233-01001,"保险管 31TC T5A250V 3.6*10mm 陶瓷慢断双帽保险丝,立式套管,脚长3.0±0.5mm,脚距7±2mm 防爆 品牌:泓达","31TC T5A250V 3.6*10mm Ceramic Slow-Dissipating Double Capillary Fuse, Standby Enclosure, Lead Length 3.0±0.5mm, Lead Spacing 7±2mm Explosion Proof, Brand: Hongd","Đèn chìa khóa 31TC T5A250V 3.6*10mm gốm sứ chậm tiêu tán, khung đứng, đường kính 3.6mm, chiều dài 10mm, chống nổ, thương hiệu: Hongda"
 211,R0234-01001,整流二极管 F7 1A 1KV SOD-123FL 品牌：南京中宝,F7 1A 1KV SOD-123FL Brand: Nanjing Zhongbao,"Đèn rectifier F7 1A 1KV SOD-123FL, thương hiệu: Nanjing Zhongbao"
 212,R0235-01001,贴片稳压管 BZT52C6V2S 6.2V 200mW SOD-323 品牌：南京中宝,BZT52C6V2S 6.2V 200mW SOD-323 Brand: Nanjing Zhongbao,"Đèn rectifier BZT52C6V2S 6.2V 200mW SOD-323, thương hiệu: Nanjing Zhongbao"
 213,R0236-01001,贴片磁珠 HCB3216KF-121T60e：120Ω 1206 品牌:台庆,HCB3216KF-121T60e: 120Ω 1206 Brand: Taizhou,"Đèn tụ HCB3216KF-121T60e: 120Ω 1206, thương hiệu: Taizhou"
 214,R0236-01002,贴片磁珠 2500Ω ±25% 600mA 0805 (CBW201209U252T) 品牌:风华高科,2500Ω ±25% 600mA 0805 (CBW201209U252T) Brand: Fenghua High Tech,"Đèn tụ 2500Ω ±25% 600mA 0805 (CBW201209U252T), thương hiệu: Fenghua High Tech"
 215,R0237-01001,贴片光耦 OR-1008-TP-G-（GK）SO-4 无卤 品牌：奥伦德,OR-1008-TP-G-（GK）SO-4 Brand: Orland,"Đèn tiếp xúc OR-1008-TP-G-（GK）SO-4, không phốt, thương hiệu: Orland"
-216,R0238-01001,合金电阻 合金电阻 3mΩ ±1% 1206 RLM12FTCMR003 品牌：大毅,Alloy Resistor 3mΩ ±1% 1206 Brand: Da Yi,"Đèn dẫn điện合金 3mΩ ±1% 1206 RLM12FTCMR003, thương hiệu: Da Yi"
+216,R0238-01001,合金电阻 合金电阻 3mΩ ±1% 1206 RLM12FTCMR003 品牌：大毅,Alloy Resistor 3mΩ ±1% 1206 Brand: Da Yi,"Đèn dẫn điệnhợp kim 3mΩ ±1% 1206 RLM12FTCMR003, thương hiệu: Da Yi"
 217,R0239-01001,TVS 管 MSD5C051U SOD-523 品牌:美台高科,TVS Diode MSD5C051U SOD-523 Brand: Me-TECh,"Đèn TVS MSD5C051U SOD-523, thương hiệu: Me-TECh"
 218,R0239-01002,TVS 管 MSD3C301VG SOD-323 30V 品牌：Me-TECh,TVS Diode MSD3C301VG SOD-323 30V Brand: Me-TECh,"Đèn TVS MSD3C301VG SOD-323 30V, thương hiệu: Me-TECh"
 219,R0240-01001,Type-C母座 TYPE C 母座 贴16PIN 蓝色 创益通料号：82216-024（A2613专用）,Type-C Mother Seat TYPE C Mother Seat 16PIN Blue Creality Part No.: 82216-024 (A2613 Dedicated),"Type-C nút phụ TYPE C nút phụ 16PIN màu xanh lá cây, số lượng: 82216-024 (A2613 đặc biệt)"
-220,R0301-01002,铭牌标签 EPS18R1G-36铭牌标签 V1.2版本 变更Logo Made in Vietnam 尺寸：28.3*25.2mm 底色:潘通冷灰1C 材质：75#PET+可打印雾膜+网格胶 厚度0.14mm 耐酒精擦拭 3倒圆角R2+1倒角C3 迈智,Label EPS18R1G-36 Label V1.2 Version Logo Change Made in Vietnam Size: 28.3*25.2mm Base Color: Pantone Cold Gray 1C Material: 75#PET + Print Fog + Grid Coating ,"Tag铭牌 EPS18R1G-36 Tag V1.2 phiên bản thay đổi logo, Made in Vietnam, kích thước: 28.3*25.2mm, màu nền: Pantone Cold Gray 1C, chất liệu: 75#PET + Print Fog + Gri"
-221,R0301-01003,铭牌标签 EPS48R1-36铭牌标签 V1.3版本 变更UL标识 Made in Vietnam 尺寸：85*38mm 底色:Pantone Black C 材质：75#PET+可打印雾膜+网格胶 厚度0.14mm 耐酒精擦拭 3倒圆角R2+1倒角C3 单面背胶 迈智,Label EPS48R1-36 Label V1.3 Version Change UL Mark Made in Vietnam Size: 85*38mm Base Color: Pantone Black C Material: 75#PET + Print Fog + Grid Coating Thickne,"Tag铭牌 EPS48R1-36 Tag V1.3 phiên bản thay đổi UL, Made in Vietnam, kích thước: 85*38mm, màu nền: Pantone Black C, chất liệu: 75#PET + Print Fog + Grid Coating, d"
+220,R0301-01002,铭牌标签 EPS18R1G-36铭牌标签 V1.2版本 变更Logo Made in Vietnam 尺寸：28.3*25.2mm 底色:潘通冷灰1C 材质：75#PET+可打印雾膜+网格胶 厚度0.14mm 耐酒精擦拭 3倒圆角R2+1倒角C3 迈智,Label EPS18R1G-36 Label V1.2 Version Logo Change Made in Vietnam Size: 28.3*25.2mm Base Color: Pantone Cold Gray 1C Material: 75#PET + Print Fog + Grid Coating,"Tagbiển tên EPS18R1G-36 Tag V1.2 phiên bản thay đổi logo, Made in Vietnam, kích thước: 28.3*25.2mm, màu nền: Pantone Cold Gray 1C, chất liệu: 75#PET + Print Fog"
+221,R0301-01003,铭牌标签 EPS48R1-36铭牌标签 V1.3版本 变更UL标识 Made in Vietnam 尺寸：85*38mm 底色:Pantone Black C 材质：75#PET+可打印雾膜+网格胶 厚度0.14mm 耐酒精擦拭 3倒圆角R2+1倒角C3 单面背胶 迈智,Label EPS48R1-36 Label V1.3 Version Change UL Mark Made in Vietnam Size: 85*38mm Base Color: Pantone Black C Material: 75#PET + Print Fog + Grid Coating Thickne,"Tagbiển tên EPS48R1-36 Tag V1.3 phiên bản thay đổi UL, Made in Vietnam, kích thước: 85*38mm, màu nền: Pantone Black C, chất liệu: 75#PET + Print Fog + Grid Coat"
 222,R0302-01001,PE袋 120*170*0.025mm 双层厚度0.05mm 白色透明PE-LD 单面印黑色循环三角环保回收标签 无卤,PE Bag 120*170*0.025mm Double Layer Thickness 0.05mm White Transparent PE-LD Single-Sided Black Circles Eco-Recycle Label No Halogen,"Bao bì PE 120*170*0.025mm, dày 0.025mm, hai lớp, dày 0.05mm, màu trắng, màu sắc: PE-LD, mặt trước: màu đen, hình tròn, nhãn eco-điển hiệu không phốt"
-223,R0302-01002,PE袋 L280（开口）*W240mm T=0.035±0.005mm 材质 白色透明PE-LD 黑色丝印 带气孔 符合环保要求,PE Bag L280（开口）*W240mm T=0.035±0.005mm Material White Transparent PE-LD Black Printing With Air Holes Compliant with Environmental Requirements,"Bao bì PE L280 (ở miệng) *W240mm, dày 0.035±0.005mm, chất liệu: PE-LD, màu trắng, màu sắc: màu đen, in màu đen, có lỗ thông hơi, tuân thủ yêu cầu môi trường"
-224,R0303-01001,塑料捆扎带 塑料捆扎带 宽15mm 厚度1.3mm 黄色 一卷200米 (联想65W：960个产品15.5米 AE70：3360个产品用33.6米 EPS6：2520个产品用33.6米),Plastic捆扎带 Plastic捆扎带 15mm Width 1.3mm Yellow 100m (Lenovo 65W: 960 Products 15.5m AE70: 3360 Products 33.6m EPS6: 2520 Products 33.6m),"Băng buộc塑料 Băng buộc plastic 15mm, dày 1.3mm, màu vàng, 100m (Lenovo 65W: 960 sản phẩm 15.5m AE70: 3360 sản phẩm 33.6m EPS6: 2520 sản phẩm 33.6m)"
+223,R0302-01002,PE袋 L280（开口）*W240mm T=0.035±0.005mm 材质 白色透明PE-LD 黑色丝印 带气孔 符合环保要求,PE Bag L280（opening）*W240mm T=0.035±0.005mm Material White Transparent PE-LD Black Printing With Air Holes Compliant with Environmental Requirements,"Bao bì PE L280 (ở miệng) *W240mm, dày 0.035±0.005mm, chất liệu: PE-LD, màu trắng, màu sắc: màu đen, in màu đen, có lỗ thông hơi, tuân thủ yêu cầu môi trường"
+224,R0303-01001,塑料捆扎带 塑料捆扎带 宽15mm 厚度1.3mm 黄色 一卷200米 (联想65W：960个产品15.5米 AE70：3360个产品用33.6米 EPS6：2520个产品用33.6米),Plasticbinding strap Plasticbinding strap 15mm Width 1.3mm Yellow 100m (Lenovo 65W: 960 Products 15.5m AE70: 3360 Products 33.6m EPS6: 2520 Products 33.6m),"Băng buộcnhựa Băng buộc plastic 15mm, dày 1.3mm, màu vàng, 100m (Lenovo 65W: 960 sản phẩm 15.5m AE70: 3360 sản phẩm 33.6m EPS6: 2520 sản phẩm 33.6m)"
 225,R0304-01001,外箱 Made in Vietnam L505*405*267mm T=6mm K535K 加强芯 抗裂强度14.5kgf/cm 96PCS/箱 印刷“Corrugated Recycles” RoHS REACH 和通,Made in Vietnam L505*405*267mm T=6mm K535K Strong Core Anti-Deformation Strength 14.5kgf/cm 96PCS/Box Printed “Corrugated Recycles” RoHS REACH and Compliant,"Bao bì Made in Vietnam L505*405*267mm, dày 6mm, K535K, khung cứng chống nứt 14.5kgf/cm, 96PCS/box, in “Corrugated Recycles” RoHS REACH và tuân thủ"
 226,R0304-01002,外箱 Made in Vietnam L505*405*234mm T=6mm H636H 抗裂强度15.5kgf/cm 40PCS/箱 印刷“Corrugated Recycles” RoHS REACH 和通,Made in Vietnam L505*405*234mm T=6mm H636H Anti-Deformation Strength 15.5kgf/cm 40PCS/Box Printed “Corrugated Recycles” RoHS REACH and Compliant,"Bao bì Made in Vietnam L505*405*234mm, dày 6mm, H636H, khung cứng chống nứt 15.5kgf/cm, 40PCS/box, in “Corrugated Recycles” RoHS REACH và tuân thủ"
 227,R0304-01003,外箱 51001001447 V1 尺寸：L417*W305*H176mm T=6.0mm 材质K=K（BC坑）1/30PCS RoHS REACH 品牌：和通,51001001447 V1 Size: L417*W305*H176mm T=6.0mm Material K=K (BC Pit) 1/30PCS RoHS REACH Brand: Hengtong,"Bao bì 51001001447 V1, kích thước: L417*W305*H176mm, dày 6.0mm, chất liệu K=K (BC pit) 1/30PCS, RoHS REACH thương hiệu: Hengtong"
 228,R0305-01001,隔板 CORRUGATED BOARD L490*390mm T=3mm K3K 加强芯  RoHS REACH 3PCS/箱 和通,CORRUGATED BOARD L490*390mm T=3mm K3K Strong Core RoHS REACH 3PCS/Box Hengtong,"Bảng cách CORRUGATED BOARD L490*390mm, dày 3mm, K3K, khung cứng chống nứt RoHS REACH 3PCS/box, thương hiệu: Hengtong"
-229,R0305-01002,隔板 CORRUGATED BOARD L490*390mm T=3mm K5K RoHS REACH 3PCS/箱 和通,隔板,木板隔板
-230,R0306-01001,长刀卡 489*116mm T=3mm 材质:K3K 加强芯 长刀卡两边各留边15mm 18PCS/箱 RoHS REACH 和通,长刀卡,伸缩刀卡
-231,R0306-01002,短刀卡 387*116mm T=3mm 材质:K3K 加强芯 短刀卡两边各留边20mm 14PCS/箱 RoHS REACH 和通,短刀卡,缩短刀卡
-232,R0306-01003,长刀卡 490*104mm T=3mm 材质:K7K 长刀卡两边各留边10.5mm 18PCS/箱 RoHS REACH 和通,长刀卡,伸缩刀卡
-233,R0306-01004,短刀卡 387*104mm T=3mm 材质:K7K 短刀卡两边不留边 6PCS/箱 RoHS REACH 和通,短刀卡,缩短刀卡
+229,R0305-01002,隔板 CORRUGATED BOARD L490*390mm T=3mm K5K RoHS REACH 3PCS/箱 和通,divider,vách ngăn gỗ
+230,R0306-01001,长刀卡 489*116mm T=3mm 材质:K3K 加强芯 长刀卡两边各留边15mm 18PCS/箱 RoHS REACH 和通,long knife clip,kẹp dao co giãn
+231,R0306-01002,短刀卡 387*116mm T=3mm 材质:K3K 加强芯 短刀卡两边各留边20mm 14PCS/箱 RoHS REACH 和通,short knife clip,kẹp dao rút gọn
+232,R0306-01003,长刀卡 490*104mm T=3mm 材质:K7K 长刀卡两边各留边10.5mm 18PCS/箱 RoHS REACH 和通,long knife clip,kẹp dao co giãn
+233,R0306-01004,短刀卡 387*104mm T=3mm 材质:K7K 短刀卡两边不留边 6PCS/箱 RoHS REACH 和通,short knife clip,kẹp dao rút gọn
 234,R0307-01001,卡板 L1220mm*W1020mm*120mm 胶合板材质 承重动载800kg 静载1000kg RoHS REACH（960PCS产品1托盘）万盛兴,"Pallet L1220*W1020*120mm plywood, dynamic load 800kg, static 1000kg, RoHS REACH, 60pcs/pallet, Wanshengxing","Pallet go L1220*W1020*120mm, tai dong 800kg, tinh 1000kg, RoHS REACH, 60cai/pallet"
 235,R0307-01002,隔卡 51003003970 V1 尺寸：L400*W288mm T=3.0mm 材质:A3A（B坑）1/1PCS RoHS REACH 品牌：和通,"Divider card 51003003970 V1, L400*W288mm T3.0mm A3A (B flute), 1/1PCS, RoHS REACH, brand Hexie","The ngan 51003003970 V1, L400*W288mm T3.0mm A3A (song B), 1/1PCS, RoHS REACH"
-236,R0308-01001,护角 L50*50*900mm 硬纸 RoHS REACH 和通,护角尺寸为50*50*900mm，硬纸材质，符合RoHS和REACH标准，环保无害。,1
+236,R0308-01001,护角 L50*50*900mm 硬纸 RoHS REACH 和通,corner protector size50*50*900mm，hard paper material，compliantRoHSandREACHstandard，eco-friendly。,1
 237,R0308-01002,护角 L50*50*800mm 硬纸 RoHS REACH 和通,"Corner protector L50*50*800mm hard paper, RoHS REACH, Hexing","Bao ve goc L50*50*800mm giay cung, RoHS REACH"
-238,R0308-01003,护角 L50*50*1080mm 硬纸 RoHS REACH 和通,护角尺寸为50*50*1080mm，硬纸材质，符合RoHS和REACH标准，环保无害。,1
+238,R0308-01003,护角 L50*50*1080mm 硬纸 RoHS REACH 和通,corner protector size50*50*1080mm，hard paper material，compliantRoHSandREACHstandard，eco-friendly。,1
 239,R0308-01004,护角 L50*50*920mm 硬纸 ROHS 960个产品4个护角 和通,"Corner protector L50*50*920mm hard paper, RoHS, 960pcs/1 protector, Hexing","Bao ve goc L50*50*920mm giay cung, RoHS, 960cai/1 bao ve goc"
 240,R0309-01001,线材标签 AC线材标签 V1版本 变更Logo 尺寸：88.9*38.1mm 印字颜色：绿地黑白字 底色:Panton 368C 材质：54#珠光合成纸+哑光膜+单面背胶 厚度0.1mm 耐酒精擦拭 RoHS REACH 迈智,"AC wire label V1, Logo change, 8.9*38.1mm, green/black, Pantone 368C, 4# pearlescent paper, matte, 0.1mm, alcohol resistant, RoHS REACH","Nhan day AC V1, doi Logo, 8.9*38.1mm, xanh/den, Pantone 368C, giay ngoc trai 4#, mo, 0.1mm, chong alcohol, RoHS REACH"
-241,R0310-01001,外箱标签 白色铜版纸 100*150mm,外箱标签是白色铜版纸，尺寸为100*150mm。,1
+241,R0310-01001,外箱标签 白色铜版纸 100*150mm,outer box label is white coated paper，size100*150mm。,1
 242,R0310-01002,空白标签 空白标签 白色铜版纸100*80mm,Màng trắng 100*80mm,Màng trắng 100*80mm
 243,R0311-01001,保护膜 0.35mm*100mm*1000米超声波专用,"Protective film 0.35mm*100mm*1000m, ultrasonic dedicated","Mang bao ve 0.35mm*100mm*1000m, chuyen dung sieu am"
-244,R0312-01001,CPE袋 L100+35*107mm 材质CPE 厚度0.03mm 符合环保要求 “丝印增加意大利回收标PE-C7+实心三角形版本”,"CPE袋 L100+35*107mm 材质CPE 厚度0.03mm 符合环保要求 ""丝印增加意大利回收标PE-C7+实心三角形版本""",1
-245,R0313-01001,封口贴 51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm,51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm,51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm
+244,R0312-01001,CPE袋 L100+35*107mm 材质CPE 厚度0.03mm 符合环保要求 “丝印增加意大利回收标PE-C7+实心三角形版本”,"CPEbag L100+35*107mm materialCPE thickness0.03mm meets environmental requirements ""silkscreen adds Italy recycling markPE-C7+solid triangle version""",1
+245,R0313-01001,封口贴 51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm,51004002204 V4 A2507011sealing sticker 50# transparent oil gluePET full adhesive strong oil glue Φ30mm peel force：6.3N 30*30mm,51004002204 V4 A2507011nhãn dán niêm phong 50# keo dầu trong suốtPET keo toàn bộ keo dầu dính chắc Φ30mm lực bóc：6.3N 30*30mm
 246,R0313-01002,底部封口贴纸 51004002207 V4 A2033H21底部封口贴纸 50# 油胶透明PET 局部胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm,"Bottom sealing sticker 51004002207 V4 A2033H21, 50# oil glue transparent PET, partial glue, strong adhesion, dia 30mm, peel force 6.3N, 30*30mm","Nhan dan kin day 51004002207 V4 A2033H21, PET trong keo dau 50#, keo mot phan, dinh chac, duong kin 30mm, luc boc 6.3N, 30*30mm"
 247,R0314-01001,吸塑 51011001039 V1 B2672111 吸塑/A2672/0.8mm 白色消光PP/铝模，拉手材料标/150*95*39mm,Injection molding,"Nối đinh kim loại, vật liệu nhựa PP màu trắng, đường kính 0.8mm, chiều cao 39mm, chiều rộng 150mm, chiều cao 95mm, đường kính 39mm"
 248,R0315-01001,珍珠棉 尺寸400*288mm T=5.0mm 材质:珍珠棉 白色 1/1PCS,"EPE foam 400*288mm T5.0mm, white, 1/1PCS","Mut xop EPE 400*288mm T5.0mm, mau trang, 1/1PCS"
 249,R0316-01001,外盒 51002006410 V1 B2672111&B2672121(新)_外盒/350g单粉（FSC认证）/4C+Anker Blue 印刷+大豆油墨+面过PP哑胶/展开：280.5*253mm 成型：150*95*39mm,Box 51002006410 V1 B2672111&B2672121 (New)_Box/350g Single Powder (FSC Certification)/4C+Anker Blue Printing+Dried Soy Ink+Surface Over PP Matte Coating/Expande,Bao bì 51002006410 V1 B2672111&B2672121 (New)_Bao bì/350g Single Powder (FSC chứng nhận)/4C+Anker Blue inox+Dung tẩy khô+Dung inox mặt trên/Phủ: 280.5*253mm Phủ
-250,R0317-01001,说明书 51005005073 V1 A2672_26L_说明书(新)/70g书咭/单黑印刷/成型尺寸：90*62mm 展开尺寸：90*496mm/16p/风琴褶,Manual 51005005073 V1 A2672_26L_70g Book/Single Black Printing/成型尺寸：90*62mm/展开尺寸：90*496mm/16 pages/accordion,Bìa sách 51005005073 V1 A2672_26L_70g/70g sách/In màu đen/Độ dày: 90*62mm/Độ rộng: 90*496mm/16 trang/Đơn vị: 16p/Đơn vị: accordion
-251,R0318-01001,绝缘片 18*14mm T=0.2mm PC 黑色 含背胶 ( RoHS REACH ) 品牌：汉联,Insulation Plate 18*14mm T=0.2mm PC Black with Back Coat (RoHS REACH) Brand: HanLink,Phần bảo vệ 18*14mm T=0.2mm PC màu đen có lớp bao覆 (RoHS REACH) Brand: HanLink
-252,R0319-01001,麦拉片 58.8*50.97 T=0.4 材质：麦拉片+单面背胶 品牌：汉联,Mylar Plate 58.8*50.97 T=0.4 Material: Mylar Plate + Single Side Back Coat Brand: HanLink,"Phần bảo vệ 58.8*50.97mm T=0.4, chất liệu: Mylar Plate + Lớp bao覆 mặt sau Brand: HanLink"
+250,R0317-01001,说明书 51005005073 V1 A2672_26L_说明书(新)/70g书咭/单黑印刷/成型尺寸：90*62mm 展开尺寸：90*496mm/16p/风琴褶,Manual 51005005073 V1 A2672_26L_70g Book/Single Black Printing/formed size：90*62mm/unfolded size：90*496mm/16 pages/accordion,Bìa sách 51005005073 V1 A2672_26L_70g/70g sách/In màu đen/Độ dày: 90*62mm/Độ rộng: 90*496mm/16 trang/Đơn vị: 16p/Đơn vị: accordion
+251,R0318-01001,绝缘片 18*14mm T=0.2mm PC 黑色 含背胶 ( RoHS REACH ) 品牌：汉联,Insulation Plate 18*14mm T=0.2mm PC Black with Back Coat (RoHS REACH) Brand: HanLink,Phần bảo vệ 18*14mm T=0.2mm PC màu đen có lớp baophủ (RoHS REACH) Brand: HanLink
+252,R0319-01001,麦拉片 58.8*50.97 T=0.4 材质：麦拉片+单面背胶 品牌：汉联,Mylar Plate 58.8*50.97 T=0.4 Material: Mylar Plate + Single Side Back Coat Brand: HanLink,"Phần bảo vệ 58.8*50.97mm T=0.4, chất liệu: Mylar Plate + Lớp baophủ mặt sau Brand: HanLink"
 253,R0319-01002,麦拉片 成型尺寸：L27.57*W16.35*H25mm T=0.43±0.03mm 材质：PC麦拉片 94V-0 (RoHS REACH CP65) 品牌：汉联,Mylar Plate Forming Dimensions: L27.57*W16.35*H25mm T=0.43±0.03mm Material: PC Mylar Plate 94V-0 (RoHS REACH CP65) Brand: HanLink,"Phần bảo vệ 27.57*16.35*25mm, độ dày: 27.57*16.35*25mm, chất liệu: Mylar Plate 94V-0 (RoHS REACH CP65) Brand: HanLink"
 254,CAP-0805-100N,贴片电容 0805 100nF,MLCC 0805 100nF,Tụ dán 0805 100nF
 255,CAP-0603-10U,贴片电容 0603 10µF,MLCC 0603 10µF,Tụ dán 0603 10µF
@@ -306,7 +306,7 @@ id,code,name_zh,name_en,name_vi
 2795,0.10.00.00.1378D,PCB板,PCB Board,Bề mặt PCB
 2796,0.14.06.02.1227-HF,中箱码标签,Middle Box Label,Đường ký hiệu hộp trung
 2797,0.07.00.00.1346,贴片IC,Surface Mount IC,IC mặt phẳng
-2798,0.01.01.04.0309A,电解电容,Electrolytic Capacitor,Công suất电解
+2798,0.01.01.04.0309A,电解电容,Electrolytic Capacitor,Công suấtđiện giải
 2799,0.02.01.00.0013B-HF,贴片桥堆,Surface Mount Bridge,Bridge mặt phẳng
 2800,0.03.01.00.0181,共模电感,Common Mode Inductor,Lưu điện chung
 2801,0.00.04.01.0085C,热敏电阻,Thermistor,Thermistor
@@ -325,18 +325,18 @@ id,code,name_zh,name_en,name_vi
 2814,0.03.01.00.0154,共模电感,Common Mode Inductor,Lưu điện chung
 2815,0.01.05.00.0213M,Y1电容,Y1 Capacitor,Công suất Y1
 2816,0.08.01.00.0731V,DC线,DC Line,Cable DC
-2817,0.01.01.05.0397B,电解电容,Electrolytic Capacitor,Công suất电解
+2817,0.01.01.05.0397B,电解电容,Electrolytic Capacitor,Công suấtđiện giải
 2818,0.15.06.00.0035,DC插头,DC Plug,Đèn DC
 2819,0.07.01.00.0093-HF,光电耦合器,Opto-Coupler,Cơ sở điện tử
 2820,0.07.00.00.1305,贴片IC,Surface Mount IC,IC mặt phẳng
 2821,0.06.00.00.0147B-HF,保险丝,Fuse,Bảo vệ
 2822,0.08.01.00.0745D,DC线,DC Line,Cable DC
-2823,0.01.01.01.0167D,电解电容,Electrolytic Capacitor,Công suất电解
+2823,0.01.01.01.0167D,电解电容,Electrolytic Capacitor,Công suấtđiện giải
 2824,0.06.00.00.0099M,方形保险丝,Square Fuse,Bảo vệ hình vuông
 2825,0.08.00.00.0003C,AC线,AC Line,Cable AC
 2826,0.03.06.04.0021M-HF,色环电感,Color Ring Inductor,Lưu điện màu
 2827,0.00.00.01.0012Q-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
-2828,0.01.01.07.0060B,电解电容,electrolytic capacitor,đèn capacitor电解
+2828,0.01.01.07.0060B,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 2829,0.10.00.00.1301B,PCB板,PCB board,PCB bảng
 2830,0.13.00.00.0018,锡线,solder wire,sắt dây
 2831,0.13.02.00.0009-HF,助焊剂,soldering agent,sản phẩm hỗ trợ
@@ -369,13 +369,13 @@ id,code,name_zh,name_en,name_vi
 2858,0.09.00.00.0718A,变压器,transformer,transformer
 2859,0.08.01.00.0627F,DC线,DC wire,đường DC
 2860,0.00.00.04.0085L-HF,贴片电阻,surface mount resistor,đèn resistor inlay
-2861,0.01.01.09.0085,电解电容,electrolytic capacitor,đèn capacitor电解
+2861,0.01.01.09.0085,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 2862,0.02.01.00.0020B,贴片桥堆,Surface Mount Bridge,Các đường nối mặt trên
 2863,0.12.00.00.0908R,主体壳,Main Shell,Bao bì cơ bản
 2864,0.11.06.01.0113-HF,活动PIN脚,Moving PIN Foot,Các đường nối hoạt động
 2866,0.09.00.00.0725,变压器,transformer,transformer
-2867,0.01.01.05.0319D,电解电容,electrolytic capacitor,đèn capacitor电解
-2868,0.01.01.04.0255B,电解电容,electrolytic capacitor,đèn capacitor电解
+2867,0.01.01.05.0319D,电解电容,electrolytic capacitor,đèn capacitorđiện giải
+2868,0.01.01.04.0255B,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 2869,0.08.01.00.0635D,DC线,DC line,đường dẫn DC
 2870,0.13.03.00.0043,空白标签,Blank label,lablem trống
 2871,0.11.00.02.0078,螺丝,screw,gạch vít
@@ -397,7 +397,7 @@ id,code,name_zh,name_en,name_vi
 2887,0.14.00.00.0001,外箱,case,bọc ngoài
 2888,0.12.00.00.1011,面壳,shell,nháy
 2889,0.00.05.05.0015D,保险丝电阻,fuse resistor,đèn cảm ứng điện áp gạch vít
-2890,0.01.01.01.0100A,电解电容,electrolytic capacitor,đèn capacitor电解
+2890,0.01.01.01.0100A,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 2891,0.14.99.00.0226,卡板,cardboard,cardboard
 2892,0.00.00.02.0043B-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 2893,0.00.00.00.0283L-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
@@ -411,19 +411,19 @@ id,code,name_zh,name_en,name_vi
 2901,0.00.03.02.0049B-HF,压敏电阻,voltage-sensitive resistor,đèn cảm ứng điện áp
 2902,0.03.01.00.0260,共模电感,common mode inductor,độ bộ chung điện cảm
 2903,0.00.00.02.0507L-HF,贴片电容,surface mount capacitor,đèn capacitor mặt phẳng
-2904,0.01.01.01.0182B,电解电容,electrolytic capacitor,đèn capacitor电解
+2904,0.01.01.01.0182B,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 2905,0.12.00.00.0609,面壳,shell,nháy
-2906,0.01.01.09.0081W,电解电容,electrolytic capacitor,đèn capacitor电解
+2906,0.01.01.09.0081W,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 2907,0.08.01.00.0723D,DC线,DC line,đường dẫn DC
 2908,0.02.05.00.0219H-HF,贴片二极管,surface mount diode,đèn diode mặt phẳng
 2909,0.06.00.00.0146H,方形保险丝,square fuse,nhịp chuyền hình vuông
-2910,0.01.01.01.0190B,电解电容,electrolytic capacitor,cáp chì电解
+2910,0.01.01.01.0190B,电解电容,electrolytic capacitor,cáp chìđiện giải
 2911,0.12.00.00.0916X,面壳,shell,nhựa
 2912,0.03.00.08.0057,贴片电感,surface-mount inductor,đèn cảm mặt phẳng
 2914,0.01.04.01.0063,X2电容,X2 capacitor,cáp X2
 2915,0.13.01.08.0108,封箱胶带,wrapping tape,bột bọc
 2916,0.00.00.00.0663G-HF,贴片电阻,surface-mount resistor,đèn dẫn điện mặt phẳng
-2917,0.01.01.07.0084D,电解电容,electrolytic capacitor,cáp chì电解
+2917,0.01.01.07.0084D,电解电容,electrolytic capacitor,cáp chìđiện giải
 2919,0.07.00.00.0931,贴片IC,surface-mount integrated circuit,đèn vi mạch mặt phẳng
 2920,0.06.00.00.0200D,方形保险丝,square fuse,nhịp chuyền hình vuông
 2921,0.02.01.01.0069-HF,插件桥堆,dual in-line package,nhịp chuyền hai đầu
@@ -503,25 +503,25 @@ id,code,name_zh,name_en,name_vi
 2997,0.08.04.00.0003,电子线,electronic wire,đường dây điện tử
 2998,0.08.01.00.0733U,DC线,DC wire,đường dây DC
 2999,0.14.06.02.1188,警示标签,warning label,đèn báo hiệu
-3000,0.07.00.00.0945,贴片IC,surface-mount integrated circuit,đèn集成电路 mặt phẳng
+3000,0.07.00.00.0945,贴片IC,surface-mount integrated circuit,đènIC mặt phẳng
 3001,0.12.01.00.0822,下盖,undershell,đèn dưới
 3002,0.12.01.00.0432,底壳,base shell,đèn base
-3003,0.01.01.01.0207W,电解电容,electrolytic capacitor,đèn电解
+3003,0.01.01.01.0207W,电解电容,electrolytic capacitor,đènđiện giải
 3004,0.01.00.00.4031S-HF,贴片电容,surface-mount capacitor,đèn điện mặt phẳng
 3005,0.01.00.00.4023G-HF,贴片电容,surface-mount capacitor,đèn điện mặt phẳng
 3006,0.12.00.00.0973,面壳,shell,đèn mặt
 3007,0.14.06.02.1008,贴纸,tape,đèn giấy
-3008,0.01.01.05.0327B,电解电容,electrolytic capacitor,đèn电解
+3008,0.01.01.05.0327B,电解电容,electrolytic capacitor,đènđiện giải
 3009,0.13.01.08.0084,封箱胶带,packing tape,đèn bao gói
 3010,0.00.00.02.0306L-HF,贴片电阻,surface-mount resistor,đèn cảm ứng mặt phẳng
 3011,0.01.00.00.4031L-HF,贴片电容,surface-mount capacitor,đèn điện mặt phẳng
-3014,0.01.01.07.0073A,电解电容,electrolytic capacitor,đèn电解
+3014,0.01.01.07.0073A,电解电容,electrolytic capacitor,đènđiện giải
 3015,0.00.00.01.0576C-HF,贴片电阻,surface-mount resistor,đèn cảm ứng mặt phẳng
 3016,0.01.00.02.4087L-HF,贴片电容,surface-mount capacitor,đèn điện mặt phẳng
 3017,0.02.03.00.0500C,贴片二极管,surface-mount diode,đèn mặt phẳng
 3018,0.00.00.02.0015B-HF,贴片电阻,surface-mount resistor,đèn cảm ứng mặt phẳng
 3019,0.14.00.00.0822,外箱,outer box,đèn ngoài
-3020,0.07.00.00.1421-HF,贴片IC,surface-mount integrated circuit,đèn集成电路 mặt phẳng
+3020,0.07.00.00.1421-HF,贴片IC,surface-mount integrated circuit,đènIC mặt phẳng
 3021,0.13.03.00.0052,空白标签,blank label,đèn không có nhãn
 3022,0.12.01.00.1200-HF,底壳,base shell,đèn base
 3023,0.10.00.00.1192A,Type-C板PCB3,Type-C board PCB3,đèn Type-C board PCB3
@@ -535,13 +535,13 @@ id,code,name_zh,name_en,name_vi
 3031,0.11.06.00.0067,T-65 AC夹片,T-65 AC clip,đèn T-65 AC clip
 3032,0.00.03.02.0058B,压敏电阻,voltage-sensitive resistor,đèn cảm áp
 3033,0.01.00.00.4040S-HF,贴片电容,surface-mount capacitor,đèn điện mặt phẳng
-3034,0.01.01.04.0215B-HF,电解电容,electrolytic capacitor,đèn电解
+3034,0.01.01.04.0215B-HF,电解电容,electrolytic capacitor,đènđiện giải
 3035,0.14.00.00.0512,外箱,case,bọc ngoài
 3036,0.00.00.02.0039L-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 3037,0.14.00.00.0301-HF,外箱,case,bọc ngoài
 3038,0.03.01.00.0126I,共模电感,common mode inductor,lượng chung điện cảm
 3039,0.06.00.00.0101L,方形保险丝,square fuse,thanh chắn điện hình vuông
-3040,0.01.01.08.0055B,电解电容,electrolytic capacitor,cáp điện tích电解
+3040,0.01.01.08.0055B,电解电容,electrolytic capacitor,cáp điện tíchđiện giải
 3041,0.12.00.00.1058,面壳,shell,bọc ngoài
 3042,0.07.00.00.1390-HF,贴片IC,surface mount integrated circuit,circuit điện mặt phẳng
 3043,0.06.00.00.0100B,方形保险丝,square fuse,thanh chắn điện hình vuông
@@ -588,7 +588,7 @@ id,code,name_zh,name_en,name_vi
 3085,0.08.01.00.0565D,DC线,DC Wire,Cable DC
 3087,0.11.06.00.0151,弹片,Spring,Đèn pin
 3088,0.14.08.00.0139-HF,保护膜,Protection Film,Màng bảo vệ
-3089,0.01.01.04.0325B,电解电容,Electrolytic Capacitor,Đèn电解
+3089,0.01.01.04.0325B,电解电容,Electrolytic Capacitor,Đènđiện giải
 3090,0.00.00.01.0349L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
 3091,0.13.00.01.0006,锡条,Solder Wad,Sản phẩm điện
 3092,0.00.00.01.0164B-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
@@ -604,11 +604,11 @@ id,code,name_zh,name_en,name_vi
 3104,0.12.01.00.0684,底壳,Base Shell,Mặt phẳng
 3105,0.14.00.02.0896,彩盒,Color Box,Bao bì màu
 3106,0.13.01.08.0073,透明封箱胶带,Transparent Shipping Tape,Bao bì màu
-3107,0.01.01.04.0292B-HF,电解电容,Electrolytic Capacitor,Đèn电解
+3107,0.01.01.04.0292B-HF,电解电容,Electrolytic Capacitor,Đènđiện giải
 3108,0.07.00.00.1388-HF,贴片IC,Surface Mount Integrated Circuit,IC mặt phẳng
 3109,0.02.99.00.0038-HF,贴片二极管,Surface Mount Diode,Đèn mặt phẳng
 3110,0.01.09.00.0042A-HF,固态电容,Solid-State Capacitor,Đèn điện tử
-3111,0.01.01.01.0105A,电解电容,Electrolytic Capacitor,Đèn电解
+3111,0.01.01.01.0105A,电解电容,Electrolytic Capacitor,Đènđiện giải
 3112,0.10.00.00.1193A,变压器板PCB2,Transformer Board PCB2,Mặt phẳng bảo vệ
 3113,0.05.00.00.0278,插件MOS管,Insertable MOS Transistor,MOS mặt phẳng
 3114,0.03.04.00.0093P-HF,贴片磁珠,Surface Mount Inductor,Mặt phẳng bảo vệ
@@ -661,7 +661,7 @@ id,code,name_zh,name_en,name_vi
 3161,0.12.00.00.1094R,装饰盖,cover,cover
 3162,0.00.13.02.0028F,合金电阻,alloy resistor,resistor
 3163,0.00.00.01.0349G-HF,贴片电阻,surface mount resistor,resistor
-3164,0.15.05.00.0205-HF,Type-C母座,Type-C mother seat,Type-C母座
+3164,0.15.05.00.0205-HF,Type-C母座,Type-C mother seat,Type-Cổ cắm cái
 3165,0.12.99.00.0060,插脚压紧支架,terminal clip holder,terminal clip holder
 3166,0.00.00.00.0115C-HF,贴片电阻,surface mount resistor,resistor
 3167,0.12.01.00.0986R,主体壳,body shell,body shell
@@ -677,7 +677,7 @@ id,code,name_zh,name_en,name_vi
 3177,0.14.00.02.0886-HF,礼盒,box,box
 3178,0.09.00.00.0771J,变压器,transformer,transformer
 3179,0.00.00.01.0471M-HF,贴片电阻,surface mount resistor,resistor
-3180,0.15.05.00.0094D,Type-C母座,Type-C mother seat,Type-C母座
+3180,0.15.05.00.0094D,Type-C母座,Type-C mother seat,Type-Cổ cắm cái
 3181,0.12.01.00.0961X,底壳,base shell,base shell
 3182,0.15.03.00.0104-HF,贴片连接器,surface mount connector,surface mount connector
 3183,0.09.00.00.0807,变压器,transformer,transformer
@@ -722,7 +722,7 @@ id,code,name_zh,name_en,name_vi
 3222,0.15.05.00.0186B-HF,USB插座,USB Socket,Hộp nối USB
 3223,0.00.00.01.0435Q-HF,贴片电阻,Surface Mount Resistor,Resistor Chip Mount
 3224,0.01.00.01.4188L-HF,贴片电容,Surface Mount Capacitor,Cáp Chip Mount
-3225,0.13.01.05.0152-HF,LCM PCB 背部隔热棉,LCM PCB Backside Thermal Insulation Fabric,Dệt隔热 cho PCB LCM
+3225,0.13.01.05.0152-HF,LCM PCB 背部隔热棉,LCM PCB Backside Thermal Insulation Fabric,Dệtcách nhiệt cho PCB LCM
 3226,0.08.01.00.0748D,DC线,DC Wire,Cable DC
 3227,0.13.01.04.0363,导热硅胶,Heat Conductive Silicone,Dầu dẫn nhiệt
 3228,0.01.00.00.0018E-HF,贴片电容,Surface Mount Capacitor,Cáp Chip Mount
@@ -782,7 +782,7 @@ id,code,name_zh,name_en,name_vi
 3284,0.01.00.00.0005E-HF,贴片电容,Surface Mount Capacitor,Độ ẩm mặt
 3285,0.00.00.02.0387B-HF,贴片电阻,Surface Mount Resistor,Độ ẩm mặt
 3286,0.03.01.00.0244Z,共模电感,Common Mode Inductor,Lưu điện chung
-3287,0.10.00.00.1360A,主板板PCB1,Main Board PCB1,PCB1 của主板
+3287,0.10.00.00.1360A,主板板PCB1,Main Board PCB1,PCB1 củabo mạch chính
 3288,0.00.00.04.0006B-HF,贴片电阻,Surface Mount Resistor,Độ ẩm mặt
 3289,0.00.00.01.0362B-HF,贴片电阻,Surface Mount Resistor,Độ ẩm mặt
 3290,0.08.00.00.0419,AC线,AC Line,Cable AC
@@ -833,12 +833,12 @@ id,code,name_zh,name_en,name_vi
 3337,0.00.13.01.0036E-HF,合金电阻,Alloy resistor,Resist alloy
 3338,0.00.00.04.0220L-HF,贴片电阻,Surface-mount resistor,Resist mặt phẳng
 3339,0.11.02.00.0312,散热片,Heat sink,Mặt phẳng tán nhiệt
-3340,0.01.01.10.0066,ELE. CAP./电解电容,ELE. CAP./Electrolytic capacitor,Capacitor电解
+3340,0.01.01.10.0066,ELE. CAP./电解电容,ELE. CAP./Electrolytic capacitor,Capacitorđiện giải
 3341,0.01.04.01.0100P,X2电容,X2 capacitor,Capacitor X2
 3342,0.00.00.00.0660M-HF,贴片电阻,Surface-mount resistor,Resist mặt phẳng
 3343,0.03.04.00.0094P-HF,贴片磁珠,Surface-mount inductor,Magnetic bead mặt phẳng
 3344,0.02.02.00.0263T,贴片稳压二极管,Surface-mount zener diode,Điode zener mặt phẳng
-3345,0.01.01.01.0185A,电解电容,Electrolytic capacitor,Capacitor电解
+3345,0.01.01.01.0185A,电解电容,Electrolytic capacitor,Capacitorđiện giải
 3346,0.12.00.00.1043F,前壳,Front shell,Hộp kim loại phía trước
 3347,0.12.01.00.0681R-HF,底壳,Bottom shell,Hộp kim loại phía dưới
 3348,0.12.01.00.1192,底壳,Bottom shell,Hộp kim loại phía dưới
@@ -850,7 +850,7 @@ id,code,name_zh,name_en,name_vi
 3354,0.00.13.01.0407K,合金电阻,Alloy resistor,Resist alloy
 3355,0.01.09.00.0425P,插件固态电容,Plug-in solid-state capacitor,Capacitor điện tử mặt phẳng
 3356,4.02.100280,CTK AC插座,CTK AC socket,Hộp điện AC mặt phẳng
-3357,0.01.01.05.0336B,电解电容,Electrolytic capacitor,Capacitor电解
+3357,0.01.01.05.0336B,电解电容,Electrolytic capacitor,Capacitorđiện giải
 3358,0.00.00.02.0294A-HF,贴片电阻,Surface-mount resistor,Resist mặt phẳng
 3359,0.03.01.00.0154L-HF,共模电感,Common-mode inductor,Magnetic bead chung
 3360,0.00.00.01.0467B-HF,贴片电阻,Surface-mount resistor,Resist mặt phẳng
@@ -881,17 +881,17 @@ id,code,name_zh,name_en,name_vi
 3385,0.00.00.02.0152B-HF,贴片电阻,Surface Mount Resistor,Đèn mặt phẳng
 3386,0.01.04.01.0113B,X2电容,X2 Capacitor,Cảm ứng điện X2
 3387,0.01.05.00.0109H,Y电容,Y Capacitor,Cảm ứng điện Y
-3388,0.14.00.00.0666,电解电容外箱,Electrolytic Capacitor Outer Case,Bao bì điện từ电解
+3388,0.14.00.00.0666,电解电容外箱,Electrolytic Capacitor Outer Case,Bao bì điện từđiện giải
 3389,0.13.01.08.0118,黄色麦拉胶带,Yellow Mylar Tape,Băng dán màu vàng Mylar
 3390,0.00.00.00.0186L-HF,贴片电阻,Surface Mount Resistor,Đèn mặt phẳng
-3391,0.08.02.00.0140,C-C配线,ELE. CAP./Electrolytic Capacitor,Cảm ứng điện ELE. CAP./Cảm ứng điện电解
+3391,0.08.02.00.0140,C-C配线,ELE. CAP./Electrolytic Capacitor,Cảm ứng điện ELE. CAP./Cảm ứng điệnđiện giải
 3393,0.14.06.02.1192,信息贴纸,Y Capacitor,Cảm ứng điện Y
-3394,0.12.01.00.1190N,底壳,Electrolytic Capacitor,Cảm ứng điện电解
+3394,0.12.01.00.1190N,底壳,Electrolytic Capacitor,Cảm ứng điệnđiện giải
 3395,0.14.06.02.1221-HF,机身参数标签,Fuse,Đèn làm chập
 3396,0.00.00.01.0512B-HF,贴片电阻,Surface Mount Resistor,Đèn mặt phẳng
-3397,0.01.01.01.0193,ELE. CAP./电解电容,ELE. CAP./Electrolytic Capacitor,Cảm ứng điện ELE. CAP./Cảm ứng điện电解
+3397,0.01.01.01.0193,ELE. CAP./电解电容,ELE. CAP./Electrolytic Capacitor,Cảm ứng điện ELE. CAP./Cảm ứng điệnđiện giải
 3398,0.01.05.00.0180,Y电容,Y Capacitor,Cảm ứng điện Y
-3399,0.01.01.05.0393B,电解电容,Electrolytic Capacitor,Cảm ứng điện电解
+3399,0.01.01.05.0393B,电解电容,Electrolytic Capacitor,Cảm ứng điệnđiện giải
 3400,0.01.00.05.0057S-HF,贴片电容,Surface Mount Capacitor,Cảm ứng điện mặt phẳng
 3401,0.06.00.00.0195A,保险丝,Fuse,Đèn làm chập
 3402,0.01.00.00.4135S-HF,贴片电容,Surface Mount Capacitor,Cảm ứng điện mặt phẳng
@@ -1003,7 +1003,7 @@ id,code,name_zh,name_en,name_vi
 3510,0.14.06.00.0624,说明书,User manual,Bản đồ sử dụng
 3511,0.02.03.00.0436B-HF,贴片二极管,Surface-mount diode,Diode mặt phẳng
 3512,0.02.03.00.0431B-HF,贴片二极管,Surface-mount diode,Diode mặt phẳng
-3514,0.13.01.04.0404-HF,变压器顶部导热垫,Transformer top heat sink,Màng dẫn nhiệt trên đầu của变压器
+3514,0.13.01.04.0404-HF,变压器顶部导热垫,Transformer top heat sink,Màng dẫn nhiệt trên đầu củabiến áp
 3515,0.12.00.00.0296A-HF,上盖,Cover,Khóa mặt trên
 3516,0.11.02.00.0314,散热片,Heat sink,Khóa dẫn nhiệt
 3517,0.00.00.02.0128L-HF,贴片电阻,Surface-mount resistor,Resistor mặt phẳng
@@ -1017,7 +1017,7 @@ id,code,name_zh,name_en,name_vi
 3525,0.12.01.00.1165-HF,EU下壳塑胶件,EU bottom shell plastic part,Khóa dưới EU
 3526,0.12.05.00.0344,麦拉片,Mylar,Mylar
 3527,0.03.03.00.0240,环型电感,ring inductor,đèn cảm điện xoay
-3528,0.01.01.12.0003B,电解电容,electrolytic capacitor,cảm điện电解
+3528,0.01.01.12.0003B,电解电容,electrolytic capacitor,cảm điệnđiện giải
 3529,0.01.00.00.4173Q-HF,贴片电容,surface mount capacitor,cảm điện mặt phẳng
 3530,0.14.02.00.0575,平卡,flat card,mặt phẳng
 3531,0.01.00.01.4088L-HF,贴片电容,surface mount capacitor,cảm điện mặt phẳng
@@ -1040,7 +1040,7 @@ id,code,name_zh,name_en,name_vi
 3548,0.01.00.00.4135A-HF,贴片电容,surface mount capacitor,cảm điện mặt phẳng
 3549,0.12.01.00.1122R,底壳,bottom shell,bình dưới
 3550,0.14.00.02.0814,外盒,case,bình ngoài
-3551,0.01.01.04.0327B,电解电容,electrolytic capacitor,cảm điện电解
+3551,0.01.01.04.0327B,电解电容,electrolytic capacitor,cảm điệnđiện giải
 3552,0.14.00.00.0811,外箱,case,bình ngoài
 3553,0.12.01.00.1167-HF,UK_PIN下壳塑胶件,UK_PIN case plastic part,bình dưới vỏ nhựa của UK_PIN
 3554,0.12.01.00.0823,底壳,bottom shell,bình dưới
@@ -1053,16 +1053,16 @@ id,code,name_zh,name_en,name_vi
 3561,0.12.99.00.0091-HF,假PIN,false pin,đèn PIN giả
 3562,0.02.01.00.0058W,贴片桥堆,surface mount bridge,đèn nối hai đầu
 3563,0.03.06.04.0036M,色环电感,color-coded inductor,cảm điện màu
-3564,0.01.01.01.0158A,电解电容,electrolytic capacitor,cảm điện电解
+3564,0.01.01.01.0158A,电解电容,electrolytic capacitor,cảm điệnđiện giải
 3565,0.11.11.00.0201-HF,TB板散热片组件,TB Board Heat Sink Component,Các đường nối nhiệt kế TB
-3566,0.01.01.05.0387N,电解电容,electrolytic capacitor,cảm điện电解
+3566,0.01.01.05.0387N,电解电容,electrolytic capacitor,cảm điệnđiện giải
 3568,0.14.00.02.0875,彩盒,color box,bịch màu
 3569,0.01.00.01.4205L-HF,贴片电容,surface mount capacitor,cáp điện tử mặt phẳng
 3570,4.02.999990000,助焊膏,solder paste,sản phẩm hàn
-3571,0.01.01.05.0374A-HF,电解电容,electrolytic capacitor,cáp điện tích电解
+3571,0.01.01.05.0374A-HF,电解电容,electrolytic capacitor,cáp điện tíchđiện giải
 3572,0.14.99.00.0233,优惠券,discount coupon,bằng chứng giảm giá
-3573,0.01.01.05.0390N,电解电容,electrolytic capacitor,cáp điện tích电解
-3574,0.01.01.01.0201B,电解电容,electrolytic capacitor,cáp điện tích电解
+3573,0.01.01.05.0390N,电解电容,electrolytic capacitor,cáp điện tíchđiện giải
+3574,0.01.01.01.0201B,电解电容,electrolytic capacitor,cáp điện tíchđiện giải
 3576,0.11.02.00.0311,散热片,heat spreader,đèn tán nhiệt
 3577,0.14.04.00.0076,防静电珍珠棉,static dissipative pearl foam,bông lông hạt chống tĩnh điện
 3578,0.13.01.00.0048,三防漆,three protection paint,màng bảo vệ ba mặt
@@ -1166,7 +1166,7 @@ id,code,name_zh,name_en,name_vi
 3678,0.11.02.00.0318,散热片,Heat Sink,Mặt phẳng
 3679,0.06.00.00.0179-HF,方形保险丝,Square Fuse,Bánh nướng
 3680,0.01.05.00.0077A,Y1电容,Y1 Capacitor,Các đường nối điện áp Y1
-3681,0.01.01.05.0256B,电解电容,Electrolytic Capacitor,Các đường nối điện áp电解
+3681,0.01.01.05.0256B,电解电容,Electrolytic Capacitor,Các đường nối điện ápđiện giải
 3682,0.10.00.00.1425,适配器PCB板,Adapter PCB Board,Bao bì cơ bản
 3683,0.11.03.00.0126,跳线,Jumper,Các đường nối
 3684,0.03.00.08.0053-HF,贴片电感,Surface Mount Inductor,Các đường nối điện áp mặt trên
@@ -1228,17 +1228,17 @@ id,code,name_zh,name_en,name_vi
 3741,0.00.00.00.0660B-HF,贴片电阻,surface mount resistor,điều chỉnh mặt phẳng
 3742,0.00.00.02.0399B-HF,贴片电阻,surface mount resistor,điều chỉnh mặt phẳng
 3743,0.11.06.00.0177-HF,左弹片,left snap ring,nhỏng đinh vít bên trái
-3744,0.01.01.03.0150A,电解电容,electrolytic capacitor,cảm ứng电解
+3744,0.01.01.03.0150A,电解电容,electrolytic capacitor,cảm ứngđiện giải
 3745,0.01.00.00.4022A-HF,贴片电容,surface mount capacitor,cảm ứng mặt phẳng
 3746,0.14.06.02.1201,产品标签,product label,đế sản phẩm
 3747,0.08.01.00.0499Q,DC线,DC line,đường dẫn DC
-3748,0.01.01.01.0102F-HF,电解电容,electrolytic capacitor,cảm ứng电解
+3748,0.01.01.01.0102F-HF,电解电容,electrolytic capacitor,cảm ứngđiện giải
 3749,0.08.02.00.0143-HF,数据线,data line,đường truyền dữ liệu
 3750,0.01.07.05.0088R,瓷片电容,ceramic capacitor,cảm ứng mặt phẳng sứ
 3751,0.07.00.00.0564,贴片IC,surface mount integrated circuit,cơ sở điện mặt phẳng
-3752,0.01.01.01.0202,电解电容,electrolytic capacitor,cảm ứng电解
+3752,0.01.01.01.0202,电解电容,electrolytic capacitor,cảm ứngđiện giải
 3753,0.00.00.02.0407L-HF,贴片电阻,surface mount resistor,điều chỉnh mặt phẳng
-3754,0.01.01.05.0371B,电解电容,electrolytic capacitor,cảm ứng电解
+3754,0.01.01.05.0371B,电解电容,electrolytic capacitor,cảm ứngđiện giải
 3755,0.02.03.00.0073A,贴片二极管,surface mount diode,điều chỉnh mặt phẳng
 3756,0.14.01.01.0244,CPE袋,CPE bag,bao CPE
 3757,0.00.00.02.0355A-HF,贴片电阻,surface mount resistor,điều chỉnh mặt phẳng
@@ -1247,7 +1247,7 @@ id,code,name_zh,name_en,name_vi
 3760,0.00.00.00.0000L-HF,贴片电阻,surface mount resistor,điều chỉnh mặt phẳng
 3761,0.08.01.00.0695D,DC线,DC line,đường dẫn DC
 3762,0.15.99.00.0070,硅胶线,silicone wire,đường truyền silicon
-3763,0.12.99.00.0096-HF,LCM 支架组件,LCM support component,thiết bị支架 LCM
+3763,0.12.99.00.0096-HF,LCM 支架组件,LCM support component,thiết bịgiá đỡ LCM
 3764,0.00.05.05.0021,保险丝电阻,fuse resistance,điều chỉnh fuse
 3765,0.12.01.00.1149R,底壳,bottom shell,thanh đáy
 3766,0.07.00.00.1114,协议IC,protocol IC,cơ sở điện protocol
@@ -1285,7 +1285,7 @@ id,code,name_zh,name_en,name_vi
 3798,0.01.00.01.4093A-HF,贴片电容,Surface mount capacitor,Cáp điện dung mặt phẳng
 3799,0.14.00.02.0803,3-12_Online_24个月质保_FSC+大豆油墨彩盒,3-12_Online_24-month warranty_FSC+soybean oil ink box,3-12_Online_24-month bảo hành_FSC+màng inox
 3800,0.05.01.00.0048,贴片MOS管,Surface mount MOS transistor,Cáp MOS mặt phẳng
-3801,0.07.00.00.1111,集成电路IC,Integrated circuit IC,Cáp集成电路
+3801,0.07.00.00.1111,集成电路IC,Integrated circuit IC,CápIC
 3802,0.01.00.01.4099A-HF,贴片电容,Surface mount capacitor,Cáp điện dung mặt phẳng
 3803,0.01.00.05.0002-HF,贴片电容,Surface mount capacitor,Cáp điện dung mặt phẳng
 3804,0.12.00.00.0211A-HF,上盖,Cover,Mạng mặt trên
@@ -1340,7 +1340,7 @@ id,code,name_zh,name_en,name_vi
 3854,0.15.05.00.0173D-HF,USB迷你插座,USB Mini Adapter,Đèn pin USB mini
 3855,0.12.01.00.1148R,底壳,Base Shell,Mặt dưới
 3856,0.13.00.00.0020,锡线,Wires,Cable
-3857,0.14.01.01.0127,自封口袋,Self-sealing Bag,Bao bì tự封
+3857,0.14.01.01.0127,自封口袋,Self-sealing Bag,Bao bì tựniêm phong
 3858,0.07.00.00.1315-HF,贴片IC,Surface Mount IC,IC mặt phẳng
 3859,0.14.05.00.0108,吸塑,Injection Molded,Molded bằng cách ép
 3860,0.01.00.02.0069-HF,贴片电容,Surface Mount Capacitor,Đèn pin mặt phẳng
@@ -1457,7 +1457,7 @@ id,code,name_zh,name_en,name_vi
 3974,0.15.05.00.0193B-HF,Type-C母座,Type-C Mother Seat,Bánh Nối
 3975,0.03.00.08.0052W-HF,贴片电感,Surface Mount Inductor,Lưu Điện Mặt Nối
 3976,4.02.902,超声膜,ultrasonic membrane,đèn vi sóng
-3977,0.01.07.05.0064I-HF,高压瓷片电容,high-voltage ceramic capacitor,cáp capacitor điện瓷 áp suất cao
+3977,0.01.07.05.0064I-HF,高压瓷片电容,high-voltage ceramic capacitor,cáp capacitor điệngốm áp suất cao
 3978,0.02.04.00.0248,贴片二极管,surface-mount diode,đèn LED mặt phẳng
 3980,0.08.01.00.0712G,DC线,DC line,đường điện DC
 3981,0.00.03.02.0072G,压敏电阻,voltage-sensitive resistor,đèn cảm ứng điện áp
@@ -1471,7 +1471,7 @@ id,code,name_zh,name_en,name_vi
 3991,0.11.02.99.0021,散热铜箔,heat-sink copper foil,cuộn đồng dẫn nhiệt
 3992,0.00.00.01.0255B-HF,贴片电阻,surface-mount resistor,đèn điện áp mặt phẳng
 3993,0.00.00.04.0300L-HF,贴片电阻,surface-mount resistor,đèn điện áp mặt phẳng
-3994,0.01.01.04.0279A,电解电容,electrolytic capacitor,cáp capacitor电解
+3994,0.01.01.04.0279A,电解电容,electrolytic capacitor,cáp capacitorđiện giải
 3995,0.01.00.00.4148A-HF,贴片电容,surface-mount capacitor,cáp capacitor mặt phẳng
 3996,0.14.06.00.0697-HF,说明书,specification,sách hướng dẫn sử dụng
 3997,0.00.04.01.0188R-HF,热敏电阻,thermistor,đèn cảm nhiệt
@@ -1482,7 +1482,7 @@ id,code,name_zh,name_en,name_vi
 4002,0.12.01.00.1137A-HF,底壳,base shell,nháy
 4003,0.12.00.00.0504A-HF,面壳,face shell,nháy mặt
 4004,0.12.01.00.1136A-HF,主体壳,main body shell,nháy cơ bản
-4005,0.12.99.00.0089-HF,LCM 支架组件,LCM support component,thiết bị支架 LCM
+4005,0.12.99.00.0089-HF,LCM 支架组件,LCM support component,thiết bịgiá đỡ LCM
 4006,0.00.00.02.0220A-HF,贴片电阻,surface-mount resistor,đèn điện áp mặt phẳng
 4007,0.00.00.00.0470B-HF,贴片电阻,surface-mount resistor,đèn điện áp mặt phẳng
 4008,0.14.03.00.0203,天地礼盒,sky and earth gift box,bánh tặng trời đất
@@ -1503,7 +1503,7 @@ id,code,name_zh,name_en,name_vi
 4023,0.00.04.01.0196,热敏电阻,Thermistor,Đèn nhiệt
 4024,0.15.03.00.0099P,连接器母座,Connector Motherboard,Hộp nối tiếp
 4025,0.14.01.01.0243,平口袋,Flat Bag,Hộp mặt phẳng
-4026,0.01.03.06.0017H,涤纶电容,Polyester Capacitor,Hộp điện涤纶
+4026,0.01.03.06.0017H,涤纶电容,Polyester Capacitor,Hộp điệnpolyester
 4027,0.02.05.00.0274-HF,贴片二极管,Surface Mount Diode,Đèn điện mặt phẳng
 4028,0.00.00.04.0016C-HF,贴片电阻,Surface Mount Resistor,Đèn điện mặt phẳng
 4029,0.12.01.00.1142R,主体壳,Main Shell,Hộp cơ bản
@@ -1565,7 +1565,7 @@ id,code,name_zh,name_en,name_vi
 4087,0.09.01.00.0029J,变压器,Transformer,Transformer
 4088,0.10.00.00.1383D-HF,PCB板,PCB Board,PCB Board
 4089,0.12.99.00.0086-HF,装饰件,Decorative Part,Nguyên Mặt Nối
-4090,0.02.03.00.0495Y,FAST DIODE/快速二极管,FAST DIODE/Quick Diode,ĐIỀU HỢP FAST/ĐIỀU HỢP R快
+4090,0.02.03.00.0495Y,FAST DIODE/快速二极管,FAST DIODE/Quick Diode,ĐIỀU HỢP FAST/ĐIỀU HỢP Rnhanh
 4091,0.12.03.00.0266-HF,塑胶片,Plastic Sheet,Sheet Plast
 4092,0.07.00.00.1328,贴片IC,Surface Mount Integrated Circuit,Cơ Hợp Mặt Nối
 4093,0.12.01.00.0505R-HF,底壳,Base Shell,Mặt Nối Giữa
@@ -1591,7 +1591,7 @@ id,code,name_zh,name_en,name_vi
 4113,0.01.09.00.0406A,固态电容,Solid-State Capacitor,Capacitor Sóng Điện
 4114,0.13.01.04.0408,导热硅胶,Heat Conducting Silicone,Sản Phẩm Tản Lực Silicone
 4115,0.03.01.00.0203E,共模电感,Common Mode Inductor,Lõi Tản Lực Chéo Phân
-4116,0.08.00.00.0415,美式三插+梅花尾AC线,American Three-Pin +梅花尾AC Line,Linh Kiện AC 3 Phân + Đầu Tái
+4116,0.08.00.00.0415,美式三插+梅花尾AC线,American Three-Pin +plum tailAC Line,Linh Kiện AC 3 Phân + Đầu Tái
 4117,0.14.00.00.0392-HF,外箱,Enclosure,Bao Bì
 4118,0.14.01.01.0014,PE胶袋,PE Bag,Bao Bì PE
 4119,0.02.04.01.0260W-HF,插件肖特基二极管,Surface Mount Schottky Diode,Diode Mặt Nẹp
@@ -1616,10 +1616,10 @@ id,code,name_zh,name_en,name_vi
 4138,0.01.05.00.0076C-HF,Y1电容,Y1 Capacitor,Capacitor Y1
 4139,0.07.03.00.0012,贴片光耦,Surface Mount Phototransistor,Phototransistor Mặt Nẹp
 4140,0.11.00.02.0105,机牙螺丝,Machine Bit Screw,Screw Máy
-4141,0.01.01.07.0086B,电解电容,electrolytic capacitor,đèn capacitor电解
+4141,0.01.01.07.0086B,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 4142,0.00.00.00.0265B-HF,贴片电阻,surface mount resistor,đèn điện áp mặt phẳng
 4143,0.12.01.00.1150R,主体壳,body shell,màng vỏ
-4144,0.01.01.08.0053B,电解电容,electrolytic capacitor,đèn capacitor电解
+4144,0.01.01.08.0053B,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 4145,0.12.01.00.1178,下盖,undershell,màng vỏ dưới
 4146,0.13.01.04.0399,导热硅胶,thermal paste,sản phẩm dẫn nhiệt
 4147,0.01.00.01.4147A-HF,贴片电容,surface mount capacitor,đèn capacitor mặt phẳng
@@ -1650,7 +1650,7 @@ id,code,name_zh,name_en,name_vi
 4173,0.00.00.00.0502D,贴片电阻（667-ERJ-6ENF1431V）,surface mount resistor (667-ERJ-6ENF1431V),đèn điện áp mặt phẳng
 4174,0.09.00.00.0758V,变压器,transformer,đèn biến áp
 4175,0.15.03.00.0015,连接器（651-1755749）,connector (651-1755749),đèn nối tiếp
-4176,0.01.01.10.0053E,电解电容,electrolytic capacitor,đèn capacitor电解
+4176,0.01.01.10.0053E,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 4177,0.14.00.00.0154-HF,外箱,outer box,màng vỏ ngoài
 4178,0.14.06.02.0864,底部封口贴纸,bottom seal label,màng đóng gói dưới
 4179,0.02.07.00.0352T-HF,贴片TVS,surface mount TVS diode,đèn TVS mặt phẳng
@@ -1692,42 +1692,42 @@ id,code,name_zh,name_en,name_vi
 4217,0.00.00.01.0234L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
 4218,0.02.01.00.0019C-HF,贴片桥堆,Surface Mount Bridge,Đèn chập mặt phẳng
 4220,0.00.00.02.0260L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
-4221,0.01.01.01.0158B,电解电容,Electrolytic Capacitor,Lõi cảm ứng电解
+4221,0.01.01.01.0158B,电解电容,Electrolytic Capacitor,Lõi cảm ứngđiện giải
 4222,0.00.00.02.0269L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
 4223,0.14.06.02.1210,51004-RFID贴纸,51004-RFID Label,Bức nhãn RFID 51004
 4224,0.09.00.00.0534C-HF,变压器,Transformer,Transformer
-4225,0.00.00.04.0321B-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
-4226,0.00.00.01.0174L-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
-4227,0.00.00.02.0343L-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
-4228,0.00.00.00.0633M-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4225,0.00.00.04.0321B-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
+4226,0.00.00.01.0174L-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
+4227,0.00.00.02.0343L-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
+4228,0.00.00.00.0633M-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4229,0.14.00.00.0142,外箱,Enclosure,Bao bì
-4230,0.00.00.02.0305C-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
-4231,0.00.00.00.0233L-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4230,0.00.00.02.0305C-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
+4231,0.00.00.00.0233L-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4232,0.07.00.00.0562,贴片高速运放,Surface Mount High-Frequency Operational Amplifier,Độ mở rộng mặt phẳng cho phép vận hành cao cấp
 4233,0.01.00.02.4027A-HF,贴片电容,Surface Mount Capacitor,Độ mở rộng mặt phẳng cho phép lưu trữ
-4234,0.00.00.00.0024A-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4234,0.00.00.00.0024A-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4235,0.15.02.00.0116,2.0双行针,2.0 Double Row Pin,Điểm nối hai hàng 2.0
 4236,0.01.00.05.0008L-HF,贴片电容,Surface Mount Capacitor,Độ mở rộng mặt phẳng cho phép lưu trữ
-4237,0.00.00.02.0290L-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4237,0.00.00.02.0290L-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4238,0.12.01.00.0626,底壳,Base Shell,Bao bì
 4239,0.03.12.00.0033,PFC电感,PFC Inductor,Lõi cảm ứng PFC
 4241,0.14.00.00.0690,外箱,Enclosure,Bao bì
 4242,0.14.03.00.0194,内箱,Inner Box,Bao bì trong
-4243,0.00.00.04.0167B-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4243,0.00.00.04.0167B-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4244,0.07.00.00.1019,贴片IC,Surface Mount Integrated Circuit,Độ mở rộng mặt phẳng cho phép tích hợp
 4245,0.11.04.00.0090,压板,Pressure Plate,Đèn pin
 4246,0.00.04.00.0033G-HF,热敏电阻,Thermal Resistor,Độ mở rộng nhiệt
 4247,0.00.03.02.0085G,压敏电阻,P-MOSFET,Độ mở rộng nhiệt
 4248,0.06.00.00.0192B-HF,方形保险丝,Square Fuse,Điểm nối hình chữ nhật
 4249,0.13.01.08.0111,黄色麦拉胶纸,Yellow Mylar Tape,Băng keo Mylar màu vàng
-4250,0.00.00.02.0353A-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4250,0.00.00.02.0353A-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4251,0.15.05.00.0070D,USB母座,Surface Mount Integrated Circuit,Độ mở rộng mặt phẳng cho phép tích hợp
 4252,0.02.07.00.0197T-HF,贴片TVS,Pressure Plate,Đèn pin
 4253,0.13.01.09.0683,季度标签,Thermal Resistor,Độ mở rộng nhiệt
 4254,0.08.01.00.0730G,DC线,P-MOSFET,Độ mở rộng nhiệt
 4255,0.02.03.00.0471F,贴片二极管,Square Fuse,Điểm nối hình chữ nhật
 4256,0.12.00.00.0419A-HF,上盖,Yellow Mylar Tape,Băng keo Mylar màu vàng
-4257,0.00.00.02.0099L-HF,贴片电阻,Surface Mount Resistor,Độ电阻 mặt phẳng
+4257,0.00.00.02.0099L-HF,贴片电阻,Surface Mount Resistor,Độđiện trở mặt phẳng
 4258,0.04.01.00.0226-HF,贴片三极管,Surface Mount Transistor,Độ mở rộng mặt phẳng cho phép tụ điện
 4260,0.09.00.00.0805V,变压器,Transformer,Đèn pin
 4261,0.03.01.00.0248Z,共模电感,Common Mode Inductor,Lõi cảm ứng chéo
@@ -1786,22 +1786,22 @@ id,code,name_zh,name_en,name_vi
 4314,0.07.00.00.1333-HF,贴片IC,surface mount integrated circuit,đèn IC mặt phẳng
 4315,0.01.00.02.4129L-HF,贴片电容,surface mount capacitor,đèn capacitor mặt phẳng
 4316,0.01.05.00.0192H,Y电容,Y capacitor,đèn capacitor Y
-4318,0.01.01.00.0022,电解电容,electrolytic capacitor,đèn capacitor电解
-4319,0.11.02.99.0003,散热片,heat sink,đèn散热
+4318,0.01.01.00.0022,电解电容,electrolytic capacitor,đèn capacitorđiện giải
+4319,0.11.02.99.0003,散热片,heat sink,đèntản nhiệt
 4320,0.01.04.01.0094B,X2电容,X2 capacitor,đèn capacitor X2
 4321,0.00.04.01.0190C,插件热敏电阻,dual in-line heat-sensitive resistor,đèn resistor nhiệt độ
 4322,0.03.09.00.0118S,工型电感,inductor,đèn điện cảm
 4323,0.02.06.00.0242,贴片发光二极管,surface mount LED,đèn LED mặt phẳng
 4324,0.06.00.00.0140K,方形保险丝,square fuse,đèn fuse hình vuông
 4326,0.01.00.05.0016A-HF,贴片电容,surface mount capacitor,đèn capacitor mặt phẳng
-4327,0.11.02.01.0064,散热片,heat sink,đèn散热
+4327,0.11.02.01.0064,散热片,heat sink,đèntản nhiệt
 4328,0.05.00.00.0189,MOS管,MOS transistor,đèn MOS
 4329,0.00.13.00.0565D,合金电阻,alloy resistor,đèn điện kim loại
 4330,0.09.00.00.0803,变压器,transformer,đèn biến áp
 4331,0.14.06.00.0698,说明书,specification,đèn hướng dẫn
 4332,0.03.01.00.0130,共模电感,common-mode inductor,đèn điện cảm
 4333,0.99.00.00.0072,解胶剂,desoldering agent,đèn giải bám
-4334,0.11.02.00.0237,U型散热片,U-shaped heat sink,đèn散热
+4334,0.11.02.00.0237,U型散热片,U-shaped heat sink,đèntản nhiệt
 4335,0.01.05.00.0199T-HF,贴片Y1电容,surface mount Y1 capacitor,đèn capacitor Y1 mặt phẳng
 4336,0.03.09.00.0105Z,工型电感,inductor,đèn điện cảm
 4337,0.12.00.00.0976R,装饰盖,cover plate,đèn đệm
@@ -1855,7 +1855,7 @@ id,code,name_zh,name_en,name_vi
 4388,0.00.00.01.0235L-HF,贴片电阻,surface mount resistor,resistor điện tích hợp bề mặt
 4389,0.99.00.00.0003,后壳,back shell,nhựa sau
 4390,0.02.01.00.0083X,贴片桥堆,surface mount bridge,bridge điện tích hợp bề mặt
-4391,0.01.01.09.0075W,电解电容,electrolytic capacitor,capacitor điện电解
+4391,0.01.01.09.0075W,电解电容,electrolytic capacitor,capacitor điệnđiện giải
 4392,0.07.00.00.1353,贴片IC,Surface Mount Integrated Circuit,Chip Mount
 4393,0.05.00.00.0203,插件MOS管,Pluggable MOSFET,MOSFET
 4394,0.12.07.00.0097,热缩套管,Thermally Shrinkable Sleeve,Thermally Shrinkable Sleeve
@@ -1936,9 +1936,9 @@ id,code,name_zh,name_en,name_vi
 4472,0.07.00.00.0681-HF,贴片光耦,surface mount phototransistor,đèn cảm ứng mặt phẳng
 4473,0.13.01.99.0035,UV胶,UV glue,bì thư hướng dẫn sử dụng
 4474,0.14.03.01.0350,内托,inner tray,bì thư hướng dẫn sử dụng
-4475,0.14.06.02.1199,封口贴纸,sealant tape,bột bám封口
+4475,0.14.06.02.1199,封口贴纸,sealant tape,bột bámniêm phong
 4476,0.00.00.02.0099A-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
-4477,0.01.01.03.0062B-HF,电解电容,electrolytic capacitor,công châm电解
+4477,0.01.01.03.0062B-HF,电解电容,electrolytic capacitor,công châmđiện giải
 4478,0.00.00.00.0000A-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 4479,0.00.00.02.0299A-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 4480,0.15.05.00.0176,USB插座,USB socket,kết nối USB
@@ -1984,23 +1984,23 @@ id,code,name_zh,name_en,name_vi
 4522,0.09.00.00.0804,变压器,Transformer,Transformer
 4523,0.12.01.00.1124R-HF,10W底壳,10W Base Shell,Bản vỏ 10W
 4524,0.02.03.00.0493-HF,贴片快恢复二极管,Surface Mount Fast Recovery Diode,Đèn tiếp điểm nhanh mặt phẳng
-4525,0.14.02.00.0294,蜂窝纸板,蜂窝 Board,Bề mặt giấy bông
-4526,0.12.03.00.0277,绝缘片,Insulation Sheet,Sheet绝缘
+4525,0.14.02.00.0294,蜂窝纸板,honeycomb Board,Bề mặt giấy bông
+4526,0.12.03.00.0277,绝缘片,Insulation Sheet,Sheetcách điện
 4527,0.14.03.01.0279,彩卡,Color Card,Bảng màu
 4528,0.00.00.00.0274B-HF,贴片电阻,Surface Mount Resistor,Đèn tiếp điểm mặt phẳng
 4529,0.12.01.00.0709-HF,底壳,Base Shell,Bản vỏ
 4530,0.09.00.00.0783V,变压器,Transformer,Transformer
 4532,0.01.09.00.0400A,固态电容,Solid-State Capacitor,Lõi cảm ứng điện từ không khí
-4533,0.01.01.04.0316,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từ电解
+4533,0.01.01.04.0316,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từđiện giải
 4534,0.00.00.02.0339B-HF,贴片电阻,Surface Mount Resistor,Đèn tiếp điểm mặt phẳng
 4535,0.00.00.01.0339A-HF,贴片电阻,Surface Mount Resistor,Đèn tiếp điểm mặt phẳng
-4536,0.01.01.04.0311W,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từ电解
+4536,0.01.01.04.0311W,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từđiện giải
 4537,0.15.05.00.0201K,Type-C母座,Type-C Motherboard,Mẹ đẻ Type-C
-4538,0.00.05.04.0017E,保险电阻,保险 Resistor,Đèn tiếp điểm bảo hiểm
-4539,0.08.00.00.0280,美式三插+梅花尾AC线,American Three-Pin +梅花Tail AC Cable,Cable AC 3 pin Mỹ + đầu nối梅花
+4538,0.00.05.04.0017E,保险电阻,fuse Resistor,Đèn tiếp điểm bảo hiểm
+4539,0.08.00.00.0280,美式三插+梅花尾AC线,American Three-Pin +plum-blossomTail AC Cable,Cable AC 3 pin Mỹ + đầu nốihoa mai
 4540,0.06.00.00.0173L,方形保险丝,Square Fuse,Đèn bảo hiểm hình vuông
-4541,0.01.01.05.0255B,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từ电解
-4542,0.01.01.01.0067B,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từ电解
+4541,0.01.01.05.0255B,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từđiện giải
+4542,0.01.01.01.0067B,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từđiện giải
 4543,0.07.00.00.1301,贴片IC,Surface Mount IC,Lõi IC mặt phẳng
 4544,0.09.00.00.0454C-HF,变压器,Transformer,Transformer
 4545,0.07.00.00.1356,贴片IC,Surface Mount IC,Lõi IC mặt phẳng
@@ -2009,7 +2009,7 @@ id,code,name_zh,name_en,name_vi
 4548,0.03.04.00.0089,贴片磁珠,Surface Mount Inductor,Đèn tụ điện mặt phẳng
 4549,0.02.03.00.0246D-HF,贴片二极管,Surface Mount Diode,Đèn tiếp điểm mặt phẳng
 4550,0.08.00.00.0401C,AC线,AC Line,Cable AC
-4551,0.01.01.01.0136B,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từ电解
+4551,0.01.01.01.0136B,电解电容,Electrolytic Capacitor,Lõi cảm ứng điện từđiện giải
 4552,0.12.01.00.1124A-HF,10W底壳,10W Base Shell,Bản vỏ 10W
 4553,0.12.00.00.0872,主体壳,Main Shell,Bản vỏ chính
 4554,0.01.09.00.0401Z,固态电容,Solid-State Capacitor,Lõi cảm ứng điện từ không khí
@@ -2023,7 +2023,7 @@ id,code,name_zh,name_en,name_vi
 4562,4/2/26,保护膜,Guard Film,Màng bảo vệ
 4563,0.14.00.00.0800,外箱,Outer Case,Bao bì ngoài
 4564,0.01.00.01.4209L-HF,贴片电容,Surface Mount Capacitor,Đèn pin mặt phẳng
-4565,0.01.01.05.0241B-HF,电解电容,Electrolytic Capacitor,Đèn pin电解
+4565,0.01.01.05.0241B-HF,电解电容,Electrolytic Capacitor,Đèn pinđiện giải
 4566,0.07.00.00.1354,贴片IC,Surface Mount Integrated Circuit,Chip mặt phẳng
 4567,0.15.05.00.0191B-HF,USB插座,USB Socket,Kết nối USB
 4568,0.15.05.00.0197K,Type-C母座,Type-C Motherboard,Kết nối Type-C
@@ -2033,7 +2033,7 @@ id,code,name_zh,name_en,name_vi
 4572,0.01.09.00.0353A,固态电容,Solid-State Capacitor,Đèn pin điện tử
 4574,0.07.00.00.1334,贴片IC,Surface Mount Integrated Circuit,Chip mặt phẳng
 4576,0.08.01.00.0675D,DC线,DC Wire,Cable DC
-4577,0.01.01.04.0195B-HF,电解电容,Electrolytic Capacitor,Đèn pin电解
+4577,0.01.01.04.0195B-HF,电解电容,Electrolytic Capacitor,Đèn pinđiện giải
 4578,0.00.00.02.0318L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
 4579,0.12.01.00.0828A-HF,底壳,Base Shell,Màng bao bên
 4580,0.00.00.04.0106L-HF,贴片电阻,Surface Mount Resistor,Resistor mặt phẳng
@@ -2136,7 +2136,7 @@ id,code,name_zh,name_en,name_vi
 4682,0.02.01.00.0073H-HF,贴片桥堆,Surface Mount Bridge,Đèn Nâng
 4683,0.06.00.00.0136B,方形保险丝,Square Fuse,Bánh Nẹp
 4684,0.01.01.05.0206B,电解电容,Electrolytic Capacitor,Cổng Electrolytic
-4685,0.01.01.01.0114B-HF,电解电容,electrolytic capacitor,đèn capacitor电解
+4685,0.01.01.01.0114B-HF,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 4686,0.00.00.01.0406L-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4687,0.00.00.01.0016L-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4688,0.08.02.00.0119,C-C数据线,C-C data line,cable dữ liệu C-C
@@ -2152,7 +2152,7 @@ id,code,name_zh,name_en,name_vi
 4700,0.11.11.00.0160,指扣组件,finger component,đèn component ngón
 4701,0.14.00.02.0608,A2667C11彩盒,A2667C11 box,bịch A2667C11
 4702,0.15.05.00.0178,Type-C座,Type-C socket,kết nối Type-C
-4703,0.01.01.01.0194,ELE. CAP./电解电容,ELE. CAP./electrolytic capacitor,đèn capacitor电解
+4703,0.01.01.01.0194,ELE. CAP./电解电容,ELE. CAP./electrolytic capacitor,đèn capacitorđiện giải
 4704,0.01.09.00.0365P,固态电容,solid-state capacitor,đèn capacitor điện tử
 4705,0.12.03.00.0237,美日规插脚,MJDJ connector,đèn connector MJDJ
 4707,0.05.01.00.0241,场效应管(MOS),field-effect transistor (MOS),đèn transistor (MOS)
@@ -2162,7 +2162,7 @@ id,code,name_zh,name_en,name_vi
 4711,0.00.00.02.0478A-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4712,0.00.00.00.0187B-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4713,0.02.03.00.0168A,贴片二极管,surface mount diode,đèn diode mặt phẳng
-4714,0.01.01.04.0248B,电解电容,electrolytic capacitor,đèn capacitor电解
+4714,0.01.01.04.0248B,电解电容,electrolytic capacitor,đèn capacitorđiện giải
 4715,0.00.00.02.0380L-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4716,0.00.00.01.0370L-HF,贴片电阻,surface mount resistor,đèn điện trở mặt phẳng
 4717,0.11.06.00.0009,左弹片,left spring,đèn spring trái
@@ -2203,7 +2203,7 @@ id,code,name_zh,name_en,name_vi
 4753,0.07.00.00.1318-HF,贴片IC,Surface Mount Integrated Circuit,Điều chỉnh mặt hàng
 4754,0.00.00.00.0207A-HF,贴片电阻,Surface Mount Resistor,Điều chỉnh mặt hàng
 4755,0.01.00.00.0012A-HF,贴片电容,Surface Mount Capacitor,Độ ẩm mặt hàng
-4756,0.13.01.05.0111,隔热膜,Heat Dissipation Film,Băng隔热
+4756,0.13.01.05.0111,隔热膜,Heat Dissipation Film,Băngcách nhiệt
 4757,0.12.01.00.0436A,底壳,Base Shell,Bộ phận base
 4758,0.14.00.00.0410-HF,外箱,Outer Case,Bộ phận outer
 4759,0.12.01.00.0965F,底壳,Base Shell,Bộ phận base
@@ -2229,7 +2229,7 @@ id,code,name_zh,name_en,name_vi
 4783,0.02.05.00.0261T,贴片二极管,Surface Mount Diode,Đèn mặt
 4784,0.00.00.01.0407A-HF,贴片电阻,Surface Mount Resistor,Đèn điện mặt
 4785,0.00.00.02.0294B-HF,贴片电阻,Surface Mount Resistor,Đèn điện mặt
-4786,0.08.00.00.0272,美式三插+梅花尾AC线,American Three-Pin +梅花尾AC Cable,Cable AC 3 pin Mỹ
+4786,0.08.00.00.0272,美式三插+梅花尾AC线,American Three-Pin +plum tailAC Cable,Cable AC 3 pin Mỹ
 4787,0.02.01.00.0054,整流桥堆,Rectifier Bridge,Cầu chia điện
 4788,0.06.00.00.0075B,方形保险丝,Square Fuse,Hóa chất hình chữ nhật
 4789,0.01.00.00.0031A-HF,贴片电容,Surface Mount Capacitor,Độ ẩm mặt
@@ -2254,19 +2254,19 @@ id,code,name_zh,name_en,name_vi
 4808,0.13.01.99.0083-HF,环氧B胶（蓝色）,Epoxy B (Blue),Màng epoxy B (xanh)
 4809,0.09.00.00.0759G,变压器,Transformer,Transformer
 4810,0.08.01.00.0717G,DC线,DC Line,Cable DC
-4811,0.01.01.99.0002V,电解电容,Electrolytic Capacitor,Đèn điện电解
+4811,0.01.01.99.0002V,电解电容,Electrolytic Capacitor,Đèn điệnđiện giải
 4812,0.01.00.00.4066A-HF,贴片电容,Surface Mount Capacitor,Độ ẩm mặt
 4813,0.11.03.00.0050-HF,跳线,jumpers,đèn dẫn
 4814,0.00.00.02.0353L-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
-4815,0.01.01.04.0109B-HF,电解电容,electrolytic capacitor,capacitor电解
+4815,0.01.01.04.0109B-HF,电解电容,electrolytic capacitor,capacitorđiện giải
 4816,0.00.00.02.0388L-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
-4817,0.01.01.05.0112B,电解电容,electrolytic capacitor,capacitor电解
+4817,0.01.01.05.0112B,电解电容,electrolytic capacitor,capacitorđiện giải
 4818,4.02.99956,DC头,DC jack,đèn DC
 4819,0.00.00.00.0024L-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 4820,0.00.00.01.0468B-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 4821,0.14.06.00.0660,A2148111说明书,A2148111 manual,mẫu số A2148111
-4822,0.01.01.01.0013B,电解电容,electrolytic capacitor,capacitor电解
-4823,0.01.01.05.0334B,电解电容,electrolytic capacitor,capacitor电解
+4822,0.01.01.01.0013B,电解电容,electrolytic capacitor,capacitorđiện giải
+4823,0.01.01.05.0334B,电解电容,electrolytic capacitor,capacitorđiện giải
 4824,0.00.00.00.0216B-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 4825,0.00.00.02.0193B-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
 4826,0.14.02.00.0331,隔板,separator,đệm
@@ -2283,13 +2283,13 @@ id,code,name_zh,name_en,name_vi
 4837,0.14.02.00.0545,平卡,flat card,thẻ phẳng
 4838,0.18.01.00.0034-HF,LCD显示屏,LCD display,đèn hiển thị LCD
 4839,0.07.00.00.0982,协议IC,protocol IC,IC chuẩn
-4840,0.01.01.01.0117A,电解电容,electrolytic capacitor,capacitor电解
+4840,0.01.01.01.0117A,电解电容,electrolytic capacitor,capacitorđiện giải
 4841,0.03.01.00.0218,共模电感,common-mode inductor,độn điện
 4842,0.12.01.00.1028F,主体壳,body shell,thân vỏ
 4843,0.01.05.00.0122A,Y1电容,Y1 capacitor,capacitor Y1
 4844,0.01.09.00.0342V,固态电容,solid-state capacitor,capacitor điện tử
 4845,0.08.00.00.0403-HF,连接线L,connection line L,thẻ nối L
-4846,0.01.01.07.0088B,电解电容,electrolytic capacitor,capacitor电解
+4846,0.01.01.07.0088B,电解电容,electrolytic capacitor,capacitorđiện giải
 4847,0.13.01.00.0032,防水泡棉胶,waterproof foam rubber,lớp bao bì nước
 4849,0.11.02.99.0002,散热片,heat sink,đèn tán nhiệt
 4850,0.00.00.00.0623L-HF,贴片电阻,surface mount resistor,resistor mặt phẳng
@@ -2320,7 +2320,7 @@ id,code,name_zh,name_en,name_vi
 4878,0.12.03.00.0081-HF,塑胶片,plastic sheet,màng nhựa
 4879,0.10.00.00.1225,C2板PCBA,C2 board PCBA,C2 bảng PCBA
 4880,0.01.04.01.0115-HF,X2电容,X2 capacitor,đèn capacitor X2
-4881,0.00.13.00.0017E,合金电阻,alloy resistor,cánh tay điện bằng合金
+4881,0.00.13.00.0017E,合金电阻,alloy resistor,cánh tay điện bằnghợp kim
 4883,0.03.01.01.0092E,差模电感,common-mode inductor,đèn inductor chia mẫu
 4884,0.00.00.02.0509B-HF,贴片电阻,surface-mount resistor,cánh tay điện tích hợp bề mặt
 4885,0.14.05.00.0218,A2148美规共用吸塑,A2148 MoJoave-Japan common-use injection molded part,màng nhựa chia mẫu MoJoave-Japan
@@ -2407,7 +2407,7 @@ id,code,name_zh,name_en,name_vi
 4968,0.00.00.01.0048A-HF,贴片电阻,surface mount resistor,đèn điện áp mặt phẳng
 4969,0.12.01.00.0413X,底壳,base shell,kính chắn gió
 4970,0.14.99.00.0234,优惠券,discount coupon,bằng giảm giá
-4971,0.13.03.00.0009,成品入库单,finished product入库 list,bản in hóa đơn
+4971,0.13.03.00.0009,成品入库单,finished productwarehousing list,bản in hóa đơn
 4972,0.00.03.02.0065G,压敏电阻,pressure-sensitive resistor,đèn điện áp mặt phẳng
 4973,0.09.00.00.0544A,变压器,transformer,đèn biến áp
 4974,0.12.01.00.0714,底壳,base shell,kính chắn gió
@@ -2478,10 +2478,10 @@ id,code,name_zh,name_en,name_vi
 5042,0.02.07.00.0274P,贴片TVS管,surface-mount TVS diode,nháy TVS diode
 5043,0.01.09.00.0313V,固态电容,solid-state capacitor,công suất điện tử
 5044,0.07.00.00.0938,贴片IC,surface-mount integrated circuit,nháy IC
-5045,0.01.01.09.0090B,电解电容,electrolytic capacitor,công suất điện tử电解
+5045,0.01.01.09.0090B,电解电容,electrolytic capacitor,công suất điện tửđiện giải
 5046,0.13.01.05.0085,高温金手指胶带,hot melt gold finger tape,nháy dây kim loại
 5047,0.12.05.00.0357,麦拉片,polyester film,nháy polyester
-5048,0.01.01.04.0201B,电解电容,electrolytic capacitor,công suất điện tử电解
+5048,0.01.01.04.0201B,电解电容,electrolytic capacitor,công suất điện tửđiện giải
 5049,0.14.99.00.0008,打包扣,packing clip,nháy đóng gói
 5050,0.12.01.00.0969,插脚下盖,plug base,nháy chân
 5051,0.14.00.00.0783,外箱,outer box,nháy hộp
@@ -2514,10 +2514,10 @@ id,code,name_zh,name_en,name_vi
 5078,0.01.00.05.0083G-HF,贴片电容,Surface Mount Capacitor,Đèn điện mặt phẳng
 5079,0.13.01.99.0049,导热灌封胶A,Thermal Paste A,Băng keo dẫn nhiệt A
 5080,0.06.00.00.0153K,方形保险丝,Square Fuse,Đèn bảo vệ hình chữ nhật
-5081,0.01.01.05.0261B,电解电容,Electrolytic Capacitor,Đèn điện电解
+5081,0.01.01.05.0261B,电解电容,Electrolytic Capacitor,Đèn điệnđiện giải
 5082,0.01.00.01.4004L-HF,贴片电容,Surface Mount Capacitor,Đèn điện mặt phẳng
 5083,0.01.00.01.4159G-HF,贴片电容,Surface Mount Capacitor,Đèn điện mặt phẳng
-5084,0.13.01.05.0148,隔热膜,Heat-Resistant Film,Màng隔热
+5084,0.13.01.05.0148,隔热膜,Heat-Resistant Film,Màngcách nhiệt
 5085,0.02.05.00.0251,贴片开关二极管,Surface Mount Diode,Điode mặt phẳng
 5086,0.01.00.01.4234A-HF,贴片电容,Surface Mount Capacitor,Đèn điện mặt phẳng
 5087,0.14.00.02.0646,彩盒,Color Box,Bao bì màu
@@ -2526,7 +2526,7 @@ id,code,name_zh,name_en,name_vi
 5090,0.12.01.00.0977R,底壳,Base Shell,Mặt phẳng
 5091,0.11.15.00.0005,石墨烯,Graphene,Graphene
 5092,0.12.00.00.0692,面盖,Cover,Mặt phẳng
-5093,0.01.01.01.0169B,电解电容,Electrolytic Capacitor,Đèn điện电解
+5093,0.01.01.01.0169B,电解电容,Electrolytic Capacitor,Đèn điệnđiện giải
 5094,0.12.01.00.0976R,主体壳(双色件),Main Shell (Dual Color),Mặt phẳng (các màu)
 5096,0.12.00.00.0794,上盖,Top Cover,Mặt phẳng
 5097,0.03.13.00.0009,线圈,Coil,Mặt phẳng
@@ -2540,7 +2540,7 @@ id,code,name_zh,name_en,name_vi
 5105,0.12.00.00.0903R,装饰盖,Cover,Mặt Nối
 5106,0.08.01.00.0703D,DC线,DC Line,Mặt Nối
 5107,0.01.00.05.0043A-HF,贴片电容,Surface Mount Capacitor,Capacitor Mặt Nối
-5108,0.12.11.00.0103,防滑垫,Anti-slip垫,Mặt Nối
+5108,0.12.11.00.0103,防滑垫,Anti-slippad,Mặt Nối
 5109,0.03.01.00.0157Z,共模电感,Common Mode Inductor,Mặt Nối
 5110,0.14.08.00.0038,大头端贴膜,End Terminal Film,Mặt Nối
 5111,0.14.01.01.0250,CPE袋,CPE Bag,Mặt Nối
@@ -2582,7 +2582,7 @@ id,code,name_zh,name_en,name_vi
 5148,0.13.01.99.0068,不干胶,Adhesive Tape,Tape không dính
 5149,0.05.01.00.0333,贴片氮化镓MOS管,Surface Mount Nitrogen-Doped Gallium Arsenide MOSFET,Chip Mount Nitrogen-Doped Gallium Arsenide MOSFET
 5150,0.01.09.00.0397,固态电容,Solid Capacitor,Cáp điện tử
-5151,0.01.01.01.0118B-HF,电解电容,Electrolytic Capacitor,Cáp电解
+5151,0.01.01.01.0118B-HF,电解电容,Electrolytic Capacitor,Cápđiện giải
 5152,0.00.03.05.0071B-HF,压敏电阻,Sensitive Resistor,Resistor nhạy cảm
 5153,0.14.02.01.0234,长刀卡,Long Knife,Long Knife
 5154,0.14.01.01.0243-HF,平口袋,Flat Bag,Bao bì phẳng
@@ -2592,12 +2592,12 @@ id,code,name_zh,name_en,name_vi
 5158,0.01.09.00.0396,固态电容,Solid Capacitor,Cáp điện tử
 5159,0.01.00.05.0081L-HF,贴片电容,Surface Mount Capacitor,Cáp chip
 5160,0.14.00.02.0792,EVA盒,EVA Box,Bao bì EVA
-5161,0.01.01.01.0117B,电解电容,Electrolytic Capacitor,Cáp电解
+5161,0.01.01.01.0117B,电解电容,Electrolytic Capacitor,Cápđiện giải
 5162,0.00.00.00.0576L-HF,贴片电阻,Surface Mount Resistor,Resistor chip
 5163,0.12.01.00.0588A-HF,底壳,Base Shell,Bao bì đáy
 5164,0.07.00.00.1076,贴片IC,Surface Mount Integrated Circuit,Chip Mount
 5165,0.12.20.00.0072,纸保护套,Paper Protection Cover,Bao bì bảo vệ giấy
-5167,0.15.00.00.0058,AC梅花插座,AC梅花插头,Phần tử梅花 AC
+5167,0.15.00.00.0058,AC梅花插座,ACplum plug,Phần tửhoa mai AC
 5168,0.01.00.05.0082G-HF,贴片电容,Surface Mount Capacitor,Cáp chip
 5169,0.12.00.00.0928R,装饰盖,Decorative Cover,Bao bì trang trí
 5170,0.12.03.00.0245,插脚连杆,Plug and Wires,Hẹn ứng và dây
@@ -2606,7 +2606,7 @@ id,code,name_zh,name_en,name_vi
 5173,0.08.01.00.0709D,DC线,DC Line,Đường DC
 5174,0.11.02.01.0051,折弯铜散热片,Bent Copper Heat Sink,Đèn sáng cuộn
 5175,0.08.00.00.0351,硅胶线,Silicone Wire,Đường silicon
-5176,0.01.01.05.0365,电解电容,Electrolytic Capacitor,Cáp电解
+5176,0.01.01.05.0365,电解电容,Electrolytic Capacitor,Cápđiện giải
 5177,0.07.00.00.1281,贴片IC,Surface Mount Integrated Circuit,Chip Mount
 5178,0.01.00.05.0199L-HF,贴片电容,Surface Mount Capacitor,Cáp chip
 5179,0.01.05.00.0204T,贴片Y电容,Surface Mount Y Capacitor,Cáp chip Y
@@ -2640,7 +2640,7 @@ id,code,name_zh,name_en,name_vi
 5207,0.07.00.00.1228,四核SoC处理器,Quad-core SoC Processor,Processor SoC
 5208,0.01.09.00.0398,固态电容,Solid-State Capacitor,Mặt hàng điện tử
 5209,0.05.01.00.0264,贴片MOS管,Surface Mount MOSFET,Độ ẩm MOSFET
-5210,0.11.07.00.0037,正极弹簧组件,Positive Terminal Spring Component,Độ ẩm簧
+5210,0.11.07.00.0037,正极弹簧组件,Positive Terminal Spring Component,Độ ẩmlò xo
 5211,0.08.01.00.0710D,DC线,DC Line,Đường DC
 5212,0.00.00.01.0151A-HF,贴片电阻,Surface Mount Resistor,Độ ẩm mặt hàng
 5213,0.14.00.00.0663,外箱,Outer Box,Mặt hàng
@@ -2853,7 +2853,7 @@ id,code,name_zh,name_en,name_vi
 5826,0.14.01.99.0085,纸袋,paper bag,bao bì giấy
 5827,0.14.02.00.0423,隔板,separator,lớp cách
 5828,0.14.02.00.0490,隔板,separator,lớp cách
-5829,0.14.02.00.0533,电解电容平卡,Electrolytic Capacitor,Đèn điện电解
+5829,0.14.02.00.0533,电解电容平卡,Electrolytic Capacitor,Đèn điệnđiện giải
 5830,0.14.02.01.0225,12刀卡,12 Volt Card,12 Volt Card
 5831,0.14.02.01.0226,4刀卡,4 Volt Card,4 Volt Card
 5832,0.14.02.01.0246,长刀卡,Long Sword Card,Card Súng Lưỡi

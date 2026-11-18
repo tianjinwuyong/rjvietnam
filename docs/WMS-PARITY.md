@@ -325,3 +325,9 @@ grant select, insert, update on public.wms_receipt_orders, public.wms_picking_or
 - `WmsCanonicalData` / `WmsRjvnInventory` / `WmsRjvnPicking` / `WmsRjvnDocFlow`：删除重复 load effect，改为单一 debounce，避免筛选时双份请求
 - 全量 rjvn 读端点带 `q` 冒烟：除 `q` 非该端点参数外全部 200；正确路径 `/rjvn-iqc/strictness/transfer-logs` 200（15 条）
 - 修复提交：`8e3b55b`、`02bcf52`（typecheck 0 错误；Playwright 3 页签搜索正常，无控制台错误）
+
+### 翻译残留中文清理
+
+权威检查（Node `[\u4e00-\u9fff]`，psql 经 PowerShell 传中文正则会乱码，不可靠）发现 LLM 对 244 条长技术描述只译了前半段，英文名残留中文 37+12 条、越文名残留 187+35 条（如 `Dongguan Lingen五金电子有限公司`、`đèn capacitor电解`）。
+
+`scripts/etl/rjvn-translate-mixed.mjs` 用 **112 个中文片段 → EN/VI 术语词典**确定性替换（长片段优先，避免 `热敏电阻` 被 `电阻` 部分替换）。结果：`materials` 202 行、`suppliers` 42 行清理完毕，**残留中文 0**。词典仅覆盖残留片段，输出仍是机器生成，业务校对清单已刷新。

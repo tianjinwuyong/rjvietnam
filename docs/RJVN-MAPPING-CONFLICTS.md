@@ -131,3 +131,4 @@ iqc_inspections   : inspection_no, material_lot_id, result, operator_id
 - 最终状态：**0 条中文占位**；`materials` 2,869 / `suppliers` 353 / `products` 4 已翻译
 - 8 条含特殊字符（Φ、*、全角括号）的长包装描述模型持续失败，由 `scripts/etl/rjvn-translate-manual.sql` 手工翻译补齐
 - 机器翻译，建议业务侧校对
+- 后续发现 244 条长技术描述残留中文片段（LLM 只译前半段），由 `scripts/etl/rjvn-translate-mixed.mjs` 用 112 条术语词典确定性清理；**最终残留中文 0**，校对清单已刷新
