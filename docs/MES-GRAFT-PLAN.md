@@ -53,11 +53,11 @@ SMT 现有 `apps/web/src/mes/`（Product Gate 架构）与 `services/api` statio
 | W4 | bom（4 页）+ ord（po/mo/issue）+ pln（3 页） | ~10 页 | ✅ 8b229f4 |
 | W5 | proc 工艺 + cfg 配置中心 19 页 | ~22 页 | ✅ ad25ee5 |
 | W6 | exec 执行域（scan/pass/bind/pack/pallet/trace/defect/repair/release） | ~31 页 | 🔄 拆三段 |
-| W6a | 过站引擎：do_pass 主流程 + 守卫/放行/路线锁换 + SN 取号 + /exec/pass 等 11 路由 | exec.py 1-2760 | ✅ 本次 |
-| W6b | SN 池/激光拼板/工位看板：laser×9、sn rules/batch/pool/void/detail/test、station next/pending、pass list、panel_preview/pass_panel | exec.py 2674-3896 | ⬜ |
-| W6c | 维修/报废/报表：repair、scrap、device_health、yield、repair/list、mo/materials、ai_stations、aging×2、trace/material×2 | exec.py 3753-5250 + report.py | ⬜ |
-| W7 | 设备接口（DeviceConfig/StationPass/MachineData/Packing）+ itf 日志 | ~60 路由 | ⬜ |
-| W8 | AOI 集成 + 报表 8 页 + 看板 board.html | ~12 页 | ⬜ |
+| W6a | 过站引擎：do_pass 主流程 + 守卫/放行/路线锁换 + SN 取号 + /exec/pass 等 11 路由 | exec.py 1-2760 | ✅ b829139 + 366f8ac |
+| W6b | SN 池/激光拼板/工位看板：laser×9、sn rules/batch/pool/void/detail/test、station next/pending、pass list、panel_preview/pass_panel | exec.py 2674-3896 | ✅ 9da2a87 |
+| W6c | 维修/报废/报表：repair、scrap、device_health、yield、repair/list、mo/materials、ai_stations、aging×2、trace/material×2 | exec.py 3753-5250 + report.py | ✅ 9da2a87 |
+| W7 | 设备接口（DeviceConfig/StationPass/MachineData/Packing）+ itf 日志 | ~60 路由 | ✅ 7683286 |
+| W8 | AOI 集成（看板/字典/机型归一/位号映射）+ 出货报告模板（上传/映射/生成）+ 迁移 284 | 18 路由 | ✅ 本次 |
 
 ## 5. 环境坑位备忘
 

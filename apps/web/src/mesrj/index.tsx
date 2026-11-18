@@ -9,6 +9,7 @@ import { crudViews } from "./resources";
 import { BomImportView, BomTreeView, IssueView, MoView, PlanBoardView, PlanLoadView } from "./views-w4";
 import { ModelProcessView } from "./views-w5";
 import { ExecScanView, ExecMoRouteView, ExecReleaseView } from "./views-w6a";
+import { AoiDashView, ReportTplView } from "./views-w8";
 import { SnPoolView, SnRuleView, SnBatchView, SnVoidView, SnDetailView, SnTestView,
   StationNextView, StationPendingView, PassListView, PanelPreviewView, PassPanelView } from "./views-w6b";
 import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoMaterialsView,
@@ -96,6 +97,9 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "exec.scan") return <ExecScanView locale={locale} />;
     if (active === "exec.moroute") return <ExecMoRouteView locale={locale} />;
     if (active === "exec.release") return <ExecReleaseView locale={locale} />;
+    // W8 AOI 集成 + 出货报告模板
+    if (active === "report.aoi") return <AoiDashView locale={locale} />;
+    if (active === "report.tpl") return <ReportTplView locale={locale} />;
     // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
     if (active === "exec.snpool") return <SnPoolView locale={locale} />;
     if (active === "exec.snrule") return <SnRuleView locale={locale} />;

@@ -528,6 +528,10 @@ export const MENU = [
         "name": "AOI 看板"
       },
       {
+        "code": "report.tpl",
+        "name": "出货报告模板"
+      },
+      {
         "code": "report.yield",
         "name": "PCBA 良率"
       },

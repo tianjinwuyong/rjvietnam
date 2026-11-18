@@ -49,6 +49,19 @@ import {
   repairRegister, scrapRegister, deviceHealth, yieldStats, repairList,
   moMaterials, aiStations, agingWip, agingDetail, traceMaterialBySn, traceMaterialByMaterial,
 } from "../mesrj/domain.js";
+// W8 AOI 集成 + 出货报告模板（源 api/aoi.py + api/report.py + core/report_tpl.py）
+import {
+  aoiSqueeze, aoiSeries, aoiSeriesLike, aoiBuildMap, aoiVariants,
+  aoiCanonicalModels, aoiManualMap, aoiResolve, aoiResolveEx,
+} from "../mesrj/aoi-model.js";
+import {
+  aoiDash, aoiStationOf, aoiPointsTable, aoiPickPoints, aoiDefectMap,
+  aoiCompMap, aoiImgCfg, aoiRelImgPath, aoiRange, aoiRate,
+} from "../mesrj/aoi-dash.js";
+import {
+  KIND_COC, KINDS, listTpl, getTpl, saveUpload, saveMapping, toggleTpl, deleteTpl,
+  tplCells, precheck, genReport, buildCtx, allFields, fieldOptions,
+} from "../mesrj/report-tpl.js";
 
 /** 源 util.ok(data, msg) */
 function ok(res, data = null, msg = "") {
@@ -4192,6 +4205,297 @@ export function createMesrjRouter({ authenticateJWT }) {
   router.get("/exec/trace/material/sns", async (req, res) => {
     try { return ok(res, await traceMaterialByMaterial(req.query)); }
     catch (ex) { return fail(res, ex.message); }
+  });
+
+  // ═══ W8 AOI 集成 + 出货报告模板（源 api/aoi.py + api/report.py）══════════
+  //   GET    /aoi/dash                     AOI 看板（产量 + 质量 DPPM/DPMO/TrueFail/NDF）
+  //   GET    /aoi/dict                     不良代码字典
+  //   GET    /aoi/models                   机型下拉（含原始程序名 + 归一映射）
+  //   GET    /aoi/compmap                  位号映射
+  //   GET    /aoi/compmap/stat             位号映射统计
+  //   POST   /aoi/compmap/import           位号映射批量导入
+  //   GET    /aoi/imgstat                  图片目录统计
+  //   GET    /aoi/img                      图片代理（proxy 模式）
+  //   GET    /report/tpl/list              模板列表
+  //   POST   /report/tpl/upload            上传模板
+  //   GET    /report/tpl/:id               模板详情
+  //   GET    /report/tpl/:id/cells         模板单元格（配置映射用）
+  //   POST   /report/tpl/:id/mapping       保存字段映射
+  //   POST   /report/tpl/:id/enable        启用/停用
+  //   DELETE /report/tpl/:id               删除模板
+  //   GET    /report/check                 生成前检查
+  //   POST   /report/gen                   生成报告（返回 xlsx 下载）
+
+  // ── AOI 看板 ──────────────────────────────────────────────────────────────
+  router.get("/aoi/dash", requireMesrjPerm("prod.trace"), async (req, res) => {
+    try {
+      const q = req.query;
+      const data = await aoiDash({
+        days: (q.days || "7").toString(),
+        day: (q.day || "").toString().trim(),
+        device: (q.device || "").toString().trim(),
+        model: (q.model || "").toString().trim(),
+        station: (q.station || "").toString().trim(),
+        by: (q.by || "model").toString().trim().toLowerCase(),
+        tsFrom: (q.from || q.ts_from || "").toString().trim(),
+        tsTo: (q.to || q.ts_to || "").toString().trim(),
+      });
+      return ok(res, data);
+    } catch (ex) {
+      console.error("[aoi/dash]", ex);
+      return fail(res, `AOI 看板查询失败：${ex.message}`);
+    }
+  });
+
+  // 不良代码字典（源 /aoi/dict）
+  router.get("/aoi/dict", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const rows = (await query(
+      "SELECT code, name_en, name_zh, category, remark, status FROM cfg_aoi_defect ORDER BY category, code"
+    )).rows;
+    return ok(res, rows);
+  });
+
+  // 机型 / 程序名下拉（源 /aoi/models）
+  router.get("/aoi/models", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const progs = (await query(
+      "SELECT DISTINCT project_name FROM prd_aoi_result WHERE COALESCE(project_name,'')<>''"
+    )).rows.map(r => r.project_name);
+    const pmap = await aoiBuildMap(progs);
+    const cnt = {};
+    for (const p of progs) {
+      const m = pmap[p]?.model ?? p;
+      if (!cnt[m]) cnt[m] = 0;
+    }
+    for (const r of (await query(
+      "SELECT project_name, COUNT(*)::int AS n FROM prd_aoi_result "
+      + "WHERE COALESCE(project_name,'')<>'' GROUP BY project_name")).rows) {
+      const m = pmap[r.project_name]?.model ?? r.project_name;
+      cnt[m] = (cnt[m] || 0) + Number(r.n || 0);
+    }
+    return ok(res, {
+      models: Object.keys(cnt).filter(Boolean)
+        .sort((a, b) => cnt[b] - cnt[a]).map(m => ({ model: m, n: cnt[m] })),
+      programs: (await query(
+        "SELECT project_name, COUNT(*)::int AS n FROM prd_aoi_result WHERE project_name<>'' "
+        + "GROUP BY project_name ORDER BY n DESC")).rows
+        .map(r => ({ program: r.project_name, n: r.n,
+          model: pmap[r.project_name]?.model ?? r.project_name,
+          mapped: pmap[r.project_name]?.hit ?? false })),
+      unmapped: progs.filter(p => !pmap[p]?.hit).sort(),
+    });
+  });
+
+  // 位号映射（源 /aoi/compmap）
+  router.get("/aoi/compmap", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const model = (req.query.model || "").toString().trim();
+    const rows = model
+      ? (await query(
+        "SELECT id, model, comp_id, designator, part_no, package, comp_type, remark "
+        + "FROM cfg_aoi_comp_map WHERE model=$1 ORDER BY comp_id", [model])).rows
+      : (await query(
+        "SELECT id, model, comp_id, designator, part_no, package, comp_type, remark "
+        + "FROM cfg_aoi_comp_map ORDER BY model, comp_id")).rows;
+    return ok(res, rows);
+  });
+
+  // 位号映射统计（源 /aoi/compmap/stat）
+  router.get("/aoi/compmap/stat", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const rows = (await query(
+      "SELECT model, COUNT(*)::int AS n FROM cfg_aoi_comp_map GROUP BY model ORDER BY model"
+    )).rows;
+    const total = Number((await query(
+      "SELECT COUNT(*)::int AS n FROM cfg_aoi_comp_map")).rows[0]?.n || 0);
+    return ok(res, { rows, total });
+  });
+
+  // 位号映射批量导入（源 /aoi/compmap/import）：{model, rows:[{comp_id,designator}]}
+  router.post("/aoi/compmap/import", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const d = req.body || {};
+    const model = (d.model || "").toString().trim();
+    const rows = Array.isArray(d.rows) ? d.rows : [];
+    if (!model) return fail(res, "请指定机型");
+    if (!rows.length) return fail(res, "没有要导入的位号数据");
+    let nOk = 0, skip = 0;
+    for (const r of rows) {
+      const compId = (r?.comp_id || r?.compId || "").toString().trim();
+      const designator = (r?.designator || "").toString().trim();
+      if (!compId || !designator) { skip++; continue; }
+      await query(
+        `INSERT INTO cfg_aoi_comp_map (model, comp_id, designator, part_no, package, comp_type, remark)
+         VALUES ($1,$2,$3,'','','','')
+         ON CONFLICT (model, comp_id) DO UPDATE SET designator=EXCLUDED.designator`,
+        [model, compId, designator]);
+      nOk++;
+    }
+    return ok(res, { ok: nOk, skip }, `已导入 ${nOk} 条位号映射${skip ? `，跳过 ${skip} 条` : ""}`);
+  });
+
+  // 图片目录统计（源 /aoi/imgstat）
+  router.get("/aoi/imgstat", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const cfg = await aoiImgCfg();
+    const out = { mode: cfg.mode, base: cfg.base, root: cfg.root, files: 0, dirs: 0, bytes: 0 };
+    if (!cfg.root) {
+      out.msg = "没有配 aoi.image_root（本机挂载目录）也没配 aoi.image_base（AOI 自带 HTTP 前缀）";
+      return ok(res, out);
+    }
+    try {
+      const fs = await import("node:fs");
+      const path = await import("node:path");
+      const root = cfg.root;
+      if (!fs.existsSync(root)) {
+        out.msg = `图片目录不存在：${root}`;
+        return ok(res, out);
+      }
+      const walk = (dir, depth) => {
+        if (depth > 6) return;
+        let ents = [];
+        try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+        for (const e of ents) {
+          const p = path.join(dir, e.name);
+          if (e.isDirectory()) { out.dirs++; walk(p, depth + 1); }
+          else {
+            out.files++;
+            try { out.bytes += fs.statSync(p).size; } catch { /* ignore */ }
+          }
+        }
+      };
+      walk(root, 0);
+    } catch (ex) {
+      out.msg = `统计失败：${ex.message}`;
+    }
+    return ok(res, out);
+  });
+
+  // 图片代理（源 /aoi/img）：proxy 模式读本机挂载目录，base 模式回 302
+  router.get("/aoi/img", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const cfg = await aoiImgCfg();
+    const p = (req.query.path || "").toString();
+    if (!p) return fail(res, "缺少 path");
+    const rel = aoiRelImgPath(p);
+    if (cfg.mode === "base") {
+      return res.redirect(`${cfg.base}/${rel}`);
+    }
+    if (cfg.mode !== "proxy" || !cfg.root) {
+      return fail(res, "图片接入未配置（aoi.image_root / aoi.image_base）");
+    }
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const full = path.resolve(cfg.root, rel);
+    if (!full.startsWith(path.resolve(cfg.root))) return fail(res, "非法路径", 400);
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) {
+      return fail(res, "图片不存在", 404);
+    }
+    res.type(full.endsWith(".png") ? "image/png" : "image/jpeg");
+    return res.sendFile(full);
+  });
+
+  // ── 出货报告模板 ─────────────────────────────────────────────────────────
+  router.get("/report/tpl/list", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const kind = (req.query.kind || "").toString().trim();
+    const rows = await listTpl(kind);
+    return ok(res, {
+      rows,
+      kinds: Object.entries(KINDS).map(([key, name]) => ({ key, name })),
+    });
+  });
+
+  router.post("/report/tpl/upload", requireMesrjPerm("prod.trace"), async (req, res) => {
+    // 两种传法：multipart 文件上传，或 JSON {file_name, content_base64}
+    const u = req.mesrjUser || {};
+    let buffer = null, kind = KIND_COC, tplName = "", remark = "";
+    const ct = (req.headers["content-type"] || "").toString();
+    if (ct.includes("multipart/form-data")) {
+      // express.json 不会解析 multipart；这里用原始 body（已在下方 middleware 处理）
+      buffer = req.rawBody || null;
+      kind = (req.query.kind || KIND_COC).toString();
+      tplName = (req.query.tpl_name || "").toString();
+      remark = (req.query.remark || "").toString();
+    } else {
+      const d = req.body || {};
+      kind = (d.kind || KIND_COC).toString().trim();
+      tplName = (d.tpl_name || "").toString().trim();
+      remark = (d.remark || "").toString().trim();
+      if (d.content_base64) {
+        buffer = Buffer.from(String(d.content_base64), "base64");
+      } else if (Array.isArray(d.content_b64)) {
+        buffer = Buffer.from(d.content_b64.join(""), "base64");
+      }
+    }
+    if (!buffer || !buffer.length) {
+      return fail(res, "没有收到文件（请用 multipart 上传，或传 content_base64）");
+    }
+    const [tpl, err] = await saveUpload(buffer, kind, tplName, remark, u.login_name);
+    if (err) return fail(res, err);
+    return ok(res, tpl,
+      `模板已保存，${(tpl?.sheets || []).length} 张表。接下来配置「哪个格子填什么」`);
+  });
+
+  router.get("/report/tpl/:id", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const tpl = await getTpl(Number(req.params.id));
+    if (!tpl) return fail(res, "模板不存在", 404);
+    return ok(res, tpl);
+  });
+
+  router.get("/report/tpl/:id/cells", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const sheet = (req.query.sheet || "").toString().trim();
+    const [rows, err] = await tplCells(Number(req.params.id), sheet || null);
+    if (err) return fail(res, err);
+    return ok(res, { rows, fields: await allFields(), editable: fieldOptions() });
+  });
+
+  router.post("/report/tpl/:id/mapping", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const d = req.body || {};
+    const [tpl, err] = await saveMapping(Number(req.params.id), d.mapping || {});
+    if (err) return fail(res, err);
+    const n = Object.values(tpl?.mapping || {})
+      .reduce((a, v) => a + Object.keys(v || {}).length, 0);
+    return ok(res, tpl, `已保存 ${n} 个字段映射`);
+  });
+
+  router.post("/report/tpl/:id/enable", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const d = req.body || {};
+    const tpl = await toggleTpl(Number(req.params.id), !!d.enabled);
+    if (!tpl) return fail(res, "模板不存在", 404);
+    return ok(res, tpl, tpl.enabled ? "已启用" : "已停用");
+  });
+
+  router.delete("/report/tpl/:id", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const [okDel, err] = await deleteTpl(Number(req.params.id));
+    if (err) return fail(res, err);
+    return ok(res, {}, "已删除");
+  });
+
+  // 生成前检查（源 /report/check）
+  router.get("/report/check", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const poNo = (req.query.po_no || "").toString().trim();
+    const r = await precheck(poNo);
+    const view = {};
+    for (const k of ["po_no", "cust_name", "product_model", "plan_qty", "ship_qty",
+      "pallet_n", "box_n", "oqc_no", "oqc_result", "insp_date_slash", "ship_date_dot",
+      "ship_qty_pcs", "signer", "signer_title", "vendor_name"]) {
+      view[k] = r.ctx?.[k] ?? "";
+    }
+    return ok(res, { ok: r.ok, warnings: r.warnings, fields: view, editable: fieldOptions() });
+  });
+
+  // 生成报告（源 /report/gen）：返回 xlsx 下载
+  router.post("/report/gen", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const d = req.body || {};
+    const tplId = Number(d.tpl_id);
+    const poNo = (d.po_no || "").toString().trim();
+    if (!tplId) return fail(res, "请选择模板");
+    const r = await genReport(tplId, poNo, d.overrides || {});
+    if (!r.buffer) return fail(res, (r.warnings || []).join("；") || "生成失败");
+    const u = req.mesrjUser || {};
+    await audit(u.login_name, "出货报告", "生成报告", poNo, `填入 ${r.filled || 0} 个单元格`);
+    if (d.download === false) {
+      return ok(res, { name: r.name, filled: r.filled || 0, warnings: r.warnings }, "已生成");
+    }
+    res.setHeader("Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition",
+      `attachment; filename="${encodeURIComponent(r.name)}"`);
+    return res.send(r.buffer);
   });
 
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════
