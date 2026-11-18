@@ -359,26 +359,29 @@ export function registerRjvnIqcRoutes(app, pgPool, requirePermission) {
   // Pending inspection lots. Source: iqc.service.ts:409-543 getPendingList.
   app.get("/rjvn-iqc/pending", perm, wrap(async (req, res) => {
     const q = String(req.query.q || "").slice(0, 200);
+    // Parity with original iqc.service.ts getPendingList: no default status filter.
+    // Optional ?status= narrows results when supplied; absent = all lots (original behavior).
+    const status = String(req.query.status || "").slice(0, 80);
     const limit = limitOf(req.query.limit), offset = offsetOf(req.query.offset);
-    const where = `lower(coalesce(l.inspection_result,'')) = 'pending'
-      and ($1::text is null or $1 = '' or
+    const where = `($1::text is null or $1 = '' or
         coalesce(l.lot_no,'') ilike '%'||$1||'%' or
         coalesce(l.inspection_no,'') ilike '%'||$1||'%' or
         coalesce(l.batch_no,'') ilike '%'||$1||'%' or
         coalesce(m.material_code,'') ilike '%'||$1||'%' or
         coalesce(m.material_name,'') ilike '%'||$1||'%' or
-        coalesce(s.supplier_name,'') ilike '%'||$1||'%')`;
-    const params = [q || null, limit, offset];
+        coalesce(s.supplier_name,'') ilike '%'||$1||'%')
+      and ($2::text is null or $2 = '' or lower(coalesce(l.status,'')) = lower($2))`;
+    const params = [q || null, status || null, limit, offset];
     const [data, count] = await Promise.all([
       pgPool.query(`select l.*, m.material_code, m.material_name, s.supplier_name
         from public.rjvn_iqc_lot l
         left join public.rjvn_material m on m.id = l.material_id
         left join public.rjvn_supplier s on s.id = l.supplier_id
         where ${where}
-        order by l.receipt_date desc nulls last, l.lot_no desc limit $2 offset $3`, params),
+        order by l.receipt_date desc nulls last, l.lot_no desc limit $3 offset $4`, params),
       pgPool.query(`select count(*)::int as n from public.rjvn_iqc_lot l
         left join public.rjvn_material m on m.id = l.material_id
-        left join public.rjvn_supplier s on s.id = l.supplier_id where ${where}`, [q || null]),
+        left join public.rjvn_supplier s on s.id = l.supplier_id where ${where}`, [q || null, status || null]),
     ]);
     res.json({ success: true, data: { rows: data.rows, total: count.rows[0].n, limit, offset } });
   }));

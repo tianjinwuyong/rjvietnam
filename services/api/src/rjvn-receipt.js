@@ -292,7 +292,11 @@ export function registerRjvnReceiptRoutes(app, pgPool, requirePermission) {
   app.get("/rjvn-receipt/list", perm, wrap(async (req, res) => {
     const limit = limitOf(req.query.limit), offset = offsetOf(req.query.offset);
     const status = String(req.query.status || "");
-    const where = status ? "where r.status = $1" : "";
+    // Parity with original receipt.service.ts getReceiptList: when no status is
+    // supplied, IQC-handled documents are excluded from the default list.
+    const where = status
+      ? "where r.status = $1"
+      : "where coalesce(r.status,'') not in ('pending_iqc','iqc_pass','iqc_fail')";
     const params = status ? [status, limit, offset] : [limit, offset];
     const [data, count] = await Promise.all([
       pgPool.query(`select r.*, m.material_code, m.material_name, s.supplier_name
