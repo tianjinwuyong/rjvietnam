@@ -3798,6 +3798,15 @@ const dictionary = {
   "mgr.comm": { "zh-CN": "通信中心", "vi-VN": "Trung tâm liên lạc", "en-US": "Communication Hub" },
   "mgr.human": { "zh-CN": "人类管理员", "vi-VN": "Quản trị viên", "en-US": "Human Admin" },
   "mgr.chatlog": { "zh-CN": "最近通信记录", "vi-VN": "Lịch sử liên lạc", "en-US": "Recent Messages" },
+  "mgr.ambassadors": { "zh-CN": "AI 监督智能体", "vi-VN": "Đại lý giám sát AI", "en-US": "AI Ambassador Agents" },
+  "mgr.skills": { "zh-CN": "项技能", "vi-VN": "kỹ năng", "en-US": "skills" },
+  "mgr.sim.title": { "zh-CN": "工厂模拟运行状态", "vi-VN": "Trạng thái mô phỏng nhà máy", "en-US": "Factory Simulation" },
+  "mgr.sim.refresh": { "zh-CN": "每 10 秒刷新", "vi-VN": "tự làm mới mỗi 10 giây", "en-US": "refreshes every 10s" },
+  "mgr.sim.lineRuns": { "zh-CN": "产线运行", "vi-VN": "Chuyền đang chạy", "en-US": "Line Runs" },
+  "mgr.sim.noData": { "zh-CN": "暂无模拟数据 — 请先运行 factory-sim.js seed && rolling", "vi-VN": "Chưa có dữ liệu mô phỏng — chạy factory-sim.js seed && rolling trước", "en-US": "No sim data — run factory-sim.js seed && rolling first" },
+  "mgr.sim.stagnation": { "zh-CN": "停滞 (24 小时)", "vi-VN": "Trì trệ (24 giờ)", "en-US": "Stagnation (24h)" },
+  "mgr.sim.scrap": { "zh-CN": "报废 (24 小时)", "vi-VN": "Phế phẩm (24 giờ)", "en-US": "Scrap (24h)" },
+  "mgr.sim.downtime": { "zh-CN": "停机 (24 小时)", "vi-VN": "Dừng máy (24 giờ)", "en-US": "Downtime (24h)" },
   "sent.ok": { "zh-CN": "已发送", "vi-VN": "Đã gửi", "en-US": "Sent" },
   "send.fail": { "zh-CN": "发送失败", "vi-VN": "Gửi thất bại", "en-US": "Send Failed" },
   "loading": { "zh-CN": "加载中...", "vi-VN": "Đang tải...", "en-US": "Loading..." },
@@ -5612,9 +5621,15 @@ const dictionary = {
 /* Retired WMS loading/FG fragment (kept temporarily for source history). */
 export type TranslationKey = string;
 
+/* Some dictionary blocks are authored with short locale codes (zh / vi / en) instead of
+ * zh-CN / vi-VN / en-US. Resolve both shapes so those keys render text instead of the raw key. */
+const shortLocale: Record<Locale, string> = { "zh-CN": "zh", "vi-VN": "vi", "en-US": "en" };
+
 export function t(key: TranslationKey, locale: Locale): string {
-  const translations = dictionary as unknown as Record<string, Record<Locale, string>>;
-  return translations[key]?.[locale] ?? key;
+  const translations = dictionary as unknown as Record<string, Record<string, string>>;
+  const entry = translations[key];
+  if (!entry) return key;
+  return entry[locale] ?? entry[shortLocale[locale]] ?? entry["zh-CN"] ?? entry.zh ?? entry["en-US"] ?? entry.en ?? key;
 }
 
 export function text(value: MultilingualText, locale: Locale): string {

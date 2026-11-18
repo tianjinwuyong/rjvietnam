@@ -21,6 +21,13 @@
   --text: #18222b;
   --text-2: #65727d;
   --text-3: #94a3b0;
+  /* Alias token names used by module code -> the approved palette above.
+     Without these, `color: var(--warning)` is invalid at computed-value time and
+     falls back to inherited text colour, so at-risk/failed states lose their cue. */
+  --warning: var(--warn);
+  --warning-bg: var(--warn-bg);
+  --critical: var(--danger);
+  --success: var(--ok);
   font-family: Inter, "Segoe UI", "Microsoft YaHei", "Noto Sans", Arial, sans-serif;
 }
 

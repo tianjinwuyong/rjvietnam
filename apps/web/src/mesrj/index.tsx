@@ -8,6 +8,7 @@ import { MesrjCrudPage } from "./GenericList";
 import { crudViews } from "./resources";
 import { BomImportView, BomTreeView, IssueView, MoView, PlanBoardView, PlanLoadView } from "./views-w4";
 import { ModelProcessView } from "./views-w5";
+import { ExecScanView, ExecMoRouteView, ExecReleaseView } from "./views-w6a";
 
 interface SysInfo {
   sys_name: string;
@@ -86,6 +87,10 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "plan.board") return <PlanBoardView locale={locale} />;
     if (active === "plan.load") return <PlanLoadView locale={locale} />;
     if (active === "route.process") return <ModelProcessView locale={locale} />;
+    // W6a 生产执行（过站 / 跳站 / 放行单 / 工单路线）
+    if (active === "exec.scan") return <ExecScanView locale={locale} />;
+    if (active === "exec.moroute") return <ExecMoRouteView locale={locale} />;
+    if (active === "exec.release") return <ExecReleaseView locale={locale} />;
     if (active === "mo" && activeView) {
       return <MoView key={activeView.code} locale={locale}
         fields={activeView.fields} filters={activeView.filters} />;
