@@ -3,15 +3,16 @@
     "name": "IQC 待检",
     "oracle": "/api/iqc/pending",
     "smt": "/rjvn-iqc/pending",
-    "verdict": "COUNT-DIFF",
+    "verdict": "MATCH",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 502,
-    "smtTotal": 501,
+    "smtTotal": 502,
     "oracleFields": 27,
-    "smtFields": 30,
-    "fieldOverlapPct": 67.6,
-    "scalarMatch": 0,
+    "smtFields": 34,
+    "fieldOverlapPct": 79.4,
+    "fieldCoveragePct": 100,
+    "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
       "limit": {
@@ -29,12 +30,6 @@
       "pageSize": {
         "match": false,
         "oracle": 20
-      },
-      "total": {
-        "match": false,
-        "oracle": 502,
-        "smt": 501,
-        "deltaPct": 0.2
       }
     }
   },
@@ -50,6 +45,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 0,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -59,7 +55,7 @@
       },
       "lots": {
         "match": false,
-        "smt": 501
+        "smt": 502
       },
       "passRate": {
         "match": false,
@@ -71,7 +67,7 @@
       },
       "pending": {
         "match": false,
-        "smt": 165
+        "smt": 166
       }
     }
   },
@@ -87,6 +83,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 0,
     "scalarTotal": 10,
     "scalarDiff": {
@@ -144,6 +141,7 @@
     "oracleFields": 0,
     "smtFields": 18,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 0,
     "scalarTotal": 0,
     "scalarDiff": {}
@@ -152,15 +150,16 @@
     "name": "严格度列表",
     "oracle": "/api/iqc/strictness/list",
     "smt": "/rjvn-iqc/strictness/list",
-    "verdict": "COUNT-DIFF",
+    "verdict": "MATCH",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 84,
-    "smtTotal": 49,
+    "smtTotal": 84,
     "oracleFields": 16,
-    "smtFields": 18,
-    "fieldOverlapPct": 88.9,
-    "scalarMatch": 0,
+    "smtFields": 16,
+    "fieldOverlapPct": 100,
+    "fieldCoveragePct": 100,
+    "scalarMatch": 1,
     "scalarTotal": 3,
     "scalarDiff": {
       "page": {
@@ -170,12 +169,6 @@
       "pageSize": {
         "match": false,
         "oracle": 20
-      },
-      "total": {
-        "match": false,
-        "oracle": 84,
-        "smt": 49,
-        "deltaPct": 71.4
       }
     }
   },
@@ -183,14 +176,15 @@
     "name": "收料单列表",
     "oracle": "/api/receipt/list",
     "smt": "/rjvn-receipt/list",
-    "verdict": "FIELD-DIFF",
+    "verdict": "MATCH",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 164,
     "smtTotal": 164,
     "oracleFields": 21,
-    "smtFields": 22,
-    "fieldOverlapPct": 72,
+    "smtFields": 25,
+    "fieldOverlapPct": 84,
+    "fieldCoveragePct": 100,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -216,14 +210,15 @@
     "name": "仓库列表",
     "oracle": "/api/receipt/warehouses",
     "smt": "/rjvn-receipt/warehouses",
-    "verdict": "COUNT-DIFF",
+    "verdict": "MATCH",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 1,
-    "smtTotal": 2,
+    "smtTotal": 1,
     "oracleFields": 6,
     "smtFields": 7,
     "fieldOverlapPct": 85.7,
+    "fieldCoveragePct": 100,
     "scalarMatch": 0,
     "scalarTotal": 0,
     "scalarDiff": {}
@@ -240,6 +235,7 @@
     "oracleFields": 5,
     "smtFields": 6,
     "fieldOverlapPct": 83.3,
+    "fieldCoveragePct": 100,
     "scalarMatch": 0,
     "scalarTotal": 0,
     "scalarDiff": {}
@@ -248,14 +244,15 @@
     "name": "库存明细",
     "oracle": "/api/inventory/list",
     "smt": "/rjvn-inventory/list",
-    "verdict": "FIELD-DIFF",
+    "verdict": "MATCH",
     "oracleStatus": 200,
     "smtStatus": 200,
     "oracleTotal": 505,
     "smtTotal": 505,
     "oracleFields": 17,
-    "smtFields": 24,
-    "fieldOverlapPct": 64,
+    "smtFields": 25,
+    "fieldOverlapPct": 68,
+    "fieldCoveragePct": 100,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -289,6 +286,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -322,6 +320,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -355,6 +354,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -388,6 +388,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {
@@ -421,6 +422,7 @@
     "oracleFields": 0,
     "smtFields": 0,
     "fieldOverlapPct": null,
+    "fieldCoveragePct": null,
     "scalarMatch": 1,
     "scalarTotal": 5,
     "scalarDiff": {

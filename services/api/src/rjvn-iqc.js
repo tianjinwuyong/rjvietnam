@@ -373,7 +373,12 @@ export function registerRjvnIqcRoutes(app, pgPool, requirePermission) {
       and ($2::text is null or $2 = '' or lower(coalesce(l.status,'')) = lower($2))`;
     const params = [q || null, status || null, limit, offset];
     const [data, count] = await Promise.all([
-      pgPool.query(`select l.*, m.material_code, m.material_name, s.supplier_name
+      pgPool.query(`select l.*, m.material_code, m.material_name, s.supplier_name,
+        s.supplier_code, l._created_at as submitted_at,
+        (select ro.keeper_id from public.rjvn_iqc_lot_receipt lr
+           join public.rjvn_receipt_order ro on ro.id = lr.receipt_id
+          where lr.lot_id = l.id limit 1) as keeper_id,
+        false as is_exempt
         from public.rjvn_iqc_lot l
         left join public.rjvn_material m on m.id = l.material_id
         left join public.rjvn_supplier s on s.id = l.supplier_id
@@ -430,13 +435,39 @@ export function registerRjvnIqcRoutes(app, pgPool, requirePermission) {
   // Strictness ledger list.
   app.get("/rjvn-iqc/strictness/list", perm, wrap(async (req, res) => {
     const limit = limitOf(req.query.limit), offset = offsetOf(req.query.offset);
+    const materialCode = String(req.query.materialCode || "").slice(0, 120);
+    const materialName = String(req.query.materialName || "").slice(0, 120);
+    const strictnessFilter = String(req.query.strictness || "").slice(0, 40);
+    // Parity with strictness.service.ts list(): every received/stocked material
+    // appears; materials without a strictness row get normal/II/0.40 defaults.
+    const clauses = [`(
+      exists (select 1 from public.rjvn_receipt_order ro where ro.material_id = m.id)
+      or exists (select 1 from public.rjvn_inventory inv where inv.material_id = m.id)
+      or s.id is not null)`];
+    const params = [];
+    const add = (sql, v) => { params.push(v); clauses.push(sql.replace("$P", `$${params.length}`)); };
+    if (materialCode) add(`coalesce(m.material_code,'') ilike '%'||$P||'%'`, materialCode);
+    if (materialName) add(`coalesce(m.material_name,'') ilike '%'||$P||'%'`, materialName);
+    if (strictnessFilter) add(`coalesce(s.strictness,'normal') = $P`, strictnessFilter);
+    const where = clauses.join(" and ");
+    const sel = `coalesce(s.id::text, m.id::text) as id, m.id as material_id,
+      m.material_code, m.material_name, 'material' as inspection_type,
+      coalesce(s.strictness,'normal') as strictness,
+      coalesce(s.inspection_level,'II') as inspection_level,
+      coalesce(s.aql,'0.40') as aql,
+      coalesce(s.consecutive_accepted,0) as consecutive_accepted,
+      coalesce(s.recent_rejected_in_5,0) as recent_rejected_in_5,
+      coalesce(s.tightened_rejected_total,0) as tightened_rejected_total,
+      coalesce(s.tightened_consecutive_accepted,0) as tightened_consecutive_accepted,
+      s.exception_source, s.remark, s._created_at, s._updated_at`;
+    const from = `from public.rjvn_material m
+      left join public.rjvn_iqc_inspection_strictness s
+        on s.material_id = m.id and s.inspection_type = 'material'
+      where ${where}`;
     const [data, count] = await Promise.all([
-      pgPool.query(`select s.*, m.material_code, m.material_name
-        from public.rjvn_iqc_inspection_strictness s
-        left join public.rjvn_material m on m.id = s.material_id
-        order by s._updated_at desc nulls last, s._created_at desc nulls last
-        limit $1 offset $2`, [limit, offset]),
-      pgPool.query(`select count(*)::int as n from public.rjvn_iqc_inspection_strictness`),
+      pgPool.query(`select ${sel} ${from} order by s._updated_at desc nulls last, m.material_code limit $${params.length + 1} offset $${params.length + 2}`,
+        [...params, limit, offset]),
+      pgPool.query(`select count(*)::int as n ${from}`, params),
     ]);
     res.json({ success: true, data: { rows: data.rows, total: count.rows[0].n } });
   }));

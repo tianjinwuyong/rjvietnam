@@ -299,10 +299,13 @@ export function registerRjvnReceiptRoutes(app, pgPool, requirePermission) {
       : "where coalesce(r.status,'') not in ('pending_iqc','iqc_pass','iqc_fail')";
     const params = status ? [status, limit, offset] : [limit, offset];
     const [data, count] = await Promise.all([
-      pgPool.query(`select r.*, m.material_code, m.material_name, s.supplier_name
+      pgPool.query(`select r.*, m.material_code, m.material_name, s.supplier_name,
+        s.supplier_code, w.location_code, ru.user_name as keeper_name
         from public.rjvn_receipt_order r
         left join public.rjvn_material m on m.id = r.material_id
         left join public.rjvn_supplier s on s.id = r.supplier_id
+        left join public.rjvn_warehouse_location w on w.id = r.location_id
+        left join public.rjvn_role_user ru on ru.user_id::text = r.keeper_id::text
         ${where} order by r.receipt_date desc nulls last, r.receipt_no desc
         limit $${status ? 2 : 1} offset $${status ? 3 : 2}`, params),
       pgPool.query(`select count(*)::int as n from public.rjvn_receipt_order r ${where}`,
@@ -332,7 +335,7 @@ export function registerRjvnReceiptRoutes(app, pgPool, requirePermission) {
   app.get("/rjvn-receipt/warehouses", perm, wrap(async (_req, res) => {
     const { rows } = await pgPool.query(
       `select id, wh_code, wh_name_zh, wh_name_vi, wh_name_en, wh_type, status
-       from public.rjvn_warehouse where status = 'active' order by wh_code`);
+       from public.rjvn_warehouse where status = 'active' and wh_type = 'normal' order by wh_code`);
     res.json({ success: true, data: { rows } });
   }));
 

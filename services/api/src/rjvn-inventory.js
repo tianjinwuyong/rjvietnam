@@ -126,11 +126,20 @@ export function registerRjvnInventoryRoutes(app, pgPool, requirePermission) {
       left join public.rjvn_material m on m.id = i.material_id
       left join public.rjvn_supplier s on s.id = i.supplier_id
       left join public.rjvn_warehouse_location w on w.id = i.location_id
-      left join public.rjvn_warehouse wh on wh.id = w.warehouse_id ${where}`;
+      left join public.rjvn_warehouse wh on wh.id = w.warehouse_id
+      left join lateral (
+        select ext.new_expiry_date from public.rjvn_material_expiry_extension ext
+        where ext.material_id = i.material_id
+          and ext.batch_no is not distinct from i.batch_no
+          and ext.location_id is not distinct from i.location_id
+        order by ext._created_at desc limit 1
+      ) exp on true ${where}`;
     const lim = params.length + 1, off = params.length + 2;
     const [data, count] = await Promise.all([
       pgPool.query(`select i.*, m.material_code, m.material_name, s.supplier_name, w.location_code,
-        wh.wh_code, wh.wh_name_zh ${base}
+        wh.wh_code, wh.wh_name_zh,
+        coalesce(exp.new_expiry_date::text,
+          (i.production_date + (m.expiry_days || ' days')::interval)::date::text) as expiry_date ${base}
         order by i._created_at desc nulls last, i.id limit $${lim} offset $${off}`, [...params, limit, offset]),
       pgPool.query(`select count(*)::int as n ${base}`, params),
     ]);

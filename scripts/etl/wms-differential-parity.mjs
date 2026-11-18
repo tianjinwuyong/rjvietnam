@@ -80,6 +80,11 @@ for (const p of PAIRS) {
   const fieldOverlap = of.size && sf.size
     ? +([...of].filter((f) => sf.has(f)).length / new Set([...of, ...sf]).size * 100).toFixed(1)
     : null;
+  // Coverage = share of ORACLE fields present in SMT. Extra SMT-internal/audit
+  // fields should not count against parity — they don't break the original UI.
+  const fieldCoverage = of.size
+    ? +([...of].filter((f) => sf.has(f)).length / of.size * 100).toFixed(1)
+    : null;
   const scalarCmp = cmp(os.scalars, ss.scalars);
   const scalarMatch = Object.values(scalarCmp).filter((v) => v.match).length;
   const scalarTotal = Object.keys(scalarCmp).length;
@@ -88,7 +93,7 @@ for (const p of PAIRS) {
     const totalOk = os.total === ss.total;
     const empty = !os.count && !ss.count;
     verdict = empty ? "EMPTY/NO-DATA"
-      : totalOk && (fieldOverlap === null || fieldOverlap >= 80) ? "MATCH"
+      : totalOk && (fieldCoverage === null || fieldCoverage >= 90) ? "MATCH"
       : totalOk ? "FIELD-DIFF" : "COUNT-DIFF";
   } else if (p.kind === "stats" || p.kind === "scalar") {
     verdict = !scalarTotal ? "NO-SCALARS" : scalarMatch / scalarTotal >= 0.6 ? "MATCH" : "VALUE-DIFF";
@@ -97,7 +102,7 @@ for (const p of PAIRS) {
     name: p.name, oracle: p.o, smt: p.s, verdict,
     oracleStatus: o.status, smtStatus: s.status,
     oracleTotal: os.total, smtTotal: ss.total,
-    oracleFields: os.fields.length, smtFields: ss.fields.length, fieldOverlapPct: fieldOverlap,
+    oracleFields: os.fields.length, smtFields: ss.fields.length, fieldOverlapPct: fieldOverlap, fieldCoveragePct: fieldCoverage,
     scalarMatch, scalarTotal, scalarDiff: Object.fromEntries(Object.entries(scalarCmp).filter(([, v]) => !v.match)),
   });
 }
@@ -178,9 +183,9 @@ const lines = [
   "",
   `匹配 **${match}/${backend.length}**（${(match / backend.length * 100).toFixed(1)}%）`,
   "",
-  "| 场景 | 判定 | Oracle 总数 | SMT 总数 | 字段重合 | 标量匹配 |",
+  "| 场景 | 判定 | Oracle 总数 | SMT 总数 | 字段覆盖 | 标量匹配 |",
   "|---|---|---:|---:|---:|---:|",
-  ...backend.map((b) => `| ${b.name} | ${b.verdict} | ${b.oracleTotal ?? "-"} | ${b.smtTotal ?? "-"} | ${b.fieldOverlapPct ?? "-"}% | ${b.scalarMatch}/${b.scalarTotal} |`),
+  ...backend.map((b) => `| ${b.name} | ${b.verdict} | ${b.oracleTotal ?? "-"} | ${b.smtTotal ?? "-"} | ${b.fieldCoveragePct ?? "-"}% | ${b.scalarMatch}/${b.scalarTotal} |`),
   "",
   "## 前端一致性",
   "",
@@ -197,12 +202,10 @@ const lines = [
   "## 差距清单（按优先级）",
   "",
   "1. **前端标签仅重合 3.4%** — 当前 SMT WMS 是自建页签，未移植原版的菜单/字段标签体系；这是「前端相似度」的最大缺口。",
-  "2. **API 字段覆盖 64–89%** — 我们的 rjvn-* 端点普遍缺少 supplier_code、keeper_name、location_code 等原版字段。",
-  "3. **统计/抽样/严格度契约不同** — 原版 IQC stats 返回 summary/topMaterials/topSuppliers，我们返回 lots/passRate/byStrictness；需对齐响应结构。",
-  "4. **严格度列表 84 vs 49** — 原版把 transfer log 并入列表，我们只返回严格度主表。",
-  "5. **iqc_lot 少 1 条源数据** — 镜像表 501 vs 源库 502；其余表行数已一致。",
+  "2. **统计/抽样/严格度当前值响应契约不同** — 原版 IQC stats 返回 summary/topMaterials/topSuppliers，我们返回 lots/passRate/byStrictness；需对齐响应结构。",
+  "3. **6 个单据流端点无数据** — 库存调拨/盘点/MRB/供应商退货/超领两侧都是 0 行，无法用现有数据判定；需先注入对等测试数据再差分。",
   "",
-  "已修复并复测：收料单默认状态过滤（164=164）、IQC 待检默认状态过滤（501，原 165）。",
+  "已修复并复测：IQC 待检默认过滤（502=502）、收料单默认状态排除（164=164）、严格度列表按物料展开（84=84）、仓库 normal 过滤（1=1）、补齐 oracle 全部字段（list 字段覆盖 100%）、补 1 条缺失的 iqc_lot 源数据。",
 ];
 fs.writeFileSync(path.join(OUT, "PARITY-REPORT.md"), lines.join("\n"));
 console.log(lines.join("\n"));
