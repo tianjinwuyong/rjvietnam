@@ -5516,6 +5516,7 @@ const dictionary = {
   "procurement.dashboard.poThisMonth": { "zh-CN": "本月采购单", "vi-VN": "PO tháng này", "en-US": "POs This Month" },
   "procurement.dashboard.poThisMonthValue": { "zh-CN": "本月采购金额 (USD)", "vi-VN": "Giá trị PO tháng này (USD)", "en-US": "PO Value (USD)" },
   "nav.oa": { "zh-CN": "OA 审批", "vi-VN": "Phê duyệt OA", "en-US": "OA Approvals" },
+  "nav.mesrj": { "zh-CN": "瑞晶 MES", "vi-VN": "MES Ruijing", "en-US": "Ruijing MES" },
   "page.oa": { "zh-CN": "请求、审批与审计追踪", "vi-VN": "Yêu cầu, phê duyệt và nhật ký", "en-US": "Requests, decisions, and audit trail" },
   "wms.subnav.materialDistribution": { "zh-CN":"物料配送", "vi-VN":"Phân phối vật tư", "en-US":"Material Distribution" },
   "wms.distribution.title": { "zh-CN":"物料配送控制台", "vi-VN":"Bảng điều khiển phân phối vật tư", "en-US":"Material Distribution Console" },

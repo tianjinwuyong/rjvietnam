@@ -145,9 +145,10 @@ import { EfficiencyAmbassador } from "./manager-dashboard/EfficiencyAmbassador";
 import { SwiftnessAmbassador } from "./manager-dashboard/SwiftnessAmbassador";
 import { CollaborationAmbassador } from "./manager-dashboard/CollaborationAmbassador";
 import { OaModule } from "./oa";
+import { MesrjModule } from "./mesrj";
 import { User } from "lucide-react";
 
-type ModuleKey = "smtLine3d" | "mobile" | "smtReelConsumption" | "groupLeaderPda" | "pdaUiDesigner" | "managementUiDesigner" | "dashboard" | "pmc" | "wms" | "mes" | "quality" | "trace" | "reports" | "admin" | "hr" | "maintenance" | "ai" | "finance" | "sales" | "service" | "bom" | "andonBoard" | "projects" | "projectMgmt" | "agents" | "employee" | "managerDashboard" | "safetyManager" | "pdaCommMonitor" | "ambassadorDashboard" | "effectivenessAmbassador" | "efficiencyAmbassador" | "swiftnessAmbassador" | "collaborationAmbassador" | "procurement" | "einvoice" | "workflow" | "oa" | "manualLine3d" | "pdaAgent3d" | "aoiAgent3d" | "ictAgent3d" | "fctAgent3d" | "assemblyAteAgent3d" | "supersonicAgent3d" | "agingCabAgent3d" | "highVoltAteAgent3d" | "packingAteAgent3d" | "outerBoxBindingAgent3d" | "depanelAgent3d" | "qrbindingAgent2d" | "qrbindingAgent3d" | "mesManagerConsole" | "team" | "mobileleave" | "dashboard" | "qms";
+type ModuleKey = "smtLine3d" | "mobile" | "smtReelConsumption" | "groupLeaderPda" | "pdaUiDesigner" | "managementUiDesigner" | "dashboard" | "pmc" | "wms" | "mes" | "mesrj" | "quality" | "trace" | "reports" | "admin" | "hr" | "maintenance" | "ai" | "finance" | "sales" | "service" | "bom" | "andonBoard" | "projects" | "projectMgmt" | "agents" | "employee" | "managerDashboard" | "safetyManager" | "pdaCommMonitor" | "ambassadorDashboard" | "effectivenessAmbassador" | "efficiencyAmbassador" | "swiftnessAmbassador" | "collaborationAmbassador" | "procurement" | "einvoice" | "workflow" | "oa" | "manualLine3d" | "pdaAgent3d" | "aoiAgent3d" | "ictAgent3d" | "fctAgent3d" | "assemblyAteAgent3d" | "supersonicAgent3d" | "agingCabAgent3d" | "highVoltAteAgent3d" | "packingAteAgent3d" | "outerBoxBindingAgent3d" | "depanelAgent3d" | "qrbindingAgent2d" | "qrbindingAgent3d" | "mesManagerConsole" | "team" | "mobileleave" | "dashboard" | "qms";
 
 const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge }> = [
   { key: "dashboard", label: "nav.dashboard", icon: Gauge },
@@ -155,6 +156,7 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
   { key: "wms", label: "nav.wms", icon: Boxes },
   { key: "bom", label: "nav.bom", icon: ClipboardList },
   { key: "mes", label: "nav.mes", icon: Factory },
+  { key: "mesrj", label: "nav.mesrj", icon: Factory },
   { key: "smtReelConsumption", label: "nav.mes", icon: Activity },
   { key: "pdaUiDesigner", label: "nav.pdaUiDesigner", icon: LayoutDashboard },
   { key: "managementUiDesigner", label: "nav.managementUiDesigner", icon: Palette },
@@ -190,7 +192,7 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
 
 const moduleGroups: Array<{ label: TranslationKey; items: ModuleKey[] }> = [
   { label: "nav.group.operations", items: ["dashboard", "pmc", "wms", "bom", "managerDashboard", "workflow", "safetyManager", "pdaCommMonitor", "ambassadorDashboard", "effectivenessAmbassador", "efficiencyAmbassador", "swiftnessAmbassador", "collaborationAmbassador"] },
-  { label: "nav.group.execution", items: ["mes", "smtReelConsumption", "pdaUiDesigner", "managementUiDesigner", "andonBoard", "quality", "qms", "trace"] },
+  { label: "nav.group.execution", items: ["mes", "mesrj", "smtReelConsumption", "pdaUiDesigner", "managementUiDesigner", "andonBoard", "quality", "qms", "trace"] },
   { label: "nav.group.control", items: ["reports", "sales", "service", "finance", "procurement", "einvoice", "admin", "hr", "maintenance", "projects", "ai", "agents", "oa"] },
   { label: "nav.group.projects", items: ["projectMgmt"] },
   { label: "nav.group.employee", items: ["employee"] },
@@ -422,7 +424,7 @@ const FULL_MODULES: ModuleKey[] = [
   "dashboard", "pmc", "wms", "bom", "mes", "smtReelConsumption", "quality", "qms", "trace",
   "reports", "admin", "hr", "mobile", "maintenance", "finance", "sales", "service",
   "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee",
-  "managerDashboard", "workflow", "oa", "andonBoard", "manualLine3d",
+  "managerDashboard", "workflow", "oa", "andonBoard", "manualLine3d", "mesrj",
 ];
 
 const roleModuleAccess: Record<string, ModuleKey[]> = {
@@ -3113,6 +3115,7 @@ export function App() {
     managerDashboard: <ManagerDashboard locale={locale} />,
     workflow: <WorkflowDashboard locale={locale} />,
     oa: <OaModule locale={locale} currentUsername={currentUser.username} roleKey={currentUser.roleKey} />,
+    mesrj: <MesrjModule locale={locale} />,
     manualLine3d: <LazyManualLineDashboard />,
     pdaAgent3d: <LazyPdaStationMonitor locale={locale} />,
     aoiAgent3d: <LazyAoiStationMonitor locale={locale} />,
