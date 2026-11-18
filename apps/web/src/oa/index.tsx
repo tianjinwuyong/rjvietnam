@@ -17,6 +17,7 @@ import { Announcements } from "./Announcements";
 import { OrgView } from "./OrgView";
 import { DocsView, type DocsSubView } from "./DocsView";
 import { DriveView } from "./DriveView";
+import { KnowledgeView } from "./KnowledgeView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
 
 /**
@@ -338,6 +339,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <DocsView locale={locale} sub={view as DocsSubView} onNavigate={s => { setWipKey(null); setView(s); }} />
   ) : view === "drive" ? (
     <DriveView locale={locale} />
+  ) : view === "knowledge" ? (
+    <KnowledgeView locale={locale} />
   ) : view === "notifications" ? (
     loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
       <>

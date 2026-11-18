@@ -668,6 +668,64 @@ export const oaDriveApi = {
   auditExport: () => apiClient.get<OaDriveAuditRow[]>("/api/drive/audit/export"),
 };
 
+// ---- 知识共享（modules.js 라우트） ----
+
+export interface OaKnowledgeRow {
+  id: number | string;
+  title: string;
+  category?: string | null;
+  description?: string | null;
+  file_path?: string | null;
+  file_size?: number | string | null;
+  status: string;
+  uploader_name?: string | null;
+  approver_name?: string | null;
+  view_count?: number | string | null;
+  download_count?: number | string | null;
+  like_count?: number | string | null;
+  favorite_count?: number | string | null;
+  version?: number | string | null;
+  is_current?: boolean;
+  created_at?: string;
+  liked?: boolean;
+  favorited?: boolean;
+}
+
+export interface OaKnowledgeVersionRow {
+  id: number | string;
+  title: string;
+  category?: string | null;
+  version: number | string;
+  status: string;
+  is_current?: boolean;
+  file_path?: string | null;
+  file_size?: number | string | null;
+  created_at?: string;
+  uploader_name?: string | null;
+}
+
+export const oaKnowledgeApi = {
+  list: (query: { status?: string; keyword?: string; page?: number; size?: number } = {}) =>
+    apiClient.get<{ list: OaKnowledgeRow[]; total: number }>("/api/knowledge", query),
+
+  create: (body: { title: string; category?: string | null; description?: string | null; filePath: string; fileSize?: number }) =>
+    apiClient.post<OaKnowledgeRow>("/api/knowledge", body),
+
+  approve: (id: number | string, action: "approve" | "reject") =>
+    apiClient.post<unknown>(`/api/knowledge/${id}/approve`, { action }),
+
+  view: (id: number | string) => apiClient.post<unknown>(`/api/knowledge/${id}/view`, {}),
+
+  download: (id: number | string) =>
+    apiClient.post<{ downloadCount: number; filePath: string }>(`/api/knowledge/${id}/download`, {}),
+
+  createVersion: (id: number | string, body: { title?: string; category?: string | null; description?: string | null; filePath: string; fileSize?: number }) =>
+    apiClient.post<OaKnowledgeRow>(`/api/knowledge/${id}/version`, body),
+
+  versions: (id: number | string) =>
+    apiClient.get<OaKnowledgeVersionRow[]>(`/api/knowledge/${id}/versions`),
+};
+
 /** 附件下载/预览 URL：新窗口场景走 query token（见 oa/middleware/index.js）；不传时自动读当前登录 token */
 export function oaFileUrl(filePath: string, token?: string | null): string {
   const base = typeof window !== "undefined"

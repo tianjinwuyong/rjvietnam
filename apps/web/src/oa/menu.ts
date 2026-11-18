@@ -58,7 +58,9 @@ export type OaViewId =
   | "docObsolete"
   | "docExternal"
   // 公共盘（原版 single:"/drive"：组头即链接）
-  | "drive";
+  | "drive"
+  // 知识共享（原版 single:"/knowledge"：组头即链接）
+  | "knowledge";
 
 export const OA_MENU: OaMenuGroup[] = [
   {
@@ -85,9 +87,9 @@ export const OA_MENU: OaMenuGroup[] = [
       { titleKey: "menu.docExternal", view: "docExternal" },
     ],
   },
-  // 原版 single:"/drive"：组头即链接（公共盘原生页）；knowledge 仍为建设中
+  // 原版 single:"/drive"、single:"/knowledge"：组头即链接（均已原生实现）
   { titleKey: "menu.drive", items: [], homeView: "drive" },
-  { titleKey: "menu.knowledge", items: [] },
+  { titleKey: "menu.knowledge", items: [], homeView: "knowledge" },
   {
     titleKey: "menu.qualityMgr",
     items: [],
