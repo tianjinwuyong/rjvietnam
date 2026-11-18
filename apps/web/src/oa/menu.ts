@@ -93,7 +93,9 @@ export type OaViewId =
   | "faiRecords"
   | "inspectRecords"
   | "oqcInspect"
-  | "qcTemplates";
+  | "qcTemplates"
+  // 系统设置（个人设置）
+  | "settings";
 
 export const OA_MENU: OaMenuGroup[] = [
   {
@@ -228,7 +230,7 @@ export const OA_MENU: OaMenuGroup[] = [
       { titleKey: "menu.flowVersions", view: "flowVersions" },
       { titleKey: "customField.manageTitle", view: "customField" },
       { titleKey: "menu.flowDesign", adminOnly: true },
-      { titleKey: "menu.system", adminOnly: true },
+      { titleKey: "menu.system", adminOnly: true, view: "settings" },
     ],
   },
 ];

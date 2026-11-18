@@ -22,6 +22,7 @@ import { SysView } from "./SysView";
 import { EquipmentView } from "./EquipmentView";
 import { HrView } from "./HrView";
 import { QualityView } from "./QualityView";
+import { SettingsView } from "./SettingsView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
 
 /**
@@ -353,6 +354,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <HrView locale={locale} sub={view} />
   ) : view === "iqcInspect" || view === "mrbReview" || view === "ipqcRecords" || view === "faiRecords" || view === "inspectRecords" || view === "oqcInspect" || view === "qcTemplates" ? (
     <QualityView locale={locale} sub={view} />
+  ) : view === "settings" ? (
+    <SettingsView locale={locale} />
   ) : view === "notifications" ? (
     loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
       <>
