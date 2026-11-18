@@ -7,6 +7,7 @@ import { t } from "./i18n";
 import { MesrjCrudPage } from "./GenericList";
 import { crudViews } from "./resources";
 import { BomImportView, BomTreeView, IssueView, MoView, PlanBoardView, PlanLoadView } from "./views-w4";
+import { ModelProcessView } from "./views-w5";
 
 interface SysInfo {
   sys_name: string;
@@ -84,6 +85,7 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "issue") return <IssueView locale={locale} />;
     if (active === "plan.board") return <PlanBoardView locale={locale} />;
     if (active === "plan.load") return <PlanLoadView locale={locale} />;
+    if (active === "route.process") return <ModelProcessView locale={locale} />;
     if (active === "mo" && activeView) {
       return <MoView key={activeView.code} locale={locale}
         fields={activeView.fields} filters={activeView.filters} />;

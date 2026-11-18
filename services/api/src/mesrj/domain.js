@@ -168,7 +168,7 @@ export async function modelProcess(model, variant = "") {
     rows = (await query(sql, [model, ""])).rows;
     if (rows.length) return [rows, "fallback"];
   }
-  return [templateProcess(model), "template"];
+  return [await templateProcess(model), "template"];
 }
 
 /** 只要"启用工位"（停用工位 = 手工过站，不进系统顺序校验） */
@@ -787,6 +787,8 @@ export async function snapshotRoute(routeCode) {
 export async function isSampling(stationCode) {
   return stationSampling(stationCode);
 }
+
+export { stationSampling };
 
 /** 同产线是否已有"生产中"工单（源 core/mo.line_busy_mo） */
 export async function lineBusyMo(moNo) {
@@ -1450,4 +1452,436 @@ export async function buildIssueDoc(issueNo) {
   }
   const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" });
   return [buf, `领料单_${issueNo}.xlsx`];
+}
+
+// ============================================================================
+// 工艺路线排序规则（源 core/route_order.py，逐字移植）
+//   顺序：工位后缀 → 固定 rank；路线编码 {线}-STD / {线}-{机型} / {线}-TMP
+// ============================================================================
+
+export const KIND_STD = "std";
+export const KIND_MODEL = "model";
+export const KIND_TMP = "tmp";
+
+export const RANKS = {
+  "01": {
+    LASER: 10, PRINT: 20, SPI: 30, SPISMT: 30,
+    AI1: 40, AI2: 45,
+    SMT1: 50, SMT2: 60, REFLOW: 70,
+    AOISMT: 80, "SMT-AOI": 80, STATIONCHECK: 90,
+    CODETRANSFER: 100, PCBSMT: 110,
+  },
+  "02": { "DIP-PASS": 20, WAVE: 30, "WS-AOI": 40, ICT: 50, FCT: 60 },
+  "03": {
+    BAKING: 5, PCBASSY: 10, LINK: 15, AOIASSY: 20,
+    ICT: 30, FCT: 40, PANELSPLIT: 50, DIVIDE: 50,
+    CODETRANSFER: 60, "CODETRANSFER-1": 60, "CODETRANSFER-2": 65,
+    PCMCHECK: 68,
+    ATE1: 69,
+    ULTRASONIC: 70, ULTRA: 70, "BI-LOAD": 75,
+    AGING: 80, BURNIN: 80, AGINGCODE: 85,
+    HIGHVOLTAGE: 88, PRESSURETEST: 90,
+    ATE: 100,
+    BARCODE: 105, DECODE: 110,
+    PACKING: 120,
+  },
+  "04": {
+    HIPOT: 10, PRESSURETEST: 10, ATE2: 20, "CODE-LINK": 30, COSMETIC: 40,
+    PACKING: 50, PALLET: 60,
+    "OQC-HIPOT": 110, "OQC-ATE2": 120, "OQC-COSMETIC": 130,
+    "OQC-REPLACE": 140, "OQC-REPORT": 150,
+  },
+};
+// 标准路线排除的后缀（维修站不上线；上料站只在整线过账时扫一次）
+export const EXCLUDE_SUFFIX = new Set(["REPAIR", "LOADER", "PCBA-LOAD", "PDA-LOAD"]);
+const UNKNOWN_RANK = 200;
+
+export function suffixOf(code, line) {
+  let s = code.startsWith(`${line}-`) ? code.slice(line.length + 1) : code;
+  if (s.startsWith("L01-") && line.startsWith("DIP-")) s = s.slice(4);
+  return s;
+}
+
+export function rankOf(code, line, proc = "") {
+  const s = suffixOf(code, line);
+  const table = RANKS[proc] ?? {};
+  if (s in table) return table[s];
+  for (const [k, v] of Object.entries(table)) {
+    if (s.startsWith(k)) return v;
+  }
+  for (const tbl of Object.values(RANKS)) {
+    if (s in tbl) return tbl[s];
+  }
+  return UNKNOWN_RANK;
+}
+
+/** 按 md_station 记录排成真实顺序；返回 (rows, dropped) */
+export function buildRows(stations, line, traffic = null, mustSuffix = null, autoMust = false) {
+  traffic = traffic || {};
+  let rows = [];
+  for (const s of stations) {
+    const code = s.station_code;
+    const suf = suffixOf(code, line);
+    if (EXCLUDE_SUFFIX.has(suf)) continue;
+    rows.push({
+      code,
+      name: s.short_name || s.station_name || code,
+      seq: s.seq_no || 0,
+      proc: s.process_code || "",
+      rank: rankOf(code, line, s.process_code || ""),
+      allow_retest: s.allow_retest === null || s.allow_retest === undefined ? 1 : s.allow_retest,
+      max_retest: s.max_retest === null || s.max_retest === undefined ? 2 : s.max_retest,
+      key: code.endsWith("PRESSURETEST") || code.endsWith("HIPOT") ? 1 : 0,
+      must: 0,
+    });
+  }
+
+  // 同名同 rank 合并（分板/测试/老化/SPI/AOI 双轨）
+  const CANON = { SPISMT: "SPI", AOISMT: "SMT-AOI" };
+  const PREFERRED = new Set(["PANELSPLIT", "ULTRASONIC", "AGING", "PRESSURETEST", "ATE",
+    "PCBASSY", "AOIASSY", "ICT", "FCT", "PCMCHECK"]);
+  const PREFERRED_SMT = new Set(["SPI", "SMT-AOI", "PCBA-LOAD", "LASER", "PRINT", "SMT1", "SMT2",
+    "REFLOW", "AI1", "AI2", "STATIONCHECK", "CODETRANSFER", "PCBSMT"]);
+  const grouped = new Map();
+  const dropped = [];
+  for (const r of rows) {
+    let key;
+    if (r.proc === "01") {
+      key = `${r.rank}|${CANON[suffixOf(r.code, line)] ?? suffixOf(r.code, line)}`;
+    } else {
+      key = `${r.rank}|${r.name}`;
+    }
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key).push(r);
+  }
+  rows = [];
+  for (const [, cands] of [...grouped.entries()].sort((a, b) => {
+    const [ra, na] = a[0].split("|");
+    const [rb] = b[0].split("|");
+    const minSeq = l => Math.min(...l.map(x => x.seq));
+    return (Number(ra) - Number(rb)) || (minSeq(a[1]) - minSeq(b[1]));
+  })) {
+    if (cands.length === 1) { rows.push(cands[0]); continue; }
+    const pref = line.startsWith("SMT") ? PREFERRED_SMT : PREFERRED;
+    cands.sort((a, b) =>
+      ((traffic[a.code] > 0 ? 1 : 0) - (traffic[b.code] > 0 ? 1 : 0))
+      || ((pref.has(suffixOf(a.code, line)) ? 1 : 0) - (pref.has(suffixOf(b.code, line)) ? 1 : 0))
+      || (b.seq - a.seq));
+    const keep = cands[cands.length - 1];
+    rows.push(keep);
+    dropped.push(...cands.filter(x => x !== keep));
+  }
+  rows.sort((a, b) => (a.rank - b.rank) || (a.seq - b.seq) || a.code.localeCompare(b.code));
+
+  for (const r of rows) {
+    if (mustSuffix) r.must = mustSuffix.has(suffixOf(r.code, line)) ? 1 : 0;
+    else if (autoMust) r.must = (traffic[r.code] ?? 0) >= 5 ? 1 : 0;
+  }
+  return [rows, dropped];
+}
+
+export function makeCode(line, kind = KIND_STD, model = "") {
+  line = (line || "").trim().toUpperCase();
+  if (!line) return "";
+  if (kind === KIND_MODEL) {
+    const slug = modelSlug(model);
+    return slug ? `${line}-${slug}` : "";
+  }
+  if (kind === KIND_TMP) return `${line}-TMP`;
+  return `${line}-STD`;
+}
+
+export function makeName(lineName, kind = KIND_STD, model = "") {
+  const ln = (lineName || "").trim() || "产线";
+  if (kind === KIND_MODEL) return `${ln} ${(model || "").trim()} 专用路线`;
+  if (kind === KIND_TMP) return `${ln} 打样/临时路线`;
+  return `${ln} 标准路线`;
+}
+
+/** 工位真实扫描流量（人工过站 + 设备上报）——判断哪些站"过站" */
+export async function trafficMap() {
+  const t = {};
+  for (const r of (await query(
+    `SELECT station_code, COUNT(*)::int AS n FROM prd_pass
+     WHERE COALESCE(operator,'') NOT IN ('系统管理员','admin','ruijing')
+     GROUP BY station_code`)).rows) {
+    t[r.station_code] = (t[r.station_code] ?? 0) + r.n;
+  }
+  for (const r of (await query(
+    "SELECT station_code, COUNT(*)::int AS n FROM prd_machine_data GROUP BY station_code")).rows) {
+    t[r.station_code] = (t[r.station_code] ?? 0) + r.n;
+  }
+  return t;
+}
+
+// ============================================================================
+// SN 生成规则渲染（源 api/cfg.py render_sn + core/util.sn_date_part/sn_seq_part）
+// ============================================================================
+const SN_ALPHA = "123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const SN_DAY_ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+
+function snAlphaDate(fmt, dt) {
+  let i;
+  if (fmt === "LY") i = dt.getFullYear() - 2011;
+  else if (fmt === "LM") i = dt.getMonth();
+  else if (fmt === "LD") i = dt.getDate() - 1;
+  else return "";
+  if (i < 0 || i >= SN_ALPHA.length) return "0";
+  return SN_ALPHA[i];
+}
+
+export function snDatePart(fmt = "", n = 0, dt = null) {
+  dt = dt || new Date();
+  fmt = (fmt || "").toUpperCase();
+  const p2 = x => String(x).padStart(2, "0");
+  const yy = String(dt.getFullYear()).slice(2);
+  const ww = p2(Math.floor((+dt - +new Date(dt.getFullYear(), 0, 1)) / 604800000) + 1).slice(0, 2);
+  if (["LY", "LM", "LD"].includes(fmt)) return snAlphaDate(fmt, dt);
+  if (fmt === "YY") return yy;
+  if (fmt === "WW") return ww;
+  if (fmt === "MM") return p2(dt.getMonth() + 1);
+  if (fmt === "DD") return p2(dt.getDate());
+  if (fmt === "YYWW") return yy + ww;
+  if (fmt === "YYMMDD") return yy + p2(dt.getMonth() + 1) + p2(dt.getDate());
+  if (fmt === "YYYYMMDD") return `${dt.getFullYear()}${p2(dt.getMonth() + 1)}${p2(dt.getDate())}`;
+  if (n === 4) return yy + ww;
+  if (n === 6) return yy + p2(dt.getMonth() + 1) + p2(dt.getDate());
+  if (n === 8) return `${dt.getFullYear()}${p2(dt.getMonth() + 1)}${p2(dt.getDate())}`;
+  return n ? (yy + ww).slice(0, n) : yy + ww;
+}
+
+export function snSeqPart(n, seq, alpha = false) {
+  seq = Number.isFinite(Number(seq)) ? Number(seq) : 0;
+  if (n <= 0) return "";
+  if (seq <= 0) seq = 1;
+  if (!alpha) return String(seq).padStart(n, "0");
+  const block = Math.floor((seq - 1) / 9999);
+  if (block > 25) return ("Z" + "9".repeat(n - 1)).slice(0, n);
+  const letter = SN_DAY_ALPHA[block];
+  return (letter + String(((seq - 1) % 9999) + 1).padStart(Math.max(n - 1, 1), "0")).slice(0, n);
+}
+
+/** 渲染一个 SN（bump=true 时推进 SEQ 计数） */
+export async function renderSn(rule, segs, bump = true) {
+  const now = new Date();
+  const parts = [];
+  for (const s of segs) {
+    const type = (s.type || "").toUpperCase();
+    const ln = Number(s.len || 0);
+    let v;
+    if (type === "FIX") {
+      v = s.value || s.val || "X".repeat(ln);
+    } else if (type === "DATE") {
+      v = snDatePart(s.fmt || "", ln, now);
+    } else if (type === "SEQ") {
+      if (bump) await query("UPDATE cfg_sn_rule SET cur_seq = cur_seq + 1 WHERE id=$1", [rule.id]);
+      const cur = await query("SELECT cur_seq FROM cfg_sn_rule WHERE id=$1", [rule.id]);
+      v = snSeqPart(ln, Number(cur.rows[0]?.cur_seq ?? 0), !!s.alpha);
+    } else if (type === "FIXED") {
+      v = String(s.value || s.val || "").padStart(ln, "0");
+    } else {
+      v = "?".repeat(ln);
+    }
+    v = String(v);
+    parts.push(ln ? v.slice(0, ln) : v);
+  }
+  return parts.join("");
+}
+
+// ============================================================================
+// 机型工艺辅助（源 api/route.py 下半部）
+// ============================================================================
+
+/** 机型已维护哪些变体工艺（''=标准工艺；开单/维护时选用） */
+export async function modelVariants(model) {
+  model = (model || "").trim();
+  if (!model) return [];
+  const rows = (await query(
+    `SELECT COALESCE(variant,'') AS v, COUNT(*)::int AS n,
+            SUM(CASE WHEN COALESCE(enabled,1)=1 THEN 1 ELSE 0 END)::int AS live_n
+     FROM cfg_model_process WHERE model=$1 GROUP BY 1`, [model])).rows;
+  rows.sort((a, b) => ((a.v === "" ? 0 : 1) - (b.v === "" ? 0 : 1)) || a.v.localeCompare(b.v));
+  return rows.map(r => ({
+    variant: r.v, name: r.v || "标准工艺",
+    stations: r.n, live: r.live_n, is_std: r.v === "",
+  }));
+}
+
+/** 开单辅助：某机型（+变体）每段默认产线/工位（源 model_defaults_data） */
+export async function modelDefaultsData(model, variant = "") {
+  model = (model || "").trim();
+  variant = (variant || "").trim();
+  if (!model) {
+    return { model: "", variant: "", step_count: 0, segments: [], route_code: "", warn: "请先选择机型" };
+  }
+  const has = await query(
+    "SELECT COUNT(*)::int AS n FROM md_product WHERE COALESCE(product_model,'')=$1", [model]);
+  if (!Number(has.rows[0]?.n ?? 0)) {
+    return { model, variant, step_count: 0, segments: [], route_code: "",
+      warn: `产品主数据没有「${model}」这个机型（不存在）。请先在基础数据里建档` };
+  }
+  const [steps, src] = await modelProcessLive(model, variant);
+  if (!steps.length) {
+    return { model, variant, step_count: 0, segments: [], route_code: "",
+      warn: `「${model}」还没有在「工艺路线」里配置启用的工位，请至少配置一次` };
+  }
+  const codes = steps.map(s => s.station_code).filter(Boolean);
+  const lineOf = {};
+  if (codes.length) {
+    const ph = codes.map((_, i) => `$${i + 1}`).join(",");
+    for (const r of (await query(
+      `SELECT station_code, line_code FROM md_station WHERE station_code IN (${ph})`, codes)).rows) {
+      lineOf[r.station_code] = (r.line_code || "").trim();
+    }
+  }
+  const segs = [], missing = [];
+  for (const [proc, pname] of PROC_SEGMENTS) {
+    const sub = steps.filter(s => (s.process_code || "") === proc);
+    if (!sub.length) continue;
+    const cnt = {};
+    for (const s of sub) {
+      const lc = lineOf[s.station_code] ?? "";
+      if (lc) cnt[lc] = (cnt[lc] ?? 0) + 1;   // 没有产线的工位不参与投票
+    }
+    const sorted = Object.entries(cnt).sort((a, b) => b[1] - a[1]);
+    const mainLine = sorted[0]?.[0] ?? "";
+    const noLine = sub.filter(s => !lineOf[s.station_code]).map(s => s.station_code);
+    if (noLine.length) missing.push(...noLine);
+    segs.push({
+      process_code: proc, name: pname,
+      line_code: mainLine, lines: Object.keys(cnt).sort(),
+      stations: sub.length,
+      must: sub.filter(s => Number(s.is_must_pass || 0) === 1).length,
+      no_line: noLine,
+    });
+  }
+  const tips = [];
+  if (missing.length) {
+    tips.push(`有 ${missing.length} 个工位「没有产线」（工位主数据没设产线）：${missing.slice(0, 5).join("、")}${missing.length > 5 ? "…" : ""}`);
+  }
+  if (src === "fallback") tips.push(`「${variant || "该变体"}」的专属工艺还没配置，用的是标准工艺`);
+  if (src === "template") {
+    tips.push(`该机型还没有专属工艺，用的是通用模板（${steps.length} 站）。请到「工艺路线」确认后保存，之后工单就会用自己的工艺`);
+  }
+  return {
+    model, variant, step_count: steps.length, segments: segs,
+    route_code: `MP-${modelSlug(model)}${variant ? `-${variant}` : ""}`,
+    source: src, warn: tips.join("\n"),
+  };
+}
+
+/** 机型在制总工单组（未完工/未关闭；源 _model_groups） */
+export async function modelGroups(model) {
+  const rows = (await query(
+    `SELECT DISTINCT substr(mo_no,1,9) AS gk FROM ord_mo
+     WHERE fg_code IN (SELECT product_code FROM md_product WHERE product_model=$1)
+       AND status IN ('待排产','已排产','待下发','生产中') ORDER BY gk`, [model])).rows;
+  return rows.map(r => r.gk);
+}
+
+/** 把当前机型工艺同步到该机型未锁站的总工单（源 _sync_model_groups） */
+export async function syncModelGroups(model, by = "") {
+  const [steps] = await modelProcessLive(model);
+  if (!steps.length) return [[], [{ group: "-", reason: "该机型没有启用的工位" }]];
+  const done = [], skipped = [];
+  for (const gk of await modelGroups(model)) {
+    const r = await lockGroup(gk, model, steps, by);
+    if (r.ok) done.push({ group: gk, steps: r.steps ?? {}, total: r.total ?? 0 });
+    else skipped.push({ group: gk, reason: r.msg ?? "" });
+  }
+  return [done, skipped];
+}
+
+// ============================================================================
+// PCB 激光码解码（源 core/pcbcode.py，客户规范 v1.1：9 位码 + 现场实测 10 位码）
+//   1 激光台号 / 2 年 / 3 月 / 4 日 / 5-8(9) 流水号 / 末位 PCB 板种码
+// ============================================================================
+
+// 客户规范字符集（1~9 + A~Z，去掉易混淆的 I/O）
+const PCB_CS = "123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+// 流水号判定字符集：现场实测流水是全数字（5G8F09886A 的 09886），含 0
+const PCB_CS_SEQ = "0123456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const PCB_YEAR_BASE = 2011;   // CS[0]='1'→2011，CS[8]='9'→2019，CS[9]='A'→2020
+
+const pcbIdx = ch => PCB_CS.indexOf((ch || "").toUpperCase());
+
+/** 解码一块 PCB 激光码，{ok, code, len, laser, year/month/day, date, serial, pcb_type, msg} */
+export function pcbDecode(code) {
+  const raw = (code || "").toString().trim().toUpperCase();
+  if (!raw) return { ok: false, msg: "空码" };
+  if (!/^[0-9A-Z]+$/.test(raw)) {
+    return { ok: false, code: raw, msg: "含非法字符（只允许数字和大写字母）" };
+  }
+  if (raw.length !== 9 && raw.length !== 10) {
+    return { ok: false, code: raw, len: raw.length,
+      msg: `长度 ${raw.length} 位（规范 9 位 / 现场实测 10 位）都不匹配` };
+  }
+  const seqLen = raw.length - 5;          // 9 位→4 位流水；10 位→5 位流水
+  const laser = raw[0], y = raw[1], m = raw[2], d = raw[3];
+  const serial = raw.slice(4, 4 + seqLen);
+  const pcbType = raw.slice(4 + seqLen);
+
+  const bad = [];
+  for (const [name, ch] of [["激光台号", laser], ["年", y], ["月", m], ["日", d], ["板种码", pcbType]]) {
+    if (pcbIdx(ch) < 0) bad.push(`${name}「${ch}」不在规范字符集内（1~9、A~Z，不含 I/O）`);
+  }
+  for (const ch of serial) {
+    if (!PCB_CS_SEQ.includes(ch)) { bad.push(`流水号「${ch}」不在规范字符集内`); break; }
+  }
+  const yi = pcbIdx(y), mi = pcbIdx(m), di = pcbIdx(d);
+  let year = yi >= 0 ? PCB_YEAR_BASE + yi : null;
+  let month = mi >= 0 ? mi + 1 : null;
+  let day = di >= 0 ? di + 1 : null;
+  if (month !== null && !(month >= 1 && month <= 12)) {
+    bad.push(`月份「${m}」对应第 ${month} 月，超出 1~12`);
+    month = null;
+  }
+  if (day !== null && !(day >= 1 && day <= 31)) {
+    bad.push(`日「${d}」对应第 ${day} 日，超出 1~31`);
+    day = null;
+  }
+  let date = "";
+  if (year && month && day) {
+    const dt = new Date(Date.UTC(year, month - 1, day));
+    if (dt.getUTCFullYear() === year && dt.getUTCMonth() === month - 1 && dt.getUTCDate() === day) {
+      date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    } else {
+      bad.push(`日期 ${year}-${month}-${day} 不存在`);
+      date = "";
+    }
+  }
+  return {
+    ok: bad.length === 0, code: raw, len: raw.length, layout: raw.length,
+    laser, year, month, day, date, serial, pcb_type: pcbType,
+    msg: bad.length
+      ? bad.join("；")
+      : `${year} 年 ${month} 月 ${day} 日 · 激光台 ${laser} · 流水 ${serial} · 板种 ${pcbType}`,
+  };
+}
+
+/** 板种码是否与机型配置一致（cfg_pcb_code.pcb_code） */
+export function pcbCheckType(code, expectType) {
+  const d = pcbDecode(code);
+  if (!d.ok) return [false, d.msg || ""];
+  if (!expectType) return [true, "机型未配置板码，跳过校验"];
+  if ((d.pcb_type || "").toUpperCase() !== (expectType || "").toString().trim().toUpperCase()) {
+    return [false, `板种码不符：实际「${d.pcb_type}」，机型应为「${expectType}」——可能不是这个机型的板`];
+  }
+  return [true, "板种码一致"];
+}
+
+/** AOI 结果列表装饰：真实拼板数（源 cfg._decorate_aoi） */
+export async function decorateAoi(rows) {
+  rows = rows.map(r => ({ ...r }));
+  const ids = rows.map(r => r.id).filter(Boolean);
+  if (!ids.length) return rows;
+  const ph = ids.map((_, i) => `$${i + 1}`).join(",");
+  const m = {};
+  for (const x of (await query(
+    `SELECT aoi_id, COUNT(*)::int AS c FROM prd_aoi_board
+     WHERE aoi_id IN (${ph}) AND COALESCE(board_sn,'')<>'' GROUP BY aoi_id`, ids)).rows) {
+    m[x.aoi_id] = x.c;
+  }
+  for (const r of rows) r.sn_count = m[r.id] ?? 0;
+  return rows;
 }

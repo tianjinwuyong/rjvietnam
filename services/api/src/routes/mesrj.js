@@ -26,6 +26,10 @@ import {
   applyStationRetest, normalizeSteps, putGroupRoute, writeMembers, lockGroup,
   groupKeyOf, modelSlug, nowStr, todayStr, ymNow,
   etaCompute,
+  KIND_STD, KIND_MODEL, KIND_TMP, buildRows, makeCode, makeName, suffixOf, rankOf,
+  trafficMap, renderSn,
+  modelVariants, modelDefaultsData, modelGroups, syncModelGroups,
+  pcbDecode, pcbCheckType, decorateAoi, stationSampling,
   latestBomVersion, allSfg, moNoAll, peekNextSeq, nextMoSeq, previewCreate, previewMoNos,
   outputOf, productRouteMap, lockMoRouteSteps, lockMoRoute, snapshotRoute, isSampling,
   lineBusyMo, createMoAll,
@@ -179,6 +183,10 @@ function Res(table, key, label, opts = {}) {
     decorate: opts.decorate || null,
     // 额外过滤（源 extra_filters：col -> 带占位 $n 的 SQL 片段，f_<col> 触发）
     extraFilters: opts.extra_filters || null,
+    // 列投影（源 select：大 JSON 行的列表不取全列）
+    select: opts.select || null,
+    // 关键字搜索的原始 SQL 片段（源 search_sql：如按拼板 SN 反查 AOI 结果）
+    searchSql: opts.search_sql || null,
   };
 }
 
@@ -248,8 +256,14 @@ function registerCrud(router, resources, permView, permEdit) {
     const where = ["1=1"];
     const args = [];
     if (kw && r.search.length) {
-      args.push(`%${kw}%`);
-      where.push("(" + r.search.map(c => `${c} ILIKE $${args.length}`).join(" OR ") + ")");
+      if (r.searchSql) {
+        // 源 search_sql：片段里写一个 ?，值 = %kw%
+        args.push(`%${kw}%`);
+        where.push(r.searchSql.replace("?", `$${args.length}`));
+      } else {
+        args.push(`%${kw}%`);
+        where.push("(" + r.search.map(c => `${c} ILIKE $${args.length}`).join(" OR ") + ")");
+      }
     }
     for (const [k, v] of Object.entries(req.query)) {
       if (!k.startsWith("f_") || v === "") continue;
@@ -266,9 +280,10 @@ function registerCrud(router, resources, permView, permEdit) {
     const w = where.join(" AND ");
     const order = await safeOrder(r, req.query.order || "");
     try {
+      const cols = r.select ? r.select.join(", ") : "*";
       const rows = await paged(
         `SELECT COUNT(*)::int AS n FROM ${r.table} WHERE ${w}`,
-        `SELECT * FROM ${r.table} WHERE ${w} ORDER BY ${order}`,
+        `SELECT ${cols} FROM ${r.table} WHERE ${w} ORDER BY ${order}`,
         args, page, size);
       if (r.decorate) rows.rows = await r.decorate(rows.rows);
       return ok(res, rows);
@@ -329,13 +344,16 @@ function registerCrud(router, resources, permView, permEdit) {
     if (roErr) return fail(res, roErr, 403);
     const perm = r.permEdit || permEdit;
     if (perm && !hasPerm(req.mesrjUser, perm)) return fail(res, `没有权限（${perm}）`, 403);
-    const old = (await query(`SELECT * FROM ${r.table} WHERE id=$1`, [req.params.rid])).rows[0];
+    // rid 为数字 id；定义了 key 的资源也接受 key 值定位（源 _crud 语义）
+    const byKey = !!(r.key && !/^\d+$/.test(req.params.rid));
+    const idCol = byKey ? r.key : "id";
+    const old = (await query(`SELECT * FROM ${r.table} WHERE ${idCol}=$1`, [req.params.rid])).rows[0];
     if (!old) return fail(res, "记录不存在", 404);
     const data = await cleanRow(r, req.body || {});
     for (const f of r.immutable) delete data[f];
     delete data.id;
     if (r.key && data[r.key] && data[r.key] !== old[r.key]) {
-      const ex = await query(`SELECT id FROM ${r.table} WHERE ${r.key}=$1 AND id<>$2`,
+      const ex = await query(`SELECT id FROM ${r.table} WHERE ${r.key}=$1 AND ${idCol}<>$2`,
         [data[r.key], req.params.rid]);
       if (ex.rows[0]) return fail(res, `${r.label} 已存在：${data[r.key]}`);
     }
@@ -347,7 +365,7 @@ function registerCrud(router, resources, permView, permEdit) {
     if (!cols.length) return ok(res, null, "没有需要更新的数据");
     try {
       const sets = cols.map((c, i) => `${c}=$${i + 1}`).join(",");
-      await query(`UPDATE ${r.table} SET ${sets} WHERE id=$${cols.length + 1}`,
+      await query(`UPDATE ${r.table} SET ${sets} WHERE ${idCol}=$${cols.length + 1}`,
         [...cols.map(c => data[c]), req.params.rid]);
       await audit(req.mesrjUser.login_name, r.label, "修改", r.table,
         `${req.params.rid} -> ${JSON.stringify(data)}`, req.ip);
@@ -365,13 +383,15 @@ function registerCrud(router, resources, permView, permEdit) {
     if (roErr) return fail(res, roErr, 403);
     const perm = r.permEdit || permEdit;
     if (perm && !hasPerm(req.mesrjUser, perm)) return fail(res, `没有权限（${perm}）`, 403);
-    const old = (await query(`SELECT * FROM ${r.table} WHERE id=$1`, [req.params.rid])).rows[0];
+    const byKey = !!(r.key && !/^\d+$/.test(req.params.rid));
+    const idCol = byKey ? r.key : "id";
+    const old = (await query(`SELECT * FROM ${r.table} WHERE ${idCol}=$1`, [req.params.rid])).rows[0];
     if (!old) return fail(res, "记录不存在", 404);
     try {
       if (r.softDelete) {
-        await query(`UPDATE ${r.table} SET status=0 WHERE id=$1`, [req.params.rid]);
+        await query(`UPDATE ${r.table} SET status=0 WHERE ${idCol}=$1`, [req.params.rid]);
       } else {
-        await query(`DELETE FROM ${r.table} WHERE id=$1`, [req.params.rid]);
+        await query(`DELETE FROM ${r.table} WHERE ${idCol}=$1`, [req.params.rid]);
       }
     } catch (ex) {
       return fail(res, `删除失败（数据已被引用，不允许删除）：${ex.message}`);
@@ -582,6 +602,194 @@ const PLAN_RES = {
     filters: ["line_code", "shift_code", "status"],
     required: ["line_code"],
     order: "line_code, shift_code",
+  }),
+};
+
+// ── W5 资源清单（源 route.py / cfg.py RES）───────────────────────────────────
+
+/** 路线编码校验：大写字母/数字/横杠，且必须以产线编码开头 */
+async function chkRoute(d, isNew, old) {
+  const code = (d.route_code || old?.route_code || "").toString().trim().toUpperCase();
+  if (!code) return [false, "路线编码不能为空"];
+  if (!/^[A-Z0-9][A-Z0-9\-]{2,40}$/.test(code)) {
+    return [false, "路线编码只能含大写字母、数字和横杠（如 ASSY-L02-STD）"];
+  }
+  if ("route_code" in d) d.route_code = code;
+  const changed = isNew || !!(old && (old.route_code || "").toUpperCase() !== code);
+  if (changed) {
+    const lines = (await query(
+      "SELECT line_code FROM md_line WHERE COALESCE(line_code,'')<>''")).rows.map(r => r.line_code);
+    if (!lines.some(ln => code === ln || code.startsWith(`${ln}-`))) {
+      return [false, `路线编码必须以产线编码开头（如 ASSY-L02-STD）。当前产线：${lines.sort().slice(0, 12).join("、")}`];
+    }
+  }
+  return [true, ""];
+}
+
+/** AOI 点数校验：机型+工位唯一，点数为正整数 */
+async function chkAoiPoints(d, _isNew, old) {
+  const model = (d.model || "").toString().trim();
+  const station = (d.station_name || "").toString().trim();
+  if (!model || !station) return [false, "机型和工位名称都要填"];
+  const qty = Number(d.point_qty);
+  if (!Number.isInteger(qty) || qty <= 0) return [false, "点数必须是正整数"];
+  const dup = await query(
+    "SELECT id FROM cfg_aoi_points WHERE model=$1 AND station_name=$2 AND id<>$3",
+    [model, station, old?.id || 0]);
+  if (dup.rows[0]) return [false, `（${model} / ${station}）已存在，请直接编辑那一条`];
+  return [true, ""];
+}
+
+const ROUTE_RES = {
+  route: Res("proc_route", "route_code", "工艺路线", {
+    search: ["route_code", "route_name", "product_code"],
+    filters: ["status", "product_code"],
+    required: ["route_code", "route_name"],
+    order: "route_code",
+    // 编码建好就不能改（改了就丢历史/断追溯）
+    immutable: ["route_code"],
+    check: chkRoute,
+  }),
+  step: Res("proc_step", "", "路线工步", {
+    search: ["route_code", "station_code", "station_name"],
+    filters: ["route_code", "process_code", "is_must_pass"],
+    required: ["route_code", "station_code"],
+    order: "route_code, seq_no",
+  }),
+  rule: Res("proc_station_rule", "", "工位规则", {
+    search: ["station_code", "rule_type", "rule_name"],
+    filters: ["station_code", "rule_type", "enabled"],
+    required: ["station_code", "rule_type"],
+    order: "station_code",
+  }),
+};
+
+const CFG_RES = {
+  threshold: Res("cfg_threshold", "th_key", "超时阈值", {
+    search: ["th_key", "th_name", "apply_to"],
+    filters: ["apply_to", "action", "enabled"],
+    required: ["th_key", "th_name"],
+    order: "apply_to, th_key",
+  }),
+  pokayoke: Res("cfg_pokayoke", "rule_key", "防错规则", {
+    search: ["rule_key", "rule_name"],
+    filters: ["scope", "enabled"],
+    required: ["rule_key", "rule_name"],
+    order: "id",
+  }),
+  snrule: Res("cfg_sn_rule", "sn_type", "SN 规则", {
+    search: ["sn_type", "remark"],
+    filters: ["enabled"],
+    required: ["sn_type"],
+    order: "id",
+  }),
+  dict: Res("cfg_code_dict", "", "码值字典", {
+    search: ["dict_type", "code", "name"],
+    filters: ["dict_type", "enabled"],
+    required: ["dict_type", "code", "name"],
+    order: "dict_type, sort_no",
+  }),
+  print_tpl: Res("cfg_print_tpl", "tpl_code", "打印模板", {
+    search: ["tpl_code", "tpl_name", "file_name"],
+    filters: ["tpl_type", "product_code", "enabled"],
+    required: ["tpl_code", "tpl_name"],
+    order: "sort_no, id",
+  }),
+  packrule: Res("cfg_pack_rule", "product_code", "装箱规则", {
+    search: ["product_code", "machine_model", "model_code", "supplier_code"],
+    filters: ["enabled", "factory_code"],
+    required: ["product_code", "machine_model"],
+    order: "id",
+  }),
+  pcbcode: Res("cfg_pcb_code", "product_code", "PCB板种码", {
+    search: ["product_code", "machine_model", "pcb_code"],
+    filters: ["enabled"],
+    required: ["product_code"],
+    order: "id",
+  }),
+  bindstation: Res("cfg_bind_station", "station_code", "绑定工位", {
+    search: ["station_code", "station_name", "rel_type"],
+    filters: ["rel_type", "enabled"],
+    required: ["station_code"],
+    order: "sort_no, id",
+  }),
+  apikey: Res("sys_api_key", "", "设备接口密钥", {
+    search: ["api_key", "name", "remark"],
+    filters: ["enabled"],
+    required: ["api_key"],
+    order: "id",
+  }),
+  bindrule: Res("cfg_bind_rule", "", "绑定规则表", {
+    search: ["station_code", "role", "sn_type", "label"],
+    filters: ["station_code", "role", "enabled"],
+    required: ["station_code", "role"],
+    order: "station_code, role",
+  }),
+  // ---- 设备上报数据：只读（设备走 HTTP 上报，后台只查）----
+  machine: Res("prd_machine_data", "id", "设备上报记录", {
+    search: ["sn", "machine_no", "product_no", "station_code", "mo_no", "create_by", "ng_info"],
+    filters: ["line_sn", "station_code", "machine_type", "pass_ng", "mo_no"],
+    order: "id DESC",
+    readonly: true,
+  }),
+  machinetest: Res("prd_test", "id", "测试参数明细", {
+    search: ["sn", "param_key", "param_val"],
+    filters: ["sn", "station_code", "result", "equip_code"],
+    order: "id",
+    readonly: true,
+  }),
+  // ---- SMT-AOI 检测数据：只读；关键字按拼板 SN 反查 ----
+  aoi: Res("prd_aoi_result", "id", "AOI 检测结果", {
+    search: ["pcb_sn", "project_name", "file_name", "device_name"],
+    // 关键字按拼板 SN 反查（现场扫一片小板 SN 就能定位整次检测）
+    search_sql: "id IN (SELECT aoi_id FROM prd_aoi_board WHERE board_sn LIKE ?)",
+    filters: ["final_result", "board_side", "track_line", "device_name"],
+    order: "test_time DESC, id DESC",
+    readonly: true,
+    // 列表不取 raw_json（单行 220KB，一页 50 行会拖垮响应）
+    select: ["id", "file_name", "device_name", "pcb_sn", "project_name", "track_line",
+      "board_side", "test_time", "final_result", "robot_result", "user_result",
+      "repair_user", "board_number", "board_ng_number", "comp_number",
+      "comp_ng_number", "image_path", "created_at"],
+    decorate: decorateAoi,
+  }),
+  aoiboard: Res("prd_aoi_board", "id", "AOI 拼板明细", {
+    search: ["board_sn", "pcb_sn", "file_name"],
+    filters: ["file_name", "pcb_sn", "final_result", "board_sn"],
+    order: "file_name DESC, board_no",
+    readonly: true,
+  }),
+  aoicomp: Res("prd_aoi_comp", "id", "AOI 元件明细", {
+    search: ["pcb_sn", "comp_designator", "comp_type", "robot_result"],
+    filters: ["file_name", "pcb_sn", "board_no", "comp_type", "robot_result"],
+    order: "id",
+    readonly: true,
+  }),
+  // ---- AOI 点数维护（DPPO/DPMO 的分母来源）----
+  aoipoints: Res("cfg_aoi_points", "id", "AOI 点数", {
+    search: ["model", "station_name", "remark"],
+    filters: ["station_name"],
+    required: ["model", "station_name", "point_qty"],
+    order: "model, station_name",
+    check: chkAoiPoints,
+  }),
+  aoidefect: Res("cfg_aoi_defect", "id", "AOI 缺陷代码", {
+    search: ["code", "name_en", "name_zh", "category"],
+    filters: ["category"],
+    required: ["code", "name_zh"],
+    order: "code",
+  }),
+  aoicompmap: Res("cfg_aoi_comp_map", "id", "AOI 位号映射", {
+    search: ["model", "comp_id", "designator", "part_no", "remark"],
+    filters: ["model"],
+    required: ["model", "comp_id", "designator"],
+    order: "model, comp_id",
+  }),
+  aoiprogrammap: Res("cfg_aoi_program_map", "id", "AOI 程序名映射", {
+    search: ["program_name", "model", "remark"],
+    filters: ["model"],
+    required: ["program_name", "model"],
+    order: "model, program_name",
   }),
 };
 
@@ -2393,6 +2601,663 @@ export function createMesrjRouter({ authenticateJWT }) {
     return ok(res, { rep_no: repNo }, `补料单 ${repNo} 已提交`);
   });
 
+  // ═══ W5 route 域（源 api/route.py）══════════════════════════════════════
+
+  // 一键生成标准路线（{线}-STD）
+  router.post("/route/generate", requireMesrjPerm("route.edit"), async (req, res) => {
+    const d = req.body || {};
+    const lineCode = (d.line_code || "").toString().trim();
+    if (!lineCode) return fail(res, "请选择产线：一条标准路线只对应一条产线");
+    const line = (await query("SELECT * FROM md_line WHERE line_code=$1", [lineCode])).rows[0];
+    if (!line) return fail(res, `产线不存在：${lineCode}`);
+    const routeCode = (d.route_code || "").toString().trim() || makeCode(lineCode, KIND_STD);
+    const routeName = (d.route_name || "").toString().trim() || makeName(line.line_name, KIND_STD);
+    const allMust = !!d.all_must;
+
+    const stations = (await query(
+      `SELECT station_code, station_name, short_name, seq_no, process_code, allow_retest, max_retest
+       FROM md_station WHERE line_code=$1 AND status=1 ORDER BY seq_no`, [lineCode])).rows;
+    if (!stations.length) return fail(res, `产线 ${lineCode} 没有启用的工位`);
+    const traffic = await trafficMap();
+    const [rows, dropped] = buildRows(stations, lineCode, traffic, null, !allMust);
+    if (!rows.length) {
+      return fail(res, "产线上没有可排的工位（检查工位后缀是否按规则命名）");
+    }
+    const old = (await query("SELECT * FROM proc_route WHERE route_code=$1", [routeCode])).rows[0];
+    const remark = `由产线工位自动生成，共 ${rows.length} 站`;
+    if (old) {
+      await query(
+        `UPDATE proc_route SET route_name=$2, product_code='', status='有效', remark=$3 WHERE route_code=$1`,
+        [routeCode, routeName, remark]);
+    } else {
+      await query(
+        `INSERT INTO proc_route (route_code, route_name, product_code, version, status, remark)
+         VALUES ($1,$2,'','V1.0','有效',$3)`, [routeCode, routeName, remark]);
+    }
+    await query("DELETE FROM proc_step WHERE route_code=$1", [routeCode]);
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      await query(
+        `INSERT INTO proc_step
+         (route_code, seq_no, process_code, station_code, station_name, is_must_pass,
+          allow_retest, max_retest, is_key_station, remark)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [routeCode, (i + 1) * 10, r.proc, r.code, r.name, r.must,
+         r.allow_retest, r.max_retest, r.key, r.must ? "过站" : "展示（未扫描校验）"]);
+    }
+    const mustN = rows.filter(r => r.must).length;
+    await audit(req.mesrjUser.login_name, "工艺路线", "由产线生成标准路线", routeCode,
+      `${rows.length} 站 / 过站 ${mustN} 站`, req.ip);
+    let msg = `已生成 ${routeCode}（${rows.length} 个工步，其中 ${mustN} 个过站校验点）`;
+    if (dropped.length) msg += `；已合并 ${dropped.length} 个重复工位`;
+    return ok(res, {
+      route_code: routeCode, steps: rows.length, must: mustN,
+      dropped: dropped.map(x => x.code), dups: [],
+    }, msg);
+  });
+
+  // 路线编码/名称建议
+  router.get("/route/suggest", async (req, res) => {
+    const lineCode = (req.query.line_code || "").toString().trim();
+    const kind = (req.query.kind || KIND_STD).toString().trim();
+    const model = (req.query.model || "").toString().trim();
+    if (!lineCode) return fail(res, "请选择产线");
+    const line = (await query("SELECT * FROM md_line WHERE line_code=$1", [lineCode])).rows[0];
+    const lineName = line ? line.line_name : lineCode;
+    const code = makeCode(lineCode, kind, model);
+    const name = makeName(lineName, kind, model);
+    const exist = code
+      ? (await query("SELECT * FROM proc_route WHERE route_code=$1", [code])).rows[0] : null;
+    let existing = null;
+    if (exist) {
+      const n = await query("SELECT COUNT(*)::int AS n FROM proc_step WHERE route_code=$1", [exist.route_code]);
+      existing = { route_code: exist.route_code, route_name: exist.route_name, steps: n.rows[0].n };
+    }
+    return ok(res, { code, name, exists: !!exist, existing,
+      product_code: (req.query.product_code || "").toString().trim() });
+  });
+
+  // 自动建路线（草稿，可选从标准路线复制步骤）
+  router.post("/route/create-auto", requireMesrjPerm("route.edit"), async (req, res) => {
+    const d = req.body || {};
+    const lineCode = (d.line_code || "").toString().trim();
+    const kind = (d.kind || KIND_STD).toString().trim();
+    const model = (d.model || "").toString().trim();
+    const productCode = (d.product_code || "").toString().trim();
+    const remark = (d.remark || "").toString().trim();
+    if (![KIND_STD, KIND_MODEL, KIND_TMP].includes(kind)) return fail(res, "路线类型不正确");
+    if (kind === KIND_MODEL && !model) return fail(res, "机型专用路线必须选机型");
+    const line = (await query("SELECT * FROM md_line WHERE line_code=$1", [lineCode])).rows[0];
+    if (!line) return fail(res, "请选产线（标准路线必须挂产线）");
+    const code = makeCode(lineCode, kind, model);
+    if (!code) return fail(res, "无法生成路线编码，请检查产线/机型");
+    const dup = await query("SELECT id FROM proc_route WHERE route_code=$1", [code]);
+    if (dup.rows[0]) return fail(res, `路线 ${code} 已存在。标准路线每条线只有一条，请直接在列表里编辑`);
+    const name = makeName(line.line_name, kind, model);
+    const copyFrom = (d.copy_from || "auto").toString().trim();
+    let srcCode = "", copied = 0;
+    if (copyFrom !== "none") {
+      srcCode = copyFrom !== "auto" ? copyFrom : `${lineCode}-STD`;
+      const srcSteps = await query("SELECT * FROM proc_step WHERE route_code=$1 ORDER BY seq_no", [srcCode]);
+      copied = srcSteps.rows.length;
+      if (!copied) srcCode = "";
+    }
+    const fullRemark = (remark ? `${remark}；` : "") + "系统自动创建" +
+      (srcCode ? `（复制自 ${srcCode}）` : "");
+    const rid = await query(
+      `INSERT INTO proc_route (route_code, route_name, product_code, version, status, remark)
+       VALUES ($1,$2,$3,'V1.0','草稿',$4) RETURNING id`,
+      [code, name, productCode, fullRemark]);
+    if (srcCode) {
+      const srcSteps = await query("SELECT * FROM proc_step WHERE route_code=$1 ORDER BY seq_no", [srcCode]);
+      for (let i = 0; i < srcSteps.rows.length; i++) {
+        const x = srcSteps.rows[i];
+        await query(
+          `INSERT INTO proc_step
+           (route_code, seq_no, process_code, station_code, station_name, is_must_pass,
+            allow_retest, max_retest, is_key_station, remark)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [code, (i + 1) * 10, x.process_code, x.station_code, x.station_name,
+           x.is_must_pass, x.allow_retest, x.max_retest, x.is_key_station, x.remark || ""]);
+      }
+    }
+    await audit(req.mesrjUser.login_name, "工艺路线", "创建路线", code,
+      `${name}（复制 ${copied} 步 自 ${srcCode || "无"}）`, req.ip);
+    let msg = `已创建 ${code}（草稿）：${name}`;
+    if (copied) msg += `；已从 ${srcCode} 复制 ${copied} 步（请到点「编辑路线」再改成「有效」）`;
+    return ok(res, { id: rid.rows[0].id, route_code: code, route_name: name, copied, copy_from: srcCode }, msg);
+  });
+
+  // 路线步骤读取/整表保存
+  router.get("/route/:code/steps", async (req, res) => {
+    const rows = (await query(
+      "SELECT * FROM proc_step WHERE route_code=$1 ORDER BY seq_no", [req.params.code])).rows;
+    const rt = (await query("SELECT * FROM proc_route WHERE route_code=$1", [req.params.code])).rows[0] ?? null;
+    return ok(res, { route: rt, steps: rows });
+  });
+
+  router.post("/route/:code/steps", requireMesrjPerm("route.edit"), async (req, res) => {
+    const steps = Array.isArray(req.body?.steps) ? req.body.steps : [];
+    const routeCode = req.params.code;
+    const rt = await query("SELECT id FROM proc_route WHERE route_code=$1", [routeCode]);
+    if (!rt.rows[0]) return fail(res, `路线不存在：${routeCode}`);
+    await query("DELETE FROM proc_step WHERE route_code=$1", [routeCode]);
+    // 重测参数以工位表为准（缺省 1/2）
+    const rtMap = {};
+    for (const r of await applyStationRetest(steps.map(s => ({
+      station_code: s.station_code ?? "",
+      allow_retest: s.allow_retest ?? 1,
+      max_retest: s.max_retest ?? 2,
+    })))) {
+      rtMap[r.station_code] = r;
+    }
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      const rtRow = rtMap[s.station_code ?? ""] ?? {};
+      await query(
+        `INSERT INTO proc_step
+         (route_code, seq_no, process_code, station_code, station_name, is_must_pass,
+          allow_retest, max_retest, is_key_station, remark)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+        [routeCode, (i + 1) * 10, s.process_code ?? "", s.station_code ?? "",
+         s.station_name ?? "", [1, "1", true, "true"].includes(s.is_must_pass ?? 1) ? 1 : 0,
+         Number(rtRow.allow_retest ?? 1), Number(rtRow.max_retest ?? 2),
+         [1, "1", true, "true"].includes(s.is_key_station ?? 0) ? 1 : 0, s.remark ?? ""]);
+    }
+    await audit(req.mesrjUser.login_name, "工艺路线", "保存步骤", routeCode, `${steps.length} 步`, req.ip);
+    return ok(res, { steps: steps.length }, `已保存 ${steps.length} 个工步`);
+  });
+
+  // 路线体检（重复工位/关键站缺失）
+  router.get("/route/:code/validate", async (req, res) => {
+    const steps = (await query(
+      "SELECT * FROM proc_step WHERE route_code=$1 ORDER BY seq_no", [req.params.code])).rows;
+    const issues = [], warns = [];
+    const seen = new Set();
+    for (const s of steps) {
+      if (seen.has(s.station_code)) issues.push(`工位重复出现：${s.station_code}`);
+      seen.add(s.station_code);
+    }
+    const shorts = {};
+    for (const s of steps) {
+      const st = (await query(
+        "SELECT short_name, station_name FROM md_station WHERE station_code=$1", [s.station_code])).rows[0];
+      const nm = (st?.short_name || st?.station_name || s.station_name) || "";
+      if (nm) (shorts[nm] ??= []).push(s.station_code);
+    }
+    for (const [nm, codes] of Object.entries(shorts)) {
+      if (codes.length > 1) {
+        warns.push(`「${nm}」在本路线出现 ${codes.length} 次（${codes.join("、")}）——是同一台设备的两笔登记吗？实际用的只有一个`);
+      }
+    }
+    if (!steps.length) issues.push("路线为空");
+    const missing = steps.filter(s => !s.station_code);
+    if (missing.length) issues.push(`有 ${missing.length} 步没有工位`);
+    const must = steps.filter(s => Number(s.is_must_pass || 0) === 1);
+    if (steps.length && !must.length) {
+      warns.push("整条路线都是展示过站（不过站校验），只适合管理看板，不适合防错");
+    }
+    return ok(res, { total: steps.length, issues, warns, must_pass: must.length, ok: issues.length === 0 });
+  });
+
+  // 产品分段路线（4 段默认线/路线 + 自动选择）
+  router.get("/route/product", async (req, res) => {
+    const pc = (req.query.product_code || "").toString().trim();
+    if (!pc) return fail(res, "请选择产品料号");
+    const prod = (await query(
+      `SELECT product_code, product_model, product_name, cust_code, product_type
+       FROM md_product WHERE product_code=$1`, [pc])).rows[0] ?? null;
+    const cfgRows = (await query(
+      "SELECT * FROM cfg_product_route WHERE product_code=$1", [pc])).rows;
+    const cfg = Object.fromEntries(cfgRows.map(r => [r.process_code, r]));
+    const fromMo = {};
+    for (const r of (await query(
+      `SELECT process_code, line_code FROM ord_mo
+       WHERE (fg_code=$1 OR product_code=$1) AND COALESCE(line_code,'')<>''
+       ORDER BY id DESC`, [pc])).rows) {
+      if (!(r.process_code in fromMo)) fromMo[r.process_code] = r.line_code;
+    }
+    const defaults = {};
+    for (const r of (await query(
+      `SELECT line_code, process_code FROM md_line WHERE COALESCE(process_code,'')<>'' ORDER BY line_code`)).rows) {
+      if (!(r.process_code in defaults)) defaults[r.process_code] = r.line_code;
+    }
+    const lines = (await query(
+      "SELECT line_code, line_name, process_code FROM md_line ORDER BY line_code")).rows;
+    const routeInfo = async code => {
+      if (!code) return null;
+      const r = (await query(
+        "SELECT route_code, route_name, status FROM proc_route WHERE route_code=$1", [code])).rows[0];
+      if (!r) return null;
+      const steps = (await query(
+        `SELECT seq_no, station_code, station_name, is_must_pass FROM proc_step
+         WHERE route_code=$1 ORDER BY seq_no`, [code])).rows;
+      r.step_list = steps;
+      r.steps = steps.length;
+      r.must = steps.filter(x => Number(x.is_must_pass || 0) === 1).length;
+      return r;
+    };
+    const segs = [], missing = [];
+    for (const [proc, pname] of PROC_SEGMENTS) {
+      const c0 = cfg[proc];
+      let lineCode, source;
+      if (c0?.line_code) { lineCode = c0.line_code; source = "配置表"; }
+      else if (proc in fromMo) { lineCode = fromMo[proc]; source = "历史工单推测"; }
+      else { lineCode = defaults[proc] ?? ""; source = "默认"; }
+      const line = lines.find(x => x.line_code === lineCode) ?? null;
+      let routeCode = c0?.route_code ?? "", rsource;
+      let info = null;
+      if (routeCode) { info = await routeInfo(routeCode); rsource = "指定"; }
+      else {
+        let row = lineCode
+          ? (await query("SELECT route_code FROM proc_route WHERE route_code=$1 AND status='有效'",
+            [`${lineCode}-STD`])).rows[0] : null;
+        if (!row && lineCode) {
+          row = (await query(
+            `SELECT route_code FROM proc_route WHERE route_code LIKE $1 AND status='有效'
+             ORDER BY LENGTH(route_code) LIMIT 1`, [`${lineCode}-%`])).rows[0] ?? null;
+        }
+        routeCode = row?.route_code ?? "";
+        info = await routeInfo(routeCode);
+        rsource = "自动";
+      }
+      const cand = lineCode
+        ? (await query(
+          "SELECT route_code, route_name, status FROM proc_route WHERE route_code LIKE $1 ORDER BY route_code",
+          [`${lineCode}-%`])).rows : [];
+      for (const x of cand) {
+        const n = await query("SELECT COUNT(*)::int AS n FROM proc_step WHERE route_code=$1", [x.route_code]);
+        x.steps = n.rows[0].n;
+      }
+      const seg = {
+        process_code: proc, process_name: pname,
+        line_code: lineCode, line_name: line?.line_name ?? "", line_source: source,
+        route_code: routeCode, route_name: info?.route_name ?? "",
+        steps: info?.steps ?? 0, must: info?.must ?? 0,
+        route_status: info?.status ?? "", route_source: rsource,
+        step_list: info?.step_list ?? [], candidates: cand,
+      };
+      if (!routeCode || !seg.steps) missing.push(proc);
+      segs.push(seg);
+    }
+    return ok(res, {
+      product: prod ?? { product_code: pc }, segments: segs, missing, lines,
+      total_steps: segs.reduce((a, x) => a + x.steps, 0),
+      total_must: segs.reduce((a, x) => a + x.must, 0),
+    });
+  });
+
+  // 产品分段路线保存
+  router.post("/route/product/save", requireMesrjPerm("route.edit"), async (req, res) => {
+    const d = req.body || {};
+    const pc = (d.product_code || "").toString().trim();
+    const segs = Array.isArray(d.segments) ? d.segments : [];
+    if (!pc) return fail(res, "请选择产品料号");
+    let n = 0;
+    for (const s of segs) {
+      const proc = (s.process_code || "").toString().trim();
+      if (!PROC_SEGMENTS.some(([p]) => p === proc)) continue;
+      const old = (await query(
+        "SELECT id FROM cfg_product_route WHERE product_code=$1 AND process_code=$2", [pc, proc])).rows[0];
+      const vals = [pc, proc, (s.line_code || "").toString().trim(),
+        (s.route_code || "").toString().trim(), req.mesrjUser.login_name, nowStr()];
+      if (old) {
+        await query(
+          `UPDATE cfg_product_route SET line_code=$3, route_code=$4, updated_by=$5, updated_at=$6
+           WHERE product_code=$1 AND process_code=$2`, vals);
+      } else {
+        await query(
+          `INSERT INTO cfg_product_route (product_code, process_code, line_code, route_code, updated_by, updated_at)
+           VALUES ($1,$2,$3,$4,$5,$6)`, vals);
+      }
+      n++;
+    }
+    await audit(req.mesrjUser.login_name, "产品路线", "保存产品分段路线", pc, `${n} 段`, req.ip);
+    return ok(res, { saved: n }, `已保存 ${n} 段工艺`);
+  });
+
+  // 已配置产品清单
+  router.get("/route/product/list", async (req, res) => {
+    const rows = (await query(
+      `SELECT r.product_code, MAX(p.product_model) AS model, MAX(p.product_name) AS name,
+              COUNT(*)::int AS segs,
+              SUM(CASE WHEN COALESCE(r.line_code,'')<>'' THEN 1 ELSE 0 END)::int AS with_line
+       FROM cfg_product_route r LEFT JOIN md_product p ON p.product_code=r.product_code
+       GROUP BY r.product_code ORDER BY r.product_code`)).rows;
+    return ok(res, rows);
+  });
+
+  // 某产线可选路线
+  router.get("/route/candidates", async (req, res) => {
+    const line = (req.query.line_code || "").toString().trim();
+    if (!line) return ok(res, []);
+    const rows = (await query(
+      "SELECT route_code, route_name, status FROM proc_route WHERE route_code LIKE $1 ORDER BY route_code",
+      [`${line}-%`])).rows;
+    for (const x of rows) {
+      x.steps = Number((await query(
+        "SELECT COUNT(*)::int AS n FROM proc_step WHERE route_code=$1", [x.route_code])).rows[0].n);
+      x.must = Number((await query(
+        "SELECT COUNT(*)::int AS n FROM proc_step WHERE route_code=$1 AND is_must_pass=1",
+        [x.route_code])).rows[0].n);
+    }
+    return ok(res, rows);
+  });
+
+  // ── 机型工艺（源 route.py 下半部）──────────────────────────────────────────
+
+  // 机型已维护哪些变体工艺
+  router.get("/route/variants", async (req, res) => {
+    const model = (req.query.model || "").toString().trim();
+    return ok(res, { model, variants: await modelVariants(model) });
+  });
+
+  // 开单辅助：机型每段默认产线/工位（md_product 不存在时给 warn）
+  router.get("/route/model-defaults", async (req, res) => {
+    return ok(res, await modelDefaultsData(
+      (req.query.model || "").toString().trim(),
+      (req.query.variant || "").toString().trim()));
+  });
+
+  // 机型工艺读取 + 按 4 段汇总
+  router.get("/route/process", async (req, res) => {
+    const model = (req.query.model || "").toString().trim();
+    if (!model) {
+      // 机型下拉：有工单的 FG 机型排前面
+      const rows = (await query(
+        `SELECT p.product_model AS m, COUNT(o.id)::int AS n FROM md_product p
+         LEFT JOIN ord_mo o ON o.fg_code = p.product_code
+         WHERE COALESCE(p.product_model,'')<>'' AND p.product_type='FG'
+         GROUP BY p.product_model ORDER BY n DESC, p.product_model`)).rows;
+      return ok(res, { models: rows.map(r => r.m), steps: [] });
+    }
+    const variant = (req.query.variant || "").toString().trim();
+    const [steps0, source] = await modelProcess(model, variant);
+    const steps = steps0.map(x => ({
+      ...x,
+      enabled: Number(x.enabled ?? 1) ? 1 : 0,
+      is_sampling: Number(x.is_sampling ?? 0),
+    }));
+    const segs = PROC_SEGMENTS.map(([proc, pname]) => {
+      const sub = steps.filter(x => (x.process_code || "") === proc);
+      const live = sub.filter(x => x.enabled === 1);
+      return {
+        process_code: proc, process_name: pname,
+        count: live.length, total: sub.length, disabled: sub.length - live.length,
+        must: live.filter(x => Number(x.is_must_pass || 0) === 1).length,
+        steps: sub,
+      };
+    });
+    const liveAll = steps.filter(x => x.enabled === 1);
+    const srcLabel = ({
+      own: "本机已维护",
+      fallback: "该变体没有专属工艺，用的是标准工艺",
+      template: "按产线模板拼装（尚未针对性维护）",
+    })[source] ?? source;
+    return ok(res, {
+      model, variant, source, variants: await modelVariants(model), source_label: srcLabel,
+      steps, segments: segs,
+      total: liveAll.length, total_all: steps.length,
+      total_disabled: steps.length - liveAll.length,
+      total_sampling: liveAll.filter(x => x.is_sampling === 1).length,
+      total_must: liveAll.filter(x => Number(x.is_must_pass || 0) === 1).length,
+    });
+  });
+
+  // 全量保存某机型（某变体）的工艺；保存后自动同步到未锁站的总工单
+  router.post("/route/process/save", requireMesrjPerm("route.edit"), async (req, res) => {
+    const d = req.body || {};
+    const model = (d.model || "").toString().trim();
+    const variant = (d.variant || "").toString().trim();
+    const steps = Array.isArray(d.steps) ? d.steps : [];
+    if (!model) return fail(res, "请选择机型");
+    if (!steps.length) return fail(res, "工步不能为空");
+    const smap = {};
+    for (const r of (await query(
+      "SELECT station_code, station_name, short_name, process_code FROM md_station")).rows) {
+      smap[r.station_code] = r;
+    }
+    // 同一工序 + 工位类型只能有一个启用站（同类型工位互斥，防止双站都校验）
+    const tmap = {};
+    for (const r of (await query(
+      "SELECT station_code, process_code, type_code FROM md_station")).rows) {
+      tmap[r.station_code] = [r.process_code || "", r.type_code || ""];
+    }
+    const seenPos = {}, dup = [];
+    for (const s of steps) {
+      const code = (s.station_code || "").toString().trim();
+      if (!code || Number(s.enabled ?? 1) !== 1) continue;
+      const [p, tp] = tmap[code] ?? ["", ""];
+      if (!tp) continue;
+      const key = `${p}|${tp}`;
+      if (key in seenPos && seenPos[key] !== code) {
+        const pname = (PROC_SEGMENTS.find(([x]) => x === p) ?? ["", p])[1];
+        dup.push(`${pname} 的「${tp}」：${seenPos[key]} 与 ${code}`);
+      } else seenPos[key] = code;
+    }
+    if (dup.length) {
+      return fail(res, "同一工序的同一工位类型只能保留一个启用站（同类型工位互斥）：" + dup.slice(0, 3).join("；"));
+    }
+    const now = nowStr(), by = req.mesrjUser.login_name;
+    await query(
+      "DELETE FROM cfg_model_process WHERE model=$1 AND COALESCE(variant,'')=$2", [model, variant]);
+    let n = 0, off = 0;
+    for (let i = 0; i < steps.length; i++) {
+      const s = steps[i];
+      const code = (s.station_code || "").toString().trim();
+      if (!code) continue;
+      const st0 = smap[code] ?? {};
+      const en = Number(s.enabled ?? 1) === 1 ? 1 : 0;
+      const smp = await stationSampling(code);
+      // 停用站不设校验点；抽检站也不设（查到才算过）
+      const must = en && !smp && Number(s.is_must_pass || 0) === 1 ? 1 : 0;
+      if (!en) off++;
+      await query(
+        `INSERT INTO cfg_model_process
+         (model, variant, seq_no, station_code, station_name, process_code,
+          is_must_pass, enabled, remark, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+        [model, variant, (i + 1) * 10, code,
+         st0.short_name || st0.station_name || s.station_name || code,
+         st0.process_code || s.process_code || "", must, en, s.remark || "", by, now]);
+      n++;
+    }
+    await audit(by, "工艺路线", "保存机型工艺",
+      variant ? `${model} / ${variant}` : `${model} / 标准`,
+      `${n} 站（启用 ${n - off} / 停用 ${off}）`, req.ip);
+    // 整段停用提醒：排产时该段将没有路线
+    const empty = [];
+    for (const [proc, pname] of PROC_SEGMENTS) {
+      const alive = steps.some(s => {
+        const st0 = smap[(s.station_code || "").toString().trim()] ?? {};
+        return (st0.process_code || s.process_code || "") === proc
+          && Number(s.enabled ?? 1) === 1;
+      });
+      if (!alive) empty.push(pname);
+    }
+    let msg = `已保存 ${model} 的工艺（${n} 站，启用 ${n - off}，停用 ${off}）`;
+    if (empty.length) msg += `；⚠ ${empty.join("、")} 没有启用的工位`;
+    // 保存即自动同步：只动还没锁路线的总工单
+    let done = [], skipped = [];
+    try {
+      [done, skipped] = await syncModelGroups(model, by);
+    } catch (e) {
+      skipped = [{ group: "-", reason: `自动同步失败：${e.message}` }];
+    }
+    if (done.length) {
+      msg += `；已自动同步 ${done.length} 个总工单（覆盖 ${done.reduce((a, x) => a + Object.keys(x.steps || {}).length, 0)} 张分工单）`;
+    }
+    if (skipped.length) msg += `；${skipped.length} 个总工单已过站冻结，未动`;
+    return ok(res, {
+      model, count: n, enabled: n - off, disabled: off, empty_segments: empty,
+      synced: done, frozen_skipped: skipped, mo_pending: 0,
+    }, msg);
+  });
+
+  // 把当前机型工艺同步到该机型「还没有锁路线」的总工单
+  router.post("/route/process/sync-mo", requireMesrjPerm("route.edit"), async (req, res) => {
+    const model = (req.body?.model || "").toString().trim();
+    if (!model) return fail(res, "请选机型");
+    const by = req.mesrjUser.login_name;
+    const [done, skipped] = await syncModelGroups(model, by);
+    await audit(by, "工艺路线", "同步工艺到未锁工单", model,
+      `更新 ${done.length} 组 / 冻结跳过 ${skipped.length} 组`, req.ip);
+    let msg = `已更新 ${done.length} 个总工单`;
+    if (skipped.length) msg += `；${skipped.length} 个已过站冻结、未动`;
+    return ok(res, {
+      done, skipped,
+      mo_n: done.reduce((a, x) => a + Object.keys(x.steps || {}).length, 0),
+    }, msg);
+  });
+
+  // 清空机型维护的工艺，回到"按产线模板自动拼装"
+  router.post("/route/process/reset", requireMesrjPerm("route.edit"), async (req, res) => {
+    const model = (req.body?.model || "").toString().trim();
+    if (!model) return fail(res, "请选择机型");
+    const r = await query("DELETE FROM cfg_model_process WHERE model=$1 RETURNING id", [model]);
+    await audit(req.mesrjUser.login_name, "工艺路线", "重置机型工艺", model, "回到模板", req.ip);
+    return ok(res, { deleted: r.rows.length }, `${model} 已回到通用模板（下次打开按模板显示）`);
+  });
+
+  // 把一张工单的路线按当前机型工艺重锁（整组一起）
+  router.post("/route/process/relock-mo", requireMesrjPerm("route.edit"), async (req, res) => {
+    const moNo = (req.body?.mo_no || "").toString().trim();
+    if (!moNo) return fail(res, "请选工单");
+    const mo = (await query(
+      `SELECT mo_no, status, process_code, fg_code, COALESCE(variant,'') AS variant
+       FROM ord_mo WHERE mo_no=$1`, [moNo])).rows[0];
+    if (!mo) return fail(res, "工单不存在", 404);
+    const pm = (await query(
+      "SELECT product_model FROM md_product WHERE product_code=$1", [mo.fg_code || ""])).rows[0];
+    const model = pm?.product_model || "";
+    if (!model) return fail(res, "工单的产品没有机型，无法按机型工艺重锁");
+    // 优先用工单自己记的变体（自动线/手动线），否则走标准工艺
+    const moVariant = (mo.variant || "").trim();
+    const [steps] = await modelProcessLive(model, moVariant);
+    if (!steps.length) return fail(res, "该机型没有启用的工位");
+    const by = req.mesrjUser.login_name;
+    const r = await lockGroup(moNo, model, steps, by);
+    if (!r.ok) return fail(res, r.msg || "重锁失败");
+    await audit(by, "工艺路线", "按机型工艺重锁工单路线", r.group_key,
+      `共 ${r.total} 站 / ${Object.keys(r.steps).length} 张分工单`, req.ip);
+    return ok(res, { mo_no: moNo, group_key: r.group_key, steps: r.steps, total: r.total },
+      `${r.group_key} 已按机型工艺重锁 ${r.total} 站（覆盖 ${Object.keys(r.steps).length} 张分工单）`);
+  });
+
+  // 某机型的工位按工序列出 4 段（排产用）
+  router.get("/route/process/segments", async (req, res) => {
+    const model = (req.query.model || "").toString().trim();
+    if (!model) return fail(res, "请选机型");
+    const [steps, source] = await modelProcessLive(model);
+    const out = {};
+    for (const [proc] of PROC_SEGMENTS) {
+      out[proc] = steps.filter(x => (x.process_code || "") === proc);
+    }
+    return ok(res, { model, source, segments: out });
+  });
+
+  // ═══ W5 cfg 域（源 api/cfg.py）══════════════════════════════════════════
+
+  // SN 规则试号（推进 SEQ 计数——与真实取号同一算法）
+  router.post("/cfg/sn/test", async (req, res) => {
+    const d = req.body || {};
+    const snType = (d.sn_type || "整机").toString().trim();
+    const n = Math.max(1, Math.min(20, Number(d.count || 5)));
+    const rule = (await query("SELECT * FROM cfg_sn_rule WHERE sn_type=$1", [snType])).rows[0];
+    if (!rule) return fail(res, `没有「${snType}」的 SN 规则`);
+    let segs;
+    try { segs = JSON.parse(rule.segments || "[]"); } catch { return fail(res, "段定义不是合法 JSON（库内）"); }
+    if (!segs.length) return fail(res, "段定义为空");
+    const total = segs.reduce((a, s) => a + Number(s.len || 0), 0);
+    const samples = [];
+    for (let i = 0; i < n; i++) samples.push(await renderSn(rule, segs, true));
+    const warn = total === Number(rule.total_len || 0) ? ""
+      : `注意：段长度合计 ${total} 位与设定总长 ${rule.total_len} 位不一致`;
+    return ok(res, { samples, seg_total: total, total_len: rule.total_len, warn }, warn || "试号成功");
+  });
+
+  // 保存 SN 规则（段长度合计必须等于总长——过站按总长校验）
+  router.put("/cfg/sn/rule/:rid", requireMesrjPerm("cfg.edit"), async (req, res) => {
+    const rid = Number(req.params.rid);
+    const d = { ...(req.body || {}) };
+    let segs = d.segments;
+    if (typeof segs === "string") {
+      try { segs = JSON.parse(segs); } catch { return fail(res, "段定义不是合法 JSON"); }
+    }
+    if (Array.isArray(segs)) {
+      const cur = (await query("SELECT total_len FROM cfg_sn_rule WHERE id=$1", [rid])).rows[0] ?? {};
+      const total = Number(d.total_len || cur.total_len || 0);
+      const n2 = segs.reduce((a, x) => a + Number(x?.len || 0), 0);
+      if (total && n2 && n2 !== total) {
+        return fail(res, `段长度合计 ${n2} 位与总长 ${total} 位不一致——生成的号会被过站校验拒收；请把某段的长度加减 ${total - n2} 位`);
+      }
+      d.total_len = total || n2;
+      d.segments = JSON.stringify(segs);
+    }
+    delete d.id;
+    const cols = await tableColumns("cfg_sn_rule");
+    const keys = Object.keys(d).filter(k => cols.has(k));
+    if (!keys.length) return fail(res, "没有可更新字段");
+    await query(
+      `UPDATE cfg_sn_rule SET ${keys.map((k, i) => `${k}=$${i + 1}`).join(", ")} WHERE id=$${keys.length + 1}`,
+      [...keys.map(k => d[k]), rid]);
+    await audit(req.mesrjUser.login_name, "配置中心", "改 SN 规则", String(rid), JSON.stringify(d), req.ip);
+    return ok(res, null, "已保存");
+  });
+
+  // 防错总览（一眼看清哪些开、哪些关）
+  router.get("/cfg/pokayoke/overview", async (req, res) => {
+    const rows = (await query("SELECT * FROM cfg_pokayoke ORDER BY id")).rows;
+    return ok(res, {
+      rows,
+      on: rows.filter(r => Number(r.enabled)).length,
+      off: rows.filter(r => !Number(r.enabled)).length,
+    });
+  });
+
+  // 启停防错规则
+  router.post("/cfg/pokayoke/:rid/toggle", requireMesrjPerm("cfg.edit"), async (req, res) => {
+    const r = (await query("SELECT * FROM cfg_pokayoke WHERE id=$1", [req.params.rid])).rows[0];
+    if (!r) return fail(res, "规则不存在", 404);
+    const newv = Number(r.enabled) ? 0 : 1;
+    await query("UPDATE cfg_pokayoke SET enabled=$1 WHERE id=$2", [newv, r.id]);
+    await audit(req.mesrjUser.login_name, "配置中心", "启停防错规则", r.rule_key,
+      `${r.enabled} -> ${newv}`, req.ip);
+    return ok(res, { enabled: newv }, newv ? "已启用" : "已停用");
+  });
+
+  // 阈值分组返回
+  router.get("/cfg/threshold/grouped", async (req, res) => {
+    const rows = (await query("SELECT * FROM cfg_threshold ORDER BY apply_to, th_key")).rows;
+    const groups = {};
+    for (const r of rows) (groups[r.apply_to || "通用"] ??= []).push(r);
+    return ok(res, Object.entries(groups).map(([k, v]) => ({ group: k, items: v })));
+  });
+
+  // 码值字典
+  router.get("/cfg/dict/:type", async (req, res) => {
+    const rows = (await query(
+      "SELECT * FROM cfg_code_dict WHERE dict_type=$1 ORDER BY sort_no", [req.params.type])).rows;
+    return ok(res, rows);
+  });
+
+  // PCB 激光码解码（+可选机型板种校验）
+  router.get("/cfg/pcbcode/decode", async (req, res) => {
+    const code = (req.query.code || "").toString().trim();
+    const model = (req.query.model || "").toString().trim();
+    const d = pcbDecode(code);
+    if (model && d.ok) {
+      const row = (await query(
+        `SELECT pcb_code FROM cfg_pcb_code WHERE machine_model=$1 AND COALESCE(pcb_code,'')<>''`,
+        [model])).rows[0];
+      const [typeOk, typeMsg] = pcbCheckType(code, row?.pcb_code || "");
+      d.type_ok = typeOk;
+      d.type_msg = typeMsg;
+      d.model = model;
+    }
+    return ok(res, d);
+  });
+
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════
 
   const mdCrud = Router();
@@ -2416,7 +3281,16 @@ export function createMesrjRouter({ authenticateJWT }) {
   registerCrud(planCrud, PLAN_RES, "plan.view", "plan.edit");
   router.use("/plan", planCrud);
 
+  // W5：route / cfg 通用 CRUD（固定路径已在前面的主 router 上，挂载在后不冲突）
+  const routeCrud = Router();
+  registerCrud(routeCrud, ROUTE_RES, "route.view", "route.edit");
+  router.use("/route", routeCrud);
+
+  const cfgCrud = Router();
+  registerCrud(cfgCrud, CFG_RES, "cfg.view", "cfg.edit");
+  router.use("/cfg", cfgCrud);
+
   return router;
 }
 
-export { ok, fail, getParam, setParam, audit, hashPwd, verifyPwd, currentUser, hasPerm, requireMesrjPerm, tableColumns, Res, cleanRow, safeOrder, cleanPageArgs, paged, registerCrud, MD_RES, SYS_RES, BOM_RES, ORD_RES, PLAN_RES };
+export { ok, fail, getParam, setParam, audit, hashPwd, verifyPwd, currentUser, hasPerm, requireMesrjPerm, tableColumns, Res, cleanRow, safeOrder, cleanPageArgs, paged, registerCrud, MD_RES, SYS_RES, BOM_RES, ORD_RES, PLAN_RES, ROUTE_RES, CFG_RES };
