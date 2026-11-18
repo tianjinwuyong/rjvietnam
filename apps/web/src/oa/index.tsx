@@ -1,78 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import {
   oaApi,
   type OaAnnouncement,
-  type OaInstanceDetail,
+  type OaFlowDef,
   type OaInstanceQuery,
-  type OaInstanceStatus,
   type OaInstanceSummary,
   type OaNotification,
   type OaPaged,
   type OaStatsOverview,
 } from "./oaApi";
 import { t } from "./i18n";
+import { FlowForm } from "./FlowForm";
+import { InstanceDetail } from "./InstanceDetail";
 
-// UI 键 → 原 OA 词典键（i18n/zh|en|vi.json，措辞与原系统逐字一致）
-const K: Record<string, string> = {
-  title: "app.name",
-  tabOverview: "menu.workbench",
-  tabTodo: "menu.todo",
-  tabMine: "menu.mine",
-  tabCc: "menu.cc",
-  tabNotifications: "announce.cat_notice",
-  tabAnnouncements: "menu.announcements",
-  todoCount: "dash.todoTitle",
-  runningCount: "flowStatus.running",
-  completedCount: "flowStatus.completed",
-  announcementUnread: "announce.unreadTag",
-  colNo: "flowList.instanceNo",
-  colTitle: "flowList.titleCol",
-  colType: "flowList.defCol",
-  colApplicant: "flowList.applicantCol",
-  colStatus: "flowList.statusCol",
-  colCreatedAt: "flowList.time",
-  colPublisher: "announce.publisher",
-  colReadCount: "announce.readCountShort",
-  searchPlaceholder: "common.keyword",
-  search: "common.search",
-  refresh: "common.refresh",
-  markAllRead: "layout.markAllRead",
-  empty: "common.empty",
-  loading: "common.loading",
-  loadFailed: "empty.loadFailed",
-  backToList: "flowDetail.back",
-  approve: "flowDetail.pass",
-  reject: "flowDetail.reject",
-  commentLabel: "flowDetail.approveOpinion",
-  commentPlaceholder: "flowDetail.opinionPlaceholder",
-  actionDone: "flowDetail.actionDone",
-  actionFailed: "common.failed",
-  auditTrail: "flowDetail.log",
-  formData: "flowDetail.applyContent",
-  recent: "dash.recentDocs",
-  byFlow: "admin.byDef",
-  read: "dash.read",
-  unread: "dash.unread",
-};
-
-const w = (key: string, locale: Locale): string => t(K[key] ?? key, locale);
-
-const statusDictKey: Record<string, string> = {
-  draft: "flowStatus.draft",
-  running: "flowStatus.running",
-  completed: "flowStatus.completed",
-  approved: "flowStatus.approved",
-  rejected: "flowStatus.rejected",
-  withdrawn: "flowStatus.withdrawn",
-  terminated: "flowStatus.terminated",
-  archived: "flowStatus.archived",
-  canceled: "flowStatus.canceled",
-};
-
-function statusLabel(status: string, locale: Locale): string {
-  return t(statusDictKey[status] ?? "flowStatus.running", locale);
-}
+/**
+ * OA 原生模块 —— 信息架构对齐原 OA：
+ * 我的工作台 / 发起申请 / 待我审批 / 我的申请 / 已办 / 抄送我的 / 通知 / 通知通告。
+ * 界面文案统一走 i18n/zh|en|vi.json（原 OA 词典逆向提取，措辞逐字一致）。
+ */
 
 const statusColor: Record<string, string> = {
   running: "#b45309",
@@ -84,23 +30,18 @@ const statusColor: Record<string, string> = {
   draft: "#64748b",
 };
 
-function fmtDate(value: string | null | undefined, locale: Locale): string {
-  if (!value) return "-";
-  try {
-    return new Date(value).toLocaleString(locale === "zh-CN" ? "zh-CN" : locale === "vi-VN" ? "vi-VN" : "en-US", {
-      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
-    });
-  } catch {
-    return value;
-  }
-}
+type Tab = "overview" | "start" | "todo" | "mine" | "done" | "cc" | "notifications" | "announcements";
 
-type Tab = "overview" | "todo" | "mine" | "cc" | "notifications" | "announcements";
-
-const TAB_KEYS: Tab[] = ["overview", "todo", "mine", "cc", "notifications", "announcements"];
-const tabWordKey: Record<Tab, string> = {
-  overview: "tabOverview", todo: "tabTodo", mine: "tabMine",
-  cc: "tabCc", notifications: "tabNotifications", announcements: "tabAnnouncements",
+const TAB_KEYS: Tab[] = ["overview", "start", "todo", "mine", "done", "cc", "notifications", "announcements"];
+const TAB_I18N_KEY: Record<Tab, string> = {
+  overview: "menu.workbench",
+  start: "menu.startFlow",
+  todo: "menu.todo",
+  mine: "menu.mine",
+  done: "menu.done",
+  cc: "menu.cc",
+  notifications: "announce.cat_notice",
+  announcements: "menu.announcements",
 };
 
 function StatCard({ label, value, color }: { label: string; value: number; color: string }) {
@@ -119,18 +60,18 @@ function InstanceTable({
   locale: Locale;
   onOpen: (id: OaInstanceSummary["id"]) => void;
 }) {
-  if (rows.length === 0) return <div className="empty-state">{w("empty", locale)}</div>;
+  if (rows.length === 0) return <div className="empty-state">{t("common.empty", locale)}</div>;
   return (
     <div className="table-shell">
       <table>
         <thead>
           <tr>
-            <th>{w("colNo", locale)}</th>
-            <th>{w("colTitle", locale)}</th>
-            <th>{w("colType", locale)}</th>
-            <th>{w("colApplicant", locale)}</th>
-            <th>{w("colStatus", locale)}</th>
-            <th>{w("colCreatedAt", locale)}</th>
+            <th>{t("flowList.instanceNo", locale)}</th>
+            <th>{t("flowList.titleCol", locale)}</th>
+            <th>{t("flowList.defCol", locale)}</th>
+            <th>{t("flowList.applicantCol", locale)}</th>
+            <th>{t("flowList.statusCol", locale)}</th>
+            <th>{t("flowList.time", locale)}</th>
           </tr>
         </thead>
         <tbody>
@@ -141,7 +82,7 @@ function InstanceTable({
               <td>{row.def_name}</td>
               <td>{row.applicant_name ?? "-"}</td>
               <td style={{ color: statusColor[row.status] ?? undefined, fontWeight: 600 }}>
-                {statusLabel(row.status, locale)}
+                {statusText(row.status, locale)}
               </td>
               <td>{fmtDate(row.created_at, locale)}</td>
             </tr>
@@ -152,130 +93,81 @@ function InstanceTable({
   );
 }
 
-function InstanceDetail({
-  id, locale, onBack, onActed,
+function fmtDate(value: string | null | undefined, locale: Locale): string {
+  if (!value) return "-";
+  try {
+    return new Date(value).toLocaleString(locale === "vi-VN" ? "vi-VN" : locale === "en-US" ? "en-US" : "zh-CN", {
+      year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+    });
+  } catch {
+    return value;
+  }
+}
+
+/** 状态码 → 词典文案；未知状态回退显示原文（flowStatus.running） */
+function statusText(status: string, locale: Locale): string {
+  const key = `flowStatus.${status}`;
+  return t(key, locale) === key ? status : t(key, locale);
+}
+
+/** 发起申请 —— 流程类型选择页（按业务分类分组，与原 OA 一致） */
+function FlowPicker({
+  locale, onPick,
 }: {
-  id: OaInstanceSummary["id"];
   locale: Locale;
-  onBack: () => void;
-  onActed: () => void;
+  onPick: (def: OaFlowDef) => void;
 }) {
-  const [detail, setDetail] = useState<OaInstanceDetail | null>(null);
+  const [flows, setFlows] = useState<OaFlowDef[] | null>(null);
   const [error, setError] = useState("");
-  const [comment, setComment] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
 
-  const load = useCallback(async () => {
-    setError("");
-    try {
-      setDetail(await oaApi.instance(id));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+  useEffect(() => {
+    let cancelled = false;
+    oaApi.flows()
+      .then(list => { if (!cancelled) setFlows(list); })
+      .catch(e => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, OaFlowDef[]>();
+    for (const f of flows || []) {
+      const cat = f.category || t("apply.catOther", locale);
+      const arr = map.get(cat) || [];
+      arr.push(f);
+      map.set(cat, arr);
     }
-  }, [id]);
+    return [...map.entries()];
+  }, [flows, locale]);
 
-  useEffect(() => { void load(); }, [load]);
-
-  const act = async (action: "approve" | "reject") => {
-    const task = detail?.tasks?.find(t => t.status === "assigned");
-    if (!task) return;
-    setBusy(true);
-    setMessage("");
-    try {
-      await oaApi.approveTask(task.id, { action, comment: comment.trim() || undefined });
-      setMessage(w("actionDone", locale));
-      setComment("");
-      await load();
-      onActed();
-    } catch (e) {
-      setMessage(`${w("actionFailed", locale)}: ${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (error) return <div className="empty-state">{w("loadFailed", locale)}: {error}</div>;
-  if (!detail) return <div className="empty-state">{w("loading", locale)}</div>;
-
-  const pendingTask = detail.tasks?.find(t => t.status === "assigned");
+  if (error) return <div className="empty-state">{t("empty.loadFailed", locale)}: {error}</div>;
+  if (!flows) return <div className="empty-state">{t("common.loading", locale)}</div>;
+  if (flows.length === 0) return <div className="empty-state">{t("apply.noFlowAvailable", locale)}</div>;
 
   return (
-    <div>
-      <button onClick={onBack} style={{ marginBottom: 10, cursor: "pointer" }}>← {w("backToList", locale)}</button>
-      <div className="surface-panel" style={{ padding: "14px 16px", marginBottom: 12 }}>
-        <h3 style={{ margin: "0 0 6px" }}>{detail.title}</h3>
-        <p style={{ margin: 0, color: "var(--text-muted, #64748b)", fontSize: 13 }}>
-          {detail.instance_no} · {detail.def_name} · {detail.applicant_name ?? "-"} · {fmtDate(detail.created_at, locale)}
-          <span style={{ marginLeft: 10, color: statusColor[detail.status], fontWeight: 600 }}>
-            {statusLabel(detail.status, locale)}
-          </span>
-        </p>
-      </div>
-
-      {pendingTask && (
-        <div className="surface-panel" style={{ padding: "14px 16px", marginBottom: 12 }}>
-          <label style={{ display: "block", marginBottom: 6, fontSize: 13 }}>{w("commentLabel", locale)}</label>
-          <textarea
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-            rows={2}
-            placeholder={w("commentPlaceholder", locale)}
-            style={{ width: "100%", boxSizing: "border-box", marginBottom: 10 }}
-          />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              disabled={busy}
-              onClick={() => void act("approve")}
-              style={{ padding: "7px 16px", cursor: "pointer", background: "#15803d", color: "#fff", border: 0, borderRadius: 6 }}
-            >{w("approve", locale)}</button>
-            <button
-              disabled={busy}
-              onClick={() => void act("reject")}
-              style={{ padding: "7px 16px", cursor: "pointer", background: "#b91c1c", color: "#fff", border: 0, borderRadius: 6 }}
-            >{w("reject", locale)}</button>
-            {message && <span style={{ alignSelf: "center", fontSize: 13 }}>{message}</span>}
+    <div className="surface-panel" style={{ padding: "14px 16px" }}>
+      <h4 style={{ margin: "0 0 4px" }}>{t("apply.pickFlow", locale)}</h4>
+      <p style={{ margin: "0 0 12px", fontSize: 13, color: "var(--text-muted, #64748b)" }}>{t("apply.pickFlowHint", locale)}</p>
+      {grouped.map(([cat, defs]) => (
+        <div key={cat} style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: "var(--text-muted, #64748b)", marginBottom: 6 }}>{cat}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {defs.map(d => (
+              <button
+                key={String(d.id)}
+                onClick={() => onPick(d)}
+                style={{ padding: "10px 14px", cursor: "pointer", border: "1px solid #cbd5e1", borderRadius: 8, background: "white", textAlign: "left", maxWidth: 260 }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 14 }}>{locale === "vi-VN" && d.name_vi ? d.name_vi : d.name}</div>
+                {d.description ? (
+                  <div style={{ fontSize: 12, color: "var(--text-muted, #64748b)", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {d.description}
+                  </div>
+                ) : null}
+              </button>
+            ))}
           </div>
         </div>
-      )}
-
-      {detail.form_data && Object.keys(detail.form_data).length > 0 && (
-        <div className="surface-panel" style={{ padding: "14px 16px", marginBottom: 12 }}>
-          <h4 style={{ margin: "0 0 8px" }}>{w("formData", locale)}</h4>
-          <div className="table-shell">
-            <table>
-              <tbody>
-                {Object.entries(detail.form_data).map(([k, v]) => (
-                  <tr key={k}><th style={{ width: 180, textAlign: "left" }}>{k}</th><td>{String(v ?? "-")}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {detail.tasks && detail.tasks.length > 0 && (
-        <div className="surface-panel" style={{ padding: "14px 16px" }}>
-          <h4 style={{ margin: "0 0 8px" }}>{w("auditTrail", locale)}</h4>
-          <div className="table-shell">
-            <table>
-              <thead>
-                <tr><th>{w("colStatus", locale)}</th><th>{w("colApplicant", locale)}</th><th>{w("colCreatedAt", locale)}</th><th>{w("commentLabel", locale)}</th></tr>
-              </thead>
-              <tbody>
-                {detail.tasks.map(t => (
-                  <tr key={String(t.id)}>
-                    <td>{t.status}</td>
-                    <td>{t.assignee_name ?? "-"}</td>
-                    <td>{fmtDate(t.finished_at ?? t.created_at, locale)}</td>
-                    <td>{t.comment ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      ))}
     </div>
   );
 }
@@ -291,6 +183,7 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [detailId, setDetailId] = useState<OaInstanceSummary["id"] | null>(null);
+  const [startDef, setStartDef] = useState<OaFlowDef | null>(null);
 
   const loadTab = useCallback(async (which: Tab, opts?: { keyword?: string; page?: number }) => {
     setLoading(true);
@@ -298,7 +191,7 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     try {
       if (which === "overview") {
         setOverview(await oaApi.statsOverview());
-      } else if (which === "todo" || which === "mine" || which === "cc") {
+      } else if (which === "todo" || which === "mine" || which === "done" || which === "cc") {
         const query: OaInstanceQuery = { tab: which, page: opts?.page ?? 1, size: 20 };
         if (opts?.keyword) query.keyword = opts.keyword;
         setInstances(await oaApi.instances(query));
@@ -344,15 +237,15 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
 
   return (
     <div className="screen-stack oa-module">
-      <h2 style={{ marginTop: 0 }}>{w("title", locale)}</h2>
+      <h2 style={{ marginTop: 0 }}>{t("app.name", locale)}</h2>
 
-      <div role="tablist" aria-label={w("title", locale)} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
+      <div role="tablist" aria-label={t("app.name", locale)} style={{ display: "flex", gap: 8, flexWrap: "wrap", margin: "12px 0" }}>
         {TAB_KEYS.map(key => (
           <button
             key={key}
             role="tab"
             aria-selected={tab === key}
-            onClick={() => { setTab(key); setPage(1); }}
+            onClick={() => { setTab(key); setPage(1); setStartDef(null); }}
             style={{
               padding: "7px 12px", borderRadius: 6, cursor: "pointer",
               border: tab === key ? "2px solid #0f766e" : "1px solid #cbd5e1",
@@ -360,38 +253,38 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
               fontWeight: tab === key ? 700 : 400,
             }}
           >
-            {w(tabWordKey[key], locale)}
+            {t(TAB_I18N_KEY[key], locale)}
             {key === "todo" && (overview?.todo ?? 0) > 0 ? ` (${overview?.todo})` : ""}
             {key === "announcements" && (overview?.announcementUnread ?? 0) > 0 ? ` (${overview?.announcementUnread})` : ""}
           </button>
         ))}
       </div>
 
-      {error && <p style={{ color: "var(--danger, #b91c1c)" }}>{w("loadFailed", locale)}: {error}</p>}
+      {error && tab !== "start" && <p style={{ color: "var(--danger, #b91c1c)" }}>{t("empty.loadFailed", locale)}: {error}</p>}
 
       {tab === "overview" && (
-        loading || !overview ? <div className="empty-state">{w("loading", locale)}</div> : (
+        loading || !overview ? <div className="empty-state">{t("common.loading", locale)}</div> : (
           <>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
-              <StatCard label={w("todoCount", locale)} value={overview.todo} color="#b45309" />
-              <StatCard label={w("runningCount", locale)} value={overview.statusCounts.running ?? 0} color="#0f766e" />
-              <StatCard label={w("completedCount", locale)} value={overview.statusCounts.completed ?? 0} color="#15803d" />
-              <StatCard label={w("announcementUnread", locale)} value={overview.announcementUnread} color="#7c3aed" />
+              <StatCard label={t("dash.todoTitle", locale)} value={overview.todo} color="#b45309" />
+              <StatCard label={t("flowStatus.running", locale)} value={overview.statusCounts.running ?? 0} color="#0f766e" />
+              <StatCard label={t("flowStatus.completed", locale)} value={overview.statusCounts.completed ?? 0} color="#15803d" />
+              <StatCard label={t("announce.unreadTag", locale)} value={overview.announcementUnread} color="#7c3aed" />
             </div>
             <div className="surface-panel" style={{ padding: "14px 16px", marginBottom: 16 }}>
-              <h4 style={{ margin: "0 0 8px" }}>{w("recent", locale)}</h4>
+              <h4 style={{ margin: "0 0 8px" }}>{t("dash.recentDocs", locale)}</h4>
               <InstanceTable rows={overview.recent} locale={locale} onOpen={setDetailId} />
             </div>
             <div className="surface-panel" style={{ padding: "14px 16px" }}>
-              <h4 style={{ margin: "0 0 8px" }}>{w("byFlow", locale)}</h4>
+              <h4 style={{ margin: "0 0 8px" }}>{t("admin.byDef", locale)}</h4>
               <div className="table-shell">
                 <table>
                   <thead>
-                    <tr><th>{w("colType", locale)}</th><th style={{ width: 80 }}>N</th></tr>
+                    <tr><th>{t("flowList.defCol", locale)}</th><th style={{ width: 80 }}>N</th></tr>
                   </thead>
                   <tbody>
                     {overview.byDef.length === 0
-                      ? <tr><td colSpan={2}>{w("empty", locale)}</td></tr>
+                      ? <tr><td colSpan={2}>{t("common.empty", locale)}</td></tr>
                       : overview.byDef.map(d => (
                         <tr key={d.id}>
                           <td>{locale === "vi-VN" && d.name_vi ? d.name_vi : d.name}</td>
@@ -406,24 +299,30 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
         )
       )}
 
-      {(tab === "todo" || tab === "mine" || tab === "cc") && (
+      {tab === "start" && (
+        startDef
+          ? <FlowForm def={startDef} locale={locale} onDone={() => { setStartDef(null); setTab("mine"); }} onCancel={() => setStartDef(null)} />
+          : <FlowPicker locale={locale} onPick={setStartDef} />
+      )}
+
+      {(tab === "todo" || tab === "mine" || tab === "done" || tab === "cc") && (
         <>
           <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
             <input
               value={keyword}
               onChange={e => setKeyword(e.target.value)}
-              placeholder={w("searchPlaceholder", locale)}
+              placeholder={t("common.keyword", locale)}
               style={{ flex: "0 1 280px", padding: "6px 10px" }}
               onKeyDown={e => { if (e.key === "Enter") { setPage(1); void loadTab(tab, { keyword, page: 1 }); } }}
             />
             <button onClick={() => { setPage(1); void loadTab(tab, { keyword, page: 1 }); }} style={{ cursor: "pointer" }}>
-              {w("search", locale)}
+              {t("common.search", locale)}
             </button>
             <button onClick={() => void loadTab(tab, { keyword, page })} style={{ cursor: "pointer" }}>
-              {w("refresh", locale)}
+              {t("common.refresh", locale)}
             </button>
           </div>
-          {loading ? <div className="empty-state">{w("loading", locale)}</div> : (
+          {loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
             <>
               <InstanceTable rows={instances.list} locale={locale} onOpen={setDetailId} />
               {instances.total > instances.size && (
@@ -439,25 +338,25 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
       )}
 
       {tab === "notifications" && (
-        loading ? <div className="empty-state">{w("loading", locale)}</div> : (
+        loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
           <>
             <div style={{ marginBottom: 10 }}>
-              <button onClick={() => void markAllRead()} style={{ cursor: "pointer" }}>{w("markAllRead", locale)}</button>
+              <button onClick={() => void markAllRead()} style={{ cursor: "pointer" }}>{t("layout.markAllRead", locale)}</button>
               <span style={{ marginLeft: 10, fontSize: 13, color: "var(--text-muted, #64748b)" }}>
-                {w("unread", locale)}: {notifications.unread}
+                {t("dash.unread", locale)}: {notifications.unread}
               </span>
             </div>
-            {notifications.list.length === 0 ? <div className="empty-state">{w("empty", locale)}</div> : (
+            {notifications.list.length === 0 ? <div className="empty-state">{t("common.empty", locale)}</div> : (
               <div className="table-shell">
                 <table>
                   <thead>
-                    <tr><th>{w("colTitle", locale)}</th><th>{w("colStatus", locale)}</th><th>{w("colCreatedAt", locale)}</th></tr>
+                    <tr><th>{t("flowList.titleCol", locale)}</th><th>{t("flowList.statusCol", locale)}</th><th>{t("flowList.time", locale)}</th></tr>
                   </thead>
                   <tbody>
                     {notifications.list.map(n => (
                       <tr key={String(n.id)} style={{ fontWeight: n.read_at ? 400 : 700 }}>
                         <td>{n.title}{n.content ? <span style={{ color: "var(--text-muted, #64748b)" }}> — {n.content}</span> : null}</td>
-                        <td>{n.read_at ? w("read", locale) : w("unread", locale)}</td>
+                        <td>{n.read_at ? t("dash.read", locale) : t("dash.unread", locale)}</td>
                         <td>{fmtDate(n.created_at, locale)}</td>
                       </tr>
                     ))}
@@ -470,16 +369,16 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
       )}
 
       {tab === "announcements" && (
-        loading ? <div className="empty-state">{w("loading", locale)}</div> : (
-          announcements.list.length === 0 ? <div className="empty-state">{w("empty", locale)}</div> : (
+        loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
+          announcements.list.length === 0 ? <div className="empty-state">{t("common.empty", locale)}</div> : (
             <div className="table-shell">
               <table>
                 <thead>
                   <tr>
-                    <th>{w("colTitle", locale)}</th>
-                    <th>{w("colPublisher", locale)}</th>
-                    <th>{w("colCreatedAt", locale)}</th>
-                    <th>{w("colReadCount", locale)}</th>
+                    <th>{t("flowList.titleCol", locale)}</th>
+                    <th>{t("announce.publisher", locale)}</th>
+                    <th>{t("announce.publishAt", locale)}</th>
+                    <th>{t("announce.readCountShort", locale)}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -488,7 +387,7 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
                       <td>{a.top ? "📌 " : ""}{a.title}{a.content ? <div style={{ color: "var(--text-muted, #64748b)", fontWeight: 400, fontSize: 13 }}>{a.content}</div> : null}</td>
                       <td>{a.publisher_name ?? "-"}</td>
                       <td>{fmtDate(a.publish_at ?? a.created_at, locale)}</td>
-                      <td>{a.read_count ?? 0}{a.is_read ? "" : ` · ${w("unread", locale)}`}</td>
+                      <td>{a.read_count ?? 0}{a.is_read ? "" : ` · ${t("announce.unreadTag", locale)}`}</td>
                     </tr>
                   ))}
                 </tbody>

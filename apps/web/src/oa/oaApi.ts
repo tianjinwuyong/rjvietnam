@@ -53,10 +53,23 @@ export interface OaInstanceDetail extends OaInstanceSummary {
   def_name_vi?: string | null;
   form_data?: Record<string, unknown> | null;
   form_schema?: unknown;
-  flow_nodes?: unknown;
+  flow_nodes?: OaFlowNode[] | null;
   tasks?: OaTask[];
-  ccs?: Array<Record<string, unknown>>;
-  logs?: Array<Record<string, unknown>>;
+  ccs?: OaCcRow[];
+  logs?: OaLogRow[];
+  attachments?: OaAttachmentRow[];
+  executions?: OaExecutionRow[];
+  myTask?: OaTask | null;
+  currentNode?: OaFlowNode | null;
+  current_index?: number | null;
+  canApprove?: boolean;
+  canWithdraw?: boolean;
+  canReturn?: boolean;
+  canUrge?: boolean;
+  canTerminate?: boolean;
+  canArchive?: boolean;
+  canAssignNode?: boolean;
+  warnings?: Array<Record<string, unknown>>;
 }
 
 export interface OaStatsOverview {
@@ -121,12 +134,150 @@ export interface OaInstanceQuery extends Record<string, unknown> {
   keyword?: string;
   page?: number;
   size?: number;
+}export type OaApproveAction = "approve" | "reject";
+
+// ---- 流程定义与动态表单（发起申请） ----
+
+export interface OaFormFieldColumn {
+  key: string;
+  type: string;
+  label: string;
+  label_vi?: string | null;
+  required?: boolean;
+  options?: OaFieldOption[];
 }
 
-export type OaApproveAction = "approve" | "reject";
+export interface OaFieldOption {
+  label: string;
+  value: string | number | boolean;
+  label_vi?: string | null;
+}
+
+export interface OaFormField {
+  key: string;
+  type: string;
+  label: string;
+  label_vi?: string | null;
+  required?: boolean;
+  placeholder?: string | null;
+  placeholder_vi?: string | null;
+  hint?: string | null;
+  hint_vi?: string | null;
+  options?: OaFieldOption[];
+  columns?: OaFormFieldColumn[];
+  min?: number;
+  step?: number;
+  sum_key?: string | null;
+  readonly?: boolean;
+}
+
+export interface OaFlowNode {
+  name: string;
+  name_vi?: string | null;
+  type?: string;
+  assign?: string;
+  temp_addable?: boolean;
+  condition?: Record<string, unknown> | null;
+}
+
+export interface OaFlowDef {
+  id: number | string;
+  code: string;
+  name: string;
+  name_vi?: string | null;
+  category?: string | null;
+  icon?: string | null;
+  description?: string | null;
+  closure_required?: boolean;
+  active?: boolean;
+  hide_in_apply?: boolean;
+  form_schema?: OaFormField[] | null;
+  flow_nodes?: OaFlowNode[] | null;
+  ledger_columns?: unknown;
+}
+
+export interface OaUserOption {
+  id: number | string;
+  username: string;
+  real_name: string;
+  employee_no?: string | null;
+  position?: string | null;
+  dept_name?: string | null;
+  department_id?: number | string | null;
+}
+
+export interface OaUploadResult {
+  fileName: string;
+  tempRelPath: string;
+  filePath?: string;
+  fileSize: number;
+  mimeType: string;
+}
+
+export interface OaAttachmentRow {
+  id: number | string;
+  file_name: string;
+  file_path?: string;
+  file_size?: number | string | null;
+  mime_type?: string | null;
+}
+
+export interface OaLogRow {
+  id: number | string;
+  action?: string | null;
+  detail?: string | null;
+  node_index?: number | null;
+  actor_id?: number | string | null;
+  real_name?: string | null;
+  created_at: string;
+}
+
+export interface OaCcRow {
+  id: number | string;
+  user_id?: number | string | null;
+  real_name?: string | null;
+  read_at?: string | null;
+  created_at?: string;
+}
+
+export interface OaExecutionRow {
+  id: number | string;
+  status?: string | null;
+  reply_by_name?: string | null;
+  verified_by_name?: string | null;
+  [key: string]: unknown;
+}
 
 export const oaApi = {
   statsOverview: () => apiClient.get<OaStatsOverview>("/api/stats/overview"),
+
+  /** 可发起的流程类型（forApply=1：剔除 hide_in_apply，按发起权限过滤） */
+  flows: () => apiClient.get<OaFlowDef[]>("/api/flows", { forApply: 1 }),
+
+  /** 单个流程类型的表单结构 + 审批节点（渲染动态表单用） */
+  flow: (id: number | string) => apiClient.get<OaFlowDef>(`/api/flows/${id}`),
+
+  createInstance: (body: {
+    definitionId: number | string;
+    title: string;
+    formData?: Record<string, unknown>;
+    submitNow?: boolean;
+  }) => apiClient.post<{ id: number | string; instance_no?: string; advance?: unknown }>("/api/instances", body),
+
+  submitDraft: (id: number | string, comment?: string) =>
+    apiClient.post<unknown>(`/api/instances/${id}/submit`, comment ? { comment } : {}),
+
+  users: () => apiClient.get<OaUserOption[]>("/api/users"),
+
+  /** 暂存上传（返回 tempRelPath），随后用 addAttachment 关联到单据 */
+  upload: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return apiClient.postForm<OaUploadResult>("/api/upload", form);
+  },
+
+  addAttachment: (instanceId: number | string, body: { fileName: string; filePath: string; fileSize?: number; mimeType?: string }) =>
+    apiClient.post<OaAttachmentRow>(`/api/instances/${instanceId}/attachments`, body),
 
   instances: (query: OaInstanceQuery = {}) => apiClient.get<OaPaged<OaInstanceSummary>>("/api/instances", query),
 
