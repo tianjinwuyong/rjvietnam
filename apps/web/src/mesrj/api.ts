@@ -9,7 +9,7 @@ export class MesrjApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function requestEnvelope<T>(method: string, path: string, body?: unknown): Promise<{ success?: boolean; msg?: string; data?: T }> {
   const headers: Record<string, string> = {};
   const token = authStorage.getToken();
   if (token) headers["Authorization"] = `Bearer ${token}`;
@@ -29,6 +29,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   if (!res.ok || json.success === false) {
     throw new MesrjApiError(json.msg || `HTTP ${res.status}`);
   }
+  return json;
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const json = await requestEnvelope<T>(method, path, body);
   return (json.data ?? json) as T;
 }
 
@@ -53,6 +58,34 @@ export const mesrjApi = {
   },
   del<T>(path: string): Promise<T> {
     return request<T>("DELETE", path);
+  },
+};
+
+/**
+ * 需要拿到后端提示语时用（辅料管控的「回温达标 / 寿命预警」等说明性文案
+ * 在信封的 msg 字段里，data 里没有 —— 普通 post 只返回 data，会丢掉）。
+ */
+export const mesrjMsg = {
+  async post<T = unknown>(path: string, body?: unknown): Promise<{ msg: string; data: T }> {
+    const json = await requestEnvelope<T>("POST", path, body);
+    return { msg: json.msg || "", data: (json.data ?? null) as T };
+  },
+  async get<T = unknown>(path: string, query?: Record<string, unknown>): Promise<{ msg: string; data: T }> {
+    let full = path;
+    if (query) {
+      const params = new URLSearchParams();
+      for (const [k, v] of Object.entries(query)) {
+        if (v !== "" && v !== null && v !== undefined) params.set(k, String(v));
+      }
+      const qs = params.toString();
+      if (qs) full += (path.includes("?") ? "&" : "?") + qs;
+    }
+    const json = await requestEnvelope<T>("GET", full);
+    return { msg: json.msg || "", data: (json.data ?? null) as T };
+  },
+  async del<T = unknown>(path: string): Promise<{ msg: string; data: T }> {
+    const json = await requestEnvelope<T>("DELETE", path);
+    return { msg: json.msg || "", data: (json.data ?? null) as T };
   },
 };
 

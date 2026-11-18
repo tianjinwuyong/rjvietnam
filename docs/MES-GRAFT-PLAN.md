@@ -58,6 +58,9 @@ SMT 现有 `apps/web/src/mes/`（Product Gate 架构）与 `services/api` statio
 | W6c | 维修/报废/报表：repair、scrap、device_health、yield、repair/list、mo/materials、ai_stations、aging×2、trace/material×2 | exec.py 3753-5250 + report.py | ✅ 9da2a87 |
 | W7 | 设备接口（DeviceConfig/StationPass/MachineData/Packing）+ itf 日志 | ~60 路由 | ✅ 7683286 |
 | W8 | AOI 集成（看板/字典/机型归一/位号映射）+ 出货报告模板（上传/映射/生成）+ 迁移 284 | 18 路由 | ✅ a619fd6 |
+| W9 | 员工资质 emp（考核/持证/上岗/授权）+ 工程变更 ECN/PCN（影响评估/审批/首件/关闭）+ 迁移 285 | 27 路由 | ✅ 4ee90b6 |
+| W10 | 辅料管控 smta（锡膏回温/钢网寿命/刮刀寿命+上下机/站位绑码/时间阈值/印刷参数/GKG 印刷记录/PDA 扫码/按工单追溯）+ 迁移 286 | 31 路由 | ✅ 本次 |
+| W10b | mesrj 权限码种子 sys_perm（36 项）+ 管理员判定大小写修正 | 缺陷修复 | ✅ 本次 |
 
 ## 5. 剩余未移植（源 427 路由，已落 160 显式 + 8 个 CRUD 组）
 
@@ -65,17 +68,24 @@ SMT 现有 `apps/web/src/mes/`（Product Gate 架构）与 `services/api` statio
 |---|---|---|---|
 | smt.py | 42 | SMT 段：贴片/锡膏/回流/分板/绑码 | ⚠ 与 SMT 侧现有 `apps/web/src/mes/` 重叠最多，需先定方向 |
 | repair.py | 31 | 维修作业（明细/交接/ATE 复测回填） | W6c 已做 repairRegister/repairList，作业台未做 |
-| smta.py | 31 | 辅料管控 | 源站位/领用/盘点 |
+| smta.py | 31 | 辅料管控 | ✅ W10 4ee90b6+ |
 | oqc.py | 27 | OQC 抽检（Z1.4 已在 SMT 侧 qms/oqc-aql） | ⚠ 与 SMT 侧 OQC 重叠 |
 | pack.py | 21 | 外箱包装/装箱单 | |
-| ecn.py | 17 | 工程变更（首件/换料确认，过站拦截 ECN_PENDING） | W6a 的 ECN 拦截只留了桩 |
+| ecn.py | 17 | 工程变更（首件/换料确认，过站拦截 ECN_PENDING） | ✅ W9 4ee90b6 |
 | pallet.py | 14 | 栈板绑码 | |
-| emp.py | 10 | 员工资质（考核/证件过期） | W6a 的资质检查留了桩 |
+| emp.py | 10 | 员工资质（考核/证件过期） | ✅ W9 4ee90b6 |
 | panel.py | 10 | 分板扫码 | |
 | analyze.py / board.py / trace_export.py | 17 | 分析看板 / 大屏 / 追溯导出 | 对应 W8 剩余 |
 
 > **收敛提醒**：源系统 127 页中，`smt`/`oqc` 两块与 SMT 系统现有模块职责高度重叠，
 > 移植前需人工确认是「并入现有模块」还是「mesrj 另起一套」，否则会造出两套真相。
+
+> **W10 已定口径（辅料）**：SMT 侧已有 `consumables`（设备保养视角：item_code / unit_cost /
+> equipment_asset_id）与 `solder_paste_lots|openings`（仓库视角：qty_kg / iqc_status），
+> 与源 smta 的「产线作业追溯」语义（stencil_no 分面机型、回温/待用时限、上机绑定机位）主键与
+> 生命周期都不同。本波按 mesrj 子系统既有惯例**保真移植源表**（migration 286，13 张），
+> **不做跨系统硬合并**；`cfg_threshold` 因 SMT 侧字段一致而**直接复用**。
+> ⚠ 两套台账并存的口径说明**待人工补**（车间实际以哪套为准），已列入收敛待办。
 
 ## 6. 环境坑位备忘
 

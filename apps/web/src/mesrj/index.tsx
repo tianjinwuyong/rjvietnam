@@ -16,6 +16,7 @@ import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoM
   AiStationsView, AgingView, AgingDetailView, TraceMaterialBySnView, TraceMaterialByMaterialView } from "./views-w6c";
 import { DeviceConfigView, StationPassView, MachineDataView, PackingView, ItfLogView } from "./views-w7";
 import { EcNView } from "./views-w9";
+import { SmtaView, FeederSlotView, TimesView } from "./views-w10";
 
 interface SysInfo {
   sys_name: string;
@@ -103,6 +104,10 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "report.tpl") return <ReportTplView locale={locale} />;
     // W9：员工资质（通用 CRUD）+ 工程变更 ECN/PCN
     if (active === "qlt.ecn") return <EcNView locale={locale} />;
+    // W10：辅料管控（锡膏/钢网/刮刀/按工单追溯）+ SMT 站位绑码 + 辅料时间参数
+    if (active === "exec.smta") return <SmtaView locale={locale} />;
+    if (active === "cfg.feederslot") return <FeederSlotView locale={locale} />;
+    if (active === "cfg.times") return <TimesView locale={locale} />;
     // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
     if (active === "exec.snpool") return <SnPoolView locale={locale} />;
     if (active === "exec.snrule") return <SnRuleView locale={locale} />;

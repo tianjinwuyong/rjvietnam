@@ -31,7 +31,7 @@ export const MENU = [
         "name": "SMT 站位绑码"
       },
       {
-        "code": "md.employee",
+        "code": "emp.employee",
         "name": "员工档案"
       },
       {
@@ -623,7 +623,7 @@ export const MENU = [
         "name": "绑码规则"
       },
       {
-        "code": "cfg.skill",
+        "code": "emp.skill",
         "name": "资质项 / 工位要求"
       },
       {
