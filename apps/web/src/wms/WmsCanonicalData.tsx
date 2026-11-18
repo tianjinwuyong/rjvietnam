@@ -23,18 +23,15 @@ const ENTITIES = [
   { key: "picking", cols: ["picking_no", "work_order_no", "work_section", "total_qty", "status"] },
   { key: "reels", cols: ["picking_no", "material_code", "material_name", "pick_qty", "actual_qty", "received_qty"] },
 ];
-const HEADERS: Record<string, string> = {
-  code: "Code", name_zh: "中文名", name_en: "English", name_vi: "Tiếng Việt",
-  uom: "UOM", status: "状态", country: "国家", lot_no: "Lot No",
-  material_code: "物料编码", material_name: "物料名称", material_name_zh: "物料名称",
-  supplier_code: "供应商", received_qty: "收料量", iqc_status: "IQC", lot_status: "批次状态",
-  receipt_no: "收料单号", receipt_date: "收料日期", batch_no: "批次号", quantity: "数量",
-  inspection_no: "检验单号", result: "结果", inspection_date: "检验日期", remarks: "备注",
-  product_code: "产品编码", product_name: "产品名称", revision: "版本",
-  source_file_name: "来源", qty_per: "用量", unit: "单位", process_stage: "工段",
-  picking_no: "拣货单号", work_order_no: "工单", work_section: "工段",
-  total_qty: "总量", pick_qty: "应拣", actual_qty: "实拣",
-};
+// Column labels are i18n keys — never hardcoded UI strings (AGENTS.md).
+const HEADERS: Record<string, string> = Object.fromEntries(
+  ["code", "name_zh", "name_en", "name_vi", "uom", "status", "country", "lot_no",
+   "material_code", "material_name", "material_name_zh", "supplier_code", "received_qty",
+   "iqc_status", "lot_status", "receipt_no", "receipt_date", "batch_no", "quantity",
+   "inspection_no", "result", "inspection_date", "remarks", "product_code", "product_name",
+   "revision", "source_file_name", "qty_per", "unit", "process_stage", "picking_no",
+   "work_order_no", "work_section", "total_qty", "pick_qty", "actual_qty"]
+    .map((c) => [c, `wms.canonical.col.${c}`]));
 
 export function WmsCanonicalData({ locale }: { locale: Locale }) {
   const [summary, setSummary] = useState<{
@@ -98,7 +95,7 @@ export function WmsCanonicalData({ locale }: { locale: Locale }) {
           {ENTITIES.map((e) => (
             <button key={e.key} type="button" className={entity === e.key ? "active" : ""}
               onClick={() => setEntity(e.key)}>
-              {e.key}
+              {t(`wms.canonical.tab.${e.key}`, locale)}
             </button>
           ))}
         </div>
@@ -114,7 +111,7 @@ export function WmsCanonicalData({ locale }: { locale: Locale }) {
           : rows.length === 0 ? <div className="placeholder-view">{t("wms.rjvn.noData", locale)}</div>
           : (
             <div className="table-scroll"><table className="data-table">
-              <thead><tr>{cfg.cols.map((c) => <th key={c}>{HEADERS[c] ?? c}</th>)}</tr></thead>
+              <thead><tr>{cfg.cols.map((c) => <th key={c}>{t(HEADERS[c] ?? c, locale)}</th>)}</tr></thead>
               <tbody>{rows.map((r, i) => (
                 <tr key={i}>{cfg.cols.map((c) => {
                   const val = str(r[c]);
