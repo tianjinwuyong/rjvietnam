@@ -26,7 +26,7 @@ export type WmsTabKey =
   | "pdaReceiving" | "pdaReceivingMobile" | "pdaConsumption" | "pdaMsd" | "pdaCycleCount" | "pdaIqc" | "pdaHistory"
   | "productionInbound" | "productionOutbound"
   | "inboundOrders" | "outboundOrders" | "requisitions" | "returnSlips" | "replenishments" | "syncHealth"
-  | "rjvnData" | "rjvnIqc" | "rjvnReceipt" | "rjvnInventory" | "rjvnPicking" | "rjvnDocFlow" | "rjvnCanonical"
+  | "rjvnData" | "rjvnIqc" | "rjvnReceipt" | "rjvnInventory" | "rjvnPicking" | "rjvnDocFlow" | "rjvnCanonical" | "rjvnClassic"
   | "slips";
 
 export const wmsTabKeys: WmsTabKey[] = [
@@ -53,7 +53,7 @@ export const wmsTabKeys: WmsTabKey[] = [
   "incoming", "materialReceiving", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop", "finishedGoods", "pdaReceiving", "pdaReceivingMobile", "pdaConsumption", "pdaMsd", "pdaIqc", "pdaHistory",
   "inboundOrders", "outboundOrders", "requisitions", "returnSlips", "replenishments", "syncHealth",
   "productionInbound", "productionOutbound",
-  "rjvnData", "rjvnIqc", "rjvnReceipt", "rjvnInventory", "rjvnPicking", "rjvnDocFlow", "rjvnCanonical",
+  "rjvnData", "rjvnIqc", "rjvnReceipt", "rjvnInventory", "rjvnPicking", "rjvnDocFlow", "rjvnCanonical", "rjvnClassic",
   "slips",
 ];
 
@@ -70,7 +70,7 @@ export interface WmsMenuGroup {
 // Canonical operator menu from WMS菜单界面.xlsx. Engineering/test utilities
 // remain routable for maintainers but are intentionally absent here.
 export const wmsMenuGroups: WmsMenuGroup[] = [
-  { key: "overview", translationKey: "wms.group.overview", tabs: ["dashboard", "closure", "rjvnData", "rjvnCanonical", "rjvnReceipt", "rjvnIqc", "rjvnInventory", "rjvnPicking", "rjvnDocFlow"] },
+  { key: "overview", translationKey: "wms.group.overview", tabs: ["dashboard", "closure", "rjvnClassic", "rjvnData", "rjvnCanonical", "rjvnReceipt", "rjvnIqc", "rjvnInventory", "rjvnPicking", "rjvnDocFlow"] },
   { key: "receivingManagement", translationKey: "wms.group.receiving", tabs: ["materialReceiving", "pdaReceiving", "pdaReceivingMobile", "inboundOrders", "iqcClosedLoop", "pdaIqc", "putaway", "locationManagement", "batchManagement", "pdaHistory", "syncHealth"] },
   { key: "warehouse", translationKey: "wms.group.warehouse", tabs: [
     "materialMaster", "materialBarcodeLoop", "locationManagement", "batchManagement", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop",
@@ -100,6 +100,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   rjvnPicking: "wms.rjvnPicking.title",
   rjvnDocFlow: "wms.rjvnDoc.title",
   rjvnCanonical: "wms.canonical.title",
+  rjvnClassic: "wms.orig.nav.systemTitle",
   dashboard: "wms.subnav.dashboard",
   receiving: "wms.subnav.receiving",
   returnReceive: "wms.subnav.returnReceive",
@@ -210,6 +211,7 @@ export { WmsRjvnInventory } from "./WmsRjvnInventory";
 export { WmsRjvnPicking } from "./WmsRjvnPicking";
 export { WmsRjvnDocFlow } from "./WmsRjvnDocFlow";
 export { WmsCanonicalData } from "./WmsCanonicalData";
+export { WmsRjvnClassic } from "./WmsRjvnClassic";
 export { WmsIqcClosedLoop } from "./WmsIqcClosedLoop";
 export { WmsIqcDefectLoop } from "./WmsIqcDefectLoop";
 export { WmsIqcInspectionLevels } from "./WmsIqcInspectionLevels";
