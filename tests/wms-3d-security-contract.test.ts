@@ -9,7 +9,7 @@ const web3d = readFileSync(new URL("../apps/web/src/mes/WarehouseScene3d.tsx", i
 describe("PDA and 3D WMS security contract", () => {
   it("purges explicit test areas but soft-disables production areas", () => {
     expect(server).toContain("SELECT area_code,status FROM wms_floor_storage_areas WHERE area_code=upper($1)");
-    expect(server).toContain("/(^|[-_])TEST([-_]|$)/i.test(area.area_code)");
+    expect(server).toContain("/^TEST([-_]|\\d|$)/i.test(area.area_code) || /[-_]TEST([-_]|$)/i.test(area.area_code)");
     expect(server).toContain("DELETE FROM wms_floor_storage_areas WHERE area_code=upper($1)");
     expect(server).toContain("UPDATE wms_floor_storage_areas SET status='DISABLED'");
   });
@@ -34,9 +34,11 @@ describe("PDA and 3D WMS security contract", () => {
   });
 
   it("opens and focuses the location property editor from the location table", () => {
-    expect(wmsLocation).toContain("locationEditorRef.current?.scrollIntoView");
-    expect(wmsLocation).toContain('type="button" className="btn btn-secondary" title={`编辑库位 ${loc.code} 的属性`}');
-    expect(wmsLocation).toContain("event.stopPropagation(); openEdit(loc)");
+    // 源码 JSX 属性可能被格式化工具折行，这里按空白归一化后再匹配
+    const flat = wmsLocation.replace(/\s+/g, " ");
+    expect(flat).toContain("locationEditorRef.current?.scrollIntoView");
+    expect(flat).toContain('type="button" className="btn btn-secondary" title={`编辑库位 ${loc.code} 的属性`}');
+    expect(flat).toContain("event.stopPropagation(); openEdit(loc)");
   });
 
   it("uses the shared API base for receiving employee HTTP and SSE communication", () => {
