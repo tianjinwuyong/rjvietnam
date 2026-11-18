@@ -318,3 +318,10 @@ grant select, insert, update on public.wms_receipt_orders, public.wms_picking_or
 - 10 个 canonical 端点全部 200（修复权限后）
 - Playwright：`rjvnCanonical` 页签渲染、summary 显示 `materials 2,951`、5 个实体切换分别 50/50/50/6/4 行、无控制台错误
 - `npm run typecheck` 0 错误；`npm run test` 380 passed / 3 既有失败（无新增）
+
+### 自检修复（同日）
+
+- `rjvn-canonical-api.js` 的 `listRoute`：count 查询原先漏了 join，`lots/inspections/boms/reels` 带 `q` 搜索时 500；已补上同一 join，4 端点实测 200
+- `WmsCanonicalData` / `WmsRjvnInventory` / `WmsRjvnPicking` / `WmsRjvnDocFlow`：删除重复 load effect，改为单一 debounce，避免筛选时双份请求
+- 全量 rjvn 读端点带 `q` 冒烟：除 `q` 非该端点参数外全部 200；正确路径 `/rjvn-iqc/strictness/transfer-logs` 200（15 条）
+- 修复提交：`8e3b55b`、`02bcf52`（typecheck 0 错误；Playwright 3 页签搜索正常，无控制台错误）
