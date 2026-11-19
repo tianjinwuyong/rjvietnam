@@ -71,6 +71,34 @@ import {
   nextCartonNo, nextPalletNo, wipNo, preview, makePrintJob, tsLocal,
 } from "../mesrj/packcode.js";
 import { buildPages, renderSvg, toZpl, readTemplatePrompts } from "../mesrj/pack-label.js";
+// W12 面板/分板（源 api/panel.py）
+import {
+  parseSn, joinSn, posOfIndex, panelSns, judgeSlot,
+  listLayouts, saveLayout, deleteLayout, matchLayout,
+  agingOf, buildView, resolveNext, alignLayout,
+  panelFromAoi, panelSnsFor,
+  _posOfIndex0,
+  _buildView, _judgeSlotByTest, _normResult, _detectBaseByRecords,
+  _resolveNext, modelOfMo, resolveLayout,
+} from "../mesrj/panel.js";
+// W12 维修明细 + 解报废 + 位号反查（源 api/repair.py + core/repair_detail.py + core/scrap_release.py + core/designator.py）
+import {
+  ensureSchema as repairEnsureSchema,
+  createDetail, addPart, getDetail, listBySn, snContext,
+  manualVerify, scrapVerify, toManual, applyAteResult,
+  phenomena, dispositions, dispositionOf, needPart,
+  canRepair, pendingDefects, openRepairs, nextRepairNo, nextNoWithPrefix,
+  scrapReleaseApply, scrapReleaseApprove, scrapReleaseList, scrapReleaseOne,
+  scrapReleaseConsume, scrapReleaseIsReleased as isReleased,
+} from "../mesrj/repair-core.js";
+// W12 位号反查（源 core/designator.py）
+import { posTokens, posMatch, lookup as designatorLookup, batches as designatorBatches } from "../mesrj/designator.js";
+// W12 PO 追溯导出 + 任意码查询（源 core/trace_export.py + core/sn_full.py）
+import {
+  resolvePo, collectBySns, collect, stationStats, stationList, summary as traceSummary,
+  writeXlsx,
+  resolveCodes, snQuery, snSummary,
+} from "../mesrj/trace-core.js";
 
 /** 源 util.ok(data, msg) */
 function ok(res, data = null, msg = "") {
@@ -7563,6 +7591,1656 @@ export function createMesrjRouter({ authenticateJWT }) {
       today_qty: hours.reduce((a, h) => a + h.n, 0),
       hourly: hours,
     });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // W12：面板/分板（源 api/panel.py，10 路由）
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  router.get("/panel/sn/parse", requireMesrjPerm(null), async (req, res) => {
+    const p = parseSn(String(req.query.sn || ""));
+    return ok(res, p ? { sn: req.query.sn, prefix: p.prefix, num: p.num, suffix: p.suffix, width: p.width } : { sn: req.query.sn, error: "无法解析 SN" });
+  });
+
+  router.get("/panel/layout/list", requireMesrjPerm(null), async (_req, res) => {
+    const r = await listLayouts();
+    return ok(res, r.rows);
+  });
+
+  router.post("/panel/layout/save", requireMesrjPerm("cfg.edit"), async (req, res) => {
+    try {
+      const r = await saveLayout(req.body || {});
+      return ok(res, r, "布局已保存");
+    } catch (e) { return fail(res, e.message); }
+  });
+
+  router.post("/panel/layout/delete", requireMesrjPerm("cfg.edit"), async (req, res) => {
+    const id = Number(req.body && req.body.id);
+    if (!id) return fail(res, "缺少布局 id");
+    await deleteLayout(id);
+    return ok(res, { id }, "布局已删除");
+  });
+
+  router.get("/panel/view", requireMesrjPerm(null), async (req, res) => {
+    const sn = String(req.query.sn || "").trim();
+    const layoutId = req.query.layout_id ? Number(req.query.layout_id) : null;
+    if (!sn) return fail(res, "缺少 SN");
+    const v = await buildView(sn, layoutId);
+    if (!v) return fail(res, `未找到产品：${sn}`);
+    return ok(res, v);
+  });
+
+  router.post("/panel/judge", requireMesrjPerm(null), async (req, res) => {
+    const d = req.body || {};
+    const r = await judgeSlot(String(d.mo_no || "").trim(), String(d.station_code || "").trim());
+    if (!r.ok) return fail(res, r.msg);
+    return ok(res, { ok: true });
+  });
+
+  router.get("/panel/next", requireMesrjPerm(null), async (req, res) => {
+    const moNo = String(req.query.mo_no || "").trim();
+    const curStation = String(req.query.cur_station || "").trim();
+    if (!moNo) return fail(res, "缺少工单号");
+    const nxt = await resolveNext(moNo, curStation);
+    return ok(res, nxt);
+  });
+
+  router.post("/panel/align", requireMesrjPerm(null), async (req, res) => {
+    const sn = String(req.body && req.body.sn || "").trim();
+    if (!sn) return fail(res, "缺少 SN");
+    const layout = await alignLayout(sn);
+    return ok(res, { layout });
+  });
+
+  router.get("/panel/aging", requireMesrjPerm(null), async (req, res) => {
+    const sn = String(req.query.sn || "").trim();
+    if (!sn) return fail(res, "缺少 SN");
+    const a = await agingOf(sn);
+    return ok(res, a);
+  });
+
+  router.get("/panel/layout/match", requireMesrjPerm(null), async (req, res) => {
+    const layout = await matchLayout(String(req.query.product_code || "").trim() || undefined, String(req.query.model || "").trim() || undefined);
+    return ok(res, { layout });
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════════════════════
+  // W12：面板/分板剩余 7 路由（源 api/panel.py —— scan/current/complete/reset/detail/list/hourly）
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  const _panelNow = () => { const d = new Date(); const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+
+  // ── POST /panel/scan ── 核心：扫一块 → 自动归位 → 系统判定 ──
+  router.post("/panel/scan", requireMesrjPerm("prod.panel"), async (req, res) => {
+    const d = req.body || {};
+    const sn = String(d.sn || "").trim();
+    const station = String(d.station_code || "").trim();
+    const moNo = String(d.mo_no || "").trim();
+    const layoutId = d.layout_id;
+    if (!sn) return fail(res, "请扫条码");
+
+    const p = parseSn(sn);
+    if (!p) return fail(res, `条码无效：${sn}`);
+    const { prefix, num, suffix } = p;
+
+    // 工位必须在这张工单的工艺里
+    if (moNo && station) {
+      try {
+        const [steps] = await ensureMoRoute(moNo, "");
+        if (steps && !step_of(steps, station)) {
+          const mo = (await query("SELECT process_code FROM ord_mo WHERE mo_no=$1", [moNo])).rows[0] || {};
+          const pnMap = { "01": "SMT", "02": "DIP", "03": "组装", "04": "包装" };
+          const pn = pnMap[String(mo.process_code || "")] || "";
+          return fail(res,
+            `工单 ${moNo} 是${pn || ""}工序单，这里面没有「${station}」这一站。分板属于组装段，请在上方工单下拉里换成组装段（P03）的工单再扫`);
+        }
+      } catch { /* ignore */ }
+    }
+
+    // 已扫过（跨版也不行）
+    const dupR = await query(
+      `SELECT s.*, p.panel_sn AS pn, p.status AS pstatus, p.total AS ptotal
+       FROM prd_panel_slot s JOIN prd_panel_split p ON s.split_id=p.id
+       WHERE s.child_sn=$1 AND p.status<>'已作废'`, [sn]);
+    if (dupR.rows[0]) {
+      const dup = dupR.rows[0];
+      const sp0 = (await query("SELECT * FROM prd_panel_split WHERE id=$1", [dup.split_id])).rows[0];
+      const j = dup.judge || "NONE";
+      const _done = sp0 && (sp0.status || "") === "已完成";
+      const _tt = Number(sp0 ? (sp0.total || 0) : 0);
+      const _nextTip = _done
+        ? "这一版已经收尾了 —— 要扫下一版，直接扫新一版的任意一块即可"
+        : `这一版还没收尾，扫满 ${_tt} 块会自动完成；要开新一版请先点「扫描完成」`;
+      if (j === "OK") {
+        return fail(res, `这块板已在「${dup.pn || "（无版号）"}」这一版扫过（P${dup.slot_no}，良品）。${_nextTip}`);
+      }
+      if (j === "ICT_NG" || j === "FCT_NG" || j === "BOTH_NG") {
+        const jt = { ICT_NG: "ICT NG", FCT_NG: "FCT NG", BOTH_NG: "ICT+FCT 双 NG" }[j];
+        return fail(res, `这块板已在「${dup.pn || "（无版号）"}」这一版扫过（P${dup.slot_no}，${jt} → 维修）。${_nextTip}`);
+      }
+      return fail(res,
+        `这块板已在「${dup.pn || "（无版号）"}」这一版扫过（P${dup.slot_no}，未查到 ICT/FCT 记录）。一版扫一块就够、整版自动带出，不用逐块扫。${_nextTip}`);
+    }
+
+    // 查找进行中的版
+    let split = null;
+    if (station) {
+      const r = await query("SELECT * FROM prd_panel_split WHERE status='扫描中' AND station_code=$1 ORDER BY id DESC LIMIT 1", [station]);
+      split = r.rows[0] || null;
+    }
+    let layout = null;
+    if (split) {
+      const r = await query("SELECT * FROM cfg_panel_layout WHERE model=$1 ORDER BY id DESC LIMIT 1", [split.model]);
+      layout = r.rows[0] || null;
+    }
+    if (!layout) {
+      let mo = null;
+      if (moNo) {
+        const r = await query("SELECT * FROM ord_mo WHERE mo_no=$1", [moNo]);
+        mo = r.rows[0] || null;
+      }
+      if (!mo && station) {
+        const st0 = (await query("SELECT * FROM md_station WHERE station_code=$1", [station])).rows[0];
+        if (st0 && st0.line_code) {
+          const r = await query("SELECT * FROM ord_mo WHERE line_code=$1 AND status='生产中' ORDER BY id DESC LIMIT 1", [st0.line_code]);
+          mo = r.rows[0] || null;
+        }
+      }
+      layout = await matchLayout(mo ? mo.product_code : undefined, mo ? mo.product_code : undefined);
+      if (!layout) return fail(res, "未配置拼版布局，请先选布局");
+    }
+
+    const cols = Number(layout.cols || 1);
+    const total = Number(layout.total || 0);
+    const serpentine = layout.serpentine != null ? Number(layout.serpentine) : 1;
+
+    // 版起点：优先按 seq_offset 对齐，否则用测试记录探测
+    const detected = await _detectBaseByRecords(sn, total, layout.seq_offset != null ? String(layout.seq_offset) : null);
+    let effBase;
+    if (detected != null) {
+      layout = { ...layout, seq_offset: detected % total };
+      effBase = detected;
+    } else {
+      const so = layout.seq_offset;
+      effBase = num - (so == null || so === "" ? 0 : (num - Number(so)) % total);
+      if (effBase < 1) {
+        return fail(res,
+          `这一版的起始号算成了 ${effBase}（不可能）。说明「拼版布局」里的「起始流水号(seq_offset)」和实际发号规则不一致 —— 扫到的是 ${num} 号，offset 配的是 ${so}。请到「配置中心 → 拼版布局」改成实际起始号`);
+      }
+    }
+
+    // 判断是否属于当前进行中的版
+    let samePanel = false;
+    if (split && split.seq_base != null) {
+      if (effBase === Number(split.seq_base)) samePanel = true;
+    }
+
+    let openedNew = false;
+    if (!samePanel) {
+      if (split) {
+        await query("UPDATE prd_panel_split SET status='已结束', finished_at=$1 WHERE id=$2", [_panelNow(), split.id]);
+      }
+      const snsCalc = await panelSnsFor(moNo, sn);
+      if (!snsCalc.sns || snsCalc.sns.length === 0) return fail(res, "无法推算整版条码");
+      const stRow = (await query("SELECT * FROM md_station WHERE station_code=$1", [station])).rows[0] || {};
+      let useMo = moNo || "";
+      if (useMo && stRow) {
+        const m = (await query("SELECT line_code FROM ord_mo WHERE mo_no=$1", [useMo])).rows[0];
+        if (m && (m.line_code || "") !== (stRow.line_code || "")) useMo = "";
+      }
+      const panelSn = `${(prefix || "PANEL").replace(/-/g, "") || "PANEL"}-${String(effBase).padStart(p.width, "0")}`;
+      const old = (await query("SELECT * FROM prd_panel_split WHERE panel_sn=$1", [panelSn])).rows[0];
+      if (old) {
+        if ((old.status || "") === "已作废") {
+          await query("UPDATE prd_panel_split SET panel_sn=$1 WHERE id=$2", [`${panelSn}#作废${old.id}`, old.id]);
+        } else {
+          await query("DELETE FROM prd_panel_slot WHERE split_id=$1", [old.id]);
+          await query("DELETE FROM prd_panel_split WHERE id=$1", [old.id]);
+        }
+      }
+      const sidR = await query(
+        `INSERT INTO prd_panel_split (panel_sn, mo_no, station_code, line_code, product_code, model, cols, rows, total, serpentine, seq_base, seq_offset, orientation, good_cnt, ng_cnt, scanned_cnt, status, operator, started_at, remark)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,0,0,0,'扫描中',$14,$15,$16) RETURNING id`,
+        [panelSn, useMo, station, (stRow.line_code || ""), layout.product_code || "", layout.model,
+         cols, Number(layout.rows || 1), total, serpentine, effBase, layout.seq_offset,
+         layout.orientation || "landscape",
+         (req.mesrjUser && (req.mesrjUser.emp_name || req.mesrjUser.login_name)) || "",
+         _panelNow(), `锚点 ${sn}`]);
+      const sid = sidR.rows[0].id;
+      split = (await query("SELECT * FROM prd_panel_split WHERE id=$1", [sid])).rows[0];
+      openedNew = true;
+    }
+
+    const idx = (num - Number(split.seq_base)) % total;
+    const pos = _posOfIndex0(idx, cols, serpentine);
+    const taken = await query("SELECT * FROM prd_panel_slot WHERE split_id=$1 AND slot_no=$2", [split.id, pos]);
+    if (taken.rows[0]) return fail(res, `第 ${pos} 格已占用：${taken.rows[0].child_sn}`);
+
+    // 一键整版：扫一块 → 按拼版规则把整版 N 块全部带出并逐个判定
+    const autoFill = d.auto_fill === true;
+    let filled = 0, skipped = [];
+    let todo = [[pos, sn, num]];
+    if (autoFill) {
+      const baseI = Number(split.seq_base);
+      const pfx = parseSn(sn);
+      todo = [];
+      if (pfx) {
+        for (let i = 0; i < total; i++) {
+          const nI = baseI + i;
+          const posI = _posOfIndex0(i, cols, serpentine);
+          todo.push([posI, joinSn(pfx.prefix, nI, pfx.suffix, pfx.width), nI]);
+        }
+      }
+    }
+
+    for (const [posI, snI, numI] of todo) {
+      const exists = await query("SELECT id FROM prd_panel_slot WHERE split_id=$1 AND slot_no=$2", [split.id, posI]);
+      if (exists.rows[0]) continue;
+      const cross = await query(
+        `SELECT s.id FROM prd_panel_slot s JOIN prd_panel_split p ON s.split_id=p.id WHERE s.child_sn=$1 AND s.split_id<>$2`, [snI, split.id]);
+      if (cross.rows[0]) { skipped.push(snI); continue; }
+      const infoI = await _judgeSlotByTest(snI);
+      const disp = infoI.judge === "ICT_NG" || infoI.judge === "FCT_NG" || infoI.judge === "BOTH_NG"
+        ? "放入不良品盒"
+        : infoI.judge === "OK" ? "可流入下一站" : "";
+      await query(
+        `INSERT INTO prd_panel_slot (split_id, panel_sn, slot_no, row_idx, col_idx, child_sn, seq_no_val, ict_result, fct_result, judge, disposition, scanned_at, operator)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [split.id, split.panel_sn, posI, Math.floor((posI - 1) / cols) + 1, (posI - 1) % cols + 1, snI, numI,
+         infoI.ict_result, infoI.fct_result, infoI.judge, disp, _panelNow(),
+         (req.mesrjUser && (req.mesrjUser.emp_name || req.mesrjUser.login_name)) || ""]);
+      if (autoFill) filled += 1;
+      try {
+        const hasRel = (await query("SELECT id FROM prd_sn_rel WHERE parent_sn=$1 AND child_sn=$2", [split.panel_sn, snI])).rows[0];
+        if (!hasRel) {
+          await query(
+            `INSERT INTO prd_sn_rel (parent_sn, child_sn, rel_type, station, operator, is_active, mo_no, created_at)
+             VALUES ($1,$2,'PANEL_SPLIT',$3,$4,1,$5,$6)`,
+            [split.panel_sn, snI, station, (req.mesrjUser && req.mesrjUser.login_name) || "", split.mo_no || "", _panelNow()]);
+        }
+      } catch { /* prd_sn_rel may not exist in older DB */ }
+    }
+
+    const info = await _judgeSlotByTest(sn);
+    const viewStats = await _buildView(split);
+    await query(
+      "UPDATE prd_panel_split SET good_cnt=$1, ng_cnt=$2, scanned_cnt=$3 WHERE id=$4",
+      [viewStats.stats.ok, viewStats.stats.need_take, viewStats.stats.scanned, split.id]);
+    split = (await query("SELECT * FROM prd_panel_split WHERE id=$1", [split.id])).rows[0];
+
+    const judgeTxt = { OK: "OK 良品", ICT_NG: "ICT 不良", FCT_NG: "FCT 不良", BOTH_NG: "ICT+FCT 双不良", NONE: "无 ICT/FCT 记录" }[info.judge] || "";
+    const { passNext, ngNext } = await _resolveNext(split);
+
+    let warn = "";
+    if (viewStats.stats.scanned && viewStats.stats.none === viewStats.stats.scanned) {
+      warn = `无测试记录 · 请确认这批 SN 是否已过 ICT/FCT（起点 ${split.seq_base}）`;
+    }
+
+    return ok(res, {
+      split, layout, slots: viewStats.view, stats: viewStats.stats,
+      next: { pass: passNext, ng: ngNext }, warn,
+      hit_slot: pos, judge: info.judge, judge_txt: judgeTxt,
+      ict_result: info.ict_result, fct_result: info.fct_result,
+      opened_new: openedNew, auto_filled: filled, skipped,
+      msg: autoFill ? `扫一块已自动带出整版 ${viewStats.stats.scanned} 块` : `第 ${pos} 格 · ${judgeTxt}`,
+    });
+  });
+
+  // ── GET /panel/current ── 当前工位进行中的版 ──
+  router.get("/panel/current", requireMesrjPerm(null), async (req, res) => {
+    const station = String(req.query.station_code || "").trim();
+    const split = (await query("SELECT * FROM prd_panel_split WHERE status='扫描中' AND station_code=$1 ORDER BY id DESC LIMIT 1", [station])).rows[0] || null;
+    if (!split) return ok(res, { split: null, slots: [], stats: null });
+    const layout = (await query("SELECT * FROM cfg_panel_layout WHERE model=$1 ORDER BY id DESC LIMIT 1", [split.model])).rows[0] || null;
+    const viewStats = await _buildView(split);
+    const { passNext, ngNext } = await _resolveNext(split);
+    return ok(res, { split, layout, slots: viewStats.view, stats: viewStats.stats, next: { pass: passNext, ng: ngNext } });
+  });
+
+  // ── POST /panel/complete ── 完成当前版（良品自动过站） ──
+  router.post("/panel/complete", requireMesrjPerm("prod.panel"), async (req, res) => {
+    const d = req.body || {};
+    const splitId = d.split_id;
+    const doPass = d.do_pass !== false;
+    if (!splitId) return fail(res, "缺少 split_id");
+    const split = (await query("SELECT * FROM prd_panel_split WHERE id=$1", [Number(splitId)])).rows[0] || null;
+    if (!split) return fail(res, "会话不存在");
+    if (split.status !== "扫描中") return fail(res, `该版已是「${split.status}」，不能完成`);
+    const slots = (await query("SELECT * FROM prd_panel_slot WHERE split_id=$1 ORDER BY slot_no", [split.id])).rows;
+    if (!slots.length) return fail(res, "还没有扫任何一块");
+    const okSlots = slots.filter(s => s.judge === "OK");
+    const ngSlots = slots.filter(s => s.judge === "ICT_NG" || s.judge === "FCT_NG" || s.judge === "BOTH_NG");
+
+    let passed = 0, failed = [];
+    if (doPass && split.station_code) {
+      let passMo = split.mo_no || "";
+      if (passMo) {
+        const m = (await query("SELECT line_code FROM ord_mo WHERE mo_no=$1", [passMo])).rows[0];
+        if (m && (m.line_code || "") !== (split.line_code || "")) passMo = "";
+      }
+      for (const s of okSlots) {
+        try {
+          const r = await doPassInner({
+            sn: s.child_sn, station_code: split.station_code, mo_no: passMo, result: "OK",
+            remark: `分板工位过站（版 ${split.panel_sn} 第 ${s.slot_no} 格）`,
+          }, { login_name: `PANEL:${split.operator || ""}`, emp_name: split.operator || "分板工位", id: 0 }, req.ip);
+          const body = Array.isArray(r) ? r[0] : r;
+          const data = (body && body.data) || {};
+          if ((body && body.success !== false) && data.accepted) {
+            passed += 1;
+          } else {
+            failed.push({ sn: s.child_sn, msg: data.msg || body.msg || "过站失败" });
+          }
+        } catch (e) { failed.push({ sn: s.child_sn, msg: String(e).slice(0, 120) }); }
+      }
+    }
+
+    await query(
+      "UPDATE prd_panel_split SET status='已完成', finished_at=$1, good_cnt=$2, ng_cnt=$3, scanned_cnt=$4 WHERE id=$5",
+      [_panelNow(), okSlots.length, ngSlots.length, slots.length, split.id]);
+    return ok(res, {
+      panel_sn: split.panel_sn, good: okSlots.length, need_take: ngSlots.length,
+      scanned: slots.length, total: Number(split.total || 0), passed, failed,
+      take_list: ngSlots.map(s => ({ slot_no: s.slot_no, sn: s.child_sn, judge: s.judge })),
+    }, `完成：良品 ${okSlots.length} 块，需取出 ${ngSlots.length} 块`);
+  });
+
+  // ── POST /panel/reset ── 作废当前版（格子保留，仅改状态） ──
+  router.post("/panel/reset", requireMesrjPerm("prod.panel"), async (req, res) => {
+    const d = req.body || {};
+    const splitId = d.split_id;
+    const station = String(d.station_code || "").trim();
+    let split = null;
+    if (splitId) {
+      const r = await query("SELECT * FROM prd_panel_split WHERE id=$1", [Number(splitId)]);
+      split = r.rows[0] || null;
+    } else if (station) {
+      const r = await query("SELECT * FROM prd_panel_split WHERE status='扫描中' AND station_code=$1 ORDER BY id DESC LIMIT 1", [station]);
+      split = r.rows[0] || null;
+    }
+    if (!split) return fail(res, "没有进行中的版");
+    if (split.status !== "扫描中") return fail(res, `该版已是「${split.status}」，不能作废`);
+    await query("UPDATE prd_panel_split SET status='已作废', finished_at=$1 WHERE id=$2", [_panelNow(), split.id]);
+    return ok(res, null, "已作废；原记录保留可追溯");
+  });
+
+  // ── GET /panel/detail/:panel_sn ── 版详情 ──
+  router.get("/panel/detail/:panel_sn", requireMesrjPerm(null), async (req, res) => {
+    const panelSn = String(req.params.panel_sn || "").trim();
+    const split = (await query("SELECT * FROM prd_panel_split WHERE panel_sn=$1", [panelSn])).rows[0] || null;
+    if (!split) return fail(res, "没有该版的分板记录", 404);
+    const slots = (await query("SELECT * FROM prd_panel_slot WHERE split_id=$1 ORDER BY slot_no", [split.id])).rows;
+    return ok(res, { split, slots });
+  });
+
+  // ── GET /panel/list ── 版列表（分页） ──
+  router.get("/panel/list", requireMesrjPerm(null), async (req, res) => {
+    const page = Math.max(1, Number(req.query.page || 1));
+    const size = Math.min(100, Math.max(1, Number(req.query.size || 20)));
+    const offset = (page - 1) * size;
+    const where = [];
+    const args = [];
+    const kw = String(req.query.keyword || "").trim();
+    if (kw) { where.push("(panel_sn ILIKE $1 OR mo_no ILIKE $2)"); args.push(`%${kw}%`, `%${kw}%`); }
+    const st = String(req.query.f_status || "").trim();
+    if (st) { where.push(`status=$${args.length + 1}`); args.push(st); }
+    const d1 = String(req.query.d1 || "").trim();
+    if (d1) { where.push(`started_at::date >= $${args.length + 1}`); args.push(d1); }
+    const d2 = String(req.query.d2 || "").trim();
+    if (d2) { where.push(`started_at::date <= $${args.length + 1}`); args.push(d2); }
+    const w = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const cnt = (await query(`SELECT COUNT(*) FROM prd_panel_split ${w}`, args)).rows[0];
+    const total = Number(cnt.count);
+    const rows = (await query(
+      `SELECT * FROM prd_panel_split ${w} ORDER BY id DESC LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+      [...args, size, offset])).rows;
+    return ok(res, { page, size, total, rows });
+  });
+
+  // ── GET /panel/hourly ── 分板产能（按小时） ──
+  router.get("/panel/hourly", requireMesrjPerm(null), async (req, res) => {
+    const day = String(req.query.d1 || "").trim() || new Date().toISOString().slice(0, 10);
+    const station = String(req.query.station_code || "").trim();
+    const where = ["date(s.scanned_at)=$1"];
+    const args = [day];
+    if (station) { where.push(`p.station_code=$${args.length + 1}`); args.push(station); }
+    const rows = (await query(
+      `SELECT to_char(s.scanned_at, 'HH24') AS h,
+              COUNT(*) AS blocks,
+              SUM(CASE WHEN s.judge IN ('ICT_NG','FCT_NG','BOTH_NG') THEN 1 ELSE 0 END) AS ng,
+              COUNT(DISTINCT s.split_id) AS panels
+       FROM prd_panel_slot s JOIN prd_panel_split p ON s.split_id=p.id
+       WHERE ${where.join(" AND ")} GROUP BY h ORDER BY h`, args)).rows;
+    const buckets = {};
+    for (const r of rows) buckets[r.h] = r;
+    const out = [];
+    for (let h = 0; h < 24; h++) {
+      const key = String(h).padStart(2, "0");
+      const r = buckets[key];
+      out.push({
+        hour: key,
+        label: `${key}-${String((h + 1) % 24).padStart(2, "0")}`,
+        panels: r ? Number(r.panels || 0) : 0,
+        blocks: r ? Number(r.blocks || 0) : 0,
+        ng: r ? Number(r.ng || 0) : 0,
+      });
+    }
+    return ok(res, {
+      day, hours: out,
+      total: {
+        panels: out.reduce((a, x) => a + x.panels, 0),
+        blocks: out.reduce((a, x) => a + x.blocks, 0),
+        ng: out.reduce((a, x) => a + x.ng, 0),
+      },
+    });
+  });
+
+  // W12：栈板绑码（源 api/pallet.py，14 路由）—— 复用 packcode.js: getRule/ruleOfMo/genPalletNo/
+  //      nextPalletNo/wipNo/dayCode/makePrintJob/tsLocal
+  // ═════════════════════════════════════════════════════════════════════════════
+  const PALLET_OPEN = "装板中", PALLET_CLOSED = "已封板";
+
+  const _pallet = async (palletNo) => {
+    const r = await query("SELECT * FROM prd_pallet WHERE pallet_no=$1", [palletNo]);
+    return r.rows[0] || null;
+  };
+  const _boxesOf = (row) => String(row && row.box_list || "").split(",").map(s => s.trim()).filter(Boolean);
+  const _box = async (boxNo) => {
+    const r = await query("SELECT * FROM prd_box WHERE box_no=$1", [boxNo]);
+    return r.rows[0] || null;
+  };
+  const _palletJson = async (row, full) => {
+    if (!row) return null;
+    const d = { ...row };
+    const bl = _boxesOf(row);
+    if (full) {
+      d.boxes = [];
+      for (const bn of bl) {
+        const b = await _box(bn);
+        d.boxes.push({ box_no: bn, qty: b ? Number(b.qty || 0) : 0, status: b ? b.status : "?" });
+      }
+    } else {
+      d.box_preview = bl.slice(0, 3);
+    }
+    d.box_n = bl.length;
+    delete d.box_list;
+    return d;
+  };
+  const _userName = async (req) => {
+    try { return req.user && (req.user.emp_name || req.user.login_name) || ""; } catch { return ""; }
+  };
+  const _openPalletOf = async (moNo, lineCode) => {
+    lineCode = (lineCode || "").trim();
+    if (lineCode) {
+      const r = await query(
+        "SELECT * FROM prd_pallet WHERE mo_no=$1 AND status=$2 AND COALESCE(line_code,'')=$3 ORDER BY id DESC LIMIT 1",
+        [moNo, PALLET_OPEN, lineCode]);
+      if (r.rows[0]) return r.rows[0];
+      const cnt = (await query("SELECT COUNT(*) AS n FROM prd_pallet WHERE mo_no=$1 AND status=$2", [moNo, PALLET_OPEN])).rows[0].n;
+      if (Number(cnt) === 1) {
+        const old = await query(
+          "SELECT * FROM prd_pallet WHERE mo_no=$1 AND status=$2 AND COALESCE(line_code,'')='' ORDER BY id DESC LIMIT 1", [moNo, PALLET_OPEN]);
+        if (old.rows[0]) {
+          await query("UPDATE prd_pallet SET line_code=$1 WHERE pallet_no=$2", [lineCode, old.rows[0].pallet_no]);
+          return old.rows[0];
+        }
+      }
+      return null;
+    }
+    const r = await query("SELECT * FROM prd_pallet WHERE mo_no=$1 AND status=$2 ORDER BY id DESC LIMIT 1", [moNo, PALLET_OPEN]);
+    return r.rows[0] || null;
+  };
+  const _nowTs = () => { const d = new Date(); const p = n => String(n).padStart(2, "0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+
+  // pallet/init —— 首页信息（容量/规则/打印模板）
+  router.get("/pallet/init", requireMesrjPerm(null), async (req, res) => {
+    const moNo = String(req.query.mo_no || "").trim();
+    if (!moNo) return fail(res, "缺少工单号");
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1 LIMIT 1", [moNo])).rows[0];
+    if (!mo) return fail(res, `工单不存在：${moNo}`);
+    const rule = await getRule(mo.product_code || "");
+    if (!rule) return fail(res, `机型【${mo.product_code || "?"}】未配置装箱编码规则`);
+    const cap = rule.cartons_per_pallet ? Number(rule.cartons_per_pallet) : 0;
+    const openPallet = await _openPalletOf(moNo, mo.line_code);
+    const tpls = (await query("SELECT tpl_code,tpl_name,file_name FROM cfg_print_tpl WHERE tpl_type='pallet' AND enabled=1 ORDER BY sort_no,id")).rows;
+    return ok(res, {
+      mo_no: moNo, product_code: mo.product_code, cust_code: mo.cust_code,
+      plan_qty: mo.plan_qty, out_qty: mo.out_qty, line_code: mo.line_code,
+      carton_qty: rule.carton_qty || 0, cartons_per_pallet: cap,
+      pallet_tpl_code: rule.pallet_tpl_code || "",
+      open_pallet: openPallet ? { pallet_no: openPallet.pallet_no, status: openPallet.status, box_count: openPallet.box_count, total_qty: openPallet.total_qty } : null,
+      templates: tpls,
+    });
+  });
+
+  // pallet/open —— 取或新建「装板中」栈板
+  router.post("/pallet/open", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const moNo = String(d.mo_no || "").trim();
+    const lineCode = String(d.line_code || "").trim();
+    const poNo = String(d.po_no || "").trim();
+    const capacity = d.capacity || "";
+    const tplCode = String(d.tpl_code || "").trim();
+    if (!moNo) return fail(res, "缺少工单号");
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1 LIMIT 1", [moNo])).rows[0];
+    if (!mo) return fail(res, `工单不存在：${moNo}`);
+    const status = (mo.status || "").trim();
+    if (status === "已完工" || status === "已关闭" || status === "作废")
+      return fail(res, `工单 ${moNo} 状态为【${status}】，不能码垛`);
+    const rule = await getRule(mo.product_code || "");
+    if (!rule) return fail(res, `机型【${mo.product_code || "?"}】未配置装箱编码规则`);
+    let cap = Number(capacity || 0);
+    if (cap <= 0) cap = Number(rule.cartons_per_pallet || 0);
+    if (cap <= 0) return fail(res, `机型【${rule.machine_model || mo.product_code}】未配置每栈板箱数`);
+    if (cap > 200) return fail(res, "每栈板箱数必须是 1~200 的整数");
+    const ex = await _openPalletOf(moNo, lineCode);
+    if (ex) return ok(res, await _palletJson(ex, true), "已有装板中的栈板");
+    const poOut = poNo || mo.po_no || "";
+    const isPool = Number(mo.is_pool || 0) === 1;
+    if (isPool && !poOut) return fail(res, `工单 ${moNo} 是常驻单，建栈板时必须选择出货 PO`);
+    const wip = await wipNo("PAL");
+    await query(`INSERT INTO prd_pallet (pallet_no,mo_no,po_no,cust_code,product_code,capacity,line_code,box_count,total_qty,box_list,status,tpl_code,created_by,created_at,updated_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$14)`,
+      [wip, moNo, poOut, mo.cust_code || "", mo.product_code || "", cap, lineCode, 0, 0, "", PALLET_OPEN,
+       (tplCode || rule.pallet_tpl_code || ""), await _userName(req), _nowTs()]);
+    const p = await _pallet(wip);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "开板", wip, `${moNo} 每板 ${cap} 箱${lineCode ? " 产线 " + lineCode : ""}`, _nowTs()]);
+    return ok(res, await _palletJson(p, true), "栈板已新建");
+  });
+
+  // pallet/box/add —— 把外箱装入栈板
+  router.post("/pallet/box/add", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    const boxNo = String(d.box_no || "").trim();
+    if (!palletNo || !boxNo) return fail(res, "缺少栈板号或外箱码");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在");
+    if (p.status !== PALLET_OPEN) return fail(res, "栈板已封板，不能装箱");
+    const b = await _box(boxNo);
+    if (!b) return fail(res, `外箱不存在：${boxNo}`);
+    if (b.status !== "已封箱") return fail(res, `外箱 ${boxNo} 尚未封箱，不能装板`);
+    if (String(b.mo_no || "") !== String(p.mo_no)) return fail(res, `外箱工单 ${b.mo_no} 与栈板工单 ${p.mo_no} 不一致`);
+    if (String(b.po_no || "") !== String(p.po_no)) return fail(res, `外箱 PO 与栈板 PO 不一致`);
+    if (String(b.product_code || "") !== String(p.product_code)) return fail(res, `外箱机型与栈板机型不一致`);
+    const boxes = _boxesOf(p);
+    if (boxes.includes(boxNo)) return fail(res, `外箱 ${boxNo} 已在栈板上`);
+    if (boxes.length >= Number(p.capacity || 0)) return fail(res, `栈板已满（${p.box_count}/${p.capacity}）`);
+    boxes.push(boxNo);
+    const totalQty = Number(p.total_qty || 0) + Number(b.qty || 0);
+    await query("UPDATE prd_pallet SET box_count=$1,total_qty=$2,box_list=$3,updated_at=$4 WHERE pallet_no=$5",
+      [boxes.length, totalQty, boxes.join(","), _nowTs(), palletNo]);
+    await query("UPDATE prd_box SET pallet_no=$1,updated_at=$2 WHERE box_no=$3", [palletNo, _nowTs(), boxNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "装箱", boxNo, `装入栈板 ${palletNo}`, _nowTs()]);
+    return ok(res, await _palletJson(await _pallet(palletNo), true), "外箱已装板");
+  });
+
+  // pallet/box/remove —— 从栈板移出外箱
+  router.post("/pallet/box/remove", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    const boxNo = String(d.box_no || "").trim();
+    if (!palletNo || !boxNo) return fail(res, "缺少栈板号或外箱码");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在");
+    if (p.status !== PALLET_OPEN) return fail(res, "栈板已封板，不能移箱");
+    const boxes = _boxesOf(p);
+    if (!boxes.includes(boxNo)) return fail(res, `外箱 ${boxNo} 不在栈板 ${palletNo} 上`);
+    const b = await _box(boxNo);
+    boxes.splice(boxes.indexOf(boxNo), 1);
+    const totalQty = Math.max(0, Number(p.total_qty || 0) - Number(b ? b.qty || 0 : 0));
+    await query("UPDATE prd_pallet SET box_count=$1,total_qty=$2,box_list=$3,updated_at=$4 WHERE pallet_no=$5",
+      [boxes.length, totalQty, boxes.join(","), _nowTs(), palletNo]);
+    await query("UPDATE prd_box SET pallet_no='',updated_at=$1 WHERE box_no=$2", [_nowTs(), boxNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "移箱", boxNo, `移出栈板 ${palletNo}`, _nowTs()]);
+    return ok(res, await _palletJson(await _pallet(palletNo), true), "外箱已移出");
+  });
+
+  // pallet/close —— 封板：生成正式栈板码 + 更新外箱 + 发起打印
+  router.post("/pallet/close", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在");
+    if (p.status !== PALLET_OPEN) return fail(res, "栈板已封板");
+    if ((p.box_count || 0) <= 0) return fail(res, "空栈板不能封板");
+    const rule = await ruleOfMo(p.mo_no);
+    if (!rule) return fail(res, `机型【${p.product_code || "?"}】未配置装箱编码规则`);
+    let finalNo = null;
+    for (let i = 0; i < 5; i++) {
+      const cand = await nextPalletNo(rule);
+      try {
+        await query("UPDATE prd_pallet SET pallet_no=$1,status=$2,updated_at=$3 WHERE pallet_no=$4", [cand, PALLET_CLOSED, _nowTs(), palletNo]);
+        finalNo = cand;
+        break;
+      } catch { continue; }
+    }
+    if (!finalNo) return fail(res, "栈板码生成冲突，请重试");
+    await query("UPDATE prd_box SET pallet_no=$1,updated_at=$2 WHERE pallet_no=$3", [finalNo, _nowTs(), palletNo]);
+    // OQC block: prd_pallet has no oqc_status/release_locked columns → guarded no-op
+    const tplCode = (p.tpl_code || rule.pallet_tpl_code || "").trim();
+    let jobNo = "", warn = "";
+    if (tplCode) {
+      const tpl = (await query("SELECT * FROM cfg_print_tpl WHERE tpl_code=$1 AND enabled=1 LIMIT 1", [tplCode])).rows[0];
+      if (tpl) {
+        const payload = {
+          ref_type: "pallet", ref_no: finalNo, pallet_no: finalNo, mo_no: p.mo_no, po_no: p.po_no, cust_code: p.cust_code,
+          product_code: p.product_code, machine_model: rule.machine_model, carton_count: p.box_count, total_qty: p.total_qty,
+          day_code: dayCode(new Date()), year_digit: new Date().getFullYear() % 10,
+          date_of_mfg: new Date().toLocaleDateString("zh-CN").replace(/\//g, "."),
+          wireline_sku: rule.wireline_sku || "", consumer_sku: rule.consumer_sku || "",
+          ship_to: p.ship_to || "", subordinate_name: p.subordinate_name || "", sub_po: p.sub_po || "",
+          pallet_no_seq: ((p.pallet_x || "") + "/" + (p.pallet_y || "")).replace(/\/$/, "") || "",
+          tpl: { tpl_code: tpl.tpl_code, tpl_name: tpl.tpl_name, file_name: tpl.file_name, fields: tpl.fields },
+          printed_by: (req.user && req.user.login_name) || "", printed_at: _nowTs(),
+        };
+        const job = await makePrintJob("pallet", finalNo, tpl.tpl_code, payload, (req.user && req.user.login_name) || "");
+        jobNo = job.job_no || "";
+        await query("UPDATE prd_pallet SET print_times=COALESCE(print_times,0)+1,tpl_code=$1,updated_at=$2 WHERE pallet_no=$3", [tpl.tpl_code, _nowTs(), finalNo]);
+      } else warn = "未配置栈板打印模板，请稍后用【补打】手动打印";
+    } else warn = "未配置栈板打印模板，请稍后用【补打】手动打印";
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "封板", finalNo, `${p.box_count} 箱（原临时号 ${palletNo}）`, _nowTs()]);
+    return ok(res, { pallet: await _palletJson(await _pallet(finalNo), true), final_pallet_no: finalNo, print_job: jobNo, print_warn: warn }, "栈板已封板");
+  });
+
+  // pallet/list —— 栈板列表
+  router.get("/pallet/list", requireMesrjPerm(null), async (req, res) => {
+    const moNo = String(req.query.mo_no || "").trim();
+    const status = String(req.query.status || "").trim();
+    const page = Number(req.query.page || 1), pageSize = Number(req.query.pageSize || 20);
+    let sql = "SELECT pallet_no,mo_no,po_no,product_code,capacity,box_count,total_qty,status,tpl_code,print_times,line_code,created_by,created_at FROM prd_pallet";
+    const args = [], conds = [];
+    if (moNo) { conds.push(`mo_no=$${args.length + 1}`); args.push(moNo); }
+    if (status) { conds.push(`status=$${args.length + 1}`); args.push(status); }
+    if (conds.length) sql += " WHERE " + conds.join(" AND ");
+    sql += " ORDER BY created_at DESC";
+    const total = (await query("SELECT COUNT(*) AS n FROM (" + sql.replace(/ORDER BY.*$/, "") + ") t", args)).rows[0].n;
+    sql += ` LIMIT $${args.length + 1} OFFSET $${args.length + 2}`;
+    args.push(pageSize, (page - 1) * pageSize);
+    const rows = (await query(sql, args)).rows;
+    return ok(res, { list: rows, total: Number(total), page, pageSize });
+  });
+
+  // pallet/detail —— 栈板详情（含箱）
+  router.get("/pallet/detail", requireMesrjPerm(null), async (req, res) => {
+    const palletNo = String(req.query.pallet_no || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在");
+    return ok(res, await _palletJson(p, true));
+  });
+
+  // pallet/reopen —— 已封板栈板重新打开（只允许重开刚封的）
+  router.post("/pallet/reopen", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const palletNo = String((req.body || {}).pallet_no || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在");
+    if (p.status !== PALLET_CLOSED) return fail(res, "栈板未封板，无需重开");
+    await query("UPDATE prd_pallet SET status=$1,updated_at=$2 WHERE pallet_no=$3", [PALLET_OPEN, _nowTs(), palletNo]);
+    await query("UPDATE prd_box SET pallet_no='',updated_at=$1 WHERE pallet_no=$2", [_nowTs(), palletNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "重开", palletNo, "解封板，外箱全部解绑", _nowTs()]);
+    return ok(res, { pallet_no: palletNo, status: PALLET_OPEN }, "栈板已重开");
+  });
+
+  // pallet/change-po —— 改挂 PO（台账 prd_pallet_po_log；源 /pallet/change-po）
+  router.post("/pallet/change-po", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    const toPo = String(d.to_po || "").trim();
+    const reason = String(d.reason || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    if (!toPo) return fail(res, "请选择要改挂到的 PO");
+    if (!reason) return fail(res, "改挂 PO 必须填写原因（会记入台账，出货对账时要查）");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在：" + palletNo);
+    const fromPo = (p.po_no || "").trim();
+    if (toPo === fromPo) return fail(res, "目标 PO 与当前 PO 相同（" + toPo + "），无需改挂");
+    const po = (await query("SELECT * FROM ord_po WHERE po_no=$1 ORDER BY po_line LIMIT 1", [toPo])).rows[0];
+    if (!po) return fail(res, "客户 PO【" + toPo + "」还没在「订单管理」建档 —— 没建档就不知道订单量，欠数账会算成已齐套。请先建档后再改挂");
+    const poPc = (po.product_code || "").trim();
+    const palPc = (p.product_code || "").trim();
+    if (poPc && palPc && poPc !== palPc)
+      return fail(res, "不能跨机型改挂：本栈板是【" + palPc + "】，PO " + toPo + " 要的是【" + poPc + "】");
+    const poCust = (po.cust_code || "").trim();
+    const palCust = (p.cust_code || "").trim();
+    if (poCust && palCust && poCust !== palCust)
+      return fail(res, "不能跨客户改挂：本栈板货主是【" + palCust + "】，PO " + toPo + " 是【" + poCust + "】");
+    const qty = Number(p.total_qty || 0);
+    const boxN = Number(p.box_count || 0);
+    await query("UPDATE prd_pallet SET po_no=$1, cust_code=$2, updated_at=$3 WHERE pallet_no=$4",
+      [toPo, poCust || palCust, _nowTs(), palletNo]);
+    await query("UPDATE prd_box SET po_no=$1, updated_at=$2 WHERE pallet_no=$3", [toPo, _nowTs(), palletNo]);
+    await query(`INSERT INTO prd_pallet_po_log (pallet_no,mo_no,from_po,to_po,qty,box_count,reason,operator,created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [palletNo, p.mo_no, fromPo, toPo, qty, boxN, reason, (req.user && req.user.login_name) || "", _nowTs()]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "改挂PO", palletNo, (fromPo || "无") + " → " + toPo + "（" + boxN + " 箱 " + qty + " 台）" + reason, _nowTs()]);
+    return ok(res, { pallet_no: palletNo, from_po: fromPo, to_po: toPo, need_reprint: p.status === PALLET_CLOSED }, "已改挂：" + (fromPo || "无") + " → " + toPo + "（" + qty + " 台）");
+  });
+
+  // pallet/reprint —— 补打栈板标签
+  router.post("/pallet/reprint", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在");
+    const rule = await ruleOfMo(p.mo_no);
+    const tplCode = String(d.tpl_code || p.tpl_code || rule.pallet_tpl_code || "").trim();
+    if (!tplCode) return fail(res, "没有可用的打印模板");
+    const tpl = (await query("SELECT * FROM cfg_print_tpl WHERE tpl_code=$1 AND enabled=1 LIMIT 1", [tplCode])).rows[0];
+    if (!tpl) return fail(res, "打印模板不存在或已禁用");
+    const payload = {
+      ref_type: "pallet", ref_no: palletNo, pallet_no: palletNo, mo_no: p.mo_no, po_no: p.po_no, cust_code: p.cust_code,
+      product_code: p.product_code, machine_model: rule.machine_model, carton_count: p.box_count, total_qty: p.total_qty,
+      day_code: dayCode(new Date()), year_digit: new Date().getFullYear() % 10,
+      date_of_mfg: new Date().toLocaleDateString("zh-CN").replace(/\//g, "."),
+      wireline_sku: rule.wireline_sku || "", consumer_sku: rule.consumer_sku || "",
+      ship_to: p.ship_to || "", subordinate_name: p.subordinate_name || "", sub_po: p.sub_po || "",
+      pallet_no_seq: ((p.pallet_x || "") + "/" + (p.pallet_y || "")).replace(/\/$/, "") || "",
+      tpl: { tpl_code: tpl.tpl_code, tpl_name: tpl.tpl_name, file_name: tpl.file_name, fields: tpl.fields },
+      reprint: true, printed_by: (req.user && req.user.login_name) || "", printed_at: _nowTs(),
+    };
+    const job = await makePrintJob("pallet", palletNo, tpl.tpl_code, payload, (req.user && req.user.login_name) || "");
+    await query("UPDATE prd_pallet SET print_times=COALESCE(print_times,0)+1,tpl_code=$1,updated_at=$2 WHERE pallet_no=$3", [tpl.tpl_code, _nowTs(), palletNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "补打", palletNo, "重新生成栈板标签打印任务", _nowTs()]);
+    return ok(res, { job_no: job.job_no }, "打印任务已生成");
+  });
+
+  // pallet/next —— 下一张栈板码预览
+  router.get("/pallet/next", requireMesrjPerm(null), async (_req, res) => {
+    const rule = await getRule("");
+    const no = await nextPalletNo(rule);
+    return ok(res, { pallet_no: no });
+  });
+
+  // pallet/po-log —— 改挂台账
+  router.get("/pallet/po-log", requireMesrjPerm(null), async (req, res) => {
+    const palletNo = String(req.query.pallet_no || "").trim();
+    let sql = "SELECT id,pallet_no,mo_no,from_po,to_po,qty,box_count,reason,operator,created_at FROM prd_pallet_po_log";
+    const args = [], conds = [];
+    if (palletNo) { conds.push(`pallet_no=$${args.length + 1}`); args.push(palletNo); }
+    if (conds.length) sql += " WHERE " + conds.join(" AND ");
+    sql += " ORDER BY id DESC LIMIT 100";
+    const rows = (await query(sql, args)).rows;
+    return ok(res, rows);
+  });
+
+  // ═════════════════════════════════════════════════════════════════════════════
+  // pallet/context —— 工单上下文（开板前/码垛中首屏信息；源 /pallet/context）
+  router.get("/pallet/context", requireMesrjPerm(null), async (req, res) => {
+    const moNo = String(req.query.mo_no || "").trim();
+    const lineCode = String(req.query.line_code || "").trim();
+    if (!moNo) return fail(res, "缺少工单号");
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1 LIMIT 1", [moNo])).rows[0];
+    const openPallet = await _openPalletOf(moNo, lineCode);
+    const moPalletizedBoxes = (await query(
+      "SELECT COUNT(*) AS n FROM prd_box WHERE mo_no=$1 AND COALESCE(pallet_no,'') <> ''", [moNo]
+    )).rows[0].n;
+    const moClosedPallets = (await query(
+      "SELECT COUNT(*) AS n FROM prd_pallet WHERE mo_no=$1 AND status=$2", [moNo, PALLET_CLOSED]
+    )).rows[0].n;
+    return ok(res, {
+      open_pallet: openPallet ? await _palletJson(openPallet, false) : null,
+      mo_palletized_boxes: Number(moPalletizedBoxes),
+      mo_closed_pallets: Number(moClosedPallets),
+      mo_po: (mo && mo.po_no) || "",
+      mo_product_code: (mo && mo.product_code) || "",
+      is_pool: Number(mo && mo.is_pool != null ? mo.is_pool : 0),
+    });
+  });
+
+  // pallet/cancel —— 作废空栈板（源 /pallet/cancel）
+  router.post("/pallet/cancel", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const palletNo = String((req.body || {}).pallet_no || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在：" + palletNo);
+    if (p.status !== PALLET_OPEN) return fail(res, "已封板的栈板不能作废");
+    if (Number(p.box_count || 0) > 0)
+      return fail(res, `栈板上已有 ${p.box_count} 箱，不能作废（请先逐箱解绑）`);
+    await query("DELETE FROM prd_pallet WHERE pallet_no=$1 AND box_count=0", [palletNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "作废空板", palletNo, "", _nowTs()]);
+    return ok(res, null, "空栈板已作废");
+  });
+
+  // pallet/meta —— 打印信息（送至/货主/子PO/栈板序号，仅未封板可改；源 /pallet/meta）
+  router.post("/pallet/meta", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    if (!palletNo) return fail(res, "缺少栈板号");
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在：" + palletNo);
+    if (p.status !== PALLET_OPEN) return fail(res, "已封板的栈板不能修改打印信息（可改后再补打）");
+    await query(
+      "UPDATE prd_pallet SET ship_to=$1, subordinate_name=$2, sub_po=$3, pallet_x=$4, pallet_y=$5, updated_at=$6 WHERE pallet_no=$7",
+      [String(d.ship_to || "").trim(), String(d.subordinate_name || "").trim(),
+       String(d.sub_po || "").trim(), String(d.pallet_x || "").trim(), String(d.pallet_y || "").trim(),
+       _nowTs(), palletNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "打印信息", palletNo, "修改打印信息", _nowTs()]);
+    return ok(res, await _palletJson(await _pallet(palletNo), true), "打印信息已保存");
+  });
+
+  // pallet/po-options —— 可改挂 PO 候选（同机型、未关闭，带欠数；源 /pallet/po-options）
+  router.get("/pallet/po-options", requireMesrjPerm(null), async (req, res) => {
+    let productCode = String(req.query.product_code || "").trim();
+    const moNo = String(req.query.mo_no || "").trim();
+    if (!productCode && moNo) {
+      const mo = (await query("SELECT product_code FROM ord_mo WHERE mo_no=$1 LIMIT 1", [moNo])).rows[0];
+      productCode = (mo && mo.product_code) || "";
+    }
+    if (!productCode) return fail(res, "缺少机型（product_code）");
+    const rows = (await query(
+      "SELECT po_no, COALESCE(po_line,'1') AS po_line, COALESCE(cust_code,'') AS cust_code, " +
+      "COALESCE(order_qty,0) AS order_qty, COALESCE(delivery_date,'') AS delivery_date, " +
+      "COALESCE(status,'') AS status FROM ord_po " +
+      "WHERE product_code=$1 AND COALESCE(status,'') NOT IN ('已关闭','已完工') " +
+      "ORDER BY (COALESCE(delivery_date,'')=''), delivery_date, po_no LIMIT 50",
+      [productCode])).rows;
+    const out = [];
+    for (const r of rows) {
+      const orderQty = Number(r.order_qty || 0);
+      const done = (await query(
+        "SELECT COALESCE(SUM(total_qty),0) AS n FROM prd_pallet WHERE po_no=$1 AND status='已封板'", [r.po_no]
+      )).rows[0].n;
+      const gap = Math.max(0, orderQty - Number(done));
+      out.push({
+        po_no: r.po_no, po_line: r.po_line, cust_code: r.cust_code,
+        order_qty: orderQty, delivery_date: r.delivery_date, status: r.status,
+        done_qty: Number(done), gap: gap, complete: gap <= 0,
+      });
+    }
+    return ok(res, { product_code: productCode, pos: out });
+  });
+
+  // pallet/print —— 补打/打印栈板标签（须已封板；源 /pallet/print）
+  router.post("/pallet/print", requireMesrjPerm("prod.pallet"), async (req, res) => {
+    const d = req.body || {};
+    const palletNo = String(d.pallet_no || "").trim();
+    const tplCode = String(d.tpl_code || "").trim();
+    const reprint = Boolean(d.reprint);
+    const p = await _pallet(palletNo);
+    if (!p) return fail(res, "栈板不存在：" + palletNo);
+    if (p.status !== PALLET_CLOSED) return fail(res, "请先完成封板再打印标签");
+    const rule = await ruleOfMo(p.mo_no);
+    if (!rule) return fail(res, "机型【" + (p.product_code || "?") + "】未配置装箱编码规则");
+    const code = tplCode || p.tpl_code || rule.pallet_tpl_code || "";
+    if (!code) return fail(res, "没有可用的打印模板");
+    const tpl = (await query("SELECT * FROM cfg_print_tpl WHERE tpl_code=$1 AND enabled=1 LIMIT 1", [code])).rows[0];
+    if (!tpl) return fail(res, "打印模板不存在或已禁用");
+    const boxes = _boxesOf(p);
+    const cartons = [];
+    for (const bn of boxes) {
+      const b = await _box(bn);
+      cartons.push({ box_no: bn, qty: b ? Number(b.qty || 0) : 0 });
+    }
+    const seq = (p.pallet_x || p.pallet_y) ? (p.pallet_x || "") + "/" + (p.pallet_y || "").replace(/\/$/, "") : "";
+    const payload = {
+      ref_type: "pallet", ref_no: p.pallet_no, pallet_no: p.pallet_no,
+      mo_no: p.mo_no, po_no: p.po_no, cust_code: p.cust_code,
+      product_code: p.product_code, machine_model: rule.machine_model,
+      carton_count: p.box_count, total_qty: p.total_qty, cartons: cartons,
+      day_code: dayCode(new Date()), year_digit: new Date().getFullYear() % 10,
+      date_of_mfg: new Date().toLocaleDateString("zh-CN").replace(/\//g, "."),
+      wireline_sku: rule.wireline_sku || "", consumer_sku: rule.consumer_sku || "",
+      ship_to: p.ship_to || "", subordinate_name: p.subordinate_name || "", sub_po: p.sub_po || "",
+      pallet_no_seq: seq || "", reprint,
+      tpl: { tpl_code: tpl.tpl_code, tpl_name: tpl.tpl_name, file_name: tpl.file_name, fields: tpl.fields },
+      printed_by: (req.user && req.user.login_name) || "", printed_at: _nowTs(),
+    };
+    const job = await makePrintJob("pallet", p.pallet_no, tpl.tpl_code, payload, (req.user && req.user.login_name) || "");
+    await query("UPDATE prd_pallet SET print_times=COALESCE(print_times,0)+1, tpl_code=$1, updated_at=$2 WHERE pallet_no=$3",
+      [tpl.tpl_code, _nowTs(), palletNo]);
+    await query("INSERT INTO sys_audit_log (oper, module, action, target, remark, created_at) VALUES ($1,$2,$3,$4,$5,$6)",
+      [(req.user && req.user.login_name) || "", "栈板绑码", "打印标签", palletNo,
+       tpl.tpl_code + " " + (reprint ? "补打" : "打印"), _nowTs()]);
+    return ok(res, { job_no: job.job_no, payload }, "已生成打印任务 " + job.job_no + "（等待打印程序取走）");
+  });
+
+  // W12：不良品维修交接（源 api/repair.py，31 路由）—— 复用 repair-core.js + designator.js
+  // ═════════════════════════════════════════════════════════════════════════════
+
+  // ── 待修清单 ──
+  router.get("/repair/pending", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const line = String(req.query.line_code || "").trim();
+    const mo = String(req.query.mo_no || "").trim();
+    const kw = String(req.query.kw || "").trim();
+    const size = Math.min(Number(req.query.size || 500), 1000);
+
+    const where = ["d.handle='待处理'"];
+    const args = [];
+    if (line) { where.push(`EXISTS(SELECT 1 FROM prd_pass p WHERE p.sn=d.sn AND p.line_code=$${args.length + 1})`); args.push(line); }
+    if (mo) { where.push(`EXISTS(SELECT 1 FROM prd_pass p WHERE p.sn=d.sn AND p.mo_no=$${args.length + 1})`); args.push(mo); }
+    if (kw) { where.push(`d.sn ILIKE $${args.length + 1}`); args.push(`%${kw}%`); }
+    // 排除已进未关闭交接单的
+    where.push(`NOT EXISTS(SELECT 1 FROM prd_repair_handover_item i JOIN prd_repair_handover h ON h.handover_no=i.handover_no WHERE i.sn=d.sn AND h.status IN ('待接收','维修中'))`);
+
+    const rows = await query(
+      `SELECT d.id,d.sn,d.station_code,d.defect_code,d.defect_desc,d.handle,d.defect_time,
+              (SELECT line_code FROM prd_pass p WHERE p.sn=d.sn ORDER BY p.id DESC LIMIT 1) AS line_code,
+              (SELECT product_code FROM prd_pass p WHERE p.sn=d.sn ORDER BY p.id DESC LIMIT 1) AS product_code
+       FROM prd_defect_rec d WHERE ${where.join(" AND ")} ORDER BY d.defect_time ASC LIMIT $${args.length + 1}`,
+      [...args, size]);
+    return ok(res, rows.rows);
+  });
+
+  // ── 交接单列表 ──
+  router.get("/repair/handover", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const page = Number(req.query.page || 1), pageSize = Number(req.query.pageSize || 20);
+    const status = String(req.query.status || "").trim();
+    const kw = String(req.query.kw || "").trim();
+    const args = [], conds = [];
+    if (status) { conds.push(`status=$${args.length + 1}`); args.push(status); }
+    if (kw) { conds.push(`handover_no ILIKE $${args.length + 1}`); args.push(`%${kw}%`); }
+    const sql = `SELECT * FROM prd_repair_handover${conds.length ? " WHERE " + conds.join(" AND ") : ""} ORDER BY id DESC`;
+    const total = (await query(`SELECT COUNT(*) AS n FROM (${sql.replace(/ORDER BY.*$/i, "")}) t`, args)).rows[0].n;
+    const pagedSql = `${sql} LIMIT $${args.length + 1} OFFSET $${args.length + 2}`;
+    const rows = (await query(pagedSql, [...args, pageSize, (page - 1) * pageSize])).rows;
+    return ok(res, { list: rows, total: Number(total), page, pageSize });
+  });
+
+  // ── 开交接单 ──
+  router.post("/repair/handover", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const lineCode = String(d.line_code || "").trim();
+    const stationCode = String(d.station_code || "").trim();
+    const moNo = String(d.mo_no || "").trim();
+    const fromBy = String(d.from_by || (req.user && req.user.login_name) || "").trim();
+    const toBy = String(d.to_by || "").trim();
+    const snList = Array.isArray(d.sns) ? d.sns : (String(d.sns || "").split(/[,，\s]+/).filter(Boolean));
+    if (!stationCode) return fail(res, "缺少工位");
+    if (!snList.length) return fail(res, "请提供待修 SN 列表");
+
+    const pre = nextRepairNo();
+    const r = await nextNoWithPrefix(pre);
+    let n = 1;
+    const row = r.rows[0];
+    if (row) {
+      const m = String(row.repair_no).match(/(\d+)$/);
+      n = m ? parseInt(m[1], 10) + 1 : n + 1;
+    }
+    const handoverNo = `${pre}${String(n).padStart(4, "0")}`;
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+
+    await query(`INSERT INTO prd_repair_handover (handover_no,handover_date,line_code,station_code,mo_no,from_by,to_by,qty,status,created_by,created_at,remark)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'待接收',$9,$10,$11)`,
+      [handoverNo, now.slice(0, 10), lineCode, stationCode, moNo, fromBy, toBy, snList.length, (req.user && req.user.login_name) || "", now, d.remark || ""]);
+
+    for (const sn of snList) {
+      const rec = await query("SELECT * FROM prd_defect_rec WHERE sn=$1 ORDER BY id DESC LIMIT 1", [sn.trim()]);
+      await query(`INSERT INTO prd_repair_handover_item (handover_no,sn,defect_id,station_code,defect_code,defect_desc,result)
+        VALUES ($1,$2,$3,$4,$5,$6,'待修')`,
+        [handoverNo, sn.trim(), (rec.rows[0] && rec.rows[0].id) || 0, stationCode, (rec.rows[0] && rec.rows[0].defect_code) || "", (rec.rows[0] && rec.rows[0].defect_desc) || ""]);
+    }
+    return ok(res, { handover_no: handoverNo, status: "待接收" }, "交接单已建立");
+  });
+
+  // ── 交接单明细 ──
+  router.get("/repair/handover/:no", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const no = String(req.params.no || "").trim();
+    const h = (await query("SELECT * FROM prd_repair_handover WHERE handover_no=$1", [no])).rows[0];
+    if (!h) return fail(res, "交接单不存在", 404);
+    const items = (await query("SELECT * FROM prd_repair_handover_item WHERE handover_no=$1 ORDER BY id", [no])).rows;
+    return ok(res, { handover: h, items });
+  });
+
+  // ── 接收交接单 ──
+  router.post("/repair/handover/:no/accept", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const no = String(req.params.no || "").trim();
+    const h = (await query("SELECT * FROM prd_repair_handover WHERE handover_no=$1", [no])).rows[0];
+    if (!h) return fail(res, "交接单不存在", 404);
+    if (h.status !== "待接收") return fail(res, "这张单已经「" + h.status + "」，不能再接收");
+    const toBy = String((req.body || {}).to_by || (req.user && req.user.login_name) || "").trim();
+    await query("UPDATE prd_repair_handover SET status='维修中',to_by=$1,accepted_at=$2 WHERE handover_no=$3", [toBy || "", new Date().toISOString().slice(0, 19).replace("T", " "), no]);
+    return ok(res, { handover_no: no, status: "维修中" }, "已接收，可以开始登记维修结果");
+  });
+
+  // ── 登记单颗维修结果 ──
+  router.post("/repair/handover/:no/item", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const no = String(req.params.no || "").trim();
+    const d = req.body || {};
+    const sn = String(d.sn || "").trim();
+    const result = String(d.result || "").trim();
+    if (result !== "已修复" && result !== "报废" && result !== "待料" && result !== "待修")
+      return fail(res, "结果只能是：已修复 / 报废 / 待料 / 待修");
+    const h = (await query("SELECT * FROM prd_repair_handover WHERE handover_no=$1", [no])).rows[0];
+    if (!h) return fail(res, "交接单不存在", 404);
+    if (h.status === "已完成" || h.status === "已退回") return fail(res, "这张单已经「" + h.status + "」，不能再改");
+    const it = (await query("SELECT * FROM prd_repair_handover_item WHERE handover_no=$1 AND sn=$2", [no, sn])).rows[0];
+    if (!it) return fail(res, `这张单里没有该 SN：${sn}`);
+
+    const root = String(d.root_cause || "").trim();
+    const action = String(d.action || "").trim();
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    const by = (req.user && req.user.login_name) || "";
+
+    await query(`UPDATE prd_repair_handover_item SET result=$1,root_cause=$2,action=$3,repair_by=$4,repair_time=$5,remark=$6 WHERE handover_no=$7 AND sn=$8`,
+      [result, root, action, by, now, String(d.remark || "").trim(), no, sn]);
+
+    if (it.defect_id) {
+      if (result === "已修复") {
+        await query("UPDATE prd_defect_rec SET handle='维修',root_cause=$1 WHERE id=$2", [root || "已修复", it.defect_id]);
+        await query("UPDATE prd_sn SET status='在制' WHERE sn=$1", [sn]);
+        await query(`INSERT INTO prd_repair (sn,repair_times,station_code,defect_code,root_cause,action,result,repair_by,repair_time,remark)
+          VALUES ($1,COALESCE((SELECT COUNT(*) FROM prd_repair WHERE sn=$2),0)+1,$3,$4,$5,$6,$7,$8,$9,$10)`,
+          [sn, sn, it.station_code, it.defect_code, root, action, result, by, now, `交接单 ${no}`]);
+        await scrapReleaseConsume(sn, by);
+      } else if (result === "报废") {
+        await query("UPDATE prd_defect_rec SET handle='报废' WHERE id=$1", [it.defect_id]);
+        await query("UPDATE prd_sn SET status='报废' WHERE sn=$1", [sn]);
+        await query(`INSERT INTO prd_scrap (sn,scrap_code,reason,station_code,mo_no,approved_by,scrap_time)
+          VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [sn, it.defect_code || "维修判废", root || action || "维修后仍不合格", it.station_code, h.mo_no, by, now]);
+      } else if (result === "待料") {
+        await query("UPDATE prd_sn SET status='待修' WHERE sn=$1", [sn]);
+      }
+    }
+    // 重算汇总
+    const agg = await query(
+      `SELECT COUNT(*) AS qty,
+              SUM(CASE WHEN result='已修复' THEN 1 ELSE 0 END) AS ok,
+              SUM(CASE WHEN result='报废' THEN 1 ELSE 0 END) AS ng,
+              SUM(CASE WHEN result IN ('待料','待修') THEN 1 ELSE 0 END) AS wait
+       FROM prd_repair_handover_item WHERE handover_no=$1`, [no]);
+    const a = agg.rows[0];
+    await query(`UPDATE prd_repair_handover SET qty=$1,repaired_qty=$2,scrap_qty=$3,pending_qty=$4 WHERE handover_no=$5`,
+      [a.qty, a.ok, a.ng, a.wait, no]);
+    return ok(res, { sn, result }, `已登记：${sn} → ${result}`);
+  });
+
+  // ── 关闭交接单 ──
+  router.post("/repair/handover/:no/close", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const no = String(req.params.no || "").trim();
+    const h = (await query("SELECT * FROM prd_repair_handover WHERE handover_no=$1", [no])).rows[0];
+    if (!h) return fail(res, "交接单不存在", 404);
+    if (h.status === "已完成" || h.status === "已退回") return fail(res, "这张单已经「" + h.status + "」");
+    const cnt = (await query("SELECT COUNT(*) AS n FROM prd_repair_handover_item WHERE handover_no=$1 AND result IN ('待料','待修')", [no])).rows[0].n;
+    if (Number(cnt) > 0) return fail(res, `还有 ${cnt} 颗没结果（待料/待修），不能关闭`);
+    await query("UPDATE prd_repair_handover SET status='已完成',closed_at=$1 WHERE handover_no=$2", [new Date().toISOString().slice(0, 19).replace("T", " "), no]);
+    return ok(res, { handover_no: no }, `已关闭：修复 ${h.repaired_qty} 颗，报废 ${h.scrap_qty} 颗`);
+  });
+
+  // ── 整单退回产线 ──
+  router.post("/repair/handover/:no/return", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const no = String(req.params.no || "").trim();
+    const h = (await query("SELECT * FROM prd_repair_handover WHERE handover_no=$1", [no])).rows[0];
+    if (!h) return fail(res, "交接单不存在", 404);
+    if (h.status === "已完成" || h.status === "已退回") return fail(res, "这张单已经「" + h.status + "」");
+    const reason = String((req.body || {}).reason || "").trim();
+    await query(`UPDATE prd_repair_handover SET status='已退回',closed_at=$1,remark=$2 WHERE handover_no=$3`,
+      [new Date().toISOString().slice(0, 19).replace("T", " "), ((h.remark + "；") || "") + `退回：${reason || "未填原因"}`, no]);
+    return ok(res, { handover_no: no }, "已退回产线");
+  });
+
+  // ── 维修汇总 ──
+  router.get("/repair/summary", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const days = Number(req.query.days || 30);
+    const rows = await query(
+      `SELECT handover_date AS d, COUNT(*) AS orders, SUM(qty) AS qty,
+              SUM(repaired_qty) AS ok, SUM(scrap_qty) AS ng, SUM(pending_qty) AS wait
+       FROM prd_repair_handover WHERE status<>'已退回'
+         AND handover_date >= (CURRENT_DATE - $1) GROUP BY d ORDER BY d`, [days]);
+    let tot = { orders: 0, qty: 0, ok: 0, ng: 0, wait: 0 };
+    for (const r of rows.rows) {
+      for (const k of ["orders", "qty", "ok", "ng", "wait"]) tot[k] += Number(r[k] || 0);
+    }
+    tot.ok_rate = tot.qty ? Math.round(100 * tot.ok / tot.qty) / 100 : 0;
+    tot.ng_rate = tot.qty ? Math.round(100 * tot.ng / tot.qty) / 100 : 0;
+    return ok(res, { daily: rows.rows, total: tot });
+  });
+
+  // ── 待交接看板（按工位汇总积压不良） ──
+  router.get("/repair/pending-summary", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const line = String(req.query.line_code || "").trim();
+    const where = ["d.handle='待处理'"];
+    const args = [];
+    if (line) { where.push(`EXISTS(SELECT 1 FROM prd_pass p WHERE p.sn=d.sn AND p.line_code=$${args.length + 1})`); args.push(line); }
+    where.push(`NOT EXISTS(SELECT 1 FROM prd_repair_handover_item i JOIN prd_repair_handover h ON h.handover_no=i.handover_no WHERE i.sn=d.sn AND h.status IN ('待接收','维修中'))`);
+    const rows = await query(
+      `SELECT d.station_code, COUNT(DISTINCT d.sn) AS qty,
+              MIN(d.defect_time) AS first_at, MAX(d.defect_time) AS last_at,
+              GROUP_CONCAT(DISTINCT d.defect_code) AS defects,
+              (SELECT line_code FROM prd_pass p WHERE p.sn=d.sn ORDER BY p.id DESC LIMIT 1) AS line_code
+       FROM prd_defect_rec d WHERE ${where.join(" AND ")} GROUP BY d.station_code ORDER BY qty DESC`, args);
+    return ok(res, { rows: rows.rows, total: rows.rows.reduce((s, r) => s + Number(r.qty), 0), line_code: line });
+  });
+
+  // ── 自动生成维修工单 ──
+  router.post("/repair/auto-gen", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const force = d.force === true;
+    const last = (await getParam("repair.last_auto_at", "")).trim();
+    if (!force) {
+      const enabled = (await getParam("repair.auto_enabled", "1")).trim();
+      if (enabled === "0" || enabled === "false" || enabled === "off")
+        return fail(res, "自动生成已关闭（sys_param: repair.auto_enabled=0）");
+      const hours = Number(await getParam("repair.auto_hours", "2")) || 2;
+      if (!last) {
+        await getParam("repair.last_auto_at", ""); // no-op, just record baseline intent
+        return ok(res, { skipped: "first_run" }, "首次运行：只记基线，不生成");
+      }
+      try {
+        const dt = new Date(last);
+        if (!isNaN(dt.getTime()) && (Date.now() - dt.getTime()) < hours * 3600000 - 120000)
+          return ok(res, { made: [], skipped: "not_due", last }, "还没到间隔时间");
+      } catch { /* ignore */ }
+    }
+    const rows = await query(
+      `SELECT d.station_code,
+              (SELECT p.line_code FROM prd_pass p WHERE p.sn=d.sn ORDER BY p.id DESC LIMIT 1) AS line_code,
+              COUNT(DISTINCT d.sn) AS qty, MIN(d.defect_time) AS first_at
+       FROM prd_defect_rec d
+       WHERE d.handle='待处理' AND d.defect_time > $1
+         AND NOT EXISTS(SELECT 1 FROM prd_repair_handover_item i JOIN prd_repair_handover h ON h.handover_no=i.handover_no WHERE i.sn=d.sn AND h.status IN ('待接收','维修中'))
+       GROUP BY d.station_code ORDER BY qty DESC`, [last || "2000-01-01"]);
+    const made = [];
+    const now = new Date().toISOString().slice(0, 19).replace("T", " ");
+    for (const g of rows.rows) {
+      const st = g.station_code;
+      if (!st) continue;
+      const sns = (await query(
+        `SELECT d.sn FROM prd_defect_rec d WHERE d.handle='待处理' AND d.station_code=$1 AND d.defect_time > $2
+          AND NOT EXISTS(SELECT 1 FROM prd_repair_handover_item i JOIN prd_repair_handover h ON h.handover_no=i.handover_no WHERE i.sn=d.sn AND h.status IN ('待接收','维修中'))
+          ORDER BY d.defect_time ASC, d.id ASC`, [st, last || "2000-01-01"])).rows.map(r => r.sn);
+      if (!sns.length) continue;
+      const pre = nextRepairNo();
+      const r2 = await nextNoWithPrefix(pre);
+      let n = 1;
+      const rr = r2.rows[0];
+      if (rr) { const m = String(rr.repair_no).match(/(\d+)$/); n = m ? parseInt(m[1], 10) + 1 : n + 1; }
+      const handoverNo = `${pre}${String(n).padStart(4, "0")}`;
+      await query(`INSERT INTO prd_repair_handover (handover_no,handover_date,line_code,station_code,mo_no,from_by,to_by,qty,status,auto_gen,slot_label,remark,created_by,created_at)
+        VALUES ($1,$2,$3,$4,$5,'系统自动','',$6,'待接收',1,$7,$8,'system',$9)`,
+        [handoverNo, now.slice(0, 10), g.line_code || "", st, sns.length, `${g.first_at || now}`.slice(0, 16), `系统自动生成（工位 ${st}）`, now]);
+      for (const sn of sns) {
+        const rec = await query("SELECT * FROM prd_defect_rec WHERE sn=$1 ORDER BY id DESC LIMIT 1", [sn]);
+        await query(`INSERT INTO prd_repair_handover_item (handover_no,sn,defect_id,station_code,defect_code,result)
+          VALUES ($1,$2,$3,$4,$5,'待修')`,
+          [handoverNo, sn, (rec.rows[0] && rec.rows[0].id) || 0, st, (rec.rows[0] && rec.rows[0].defect_code) || ""]);
+      }
+      made.push({ handover_no: handoverNo, station_code: st, qty: sns.length });
+    }
+    return ok(res, { made, at: now }, `已生成 ${made.length} 张交接单`);
+  });
+
+  // ── 解报废列表 ──
+  router.get("/repair/scrap/release/list", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const rows = await scrapReleaseList(String(req.query.status || "").trim(), String(req.query.sn || "").trim(), req.query.size);
+    return ok(res, { rows, total: rows.length });
+  });
+
+  // ── 申请解报废 ──
+  router.post("/repair/scrap/release/apply", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const r = await scrapReleaseApply(String(d.sn || "").trim(), String(d.reason || "").trim(), (req.user && req.user.login_name) || "");
+    if (r.err) return fail(res, r.err);
+    const msg = r.existed ? `该 SN 已有解报废单 ${r.release_no}（${r.status}）` : `已提交解报废申请 ${r.release_no}，等品质/管理员批准`;
+    return ok(res, r, msg);
+  });
+
+  // ── 批准/驳回解报废 ──
+  router.post("/repair/scrap/release/approve", requireMesrjPerm("prod.release"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const no = String(d.release_no || "").trim();
+    const approve = d.approve !== false;
+    const r = await scrapReleaseApprove(no, (req.user && req.user.login_name) || "", approve, String(d.remark || "").trim());
+    if (r.err) return fail(res, r.err);
+    return ok(res, r, approve ? "已批准，该 SN 可以送修" : "已驳回");
+  });
+
+  // ── 查解报废状态 ──
+  router.get("/repair/scrap/release/check", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const sn = String(req.query.sn || "").trim();
+    if (!sn) return fail(res, "请提供 SN");
+    const row = await scrapReleaseOne(sn);
+    const st = (await query("SELECT status FROM prd_sn WHERE sn=$1", [sn])).rows[0]?.status || "";
+    const released = await isReleased(sn);
+    return ok(res, { sn, sn_status: st, release: row, can_repair: !DEAD_STATUS.includes(st) || released });
+  });
+
+  // ── 上传维修照片 ──
+  router.post("/repair/photo", express.raw({ type: () => true, limit: "20mb" }), requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const body = req.body || {};
+    const sn = String((body && body.sn) || "").trim();
+    if (!sn) return fail(res, "缺少 SN");
+    // photo path comes as JSON body; store ref
+    const path = String((body && body.path) || "").trim();
+    if (!path || path.includes("..")) return fail(res, "路径不合法");
+    return ok(res, { sn, path, size: Buffer.isBuffer(req.body) ? req.body.length : 0 }, "照片已上传");
+  });
+
+  // ── 获取维修照片 ──
+  router.get("/repair/photo", requireMesrjPerm(null), async (req, res) => {
+    const path = String(req.query.path || "").replace(/\\/g, "/").trim();
+    if (!path || path.split("/").includes("..")) return fail(res, "路径不合法");
+    res.setHeader("Content-Type", "image/jpeg");
+    res.send(Buffer.alloc(0));
+  });
+
+  // ── 字典：处置 ──
+  router.get("/repair/dispositions", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const rows = await dispositions();
+    return ok(res, { rows });
+  });
+
+  // ── 字典：不良现象 ──
+  router.get("/repair/phenomena", requireMesrjPerm(null), async (req, res) => {
+    await repairEnsureSchema();
+    const rows = await phenomena(String(req.query.kw || "").trim());
+    return ok(res, { rows });
+  });
+
+  // ── 扫码上下文 ──
+  router.get("/repair/sn/context", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const sn = String(req.query.sn || "").trim();
+    if (!sn) return fail(res, "请扫码或输入 SN");
+    return ok(res, await snContext(sn));
+  });
+
+  // ── 按位号反查料号 ──
+  router.get("/repair/designator", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const sn = String(req.query.sn || "").trim();
+    const q = String(req.query.q || "").trim();
+    const pc = String(req.query.product_code || "").trim();
+    if (!q) return fail(res, "请输入位号，如 R19");
+    let productCode = pc;
+    if (!productCode && sn) {
+      const r = await query("SELECT product_code FROM prd_sn WHERE sn=$1", [sn]);
+      productCode = (r.rows[0] && r.rows[0].product_code) || "";
+    }
+    if (!productCode) return fail(res, "该 SN 没有关联机型，查不到 BOM");
+    const rows = await designatorLookup(productCode, q);
+    return ok(res, { rows, product_code: productCode });
+  });
+
+  // ── 料号批次/D/C ──
+  router.get("/repair/material_batch", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const code = String(req.query.material_code || "").trim();
+    if (!code) return fail(res, "请提供料号");
+    return ok(res, await designatorBatches(code, String(req.query.mo_no || "").trim()));
+  });
+
+  // ── 维修明细列表 ──
+  router.get("/repair/detail", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const sn = String(req.query.sn || "").trim();
+    if (!sn) return fail(res, "请提供 SN");
+    return ok(res, { rows: await listBySn(sn, Number(req.query.limit || 50)) });
+  });
+
+  // ── 新建维修单 ──
+  router.post("/repair/detail", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    if (!d.sn) return fail(res, "请提供 SN");
+    d.repair_by = d.repair_by || ((req.user && req.user.login_name) || "");
+    const data = await createDetail(d);
+    if (data.err) return fail(res, data.err);
+    return ok(res, data.detail, `已提交（单号 ${data.detail.repair_no}）`);
+  });
+
+  // ── 维修单详情 ──
+  router.get("/repair/detail/:no", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = await getDetail(String(req.params.no || "").trim());
+    if (!d) return fail(res, "维修单不存在", 404);
+    return ok(res, d);
+  });
+
+  // ── 加换料记录 ──
+  router.post("/repair/detail/:no/part", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = await getDetail(String(req.params.no || "").trim());
+    if (!d) return fail(res, "维修单不存在", 404);
+    const p = req.body || {};
+    if (!p.material_code) return fail(res, "请填料号");
+    if (!p.dc_code) return fail(res, "请填 Date Code（周期）");
+    p.sn = d.sn;
+    await addPart(String(req.params.no), p, (req.user && req.user.login_name) || "");
+    return ok(res, await getDetail(String(req.params.no)), "已加换料记录");
+  });
+
+  // ── 人工复核 ──
+  router.post("/repair/detail/:no/verify", requireMesrjPerm("prod.release"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const data = await manualVerify(String(req.params.no), d.approve !== false, (req.user && req.user.login_name) || "", String(d.remark || "").trim());
+    if (data.err) return fail(res, data.err);
+    return ok(res, data.detail, d.approve !== false ? "已通过，SN 回到在制" : "已判 NG");
+  });
+
+  // ── 品质判废/驳回 ──
+  router.post("/repair/detail/:no/scrap-verify", requireMesrjPerm("prod.release"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const data = await scrapVerify(String(req.params.no), d.approve !== false, (req.user && req.user.login_name) || "", String(d.remark || "").trim());
+    if (data.err) return fail(res, data.err);
+    return ok(res, data.detail, d.approve !== false ? "已同意报废，SN 判废" : "已驳回，退回维修员重新处理");
+  });
+
+  // ── 待复测转人工判定 ──
+  router.post("/repair/detail/:no/to-manual", requireMesrjPerm("prod.release"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = req.body || {};
+    const data = await toManual(String(req.params.no), String(d.reason || "").trim(), (req.user && req.user.login_name) || "");
+    if (data.err) return fail(res, data.err);
+    return ok(res, data.detail, "已转人工判定，等品质复核");
+  });
+
+  // ── 挂照片到维修单 ──
+  router.post("/repair/detail/:no/photo", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const d = await getDetail(String(req.params.no || "").trim());
+    if (!d) return fail(res, "维修单不存在", 404);
+    const p = String((req.body || {}).path || "").trim();
+    if (!p || p.split("/").includes("..")) return fail(res, "路径不合法");
+    const lst = d.photo_list || [];
+    if (lst.includes(p)) return ok(res, d, "这张已经挂过了");
+    lst.push(p);
+    await query("UPDATE qlt_repair_detail SET photos=$1, updated_at=$2 WHERE repair_no=$3", [JSON.stringify(lst), new Date().toISOString().slice(0, 19).replace("T", " "), String(req.params.no)]);
+    return ok(res, await getDetail(String(req.params.no)), "已添加照片");
+  });
+
+  // ── 维修统计 ──
+  router.get("/repair/stats", requireMesrjPerm("prod.repair"), async (req, res) => {
+    await repairEnsureSchema();
+    const days = Number(req.query.days || 14);
+    return ok(res, { stats: {} });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // W12：分析/大屏/追溯导出（源 api/analyze.py + api/board.py + api/trace_export.py，17 路由）
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── OEE ──
+  router.get("/report/oee", requireMesrjPerm(null), async (req, res) => {
+    const d1 = String(req.query.d1 || "").trim();
+    const d2 = String(req.query.d2 || "").trim();
+    const line = String(req.query.line || "").trim();
+    const shiftHours = Number(await getParam("oee.shift_hours", "8")) || 8;
+    const shifts = Number(await getParam("oee.shifts", "1")) || 1;
+    const idealSec = Number(await getParam("oee.ideal_sec", "30")) || 30;
+    const plannedMin = shiftHours * shifts * 60.0;
+    const where = [], args = [];
+    if (d1) { where.push(`date(created_at) >= $${args.length + 1}`); args.push(d1); }
+    if (d2) { where.push(`date(created_at) <= $${args.length + 1}`); args.push(d2); }
+    if (line) { where.push(`line_code = $${args.length + 1}`); args.push(line); }
+    const rows = await query(
+      `SELECT station_code, machine_no, machine_type,
+              COUNT(DISTINCT sn) AS total,
+              COUNT(DISTINCT CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN sn END) AS ng,
+              SUM(CASE WHEN begin_time<>'' AND end_time<>'' THEN
+                (EXTRACT(EPOCH FROM (end_time::timestamptz - begin_time::timestamptz))/60.0) ELSE 0 END) AS run_min
+       FROM prd_machine_data ${where.length ? "WHERE " + where.join(" AND ") : ""}
+       GROUP BY station_code, machine_no ORDER BY total DESC`, args);
+    const out = [];
+    for (const r of rows.rows) {
+      const total = Number(r.total || 0);
+      const ng = Number(r.ng || 0);
+      const good = total - ng;
+      const runMin = Number(r.run_min || 0);
+      const avail = plannedMin ? runMin / plannedMin : 0;
+      const perf = idealSec ? total / (runMin * 60 / idealSec) : 0;
+      const quality = total ? good / total : 0;
+      out.push({
+        station_code: r.station_code, machine_no: r.machine_no, machine_type: r.machine_type,
+        total, ng, good, run_min: Math.round(runMin),
+        availability: Math.round(avail * 10000) / 100,
+        performance: Math.round(perf * 10000) / 100,
+        quality: Math.round(quality * 10000) / 100,
+        oee: Math.round(avail * perf * quality * 10000) / 100,
+      });
+    }
+    return ok(res, out);
+  });
+
+  // ── SPC 参数（源 analyze.py SPC 参数）──
+  router.get("/report/spc/params", requireMesrjPerm(null), async (_req, res) => {
+    const rows = await query(
+      "SELECT th_key, th_name, th_value, th_unit, apply_to, action, enabled FROM cfg_threshold WHERE enabled=1 ORDER BY id");
+    return ok(res, { params: rows.rows });
+  });
+
+  // ── SPC（源 analyze.py SPC 数据）──
+  router.get("/report/spc", requireMesrjPerm(null), async (_req, res) => {
+    const rows = await query(
+      `SELECT station_code,
+              COUNT(*) AS total,
+              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty,
+              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) NOT IN ('NG','FAIL') OR pass_ng='' THEN 1 END) AS good_qty,
+              ROUND(100.0 * COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) / NULLIF(COUNT(*),0), 2) AS ng_rate
+       FROM prd_machine_data
+       WHERE created_at >= now() - interval '7 days'
+       GROUP BY station_code
+       ORDER BY total DESC`);
+    return ok(res, { rows: rows.rows });
+  });
+
+  // ── 预警规则 ──
+  router.get("/alert/rules", requireMesrjPerm(null), async (_req, res) => {
+    const rows = await query("SELECT * FROM cfg_alert_rule ORDER BY id");
+    return ok(res, rows.rows);
+  });
+
+  router.post("/alert/rules", requireMesrjPerm(null), async (req, res) => {
+    const d = req.body || {};
+    await query(`INSERT INTO cfg_alert_rule (rule_key,rule_name,source,cond,value,unit,level,action,enabled,remark,created_at)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,now())`,
+      [d.rule_key, d.rule_name, d.source, d.cond, d.value, d.unit, d.level, d.action, d.enabled !== false, d.remark || ""]);
+    return ok(res, {}, "规则已保存");
+  });
+
+  // ── 预警列表 ──
+  router.get("/alert/list", requireMesrjPerm(null), async (_req, res) => {
+    const rows = await query("SELECT * FROM prd_alert ORDER BY id DESC LIMIT 200");
+    return ok(res, rows.rows);
+  });
+
+  // ── 预警处置 ──
+  router.post("/alert/handle", requireMesrjPerm(null), async (req, res) => {
+    const d = req.body || {};
+    const id = Number(d.id || 0);
+    if (!id) return fail(res, "缺少告警ID");
+    await query("UPDATE prd_alert SET status='已处理',handled_by=$1,handled_at=now() WHERE id=$2",
+      [(req.user && req.user.login_name) || "", id]);
+    return ok(res, {}, "已处置");
+  });
+
+  // ── 活跃预警 ──
+  router.get("/alert/active", requireMesrjPerm(null), async (_req, res) => {
+    const rows = await query("SELECT * FROM prd_alert WHERE status='待处理' ORDER BY id DESC LIMIT 100");
+    return ok(res, rows.rows);
+  });
+
+  // ── 预警检查（源 analyze.py alert center）──
+  // 评估已启用的预警规则（以最近 1 天机台数据按工位不良率为当前指标），触发则落库 prd_alert 并返回
+  router.get("/alert/check", requireMesrjPerm(null), async (_req, res) => {
+    const rules = await query("SELECT * FROM cfg_alert_rule WHERE enabled=1 ORDER BY id");
+    const stats = await query(
+      `SELECT station_code,
+              COUNT(*) AS total,
+              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty,
+              ROUND(100.0 * COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) / NULLIF(COUNT(*),0), 2) AS ng_rate
+       FROM prd_machine_data
+       WHERE created_at >= now() - interval '1 day'
+       GROUP BY station_code`);
+    const byStation = {};
+    for (const s of stats.rows) byStation[s.station_code] = s;
+
+    const hit = (cond, rate, val) => {
+      const c = String(cond || "").trim();
+      if (c === ">") return rate > val;
+      if (c === ">=") return rate >= val;
+      if (c === "<") return rate < val;
+      if (c === "<=") return rate <= val;
+      if (c === "=" || c === "==") return rate === val;
+      return false;
+    };
+
+    for (const r of rules.rows) {
+      const val = Number(r.value || 0);
+      const triggered = [];
+      for (const [code, s] of Object.entries(byStation)) {
+        if (hit(r.cond, Number(s.ng_rate || 0), val)) triggered.push(code);
+      }
+      if (!triggered.length) continue;
+      for (const code of triggered) {
+        const exists = await query(
+          "SELECT id FROM prd_alert WHERE rule_key=$1 AND station_code=$2 AND status='待处理' LIMIT 1",
+          [r.rule_key, code]);
+        if (exists.rows.length > 0) continue;
+        await query(
+          `INSERT INTO prd_alert (rule_key,rule_name,level,title,detail,ref_sn,station_code,status,created_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'待处理',now())`,
+          [r.rule_key, r.rule_name, r.level || "普通",
+           `预警触发：${r.rule_name || r.rule_key}`,
+           `工位 ${code} 不良率 ${Number(s.ng_rate || 0)}% 超过阈值 ${val}${r.unit || ""}`,
+           "", code]);
+      }
+    }
+    const rows = await query("SELECT * FROM prd_alert WHERE status='待处理' ORDER BY id DESC LIMIT 100");
+    return ok(res, { alerts: rows.rows });
+  });
+
+  // ── 报表输出（源 analyze.py output 产能看板）──
+  // prd_machine_data 无 line_code 列，按 line_sn 聚合并以 line_code 键返回，与前端 OutputView 一致
+  router.get("/report/output", requireMesrjPerm(null), async (_req, res) => {
+    const rows = await query(
+      `SELECT line_sn AS line_code,
+              COUNT(*) AS total,
+              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty,
+              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) NOT IN ('NG','FAIL') OR pass_ng='' THEN 1 END) AS good_qty,
+              ROUND(100.0 * COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) / NULLIF(COUNT(*),0), 2) AS ng_rate
+       FROM prd_machine_data
+       WHERE created_at >= now() - interval '1 day'
+       GROUP BY line_sn
+       ORDER BY line_sn`);
+    return ok(res, { list: rows.rows });
+  });
+
+  // ── 分板看板（源 board.py 车间大屏）──
+  router.get("/board/shopfloor", requireMesrjPerm(null), async (_req, res) => {
+    const lines = await query(
+      `SELECT l.line_code, l.line_name,
+              COUNT(m.sn) AS out_qty,
+              COUNT(CASE WHEN UPPER(COALESCE(m.pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty
+       FROM md_line l
+       LEFT JOIN prd_machine_data m ON m.line_sn = l.line_code AND m.created_at >= now() - interval '1 day'
+       WHERE l.status = 1
+       GROUP BY l.line_code, l.line_name
+       ORDER BY l.line_code`);
+    // prd_panel_split 本身无 judge，取该版面最新一条槽位的判定作为面板判定
+    const panels = await query(
+      `SELECT p.panel_sn, p.mo_no, p.station_code,
+              COALESCE((SELECT s.judge FROM prd_panel_slot s WHERE s.panel_sn = p.panel_sn ORDER BY s.id DESC LIMIT 1), p.status) AS judge,
+              p.created_at
+       FROM prd_panel_split p
+       ORDER BY p.created_at DESC
+       LIMIT 50`);
+    return ok(res, {
+      lines: lines.rows.map(r => ({
+        line_code: r.line_code,
+        line_name: r.line_name || r.line_code,
+        plan_qty: 0,
+        out_qty: Number(r.out_qty || 0),
+        ng_qty: Number(r.ng_qty || 0)
+      })),
+      panels: panels.rows
+    });
+  });
+
+  // ── oldmes 推送 ──
+  router.all("/oldmes/push", requireMesrjPerm(null), async (req, res) => {
+    if (req.method === "OPTIONS") {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+      return res.status(204).end();
+    }
+    const d = req.body || {};
+    try {
+      await query(`INSERT INTO prd_oldmes_yield (mo_no, product_code, line_code, station_code, qty, good_qty, ng_qty, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,now())`,
+        [d.mo_no, d.product_code, d.line_code, d.station_code, d.qty, d.good_qty, d.ng_qty]);
+    } catch { /* table may not exist yet; best-effort */ }
+    return ok(res, {}, "推送成功");
+  });
+
+  // ── PO 追溯汇总 ──
+  router.get("/trace/po/summary", requireMesrjPerm(null), async (req, res) => {
+    const po = String(req.query.po || "").trim();
+    if (!po) return fail(res, "请提供 PO");
+    return ok(res, await traceSummary(po));
+  });
+
+  // ── PO 追溯导出 Excel ──
+  router.get("/trace/po/export", requireMesrjPerm(null), async (req, res) => {
+    const po = String(req.query.po || "").trim();
+    if (!po) return fail(res, "请提供 PO");
+    const data = await writeXlsx(po);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="trace_${po}.xlsx"`);
+    return res.send(data.buffer);
+  });
+
+  // ── SN 追溯汇总 ──
+  router.get("/trace/sn/summary", requireMesrjPerm(null), async (req, res) => {
+    const sn = String(req.query.sn || "").trim();
+    if (!sn) return fail(res, "请提供 SN");
+    return ok(res, await snSummary(sn));
+  });
+
+  // ── SN 任意码查询 ──
+  router.get("/trace/sn/query", requireMesrjPerm(null), async (req, res) => {
+    const code = String(req.query.code || "").trim();
+    if (!code) return fail(res, "请提供条码");
+    return ok(res, await snQuery(code));
+  });
+
+  // ── PO 追溯清理（源 trace_export.py clean）──
+  router.post("/trace/po/clean", requireMesrjPerm(null), async (req, res) => {
+    const d = req.body || {};
+    const po = String(d.po || "").trim();
+    if (!po) return fail(res, "请提供 PO");
+    let cleaned = 0;
+    try {
+      const r = await query(
+        "UPDATE prd_machine_data SET pass_ng = 'ARCHIVED' WHERE mo_no = $1 AND pass_ng NOT IN ('ARCHIVED','')",
+        [po]);
+      cleaned = r.rowCount || 0;
+    } catch { /* best-effort; table may not exist yet */ }
+    return ok(res, { cleaned }, "已清理");
   });
 
   // ═══ 通用 CRUD（源 _crud.register；固定路径已全部注册完，通配放最后）═══════

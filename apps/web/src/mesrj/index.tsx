@@ -18,6 +18,11 @@ import { DeviceConfigView, StationPassView, MachineDataView, PackingView, ItfLog
 import { EcNView } from "./views-w9";
 import { SmtaView, FeederSlotView, TimesView } from "./views-w10";
 import { PackView } from "./views-w11";
+import {
+  PanelSplitView, PanelLayoutView, PalletView, RepairHandoverView, ScrapReleaseView,
+  RepairBoardView, RepairDeskView, OeeView, SpcView, OutputView, AlertView,
+  ShopfloorBoardView, PoExportView,
+} from "./views-w12";
 
 interface SysInfo {
   sys_name: string;
@@ -111,6 +116,20 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "cfg.times") return <TimesView locale={locale} />;
     // W11：外箱绑码（装箱站）
     if (active === "exec.pack") return <PackView locale={locale} />;
+    // W12：分板/拼版 · 栈板 · 维修交接/解报废 · 分析/大屏/追溯导出
+    if (active === "exec.panelsplit") return <PanelSplitView locale={locale} />;
+    if (active === "cfg.panellayout") return <PanelLayoutView locale={locale} />;
+    if (active === "exec.pallet") return <PalletView locale={locale} />;
+    if (active === "exec.repairhandover") return <RepairHandoverView locale={locale} />;
+    if (active === "exec.scraprelease") return <ScrapReleaseView locale={locale} />;
+    if (active === "qlt.repairboard") return <RepairBoardView locale={locale} />;
+    if (active === "qlt.repairdesk") return <RepairDeskView locale={locale} />;
+    if (active === "report.oee") return <OeeView locale={locale} />;
+    if (active === "report.spc") return <SpcView locale={locale} />;
+    if (active === "report.output") return <OutputView locale={locale} />;
+    if (active === "report.alert") return <AlertView locale={locale} />;
+    if (active === "report.board") return <ShopfloorBoardView locale={locale} />;
+    if (active === "qlt.poexport") return <PoExportView locale={locale} />;
     // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
     if (active === "exec.snpool") return <SnPoolView locale={locale} />;
     if (active === "exec.snrule") return <SnRuleView locale={locale} />;
