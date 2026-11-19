@@ -121,7 +121,7 @@ export async function saveLayout(d) {
   if (id) {
     await query(
       `UPDATE cfg_panel_layout SET cols=$1, rows=$2, product_code=$3, serpentine=$4,
-       seq_offset=$5, total=$6, enabled=$7, remark=$8, updated_at=now()
+       seq_offset=$5, total=$6, enabled=$7, remark=$8
        WHERE id=$9`,
       [cols, rows, pc, serpentine, seq_offset, total, enabled, remark, id],
     );
@@ -139,7 +139,7 @@ export async function saveLayout(d) {
 
 /** 删除布局（软删除：enabled=0） */
 export async function deleteLayout(id) {
-  await query("UPDATE cfg_panel_layout SET enabled=0, updated_at=now() WHERE id=$1", [id]);
+  await query("UPDATE cfg_panel_layout SET enabled=0 WHERE id=$1", [id]);
   return { ok: true };
 }
 
@@ -222,9 +222,9 @@ export async function alignLayout(sn) {
   const childSns = rels.rows.map(r => r.child_sn);
   const ph = childSns.map((_, i) => `$${i + 1}`).join(",");
   const boardRows = await query(
-    `SELECT DISTINCT board_number FROM prd_aoi_board WHERE pcb_sn IN (${ph})`, childSns,
+    `SELECT DISTINCT board_no FROM prd_aoi_board WHERE pcb_sn IN (${ph})`, childSns,
   );
-  const boardNums = [...new Set(boardRows.rows.map(r => r.board_number).filter(Boolean))];
+  const boardNums = [...new Set(boardRows.rows.map(r => r.board_no).filter(Boolean))];
   if (!boardNums.length) return null;
   // 用板号去 cfg_panel_layout 找 total 匹配的
   const layouts = await query(
@@ -683,6 +683,7 @@ export {
   _agingOf, _buildView, _posOfIndex0,
   panelFromAoi, panelSnsFor,
   modelOfMo, resolveLayout,
+  matchLayout,
 };
 
 export default {

@@ -52,7 +52,7 @@ import { sqlQuery } from "./src/sqlserver.js";
 import { mysqlQuery, mysqlGetOne, psQuery, psGetOne } from "./src/mysql.js";
 import { TtlCache } from "./src/_shared/cache.js";
 import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
-import { envelope, listEnvelope, mutateEnvelope, errorEnvelope } from "./src/shared/helpers.js";
+import { envelope, listEnvelope, mutateEnvelope, errorEnvelope, successEnvelope } from "./src/shared/helpers.js";
 import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
 import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
 import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
@@ -14211,6 +14211,22 @@ function requirePermission(...requiredPerms) {
     const hasAll = req.user.permissions.includes("*") || requiredPerms.every((p) => req.user.permissions.includes(p));
     if (!hasAll) {
       return res.status(403).json(errorEnvelope("FORBIDDEN", `Missing required permission: ${requiredPerms.join(", ")}`));
+    }
+    next();
+  };
+}
+
+// Role-based access control matching WMS reference NeedRoles decorator.
+// Checks req.user.roleKey against allowed role codes.
+function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    if (!req.user) {
+      return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
+    }
+    const roleKey = req.user.roleKey || "";
+    const hasRole = allowedRoles.includes("*") || allowedRoles.includes(roleKey);
+    if (!hasRole) {
+      return res.status(403).json(errorEnvelope("FORBIDDEN", `Required role: ${allowedRoles.join(", ")}`));
     }
     next();
   };
@@ -48169,4 +48185,636 @@ app.get("/api/repair-station/export", async (req, res) => {
     console.error("GET /api/repair-station/export:", error.message);
     res.status(500).json(errorEnvelope("REPAIR_EXPORT_FAILED", error.message));
   }
+});
+
+// ── Grafted WMS routes: over-picking (api/over-picking) ──
+// Reference: WMS-20261019 server/modules/over-picking/over-picking.controller.ts
+// Role sets from reference: CREATE_ROLES = ['admin','production_material_smt','production_material_dip','production_material_assembly','production_material_packing']
+// APPROVE_ROLES = ['admin','production_manager']
+// SMT user: req.user = { userId, username, roleKey }
+// Applicant/approver always from login identity (ignore request body), role from sysAccount table
+
+app.post("/api/over-picking", authenticateJWT, requireRole("admin", "production_material_smt", "production_material_dip", "production_material_assembly", "production_material_packing"), async (req, res) => {
+  try {
+    const { workOrderNo, items, remark } = req.body || {};
+    const userId = req.user?.userId;
+    const userName = req.user?.username;
+    const userRole = req.user?.roleKey;
+    if (!workOrderNo) return res.status(400).json(errorEnvelope("VALIDATION", "workOrderNo is required"));
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "items array required"));
+    const { rows } = await query(`INSERT INTO over_picking_orders(work_order_no,status,applicant_id,applicant_name,applicant_role,remark)
+      VALUES($1,'pending',$2,$3,$4,$5) RETURNING *`, [workOrderNo, userId, userName, userRole, remark||null]);
+    const orderId = rows[0].id;
+    for (const it of items) {
+      await query(`INSERT INTO over_picking_items(order_id,material_code,material_name,qty,unit)
+        VALUES($1,$2,$3,$4,$5)`, [orderId, it.materialCode, it.materialName, it.qty||0, it.unit||"PCS"]);
+    }
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_CREATE_FAILED", error.message)); }
+});
+
+app.get("/api/over-picking/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, orderNo, workOrderNo, status, startDate, endDate } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (orderNo) { conditions.push(`order_no ILIKE $${idx++}`); params.push(`%${orderNo}%`); }
+    if (workOrderNo) { conditions.push(`work_order_no ILIKE $${idx++}`); params.push(`%${workOrderNo}%`); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    if (startDate) { conditions.push(`created_at >= $${idx++}`); params.push(startDate); }
+    if (endDate) { conditions.push(`created_at <= $${idx++}`); params.push(endDate); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT o.id,o.order_no AS "orderNo",o.work_order_no AS "workOrderNo",o.status,
+      o.applicant_name AS "applicantName",o.applicant_role AS "applicantRole",
+      o.approver_name AS "approverName",o.approver_role AS "approverRole",o.approval_remark AS "approvalRemark",
+      o.approved_at AS "approvedAt",o.remark,o.created_at AS "createdAt",o.updated_at AS "updatedAt"
+      FROM over_picking_orders o ${where} ORDER BY o.created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM over_picking_orders o ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/over-picking/stats", authenticateJWT, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (startDate) { conditions.push(`created_at >= $${idx++}`); params.push(startDate); }
+    if (endDate) { conditions.push(`created_at <= $${idx++}`); params.push(endDate); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const rows = await query(`SELECT status, count(*)::int as cnt FROM over_picking_orders ${where} GROUP BY status`, params);
+    const stats = {}; for (const r of rows.rows) stats[r.status] = r.cnt;
+    res.json(successEnvelope({ stats, total: rows.rows.reduce((a,r)=>a+Number(r.cnt),0) }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_STATS_FAILED", error.message)); }
+});
+
+app.get("/api/over-picking/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const order = (await query(`SELECT o.id,o.order_no AS "orderNo",o.work_order_no AS "workOrderNo",o.status,
+      o.applicant_name AS "applicantName",o.applicant_role AS "applicantRole",
+      o.approver_name AS "approverName",o.approver_role AS "approverRole",o.approval_remark AS "approvalRemark",o.approved_at AS "approvedAt",
+      o.remark,o.created_at AS "createdAt",o.updated_at AS "updatedAt"
+      FROM over_picking_orders o WHERE o.id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
+    const items = (await query(`SELECT id,material_code AS "materialCode",material_name AS "materialName",
+      qty,unit FROM over_picking_items WHERE order_id=$1 ORDER BY id`, [id])).rows;
+    res.json(successEnvelope({ ...order, items }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_DETAIL_FAILED", error.message)); }
+});
+
+app.post("/api/over-picking/:id/approve", authenticateJWT, requireRole("admin", "production_manager"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { pass, approvalRemark } = req.body || {};
+    const userId = req.user?.userId;
+    const userName = req.user?.username;
+    const userRole = req.user?.roleKey;
+    const order = (await query(`SELECT id,status FROM over_picking_orders WHERE id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
+    if (order.status !== "pending") return res.status(409).json(errorEnvelope("OVER_PICKING_INVALID_STATE", "Order is not pending"));
+    await query(`UPDATE over_picking_orders SET status=$1,approver_id=$2,approver_name=$3,approver_role=$4,approval_remark=$5,approved_at=now(),updated_at=now()
+      WHERE id=$6 RETURNING id`, [pass ? "approved" : "rejected", userId, userName, userRole, approvalRemark||null, id]);
+    res.json(successEnvelope({ id, status: pass ? "approved" : "rejected" }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_APPROVE_FAILED", error.message)); }
+});
+
+app.post("/api/over-picking/:id/cancel", authenticateJWT, requireRole("admin", "production_material_smt", "production_material_dip", "production_material_assembly", "production_material_packing"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const order = (await query(`SELECT id,status FROM over_picking_orders WHERE id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
+    if (order.status !== "pending") return res.status(409).json(errorEnvelope("OVER_PICKING_INVALID_STATE", "Only pending orders can be cancelled"));
+    await query(`UPDATE over_picking_orders SET status='cancelled',updated_at=now() WHERE id=$1`, [id]);
+    res.json(successEnvelope({ id, status: "cancelled" }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_CANCEL_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: rework (api/rework) ──
+// Reference: WMS-20261019 server/modules/rework/rework.controller.ts
+// Role sets from reference: REWORK_START_ROLES = ['admin','wh_keeper','wh_manager','sqe']
+// REWORK_FINISH_ROLES = ['admin','sqe','quality_manager']
+// REWORK_REINSPECT_ROLES = ['admin','iqc_inspector','iqc_manager','quality_manager']
+// Status values: pending, started, finished, reinspected_ok, reinspected_ng
+// SMT user: req.user = { userId, username, roleKey }
+
+app.get("/api/rework/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, reworkNo, status, materialCode } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (reworkNo) { conditions.push(`rework_no ILIKE $${idx++}`); params.push(`%${reworkNo}%`); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,rework_no AS "reworkNo",mrb_no AS "mrbNo",material_code AS "materialCode",
+      material_name AS "materialName",supplier_code AS "supplierCode",supplier_name AS "supplierName",
+      batch_no AS "batchNo",quantity,unit,status,finish_time AS "finishTime",finish_by AS "finishBy",
+      finish_remark AS "finishRemark",created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM rework_orders ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM rework_orders ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/rework/pending-count", authenticateJWT, async (req, res) => {
+  try {
+    const rows = await query(`SELECT status, count(*)::int as cnt FROM rework_orders WHERE status IN ('pending','started')
+      GROUP BY status`);
+    const counts = {}; for (const r of rows.rows) counts[r.status] = r.cnt;
+    res.json(successEnvelope(counts));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_PENDING_COUNT_FAILED", error.message)); }
+});
+
+app.get("/api/rework/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_DETAIL_FAILED", error.message)); }
+});
+
+app.post("/api/rework/start", authenticateJWT, requireRole("admin", "wh_keeper", "wh_manager", "sqe"), async (req, res) => {
+  try {
+    const { id, remark } = req.body || {};
+    const userId = req.user?.userId;
+    const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (row.status !== "pending") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending orders can be started"));
+    await query(`UPDATE rework_orders SET status='started',updated_at=now() WHERE id=$1 RETURNING id`, [id]);
+    res.json(successEnvelope({ id, status: "started" }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_START_FAILED", error.message)); }
+});
+
+app.post("/api/rework/finish", authenticateJWT, requireRole("admin", "sqe", "quality_manager"), async (req, res) => {
+  try {
+    const { id, remark } = req.body || {};
+    const userId = req.user?.userId;
+    const userName = req.user?.username;
+    const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (row.status !== "started") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only started orders can be finished"));
+    await query(`UPDATE rework_orders SET status='finished',finish_time=now(),finish_by=$2,finish_by_name=$3,
+      finish_remark=$4,updated_at=now() WHERE id=$1 RETURNING id`, [id, userId, userName, remark||null]);
+    res.json(successEnvelope({ id, status: "finished" }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_FINISH_FAILED", error.message)); }
+});
+
+app.post("/api/rework/reinspect", authenticateJWT, requireRole("admin", "iqc_inspector", "iqc_manager", "quality_manager"), async (req, res) => {
+  try {
+    const { id, result, remark } = req.body || {};
+    const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (row.status !== "finished") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only finished orders can be reinspected"));
+    const newStatus = result === "pass" ? "reinspected_ok" : "reinspected_ng";
+    await query(`UPDATE rework_orders SET status=$2,finish_remark=$3,updated_at=now() WHERE id=$1 RETURNING id`,
+      [id, newStatus, remark||null]);
+    res.json(successEnvelope({ id, status: newStatus }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_REINSPECT_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: supplier-debt (api/supplier-debt) ──
+// Reference: WMS-20261019 server/modules/supplier-debt/supplier-debt.controller.ts
+// Debt no generation: SDYYYYMMDD + 4-digit sequence
+// Status: pending, settled, voided
+// SMT user: req.user = { userId, username, roleKey }
+
+app.get("/api/supplier-debt/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, supplierName, materialCode, status } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (supplierName) { conditions.push(`supplier_name ILIKE $${idx++}`); params.push(`%${supplierName}%`); }
+    if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,debt_no AS "debtNo",supplier_code AS "supplierCode",supplier_name AS "supplierName",
+      material_code AS "materialCode",material_name AS "materialName",origin_qty AS "originQty",
+      settled_qty AS "settledQty",source_type AS "sourceType",source_id AS "sourceId",source_no AS "sourceNo",
+      status,remark,created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM supplier_debt ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM supplier_debt ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
+  } catch (error) { res.status(500).json(errorEnvelope("SUPPLIER_DEBT_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/supplier-debt/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM supplier_debt WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SUPPLIER_DEBT_NOT_FOUND", "Supplier debt record not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("SUPPLIER_DEBT_DETAIL_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: defective-move (api/defective-move) ──
+// Reference: WMS-20261019 server/modules/defective-move/defective-move.controller.ts
+// Role sets from reference:
+//   CREATE_ROLES = ['wh_keeper','wh_manager','admin']
+//   CONFIRM_ROLES = ['wh_manager','admin'] (岗位分离：制单人不能自己批)
+//   MOVE_ROLES   = ['wh_keeper','wh_manager','admin']
+// Status flow: pending_confirm → (confirm approve) → pending → (scan+complete) → completed
+//              cancel: pending_confirm (creator or manager) / pending (manager only) → cancelled
+// SMT user: req.user = { userId, username, roleKey }
+
+app.get("/api/defective-move/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, status, materialCode, mrbNo, source, keyword } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (status) {
+      const list = String(status).split(",").map((s) => s.trim()).filter(Boolean);
+      if (list.length === 1) { conditions.push(`status = $${idx++}`); params.push(list[0]); }
+      else if (list.length > 1) { conditions.push(`status IN (${list.map(() => `$${idx++}`).join(",")})`); list.forEach((s) => params.push(s)); }
+    }
+    if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
+    if (mrbNo) { conditions.push(`move_no ILIKE $${idx++}`); params.push(`%${mrbNo}%`); }
+    if (source) { conditions.push(`from_stock_status = $${idx++}`); params.push(source); }
+    if (keyword) { conditions.push(`(move_no ILIKE $${idx++} OR material_code ILIKE $${idx++} OR material_name ILIKE $${idx++})`); params.push(`%${keyword}%`,`%${keyword}%`,`%${keyword}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,move_no AS "moveNo",inventory_id AS "inventoryId",from_stock_status AS "fromStockStatus",
+      material_code AS "materialCode",material_name AS "materialName",quantity,unit,reason,remark,to_location_id AS "toLocationId",
+      status,created_by AS "createdBy",created_by_name AS "createdByName",confirmed_by AS "confirmedBy",
+      confirmed_at AS "confirmedAt",confirm_remark AS "confirmRemark",executed_by AS "executedBy",executed_at AS "executedAt",
+      cancelled_by AS "cancelledBy",cancelled_at AS "cancelledAt",cancel_reason AS "cancelReason",
+      created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM defective_move_tasks ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM defective_move_tasks ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/pending-count", authenticateJWT, async (req, res) => {
+  try {
+    const row = (await query(`SELECT
+      COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+      COUNT(*) FILTER (WHERE status = 'pending_confirm')::int AS pending_confirm
+      FROM defective_move_tasks`)).rows[0];
+    const pending = Number(row?.pending || 0);
+    const pendingConfirm = Number(row?.pending_confirm || 0);
+    res.json(successEnvelope({ pending, pendingConfirm, total: pending + pendingConfirm }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_PENDING_COUNT_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/locations", authenticateJWT, async (req, res) => {
+  try {
+    // 仅用于扫码后回显，前端不允许直接下拉选择（同参考实现）
+    const rows = await query(`SELECT id,code AS "locationCode",name_zh AS "nameZh",name_en AS "nameEn",name_vi AS "nameVi",status
+      FROM storage_locations WHERE status='active' ORDER BY code LIMIT 100`);
+    res.json(successEnvelope(rows.rows));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_LOCATIONS_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/source-stock", authenticateJWT, async (req, res) => {
+  try {
+    // 制单可选的来源库存：良品仓、可用量 > 0，且排除已在待确认/待执行调拨单里的批次行
+    // （同参考实现 NOT EXISTS 防重复制单）
+    const { keyword, page = 1, pageSize = 20 } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (keyword) { conditions.push(`(m.code ILIKE $${idx++} OR m.name_zh ILIKE $${idx++})`); params.push(`%${keyword}%`,`%${keyword}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") + " AND " : "WHERE ";
+    const limit = Math.min(Math.max(Number(pageSize),1),100); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT ml.id,ml.material_id AS "materialId",m.code AS "materialCode",m.name_zh,m.name_en,m.name_vi,
+      ml.storage_location_id AS "storageLocationId",sl.code AS "locationCode",
+      COALESCE(SUM(CASE WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+        WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty ELSE 0 END),0) AS qty
+      FROM material_lots ml JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
+      LEFT JOIN inventory_transactions it ON it.material_lot_id=ml.id AND it.tx_status='posted'
+      ${where}NOT EXISTS (SELECT 1 FROM defective_move_tasks t WHERE t.inventory_id = ml.id AND t.status IN ('pending_confirm','pending'))
+      GROUP BY ml.id,m.code,m.name_zh,m.name_en,m.name_vi,ml.storage_location_id,sl.code
+      HAVING COALESCE(SUM(CASE WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+        WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty ELSE 0 END),0) > 0
+      ORDER BY m.code LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM (
+      SELECT ml.id
+      FROM material_lots ml JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
+      LEFT JOIN inventory_transactions it ON it.material_lot_id=ml.id AND it.tx_status='posted'
+      ${where}NOT EXISTS (SELECT 1 FROM defective_move_tasks t WHERE t.inventory_id = ml.id AND t.status IN ('pending_confirm','pending'))
+      GROUP BY ml.id,m.code,m.name_zh,m.name_en,m.name_vi,ml.storage_location_id,sl.code
+      HAVING COALESCE(SUM(CASE WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+        WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty ELSE 0 END),0) > 0
+    ) x`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_SOURCE_STOCK_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT id,move_no AS "moveNo",inventory_id AS "inventoryId",
+      material_code AS "materialCode",material_name AS "materialName",quantity,unit,status,
+      reason,remark,from_stock_status AS "fromStockStatus",confirm_remark AS "confirmRemark",
+      confirmed_at AS "confirmedAt",created_by_name AS "createdByName"
+      FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_DETAIL_FAILED", error.message)); }
+});
+
+// 自动生成调拨单号：DM + YYYYMMDD + 4位序号（同参考 nextDefectiveMoveNo）
+async function nextDefectiveMoveNo() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const prefix = `DM${dateStr}`;
+  const { rows } = await query(`SELECT move_no FROM defective_move_tasks WHERE move_no LIKE $1 ORDER BY move_no DESC LIMIT 1`, [`${prefix}%`]);
+  const last = rows[0]?.move_no;
+  const seq = last ? Number(String(last).slice(prefix.length)) + 1 : 1;
+  return `${prefix}${String(seq).padStart(4, "0")}`;
+}
+
+app.post("/api/defective-move/create", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    const { inventoryId, quantity, reason, remark, toLocationId } = req.body || {};
+    const userId = req.user?.userId || "";
+    const userName = req.user?.username || "";
+    const qty = Number(quantity);
+    if (!inventoryId) return res.status(400).json(errorEnvelope("VALIDATION", "inventoryId is required"));
+    if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json(errorEnvelope("VALIDATION", "quantity must be > 0"));
+    if (!reason || !String(reason).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "reason is required"));
+    const dup = (await query(`SELECT move_no FROM defective_move_tasks WHERE inventory_id=$1 AND status IN ('pending_confirm','pending') LIMIT 1`, [inventoryId])).rows[0];
+    if (dup) return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_DUPLICATED", `Inventory already has a pending move task (${dup.move_no})`));
+    const moveNo = await nextDefectiveMoveNo();
+    const rows = await query(`INSERT INTO defective_move_tasks(move_no,inventory_id,quantity,reason,remark,to_location_id,status,created_by,created_by_name,from_stock_status)
+      VALUES($1,$2,$3,$4,$5,$6,'pending_confirm',$7,$8,'good') RETURNING id,move_no,status`,
+      [moveNo, inventoryId, qty, String(reason).trim(), remark ? String(remark).trim() : null, toLocationId || null, userId, userName]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_CREATE_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/confirm", authenticateJWT, requireRole("wh_manager", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { approve, remark } = req.body || {};
+    const userId = req.user?.userId || "";
+    const row = (await query(`SELECT id,status FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (row.status !== "pending_confirm") return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", "Task has already been processed"));
+    const newStatus = approve ? "pending" : "cancelled";
+    await query(`UPDATE defective_move_tasks SET status=$1,confirmed_by=$2,confirm_remark=$3,confirmed_at=now(),updated_at=now()
+      WHERE id=$4 RETURNING id`, [newStatus, userId, remark ? String(remark).trim() : (approve ? null : "Rejected by supervisor"), id]);
+    res.json(successEnvelope({ id, status: newStatus }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_CONFIRM_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/cancel", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    // 作废/撤销（同参考 cancelOrder）：
+    //  - 待执行(pending)：只有仓库主管/管理员可作废
+    //  - 待确认(pending_confirm)：制单人本人或主管可撤销
+    const id = Number(req.params.id); const { reason } = req.body || {};
+    const userId = req.user?.userId || "";
+    const userRole = req.user?.roleKey || "";
+    const isManager = ["wh_manager", "admin"].includes(userRole);
+    const row = (await query(`SELECT id,status,created_by FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (!["pending_confirm", "pending"].includes(row.status)) return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", "Only pending_confirm / pending tasks can be cancelled"));
+    if (row.status === "pending" && !isManager) return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_FORBIDDEN", "Task is already effective; only a warehouse manager can cancel it"));
+    if (row.status === "pending_confirm" && !isManager && Number(row.created_by) !== Number(userId)) return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_FORBIDDEN", "Only the creator or a warehouse manager can cancel a pending-confirmation task"));
+    await query(`UPDATE defective_move_tasks SET status='cancelled',cancelled_by=$2,cancelled_at=now(),cancel_reason=$3,updated_at=now() WHERE id=$1`,
+      [id, userId, reason ? String(reason).trim() : "Manual cancellation"]);
+    res.json(successEnvelope({ success: true }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_CANCEL_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/scan", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    // 扫描货物标签，校验是否属于本单（逐箱预校验）
+    const id = Number(req.params.id); const { code } = req.body || {};
+    if (!code || !String(code).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "Scan content is empty"));
+    const row = (await query(`SELECT id,status,material_code AS "materialCode",quantity,unit FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (row.status !== "pending") return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", "Task is not in executable state"));
+    const text = String(code).trim();
+    const sep = text.includes("|") ? "|" : text.includes("*") ? "*" : null;
+    let parsed = { structured: false };
+    if (sep) {
+      const parts = text.split(sep).map((p) => p.trim());
+      if (parts.length >= 6) parsed = { structured: true, materialCode: parts[1], batchNo: parts[4], quantity: Number(parts[3]) };
+    }
+    const expectMaterial = String(row.materialCode || "").trim();
+    if (parsed.structured && parsed.materialCode && expectMaterial && parsed.materialCode !== expectMaterial) {
+      return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Material mismatch: scanned ${parsed.materialCode}, expected ${expectMaterial}`));
+    }
+    if (!parsed.structured) {
+      if (expectMaterial && text === expectMaterial) {
+        return res.json(successEnvelope({ matched: true, code: text, materialCode: expectMaterial, expectMaterial, expectBatch: "" }));
+      }
+      return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Barcode does not match this task (material ${expectMaterial || "-"})`));
+    }
+    res.json(successEnvelope({ matched: true, code: text, materialCode: parsed.materialCode || expectMaterial, expectMaterial, expectQty: Number(row.quantity || 0) }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_SCAN_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/complete", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    // 执行调拨：必须带「扫描到的货物标签」与「扫描到的目标库位码」，操作人以登录身份为准
+    const id = Number(req.params.id); const { scannedCodes, toLocationCode } = req.body || {};
+    const operatorId = req.user?.userId || "";
+    const codes = Array.isArray(scannedCodes) ? scannedCodes.map((c) => String(c || "").trim()).filter(Boolean) : [];
+    if (codes.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "Please scan at least one cargo label matching this task"));
+    const toCode = String(toLocationCode || "").trim();
+    if (!toCode) return res.status(400).json(errorEnvelope("VALIDATION", "Please scan the defective warehouse location code"));
+    const loc = (await query(`SELECT id,code,status FROM storage_locations WHERE code=$1`, [toCode])).rows[0];
+    if (!loc || loc.status !== "active") return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_LOCATION_INVALID", `Location ${toCode} is not an active location`));
+    const row = (await query(`SELECT id,status,material_code AS "materialCode",quantity FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (row.status !== "pending") return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", row.status === "pending_confirm" ? "Task has not been confirmed by a warehouse manager" : "Task is already completed or cancelled"));
+    // 全量复核扫码内容（防绕过前端）：物料码必须一致
+    const expectMaterial = String(row.materialCode || "").trim();
+    for (const c of codes) {
+      const sep = c.includes("|") ? "|" : c.includes("*") ? "*" : null;
+      if (sep) {
+        const parts = c.split(sep).map((p) => p.trim());
+        if (parts.length >= 6 && parts[1] && expectMaterial && parts[1] !== expectMaterial) {
+          return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Material mismatch: scanned ${parts[1]}, expected ${expectMaterial}`));
+        }
+      } else if (expectMaterial && c !== expectMaterial) {
+        return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Barcode does not match this task (material ${expectMaterial})`));
+      }
+    }
+    await query(`UPDATE defective_move_tasks SET status='completed',to_location_id=$2,executed_by=$3,executed_at=now(),updated_at=now()
+      WHERE id=$1 RETURNING id`, [id, loc.id, operatorId]);
+    res.json(successEnvelope({ success: true, quantity: Number(row.quantity || 0), toLocationCode: toCode, status: "completed" }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_COMPLETE_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: wms-hr (api/wms-hr) ──
+// Reference: WMS-20261019 server/modules/hr/hr.controller.ts
+// Role sets from reference:
+//   - hr: hr_manager, hr_staff, admin
+//   - hr: hr_manager, admin
+// SMT user: req.user = { userId, username, roleKey }
+// NOTE: Renamed from /api/hr to /api/wms-hr to avoid collision with SMT's native HR endpoints
+
+app.get("/api/wms-hr/departments", authenticateJWT, async (req, res) => {
+  try {
+    const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,parent_id,manager_employee_id,head_count,status,
+      created_at AS "createdAt",updated_at AS "updatedAt" FROM hr_departments ORDER BY code`);
+    res.json(successEnvelope(rows.rows));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_DEPARTMENTS_FAILED", error.message)); }
+});
+
+app.post("/api/wms-hr/departments", authenticateJWT, requireRole("hr_manager", "hr_staff", "admin"), async (req, res) => {
+  try {
+    const { code, nameZh, nameEn, nameVi, parentId } = req.body || {};
+    const userId = req.user?.userId || "";
+    if (!code || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "code and nameZh are required"));
+    const rows = await query(`INSERT INTO hr_departments(code,name_zh,name_en,name_vi,parent_id,head_count)
+      VALUES($1,$2,$3,$4,$5,0) RETURNING *`, [code, nameZh, nameEn, nameVi, parentId || null]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_CREATE_DEPARTMENT_FAILED", error.message)); }
+});
+
+app.put("/api/wms-hr/departments/:id", authenticateJWT, requireRole("hr_manager", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { code, nameZh, nameEn, nameVi } = req.body || {};
+    if (!code || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "code and nameZh are required"));
+    const row = (await query(`SELECT id FROM hr_departments WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("HR_DEPARTMENT_NOT_FOUND", "Department not found"));
+    await query(`UPDATE hr_departments SET code=$1,name_zh=$2,name_en=$3,name_vi=$4,updated_at=now() WHERE id=$5`,
+      [code, nameZh, nameEn, nameVi, id]);
+    res.json(successEnvelope({ id }));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_UPDATE_DEPARTMENT_FAILED", error.message)); }
+});
+
+app.get("/api/wms-hr/employees", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, keyword, departmentId } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (keyword) {
+      const kw = `%${keyword.trim()}%`;
+      conditions.push(`employee_no ILIKE $${idx++} OR name_zh ILIKE $${idx++}`); params.push(kw, kw); idx += 2;
+    }
+    if (departmentId) { conditions.push(`department_id = $${idx++}`); params.push(departmentId); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,employee_no AS "employeeNo",name_zh,name_en,name_vi,gender,birth_date AS "birthDate",
+      phone,email,department_id AS "departmentId",position_title AS "positionTitle",employment_type AS "employmentType",
+      join_date AS "joinDate",status,created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM hr_employees ${where} ORDER BY employee_no LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM hr_employees ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_EMPLOYEES_FAILED", error.message)); }
+});
+
+app.get("/api/wms-hr/employees/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM hr_employees WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("HR_EMPLOYEE_NOT_FOUND", "Employee not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_EMPLOYEE_DETAIL_FAILED", error.message)); }
+});
+
+app.post("/api/wms-hr/employees", authenticateJWT, requireRole("hr_manager", "hr_staff", "admin"), async (req, res) => {
+  try {
+    const { employeeNo, nameZh, nameEn, nameVi, gender, departmentId, positionTitle, employmentType, joinDate } = req.body || {};
+    if (!employeeNo || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "employeeNo and nameZh are required"));
+    const userId = req.user?.userId || "";
+    const rows = await query(`INSERT INTO hr_employees(employee_no,name_zh,name_en,name_vi,gender,department_id,position_title,employment_type,join_date)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [employeeNo, nameZh, nameEn, nameVi, gender, departmentId, positionTitle, employmentType, joinDate || null]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_CREATE_EMPLOYEE_FAILED", error.message)); }
+});
+
+app.put("/api/wms-hr/employees/:id", authenticateJWT, requireRole("hr_manager", "hr_staff", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { nameZh, nameEn, nameVi, departmentId, positionTitle } = req.body || {};
+    if (!nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "nameZh is required"));
+    const row = (await query(`SELECT id FROM hr_employees WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("HR_EMPLOYEE_NOT_FOUND", "Employee not found"));
+    await query(`UPDATE hr_employees SET name_zh=$1,name_en=$2,name_vi=$3,department_id=$4,position_title=$5,updated_at=now() WHERE id=$6`,
+      [nameZh, nameEn, nameVi, departmentId, positionTitle, id]);
+    res.json(successEnvelope({ id }));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_UPDATE_EMPLOYEE_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: wms-sales (api/wms-sales) ──
+// Reference: WMS-20261019 server/modules/sales/sales.controller.ts
+// Role sets from reference:
+//   - create/update: sales_manager, sales_rep, admin
+//   - delete (soft-void): sales_manager, admin
+// Reference code gen: CUST-<timestamp last 6>
+// SMT user: req.user = { userId, username, roleKey }
+// NOTE: Renamed from /api/sales to /api/wms-sales to avoid collision with SMT's native sales endpoints
+
+app.get("/api/wms-sales/customers", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, keyword } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (keyword) { conditions.push(`(code ILIKE $${idx++} OR name_zh ILIKE $${idx++} OR name_en ILIKE $${idx++})`); params.push(`%${keyword}%`,`%${keyword}%`,`%${keyword}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,contact_person AS "contactPerson",contact_phone AS "contactPhone",
+      contact_email AS "contactEmail",address,tax_code AS "taxCode",payment_term AS "paymentTerm",currency,status,remark,
+      created_by AS "createdBy",created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM customers ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM customers ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ list: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_CUSTOMERS_FAILED", error.message)); }
+});
+
+app.get("/api/wms-sales/customers/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM customers WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_CUSTOMER_DETAIL_FAILED", error.message)); }
+});
+
+// 自动生成客户编码：CUST-<Date.now() 后 6 位>（同参考 createCustomer）
+function nextCustomerCode() {
+  return `CUST-${Date.now().toString().slice(-6)}`;
+}
+
+app.post("/api/wms-sales/customers", authenticateJWT, requireRole("sales_manager", "sales_rep", "admin"), async (req, res) => {
+  try {
+    const { customerName, customerNameVi, customerNameEn, contactPerson, contactPhone, contactEmail, address, taxCode, paymentTerm, currency, remark } = req.body || {};
+    const userId = req.user?.userId || "";
+    if (!customerName || !String(customerName).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "customerName is required"));
+    const code = nextCustomerCode();
+    const rows = await query(`INSERT INTO customers(code,name_zh,name_en,name_vi,contact_person,contact_phone,contact_email,address,tax_code,payment_term,currency,status,remark,created_by)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,$13) RETURNING *`,
+      [code, String(customerName).trim(), customerNameEn ? String(customerNameEn).trim() : null, customerNameVi ? String(customerNameVi).trim() : null,
+        contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, contactEmail ? String(contactEmail).trim() : null,
+        address ? String(address).trim() : null, taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
+        currency ? String(currency).trim() : "VND", remark ? String(remark).trim() : null, userId]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_CREATE_CUSTOMER_FAILED", error.message)); }
+});
+
+app.put("/api/wms-sales/customers/:id", authenticateJWT, requireRole("sales_manager", "sales_rep", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { customerName, customerNameVi, customerNameEn, contactPerson, contactPhone, contactEmail, address, taxCode, paymentTerm, currency, remark, status } = req.body || {};
+    if (!customerName || !String(customerName).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "customerName is required"));
+    const row = (await query(`SELECT id FROM customers WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
+    await query(`UPDATE customers SET name_zh=$1,name_en=$2,name_vi=$3,contact_person=$4,contact_phone=$5,contact_email=$6,address=$7,tax_code=$8,payment_term=$9,currency=$10,remark=$11,status=COALESCE($12,status),updated_at=now() WHERE id=$13`,
+      [String(customerName).trim(), customerNameEn ? String(customerNameEn).trim() : null, customerNameVi ? String(customerNameVi).trim() : null,
+        contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, contactEmail ? String(contactEmail).trim() : null,
+        address ? String(address).trim() : null, taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
+        currency ? String(currency).trim() : "VND", remark ? String(remark).trim() : null, status ? String(status) : null, id]);
+    res.json(successEnvelope({ id }));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_UPDATE_CUSTOMER_FAILED", error.message)); }
+});
+
+app.delete("/api/wms-sales/customers/:id", authenticateJWT, requireRole("sales_manager", "admin"), async (req, res) => {
+  try {
+    // 软删除：参考实现置 status=inactive，SMT 约定用 status 字段软删（voided）
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT id FROM customers WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
+    await query(`UPDATE customers SET status='inactive',updated_at=now() WHERE id=$1`, [id]);
+    res.json(successEnvelope({ id, status: "inactive" }));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_DELETE_CUSTOMER_FAILED", error.message)); }
 });
