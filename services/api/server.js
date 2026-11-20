@@ -114,6 +114,7 @@ import { registerReportsRoutes } from "./src/routes/reports.js";
 import { registerPdaRoutes } from "./src/routes/pda.js";
 import { registerWmsProductionRoutes } from "./src/routes/wms-production.js";
 import { registerWmsReceivingIqcRoutes } from "./src/routes/wms-receiving-iqc.js";
+import { registerHrGrievanceRoutes } from "./src/routes/hr-grievance.js";
 import {
   askChat,
   askReceivingLabelVision,
@@ -973,8 +974,14 @@ async function loadRevokedTokens() {
       `SELECT jti, EXTRACT(EPOCH FROM expires_at)::bigint AS exp
          FROM auth_revoked_token WHERE expires_at > now()`,
     );
-    for (const row of rows) revokedTokens.add(row.jti, Number(row.exp));
-    if (rows.length) console.log(`[auth] loaded ${rows.length} revoked token(s)`);
+    let added = 0;
+    for (const row of rows) {
+      if (revokedTokens.has(row.jti)) continue;
+      revokedTokens.add(row.jti, Number(row.exp));
+      added += 1;
+    }
+    // The 5-minute refresh calls this forever; only a change is news.
+    if (added) console.log(`[auth] revoked-token list: ${rows.length} live, ${added} new`);
   } catch (err) {
     console.error("[auth] revoked-token load skipped:", err.message);
   }
@@ -7131,99 +7138,10 @@ app.post('/api/plant-manager/authorizations/:authorizationId/close', requirePerm
   } catch (err) { res.status(409).json(errorEnvelope('PLANT_EXCEPTION_CLOSE_FAILED',err.message)); }
 });
 
-// Confidential employee grievance channel. HR sees the reporter and case
-// evidence; the line manager receives only the allegation and due date.
-app.post("/hr/grievance-cases", requirePermission("hr.grievance.submit"), async (req, res) => {
-  try {
-    const p = req.body?.payload ?? req.body ?? {};
-    if (!p.subjectEmployeeCode || !p.complaintText || !p.allegationCategory) return res.status(400).json(errorEnvelope("VALIDATION", "subjectEmployeeCode, complaintText and allegationCategory required"));
-    const result = await query(`INSERT INTO hr_employee_grievance_cases(reporter_employee_id,subject_employee_id,line_id,complaint_text,allegation_category,evidence_reference,response_due_at)
-      SELECT $1,e.id,l.id,$2,$3,NULLIF($4,''),COALESCE($5::timestamptz,NOW()+INTERVAL '3 days')
-      FROM employees e LEFT JOIN production_lines l ON UPPER(l.internal_code)=UPPER(NULLIF($6,''))
-      WHERE UPPER(COALESCE(NULLIF(e.code,''),e.employee_no))=UPPER($7) AND e.status='active'
-      RETURNING id,case_no AS "caseNo",status,response_due_at AS "responseDueAt"`,
-      [req.user?.employeeId ?? req.user?.userId ?? null,p.complaintText,p.allegationCategory,p.evidenceReference || "",p.responseDueAt || null,p.lineCode || "",p.subjectEmployeeCode]);
-    if (!result.rows.length) return res.status(404).json(errorEnvelope("EMPLOYEE_NOT_FOUND", "Subject employee is not registered"));
-    await writeAuditLog({actorId:req.user?.userId,action:'HR_GRIEVANCE_SUBMITTED',entityType:'hr_employee_grievance_case',entityId:String(result.rows[0].id),payload:{...p,complaintText:'[CONFIDENTIAL]'},ipAddress:req.ip,userAgent:req.headers['user-agent']});
-    res.status(201).json({success:true,data:result.rows[0]});
-  } catch (err) { res.status(409).json(errorEnvelope("GRIEVANCE_SUBMIT_FAILED", err.message)); }
-});
-
-app.get("/hr/grievance-cases", requirePermission("hr.grievance.investigate"), async (req, res) => {
-  try {
-    const rows = await query(`SELECT c.id,c.case_no AS "caseNo",c.complaint_text AS "complaintText",c.allegation_category AS "allegationCategory",c.evidence_reference AS "evidenceReference",c.status,c.response_due_at AS "responseDueAt",c.manager_explanation AS "managerExplanation",c.hr_finding AS "hrFinding",c.hr_action AS "hrAction",c.created_at AS "createdAt",
-      COALESCE(NULLIF(re.code,''),re.employee_no) AS "reporterCode",COALESCE(NULLIF(re.display_name,''),re.name_zh,re.employee_no) AS "reporterName",
-      COALESCE(NULLIF(se.code,''),se.employee_no) AS "subjectCode",COALESCE(NULLIF(se.display_name,''),se.name_zh,se.employee_no) AS "subjectName",l.internal_code AS "lineCode"
-      FROM hr_employee_grievance_cases c LEFT JOIN employees re ON re.id=c.reporter_employee_id JOIN employees se ON se.id=c.subject_employee_id LEFT JOIN production_lines l ON l.id=c.line_id ORDER BY c.created_at DESC`);
-    res.json({success:true,data:rows.rows});
-  } catch (err) { res.status(500).json(errorEnvelope("GRIEVANCE_READ_FAILED", err.message)); }
-});
-
-app.post("/hr/grievance-cases/:id/request-explanation", requirePermission("hr.grievance.investigate"), async (req, res) => {
-  try {
-    const result = await query(`UPDATE hr_employee_grievance_cases SET status='AWAITING_MANAGER_EXPLANATION',investigated_by=$2,updated_at=NOW() WHERE id=$1 AND status IN ('SUBMITTED','INVESTIGATING','HR_REVIEW') RETURNING id,case_no AS "caseNo",status,response_due_at AS "responseDueAt"`, [req.params.id,req.user?.userId ?? null]);
-    if (!result.rows.length) return res.status(404).json(errorEnvelope("GRIEVANCE_NOT_FOUND", "Case is not available for investigation"));
-    await writeAuditLog({actorId:req.user?.userId,action:'HR_REQUESTED_LINE_MANAGER_EXPLANATION',entityType:'hr_employee_grievance_case',entityId:String(req.params.id),payload:{},ipAddress:req.ip,userAgent:req.headers['user-agent']});
-    res.json({success:true,data:result.rows[0]});
-  } catch (err) { res.status(409).json(errorEnvelope("GRIEVANCE_REQUEST_FAILED", err.message)); }
-});
-
-app.get("/api/manager/grievance-cases", requirePermission("hr.grievance.respond"), async (req, res) => {
-  try {
-    const employeeId = req.user?.employeeId ?? req.user?.userId;
-    const rows = await query(`SELECT c.id,c.case_no AS "caseNo",c.allegation_category AS "allegationCategory",c.complaint_text AS "complaintText",c.status,c.response_due_at AS "responseDueAt",c.manager_explanation AS "managerExplanation",l.internal_code AS "lineCode"
-      FROM hr_employee_grievance_cases c LEFT JOIN production_lines l ON l.id=c.line_id WHERE c.subject_employee_id=$1 AND c.status IN ('AWAITING_MANAGER_EXPLANATION','HR_REVIEW') ORDER BY c.response_due_at`, [employeeId]);
-    res.json({success:true,data:rows.rows});
-  } catch (err) { res.status(500).json(errorEnvelope("MANAGER_GRIEVANCE_READ_FAILED", err.message)); }
-});
-
-app.post("/api/manager/grievance-cases/:id/explanation", requirePermission("hr.grievance.respond"), async (req, res) => {
-  try {
-    const explanation = String(req.body?.payload?.explanation ?? req.body?.explanation ?? '').trim();
-    if (!explanation) return res.status(400).json(errorEnvelope('VALIDATION','explanation required'));
-    const employeeId = req.user?.employeeId ?? req.user?.userId;
-    const result = await query(`UPDATE hr_employee_grievance_cases SET manager_explanation=$2,manager_responded_by=$3,manager_responded_at=NOW(),status='HR_REVIEW',updated_at=NOW() WHERE id=$1 AND subject_employee_id=$3 AND status='AWAITING_MANAGER_EXPLANATION' RETURNING id,case_no AS "caseNo",status,manager_responded_at AS "respondedAt"`, [req.params.id,explanation,employeeId]);
-    if (!result.rows.length) return res.status(404).json(errorEnvelope('GRIEVANCE_NOT_FOUND','Case is not assigned to this line manager'));
-    await writeAuditLog({actorId:req.user?.userId,action:'LINE_MANAGER_EXPLANATION_SUBMITTED',entityType:'hr_employee_grievance_case',entityId:String(req.params.id),payload:{},ipAddress:req.ip,userAgent:req.headers['user-agent']});
-    res.json({success:true,data:result.rows[0]});
-  } catch (err) { res.status(409).json(errorEnvelope('MANAGER_EXPLANATION_FAILED',err.message)); }
-});
-
-// HR must record a finding and corrective action before the employee can
-// acknowledge the outcome. The case is not closed by the manager's reply.
-app.post("/hr/grievance-cases/:id/resolve", requirePermission("hr.grievance.investigate"), async (req, res) => {
-  try {
-    const p = req.body?.payload ?? req.body ?? {};
-    if (!String(p.hrFinding || '').trim() || !String(p.hrAction || '').trim()) return res.status(400).json(errorEnvelope('VALIDATION','hrFinding and hrAction required'));
-    const result = await query(`UPDATE hr_employee_grievance_cases SET status='RESOLVED',hr_finding=$2,hr_action=$3,outcome_sent_at=NOW(),investigated_by=COALESCE(investigated_by,$4),updated_at=NOW() WHERE id=$1 AND status IN ('HR_REVIEW','INVESTIGATING','AWAITING_MANAGER_EXPLANATION') RETURNING id,case_no AS "caseNo",status,outcome_sent_at AS "outcomeSentAt"`, [req.params.id,p.hrFinding,p.hrAction,req.user?.userId ?? null]);
-    if (!result.rows.length) return res.status(404).json(errorEnvelope('GRIEVANCE_NOT_READY','Case is not ready for HR resolution'));
-    await writeAuditLog({actorId:req.user?.userId,action:'HR_GRIEVANCE_RESOLVED',entityType:'hr_employee_grievance_case',entityId:String(req.params.id),payload:{hrFinding:p.hrFinding,hrAction:p.hrAction},ipAddress:req.ip,userAgent:req.headers['user-agent']});
-    res.json({success:true,data:result.rows[0]});
-  } catch (err) { res.status(409).json(errorEnvelope('GRIEVANCE_RESOLVE_FAILED',err.message)); }
-});
-
-// Employee view is limited to the employee's own cases and HR outcome.
-app.get("/hr/grievance-cases/mine", requirePermission("hr.grievance.submit"), async (req, res) => {
-  try {
-    const employeeId = req.user?.employeeId ?? req.user?.userId;
-    const rows = await query(`SELECT id,case_no AS "caseNo",allegation_category AS "allegationCategory",status,response_due_at AS "responseDueAt",hr_finding AS "hrFinding",hr_action AS "hrAction",outcome_sent_at AS "outcomeSentAt",employee_ack_decision AS "employeeAckDecision",employee_ack_at AS "employeeAckAt",employee_appeal_text AS "employeeAppealText" FROM hr_employee_grievance_cases WHERE reporter_employee_id=$1 ORDER BY created_at DESC`, [employeeId]);
-    res.json({success:true,data:rows.rows});
-  } catch (err) { res.status(500).json(errorEnvelope('GRIEVANCE_MINE_READ_FAILED',err.message)); }
-});
-
-app.post("/hr/grievance-cases/:id/employee-ack", requirePermission("hr.grievance.submit"), async (req, res) => {
-  try {
-    const p = req.body?.payload ?? req.body ?? {};
-    const decision = String(p.decision || '').toUpperCase();
-    const employeeId = req.user?.employeeId ?? req.user?.userId;
-    if (!['ACKNOWLEDGED','APPEALED'].includes(decision)) return res.status(400).json(errorEnvelope('VALIDATION','decision must be ACKNOWLEDGED or APPEALED'));
-    if (decision === 'APPEALED' && !String(p.appealText || '').trim()) return res.status(400).json(errorEnvelope('VALIDATION','appealText required'));
-    const result = await query(`UPDATE hr_employee_grievance_cases SET employee_ack_decision=$2,employee_ack_at=NOW(),employee_appeal_text=CASE WHEN $2='APPEALED' THEN $3 ELSE employee_appeal_text END,employee_appealed_at=CASE WHEN $2='APPEALED' THEN NOW() ELSE employee_appealed_at END,status=CASE WHEN $2='APPEALED' THEN 'HR_REVIEW' ELSE 'CLOSED' END,hr_closed_at=CASE WHEN $2='ACKNOWLEDGED' THEN NOW() ELSE NULL END,updated_at=NOW() WHERE id=$1 AND reporter_employee_id=$4 AND status='RESOLVED' RETURNING id,case_no AS "caseNo",status,employee_ack_at AS "ackAt"`, [req.params.id,decision,p.appealText || '',employeeId]);
-    if (!result.rows.length) return res.status(404).json(errorEnvelope('GRIEVANCE_NOT_FOUND','Only the reporting employee can acknowledge a resolved case'));
-    await writeAuditLog({actorId:req.user?.userId,action:decision === 'APPEALED' ? 'EMPLOYEE_GRIEVANCE_APPEALED' : 'EMPLOYEE_GRIEVANCE_ACKNOWLEDGED',entityType:'hr_employee_grievance_case',entityId:String(req.params.id),payload:{decision},ipAddress:req.ip,userAgent:req.headers['user-agent']});
-    res.json({success:true,data:result.rows[0]});
-  } catch (err) { res.status(409).json(errorEnvelope('GRIEVANCE_ACK_FAILED',err.message)); }
-});
+// Confidential employee grievance channel (8 routes) lives in src/routes/hr-grievance.js.
+// HR sees the reporter and case evidence; the line manager receives only the allegation
+// and the due date -- that split is enforced by the per-route permissions in the module.
+registerHrGrievanceRoutes(app, { query, requirePermission, errorEnvelope, writeAuditLog });
 
 app.get("/api/smt/loading/session", async (req, res) => {
   try {
@@ -10942,79 +10860,162 @@ api.get('/qms/iqc/aql-status', async (req, res) => {
 
 // IQC 离线队列处理（POST from PDA）
 api.post('/qms/iqc/inspections', async (req, res) => {
+  // The QC PDA posts every finished inspection here, online and from its offline
+  // queue. This insert was still written against the old MySQL-shaped schema:
+  // `batch_size` is not a column, the NOT NULL keys this schema requires
+  // (inspection_no, material_lot_id, result, operator_id) were never filled,
+  // `incoming_record_id` was used where a foreign key to wms_incoming_records is
+  // expected, and a FAIL ended on `iqc_status='failed'`, which
+  // material_lots_iqc_status_check rejects. So every call answered 500 — and
+  // QmsPdaIqc.submitInspection treats any non-2xx as "queue it offline" and shows
+  // 已提交. No IQC result was ever stored, rejected material kept its 'pending'
+  // status, and the offline queue replays against the same failing insert forever.
+  const client = await pgPool.connect();
   try {
     const { incoming_record_id, lot_no, material_code, supplier_code, batch_size,
             aql_level, dynamic_aql_status, inspection_result,
             measurement_items, defects, notes, inspector_id, inspector_name, factory_id } = req.body;
-    const fid = factory_id || 1;
-    // Insert inspection
-    const [insp] = await query(
-      `INSERT INTO iqc_inspections
-       (incoming_record_id, lot_no, material_code, supplier_code, batch_size, aql_level,
-        inspection_result, inspection_types, inspector_id, inspector_name, inspection_date, factory_id,
-        inspection_mode, major_defects, minor_defects, critical_defects, spc_data_linked)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW(),$11,$12,0,0,0,$13)
-       RETURNING *`,
-      [incoming_record_id, lot_no, material_code, supplier_code, batch_size, aql_level||'II',
-       inspection_result, JSON.stringify(['visual','dimensional','functional']), inspector_id, inspector_name,
-       fid, dynamic_aql_status||'NORMAL', Array.isArray(measurement_items) && measurement_items.length > 0]);
 
+    const lotNo = String(lot_no ?? "").trim();
+    const decision = String(inspection_result ?? "").toUpperCase();
+    if (!lotNo) return res.status(400).json(errorEnvelope("VALIDATION", "lot_no is required"));
+    if (!["PASS", "FAIL"].includes(decision))
+      return res.status(400).json(errorEnvelope("IQC_RESULT_REQUIRED", "inspection_result must be PASS or FAIL"));
+
+    const lotRows = (await client.query(
+      `SELECT ml.id, ml.lot_no, m.code AS material_code, s.code AS supplier_code
+         FROM material_lots ml
+         JOIN materials m ON m.id = ml.material_id
+         LEFT JOIN suppliers s ON s.id = ml.supplier_id
+        WHERE ml.lot_no = $1`,
+      [lotNo],
+    )).rows;
+    if (lotRows.length === 0)
+      return res.status(404).json(errorEnvelope("LOT_NOT_FOUND", `material lot ${lotNo} does not exist`));
+    const lot = lotRows[0];
+
+    // operator_id references users(id); the PDA sends whatever localStorage holds,
+    // which is an id for some builds and a username for others.
+    const wanted = Number(inspector_id);
+    const operatorRows = Number.isInteger(wanted) && wanted > 0
+      ? (await client.query(`SELECT id FROM users WHERE id = $1`, [wanted])).rows
+      : (await client.query(`SELECT id FROM users WHERE username = $1`, [String(inspector_id ?? "")])).rows;
+    const operatorId = operatorRows[0]?.id ?? req.user?.userId ?? null;
+    if (!operatorId)
+      return res.status(400).json(errorEnvelope("OPERATOR_UNKNOWN", `inspector "${inspector_id}" is not a known user`));
+
+    const matCode = String(material_code ?? lot.material_code ?? "").trim();
+    if (!matCode) return res.status(400).json(errorEnvelope("MATERIAL_REQUIRED", "material_code is required"));
+    const suppCode = String(supplier_code ?? lot.supplier_code ?? "").trim();
+
+    const incomingId = (await client.query(
+      `SELECT id FROM wms_incoming_records WHERE id = $1`, [Number(incoming_record_id) || 0],
+    )).rows[0]?.id ?? null;
+
+    // Sample size comes from the AQL plan, the way the receiving-side IQC route picks
+    // it. `active` is an int flag here (default 1), not a boolean, and the plan's
+    // aql_level holds numeric AQL values ("0.065", "0.10") — so a payload carrying an
+    // inspection level such as "II" simply finds no plan and the measurements taken
+    // become the sample.
+    const planRows = (await client.query(
+      `SELECT sample_size FROM iqc_sampling_plans
+        WHERE aql_level = $1 AND COALESCE(active, 1) = 1
+        ORDER BY inspection_level LIMIT 1`,
+      [aql_level || "II"],
+    )).rows;
+    const sampleSize = Number(planRows[0]?.sample_size)
+      || (Array.isArray(measurement_items) ? measurement_items.length : 0);
+
+    const mode = String(dynamic_aql_status ?? "").toUpperCase();
+    const inspectionMode = ["EXEMPT", "REDUCED", "NORMAL", "TIGHTENED", "FULL"].includes(mode) ? mode : "NORMAL";
+
+    await client.query("BEGIN");
+
+    // Both column generations are filled: result/material_lot_id/operator_id are what
+    // this schema requires, the legacy names are what the reports still read.
+    const [insp] = (await client.query(
+      `INSERT INTO iqc_inspections
+       (inspection_no, material_lot_id, inspection_type, result, operator_id, occurred_at,
+        incoming_record_id, lot_no, material_code, supplier_code, sample_size, inspected_qty,
+        aql_level, inspection_result, inspection_types, inspector_id, inspector_name,
+        inspection_date, factory_id, inspection_mode, major_defects, minor_defects,
+        critical_defects, spc_data_linked, remarks)
+       VALUES ($1,$2,'incoming',$3,$4,NOW(),$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NOW(),$16,$17,0,0,0,$18,$19)
+       RETURNING *`,
+      // sample_size and inspected_qty are int and numeric respectively, so one
+      // placeholder cannot serve both — Postgres refuses to infer a single type.
+      [`IQC_${Date.now()}_${randomUUID().slice(0, 8)}`, lot.id,
+       decision === "PASS" ? "pass" : "reject", operatorId, incomingId, lotNo, matCode, suppCode,
+       // inspection_types is varchar[], not a JSON column: the MySQL-shaped
+       // JSON.stringify here produced "malformed array literal".
+       sampleSize, sampleSize, aql_level || "II", decision,
+       ["visual", "dimensional", "functional"],
+       String(inspector_id ?? operatorId), inspector_name ?? null, factory_id || 1, inspectionMode,
+       Array.isArray(measurement_items) && measurement_items.length > 0, notes ?? null],
+    )).rows;
     const inspId = insp.id;
-    // Insert measurement items
-    if (Array.isArray(measurement_items)) {
-      for (const item of measurement_items) {
-        await query(
-          `INSERT INTO iqc_inspection_items
-           (inspection_id, item_sequence, inspection_item_code, inspection_item_name, inspection_category,
-            lower_spec_limit, upper_spec_limit, target_value, measured_value, result, inspector_id, inspector_name)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-          [inspId, item.sequence, item.code, item.name, item.category||'other',
-           item.lsl, item.usl, item.target, item.measured, item.result, inspector_id, inspector_name]);
-        // If has numeric measured value → create SPC data point
-        if (item.measured !== undefined && item.measured !== null) {
-          await query(
-            `INSERT INTO iqc_spc_data
-             (control_lot_id, material_code, supplier_code, parameter_code, parameter_name,
-              sample_subgroup_id, x_bar, usl, ucl, lcl, center_line, lsl, result, control_chart_type, production_date, inspector_id)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'XBAR_R', CURRENT_DATE, $14)`,
-            [incoming_record_id, material_code, supplier_code, item.code, item.name,
-             `GRP-${inspId}-${item.sequence}`, item.measured, item.usl, (item.usl||0 + item.lsl||0)/2 + (item.usl||0 - item.lsl||0)*0.5,
-             (item.usl||0 + item.lsl||0)/2 + (item.usl||0 - item.lsl||0)*0.3,
-             (item.usl||0 + item.lsl||0)/2 + (item.usl||0 - item.lsl||0)*0.15,
-             (item.usl||0 + item.lsl||0)/2, item.lsl,
-             item.result === 'FAIL' ? 'OUT_OF_CONTROL' : 'IN_CONTROL', inspector_id]);
-        }
-      }
+
+    for (const item of Array.isArray(measurement_items) ? measurement_items : []) {
+      await client.query(
+        `INSERT INTO iqc_inspection_items
+         (inspection_id, item_sequence, inspection_item_code, inspection_item_name, inspection_category,
+          lower_spec_limit, upper_spec_limit, target_value, measured_value, result, inspector_id, inspector_name)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [inspId, item.sequence, item.code, item.name, item.category || "other",
+         item.lsl, item.usl, item.target, item.measured, item.result,
+         String(inspector_id ?? operatorId), inspector_name ?? null]);
+      if (item.measured === undefined || item.measured === null) continue;
+      // Control limits around the specification midpoint. The old expression relied on
+      // `0 + x || 0` precedence, which ignored lsl entirely.
+      const mid = ((Number(item.usl) || 0) + (Number(item.lsl) || 0)) / 2;
+      const span = (Number(item.usl) || 0) - (Number(item.lsl) || 0);
+      await client.query(
+        `INSERT INTO iqc_spc_data
+         (material_code, parameter_code, parameter_name, measurement_index, sample_subgroup_id,
+          x_bar, usl, ucl, lcl, center_line, lsl, result, control_chart_type, production_date, inspector_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'XBAR_R',CURRENT_DATE,$13)`,
+        [matCode, item.code, item.name, Number(item.sequence) || 1, `GRP-${inspId}-${item.sequence}`,
+         item.measured, item.usl ?? null, mid + span * 0.5, mid + span * 0.3, mid + span * 0.15,
+         item.lsl ?? null, item.result === "FAIL" ? "OUT_OF_CONTROL" : "IN_CONTROL", operatorId]);
     }
-    // Insert defects
-    if (Array.isArray(defects)) {
-      let defectNo = 1;
-      for (const d of defects) {
-        await query(
-          `INSERT INTO iqc_defect_records (inspection_id, defect_no, defect_type, defect_code, defect_location, quantity_defect, severity)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [inspId, defectNo++, d.defect_code||d.defect_type, d.defect_type, d.location, d.count||1, d.severity||'minor']);
-      }
-      // Count defects by severity
-      for (const d of defects) {
-        if (d.severity === 'critical') await query(`UPDATE iqc_inspections SET critical_defects=critical_defects+$1 WHERE id=$2`, [d.count||1, inspId]);
-        else if (d.severity === 'major') await query(`UPDATE iqc_inspections SET major_defects=major_defects+$1 WHERE id=$2`, [d.count||1, inspId]);
-        else await query(`UPDATE iqc_inspections SET minor_defects=minor_defects+$1 WHERE id=$2`, [d.count||1, inspId]);
-      }
+
+    const defectList = Array.isArray(defects) ? defects : [];
+    let defectNo = 1;
+    for (const d of defectList) {
+      await client.query(
+        `INSERT INTO iqc_defect_records
+         (inspection_id, defect_no, defect_type, defect_code, defect_location, quantity_defect, severity)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [inspId, defectNo++, d.defect_type || "other", d.defect_code ?? null,
+         d.location ?? null, d.count || 1, d.severity || "minor"]);
     }
-    // Update WMS material lot status
-    if (inspection_result === 'PASS') {
-      await query(`UPDATE material_lots SET iqc_status='released' WHERE lot_no=$1`, [lot_no]);
-    } else if (inspection_result === 'FAIL') {
-      await query(`UPDATE material_lots SET iqc_status='failed' WHERE lot_no=$1`, [lot_no]);
-      // Create MES lock
-      await query(
-        `INSERT INTO iqc_mes_work_order_locks (incoming_record_id, work_order_code, material_code, material_lot_no, lock_reason, locked_by)
+    for (const d of defectList) {
+      const column = d.severity === "critical" ? "critical_defects"
+        : d.severity === "major" ? "major_defects" : "minor_defects";
+      await client.query(`UPDATE iqc_inspections SET ${column} = ${column} + $1 WHERE id = $2`, [d.count || 1, inspId]);
+    }
+
+    await client.query(
+      `UPDATE material_lots SET iqc_status = $1, updated_at = now() WHERE id = $2`,
+      [decision === "PASS" ? "released" : "rejected", lot.id]);
+
+    if (decision === "FAIL") {
+      await client.query(
+        `INSERT INTO iqc_mes_work_order_locks
+         (incoming_record_id, work_order_code, material_code, material_lot_no, lock_reason, locked_by)
          VALUES ($1,'',$2,$3,'iqc_reject',$4)`,
-        [incoming_record_id, material_code, lot_no, inspector_id]);
+        [incomingId, matCode, lotNo, String(inspector_name ?? inspector_id ?? operatorId)]);
     }
-    res.json(insp);
-  } catch(e) { res.status(500).json({error: e.message}); }
+
+    await client.query("COMMIT");
+    res.status(201).json(insp);
+  } catch (e) {
+    // A half-written inspection is the orphan row this table already has one of.
+    await client.query("ROLLBACK").catch(() => {});
+    res.status(500).json(errorEnvelope("IQC_INSPECTION_FAILED", e.message));
+  } finally {
+    client.release();
+  }
 });
 
 // 获取离线队列状态
@@ -18841,8 +18842,14 @@ app.get("/wms/storage-locations", async (req, res) => {
               sl.allow_receiving AS "allowReceiving", sl.allow_transfer AS "allowTransfer", sl.allow_putaway AS "allowPutaway",
               sl.x_coord AS "xCoord", sl.y_coord AS "yCoord", sl.coordinate_system AS "coordinateSystem",
               sl.aisle_code AS "aisleCode", sl.rack_code AS "rackCode", sl.level_code AS "levelCode", sl.bin_code AS "binCode",
-              sl.temperature_min AS "temperatureMin", sl.temperature_max AS "temperatureMax",
-              sl.humidity_min AS "humidityMin", sl.humidity_max AS "humidityMax", sl.msd_allowed AS "msdAllowed", sl.max_pallets AS "maxPallets",
+              -- temperature/humidity limits live on the ZONE, not on the location:
+              -- they are properties of the zone's storage envelope (wms_zones).
+              -- Reading them off `sl` referenced columns that no migration ever
+              -- created, so this endpoint failed with
+              -- "column sl.temperature_min does not exist" in every environment.
+              z.temperature_min AS "temperatureMin", z.temperature_max AS "temperatureMax",
+              z.humidity_min AS "humidityMin", z.humidity_max AS "humidityMax",
+              sl.msd_allowed AS "msdAllowed", sl.max_pallets AS "maxPallets",
               COALESCE((SELECT json_agg(json_build_object('materialId', r.material_id, 'ruleType', r.rule_type, 'reason', r.reason) ORDER BY r.rule_type, r.material_id)
                         FROM wms_location_material_rules r WHERE r.location_id=sl.id), '[]'::json) AS "materialRules",
               w.code AS "warehouseCode", w.warehouse_type AS "warehouseType", z.code AS "zoneCode"
@@ -20946,13 +20953,15 @@ app.post("/bom-import-change-requests/:id/decision", requirePermission("bom.edit
 // finished products, and finished-product SNs never contribute to material stock.
 app.get("/wms/raw-material-inventory", requirePermission("wms.view"), async (req,res)=>{
   try {
-    const { q="", limit=100, offset=0 }=req.query;
+    const { q="", iqc_status="", limit=100, offset=0 }=req.query;
     const pattern=`%${q}%`;
     const rows=await query(`SELECT * FROM v_wms_raw_material_inventory
       WHERE ($1='' OR lot_no ILIKE $2 OR material_code ILIKE $2)
-      ORDER BY material_lot_id DESC LIMIT $3 OFFSET $4`,[q,pattern,Number(limit),Number(offset)]);
+        AND ($3='' OR iqc_status=$3)
+      ORDER BY material_lot_id DESC LIMIT $4 OFFSET $5`,[q,pattern,String(iqc_status),Number(limit),Number(offset)]);
     const count=await query(`SELECT count(*)::int AS total FROM v_wms_raw_material_inventory
-      WHERE ($1='' OR lot_no ILIKE $2 OR material_code ILIKE $2)`,[q,pattern]);
+      WHERE ($1='' OR lot_no ILIKE $2 OR material_code ILIKE $2)
+        AND ($3='' OR iqc_status=$3)`,[q,pattern,String(iqc_status)]);
     res.json(listEnvelope(rows.rows,count.rows[0]?.total??0));
   }catch(err){res.status(500).json(errorEnvelope("SERVER_ERROR",err.message));}
 });
