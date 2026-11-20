@@ -88,6 +88,9 @@ adb shell am start -n com.ruijing.linemanager/com.smt.materialloader.MainActivit
 adb exec-out screencap -p > shot.png          :: 目检 UI 变更
 ```
 
+**MuMu 模拟器不可用于自动化**(本机约定):设备冒烟(含 ROLE_TASK_GRAPH 的三语冒烟门槛)
+须由操作者在真机/MuMu 界面手动完成;智能体不要尝试启动 MuMu 或经其执行测试。
+
 `hotelDebug` 为本地调试构建,但注意其每变体的 `API_BASE_URL` 字段是**死代码** ——
 运行时只读 `PRIMARY/SECONDARY/TERTIARY_API_BASE_URL`,所以它仍然打向 .155;
 如需本地服务,用 `adb reverse tcp:8080 tcp:8080` 加本地代理。
