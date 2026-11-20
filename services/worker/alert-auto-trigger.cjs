@@ -17,7 +17,7 @@ const pool = new pg.Pool({
   port: parseInt(process.env.PGPORT || "5432"),
   user: process.env.PGUSER || "postgres",
   password: process.env.PGPASSWORD || "postgres",
-  database: process.env.PGDATABASE || "smt_factory",
+  database: process.env.PGDATABASE || "factory", options: "-c search_path=rjvn,public",
 });
 
 // Deduplication window: don't re-alert for same WO/line within this many hours

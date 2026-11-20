@@ -1,0 +1,1017 @@
+/* ===== PDA 移动端专用样式 ===== */
+/* 说明：.pda-shell 内的样式为 PDA 页面基础布局，始终生效（不受视口宽度限制）。
+   文件底部保留原有的全局触屏响应式增强。 */
+
+:root {
+  --pda-primary: #1677ff;
+  --pda-success: #52c41a;
+  --pda-warning: #faad14;
+  --pda-danger: #ff4d4f;
+  --pda-bg: #f2f3f5;
+  --pda-text: #1f2329;
+  --pda-muted: #8a9099;
+  /* 3.3：补 soft / ink / border 三档，原先这些值散在页面里硬编码 */
+  --pda-primary-soft: #e6f7ff;
+  --pda-success-soft: #f6ffed;
+  --pda-success-border: #b7eb8f;
+  --pda-success-ink: #135200;
+  --pda-danger-soft: #fff2f0;
+  --pda-danger-border: #ffa39e;
+  --pda-danger-ink: #a8071a;
+  --pda-border: #e0e0e0;
+  --pda-surface: #f9f9f9;
+  --pda-surface-2: #f0f0f0;
+}
+
+/* ---------- 整体壳 ---------- */
+.pda-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  /* 动态视口高度，适配 iPhone 浏览器地址栏伸缩 */
+  min-height: 100dvh;
+  overflow-x: hidden;
+  width: 100%;
+  background: var(--pda-bg);
+  color: var(--pda-text);
+  font-size: 16px;
+}
+
+.pda-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  /* iPhone 刘海/灵动岛安全区适配：顶部留出安全区，内容区保持 52px */
+  padding: env(safe-area-inset-top) 10px 0;
+  background: var(--pda-primary);
+  color: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+  box-sizing: border-box;
+}
+
+.pda-header-left,
+.pda-header-right {
+  display: flex;
+  align-items: center;
+  min-width: 64px;
+}
+.pda-header-right {
+  justify-content: flex-end;
+}
+
+.pda-header-title {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pda-content {
+  flex: 1;
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12px;
+  /* iPhone 底部 Home 指示条安全区适配 */
+  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+}
+
+/* ---------- 顶部按钮 ---------- */
+.pda-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.pda-icon-btn:active {
+  background: rgba(255, 255, 255, 0.2);
+}
+.pda-icon-btn.danger {
+  color: var(--pda-danger);
+}
+
+.pda-lang-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 48px;
+  min-width: 64px;
+  padding: 6px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
+  background: transparent;
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ---------- 登录 ---------- */
+.pda-login-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  max-width: 420px;
+}
+.pda-login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 8px 0 4px;
+}
+.pda-login-logo-img {
+  border-radius: 18px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+}
+.pda-login-brand-text {
+  text-align: center;
+  margin-top: 12px;
+}
+.pda-login-company {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--pda-text);
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+.pda-login-brand-text .pda-login-sub {
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+.pda-login-sub {
+  text-align: center;
+  margin: 4px 0 24px;
+  color: var(--pda-muted);
+  font-size: 15px;
+}
+
+/* ---------- 表单 ---------- */
+.pda-field {
+  margin-bottom: 14px;
+}
+.pda-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--pda-text);
+  margin-bottom: 6px;
+}
+.pda-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.pda-input-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--pda-muted);
+  pointer-events: none;
+}
+.pda-input {
+  width: 100%;
+  height: 48px;
+  padding: 0 12px;
+  font-size: 16px;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--pda-text);
+  box-sizing: border-box;
+}
+.pda-input-wrap .pda-input {
+  padding-left: 40px;
+}
+textarea.pda-input {
+  height: auto;
+  padding: 10px 12px;
+}
+select.pda-input {
+  padding-right: 12px;
+}
+.pda-input:focus {
+  /* 原来是 outline:none + 15% 透明光晕：触摸屏上"有没有聚焦"看不出来。
+     改为 2px 实色环，扫码定位时能一眼确认光标在哪。 */
+  outline: 2px solid var(--pda-primary);
+  outline-offset: 1px;
+  border-color: var(--pda-primary);
+  box-shadow: none;
+}
+.pda-row2 {
+  display: flex;
+  gap: 8px;
+}
+.pda-row2 > * {
+  flex: 1;
+}
+.pda-error-text {
+  color: var(--pda-danger);
+  font-size: 14px;
+  margin: 8px 0;
+}
+.pda-ok-box {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  border-radius: 8px;
+  background: #f0f9eb;
+  border: 1px solid #b7eb8f;
+  color: #389e0d;
+  font-weight: 500;
+}
+.pda-link-btn {
+  margin-top: 8px;
+  background: none;
+  border: none;
+  color: var(--pda-primary);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+/* ---------- 复选框 ---------- */
+.pda-check {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: 10px;
+  border-radius: 6px;
+  border: 2px solid #c0c4cc;
+  background: #fff;
+  cursor: pointer;
+  position: relative;
+  padding: 0;
+}
+.pda-check.checked {
+  background: var(--pda-primary);
+  border-color: var(--pda-primary);
+}
+.pda-check.checked::after {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 2px;
+  width: 5px;
+  height: 10px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+/* ---------- 扫码输入 ---------- */
+.pda-scan-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.pda-scan-icon {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--pda-primary);
+  pointer-events: none;
+  z-index: 1;
+}
+.pda-scan-input {
+  width: 100%;
+  height: 56px;
+  padding: 0 54px 0 46px;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--pda-text);
+  border: 2px solid var(--pda-primary);
+  border-radius: 10px;
+  background: #f0f7ff;
+  box-sizing: border-box;
+}
+.pda-scan-input:focus {
+  outline: 3px solid var(--pda-primary);
+  outline-offset: 2px;
+  box-shadow: none;
+}
+.pda-camera-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 8px;
+  background: var(--pda-primary);
+  color: #fff;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.pda-camera-btn:active {
+  opacity: 0.8;
+}
+.pda-camera-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ---------- 按钮 ---------- */
+.pda-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  padding: 0 20px;
+  border: none;
+  border-radius: 10px;
+  font-size: 17px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.pda-btn:active {
+  opacity: 0.8;
+}
+.pda-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.pda-btn-block {
+  width: 100%;
+}
+.pda-btn-primary {
+  background: var(--pda-primary);
+  color: #fff;
+}
+.pda-btn-success {
+  background: var(--pda-success);
+  color: #fff;
+}
+.pda-btn-danger {
+  background: var(--pda-danger);
+  color: #fff;
+}
+.pda-btn-ghost {
+  background: #fff;
+  color: var(--pda-primary);
+  border: 1px solid var(--pda-primary);
+}
+
+/* ---------- 卡片 ---------- */
+.pda-card {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  margin-bottom: 12px;
+  padding: 16px;
+}
+.pda-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.pda-card-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.pda-card-extra {
+  font-size: 13px;
+  color: var(--pda-muted);
+}
+
+/* ---------- 列表 ---------- */
+.pda-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pda-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #ececec;
+  border-radius: 10px;
+  background: #fafafa;
+}
+.pda-list-item.active {
+  border-color: var(--pda-primary);
+  background: #f0f7ff;
+}
+.pda-list-main {
+  flex: 1;
+  min-width: 0;
+}
+.pda-list-title {
+  font-size: 16px;
+  font-weight: 600;
+  word-break: break-all;
+}
+.pda-list-sub {
+  font-size: 13px;
+  color: var(--pda-muted);
+  margin-top: 2px;
+}
+.pda-list-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.pda-qty-input {
+  width: 84px;
+  height: 40px;
+  text-align: center;
+  font-size: 16px;
+  font-weight: 600;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+}
+
+.pda-empty {
+  text-align: center;
+  color: var(--pda-muted);
+  padding: 36px 0;
+  font-size: 15px;
+}
+
+/* ---------- 描述网格 ---------- */
+.pda-desc-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 12px;
+  font-size: 15px;
+}
+.pda-desc-grid > span {
+  color: var(--pda-muted);
+}
+.pda-desc-grid > b {
+  text-align: right;
+  word-break: break-all;
+}
+
+/* ---------- 分页 ---------- */
+.pda-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.pda-pager-info {
+  font-size: 14px;
+  color: var(--pda-muted);
+}
+
+/* ---------- 弹窗 ---------- */
+.pda-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+.pda-modal {
+  width: 100%;
+  max-width: 480px;
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  padding: 20px 16px 24px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.pda-modal-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 12px;
+}
+
+/* ---------- Tabs / Chips ---------- */
+.pda-tabs {
+  display: flex;
+  background: #fff;
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 12px;
+}
+.pda-tab {
+  flex: 1;
+  height: 44px;
+  border: none;
+  background: transparent;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--pda-muted);
+  cursor: pointer;
+}
+.pda-tab.active {
+  background: var(--pda-primary);
+  color: #fff;
+}
+.pda-chip-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.pda-chip {
+  padding: 10px 14px;
+  border: 1px solid #d9d9d9;
+  border-radius: 18px;
+  background: #fff;
+  font-size: 14px;
+  cursor: pointer;
+}
+.pda-chip.active {
+  border-color: var(--pda-primary);
+  background: #e6f0ff;
+  color: var(--pda-primary);
+  font-weight: 600;
+}
+
+/* ---------- 状态标签 ---------- */
+.pda-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.pda-badge-default {
+  background: #f0f0f0;
+  color: #555;
+}
+.pda-badge-success {
+  background: #f6ffed;
+  color: #389e0d;
+}
+.pda-badge-warning {
+  background: #fffbe6;
+  color: #d48806;
+}
+.pda-badge-danger {
+  background: #fff1f0;
+  color: #cf1322;
+}
+
+/* ---------- 结果全屏提示 ---------- */
+.pda-result-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.pda-result-box {
+  background: #fff;
+  border-radius: 16px;
+  padding: 32px 28px;
+  text-align: center;
+  min-width: 220px;
+}
+.pda-result-icon.ok {
+  color: var(--pda-success);
+}
+.pda-result-icon.fail {
+  color: var(--pda-danger);
+}
+.pda-result-title {
+  margin-top: 12px;
+  font-size: 20px;
+  font-weight: 700;
+}
+.pda-result-title.ok {
+  color: var(--pda-success);
+}
+.pda-result-title.fail {
+  color: var(--pda-danger);
+}
+.pda-result-sub {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--pda-muted);
+}
+/* 失败弹窗的确认按钮：大号、满宽，方便戴手套点按 */
+.pda-result-confirm {
+  margin-top: 20px;
+  width: 100%;
+  min-width: 180px;
+  padding: 14px 24px;
+  border: none;
+  border-radius: 10px;
+  background: var(--pda-danger);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pda-result-confirm:active {
+  opacity: 0.82;
+}
+
+/* ---------- 首页菜单 ---------- */
+.pda-user-card {
+  background: linear-gradient(135deg, #1677ff, #4096ff);
+  color: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 12px;
+}
+.pda-user-name {
+  font-size: 20px;
+  font-weight: 700;
+}
+.pda-user-meta {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-top: 4px;
+}
+.pda-menu-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.pda-menu-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #fff;
+  border: none;
+  border-radius: 12px;
+  padding: 18px 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  cursor: pointer;
+}
+.pda-menu-item:active {
+  background: #f0f7ff;
+}
+.pda-menu-icon {
+  color: var(--pda-primary);
+}
+.pda-menu-label {
+  font-size: 13px;
+  text-align: center;
+  color: var(--pda-text);
+}
+.pda-menu-badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--pda-danger);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* ---------- 切换到电脑版入口 ---------- */
+.pda-desktop-switch {
+  text-align: center;
+  margin-top: 24px;
+}
+.pda-desktop-switch-btn {
+  background: none;
+  border: none;
+  color: var(--pda-muted);
+  font-size: 12px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.pda-desktop-switch-btn:active {
+  color: var(--pda-primary);
+}
+
+/* ---------- 超窄屏适配（max-width: 360px）：菜单改 2 列 ---------- */
+@media (max-width: 360px) {
+  .pda-menu-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ============================================================================
+   触屏增强（PC 界面运行在触摸屏设备上时生效）
+   ----------------------------------------------------------------------------
+   判定来源：html[data-input="coarse"]，由 client/src/index.tsx 启动时写入。
+   · 不再用 @media (pointer: coarse)：与 JS 判定并存 = 两个判定者，改一处另一处不跟。
+   · 不再用 !important：冲突改为"作用域更具体者生效"，可预测。
+   · 已删除实测对 PC 完全无效或误伤的规则：
+     .sidebar / .sidebar.open  死规则（Layout 用 bg-sidebar，精确类不命中）
+     .btn                      全站不存在
+     [class*="btn"]            只命中 PDA 自己的 pda-btn*
+     [class*="card"]           误伤 14 处 bg-card（≥130 个 outline 按钮、吸顶栏、
+                               弹窗本体、输入框），导致整排错行
+     [class*="tag"|badge|status] 组件类名不含这些词，PC 上 0 命中
+     .pda-hide                 全站 0 处使用
+   · 根字号 16px 已移到 tailwind-theme.css（基准只留一个源），此处不再重复。
+   ============================================================================ */
+html[data-input="coarse"] body {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+html[data-input="coarse"] button,
+html[data-input="coarse"] [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+  font-size: 15px;
+}
+
+html[data-input="coarse"] input,
+html[data-input="coarse"] select,
+html[data-input="coarse"] textarea {
+  min-height: 44px;
+  font-size: 16px; /* 防 iOS 聚焦时页面自动放大 */
+  padding: 8px 12px;
+}
+
+html[data-input="coarse"] input[data-scan="true"],
+html[data-input="coarse"] .scan-input {
+  min-height: 56px;
+  font-size: 18px;
+  font-weight: 600;
+  border: 2px solid #1677ff;
+  background: #f0f7ff;
+}
+
+html[data-input="coarse"] .ant-table-wrapper,
+html[data-input="coarse"] [class*="table"] {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+html[data-input="coarse"] [role="dialog"],
+html[data-input="coarse"] [class*="modal"] {
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.pda-mode {
+  font-size: 16px;
+}
+.pda-mode button,
+.pda-mode [role="button"] {
+  min-height: 44px;
+  min-width: 44px;
+}
+.pda-mode input,
+.pda-mode select,
+.pda-mode textarea {
+  min-height: 44px;
+  font-size: 16px;
+}
+
+/* ---------- HTTPS 警告条 ---------- */
+.pda-https-warning {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #fff7e6, #ffe7ba);
+  border-bottom: 1px solid #ffd591;
+  flex-shrink: 0;
+}
+.pda-https-warning-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  color: #ad6800;
+}
+.pda-https-warning-text {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  line-height: 1.3;
+  min-width: 0;
+}
+.pda-https-warning-text strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: #874d00;
+}
+.pda-https-warning-text span {
+  color: #ad6800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pda-https-switch-btn {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  background: #fa8c16;
+  color: #fff;
+  border: none;
+  border-radius: 16px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pda-https-switch-btn:active {
+  background: #d46b08;
+}
+
+/* ---------- 使用帮助（PDA） ---------- */
+.pda-help-search {
+  position: relative;
+  margin-bottom: 10px;
+}
+.pda-help-search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--pda-muted);
+  pointer-events: none;
+}
+.pda-help-search-input {
+  padding-left: 36px;
+}
+.pda-help-list {
+  display: flex;
+  flex-direction: column;
+}
+.pda-help-card {
+  padding: 0;
+  overflow: hidden;
+}
+.pda-help-card-head {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  color: var(--pda-text);
+}
+.pda-help-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.pda-help-card-body {
+  padding: 0 16px 14px;
+  border-top: 1px solid #f0f0f0;
+}
+.pda-help-summary {
+  font-size: 13px;
+  color: var(--pda-muted);
+  line-height: 1.6;
+  padding: 10px 0;
+}
+.pda-help-section {
+  padding-top: 6px;
+}
+.pda-help-section + .pda-help-section {
+  border-top: 1px dashed #eee;
+  margin-top: 12px;
+}
+.pda-help-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--pda-text);
+  padding-left: 8px;
+  border-left: 3px solid var(--pda-primary);
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+.pda-help-p {
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #3d434d;
+  margin: 0 0 8px;
+}
+.pda-help-h3 {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pda-text);
+  margin: 10px 0 6px;
+}
+.pda-help-ul,
+.pda-help-ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 13.5px;
+  line-height: 1.75;
+  color: #3d434d;
+}
+/* Tailwind preflight 会把 ul/ol 的 list-style 清空，这里显式恢复项目符号与序号 */
+.pda-help-ul {
+  list-style: disc outside;
+}
+.pda-help-ol {
+  list-style: decimal outside;
+}
+.pda-help-ul li::marker {
+  color: var(--pda-primary);
+}
+.pda-help-ol li::marker {
+  color: var(--pda-primary);
+  font-weight: 600;
+}
+.pda-help-ul li,
+.pda-help-ol li {
+  margin-bottom: 4px;
+}
+.pda-help-note {
+  background: #fafafa;
+  border-left: 3px solid var(--pda-primary);
+  border-radius: 0 8px 8px 0;
+  padding: 8px 10px;
+  margin: 0 0 10px;
+}
+.pda-help-note-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.pda-help-note-body {
+  font-size: 13px;
+  line-height: 1.7;
+  color: #3d434d;
+  white-space: pre-line;
+}
+.pda-help-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 10px;
+  border: 1px solid #ececec;
+  border-radius: 8px;
+}
+.pda-help-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.pda-help-table th {
+  background: #f5f6f8;
+  font-weight: 600;
+  color: var(--pda-text);
+  text-align: left;
+  padding: 8px 10px;
+  white-space: nowrap;
+  border-bottom: 1px solid #ececec;
+}
+.pda-help-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid #f5f5f5;
+  color: #3d434d;
+  line-height: 1.6;
+  vertical-align: top;
+}
+.pda-help-table tr:last-child td {
+  border-bottom: none;
+}
+.pda-help-flow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin: 0 0 10px;
+}
+.pda-help-flow-step {
+  background: #e8f1ff;
+  color: var(--pda-primary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 7px;
+}

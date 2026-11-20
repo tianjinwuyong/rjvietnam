@@ -6,7 +6,7 @@ services:
     ports:
       - "${DB_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: smt_factory
+      POSTGRES_DB: factory
       POSTGRES_USER: smt_factory
       POSTGRES_PASSWORD: smt_factory
     volumes:

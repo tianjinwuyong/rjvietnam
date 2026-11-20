@@ -1,5 +1,5 @@
 const pg = require('pg');
-const pool = new pg.Pool({ host: '127.0.0.1', port: 5432, database: 'smt_factory', user: 'postgres', password: 'postgres' });
+const pool = new pg.Pool({ host: '127.0.0.1', port: 5432, database: 'factory', options: "-c search_path=rjvn,public", user: 'postgres', password: 'postgres' });
 async function main() {
   // Find material lots that match BOM materials for WO 26071020017 (bom_id=45)
   const lots = await pool.query(`

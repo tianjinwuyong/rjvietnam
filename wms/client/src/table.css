@@ -1,0 +1,66 @@
+/**
+ * 表格垫片（3.1）
+ * ---------------------------------------------------------------------------
+ * 原来这些规则由两个组件各自在 JSX 里注入 <style>：
+ *   · compat/antd-table.tsx     —— 列宽拖动手柄
+ *   · components/ui/resizable-table.tsx —— 固定布局 + 单行省略
+ * 每个渲染实例都会往 <head> 里塞一份同样的样式，且优先级与加载顺序相关。
+ * 现在统一提到这里，由 index.tsx 引入一次。
+ *
+ * 与 "1 处来源" 原则一致：表格的视觉规则只在 CSS 里定义，组件只负责结构。
+ */
+
+/* ---- 列宽拖动手柄（来自 antd-table.tsx） ---- */
+th .col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -5px;
+  width: 11px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 10;
+  background: transparent;
+}
+
+th .col-resize-handle:hover,
+th .col-resize-handle:active {
+  background: var(--primary);
+  opacity: 0.25;
+}
+
+/* ---- 固定布局 + 单行省略（来自 resizable-table.tsx） ---- */
+/* table-layout: fixed 是固定列(sticky)对齐的前提，必须保留 !important：
+   antd 会按列宽汇总写行内 style，普通声明压不住。 */
+.resizable-table-wrapper .ant-table table {
+  table-layout: fixed !important;
+}
+
+.resizable-table-wrapper .ant-table-thead > tr > th,
+.resizable-table-wrapper .ant-table-tbody > tr > td {
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 单元格内边距不在此定义：统一由 index.tsx 的 Table token
+   （cellPaddingBlock / cellPaddingInline）控制，否则"调密度"改了没反应。 */
+
+/* ---- 原生 <table> 表头统一左对齐（4.0） ----
+ * 走 compat/antd-table 的列表已在 ResizableHeaderCell 里强制左对齐；
+ * 这里兜住页面里手写的 <table>（库存盘点、调拨、检验明细、弹窗明细…）。
+ * 这些表头此前用 .text-center / .text-right 工具类逐处声明，一排看过去不齐。
+ *
+ * 不用 !important：Tailwind 工具类在 @layer utilities 里，本文件是不分层样式，
+ * 天然压得住；同时不干扰单元格里其它对齐声明。
+ */
+table > thead > tr > th {
+  text-align: left;
+}
+
+/* 检验报告 / 打印稿例外：序号等窄列的表头居中是有意的版式，保持原样 */
+.iqc-paper table > thead > tr > th.text-center,
+.iqc-inspect-page table > thead > tr > th.text-center {
+  text-align: center;
+}

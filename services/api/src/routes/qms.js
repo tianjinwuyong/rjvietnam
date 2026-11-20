@@ -26,6 +26,7 @@ const IQC_LLM_PROVIDER_OPTIONS = Object.freeze([
   { value:'minimax',label:'MiniMax',defaultModel:'MiniMax-M2.7',credentialEnv:'MINIMAX_API_KEY' },
   { value:'ollama',label:'Ollama (local)',defaultModel:'qwen2.5:7b',credentialEnv:null },
   { value:'openai-compatible',label:'OpenAI-compatible',defaultModel:'gpt-4o-mini',credentialEnv:'OPENAI_API_KEY' },
+  { value:'deepseek',label:'DeepSeek',defaultModel:'deepseek-chat',credentialEnv:'DEEPSEEK_API_KEY' },
   { value:'hermes',label:'Hermes CLI',defaultModel:'configured-default',credentialEnv:null },
   { value:'opencode',label:'OpenCode CLI',defaultModel:'configured-default',credentialEnv:null },
   { value:'pi',label:'Pi CLI',defaultModel:'configured-default',credentialEnv:null },

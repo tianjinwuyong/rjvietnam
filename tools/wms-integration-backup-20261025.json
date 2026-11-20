@@ -1,0 +1,18 @@
+{
+  "id": 1,
+  "wms_db_host": "192.168.6.160",
+  "wms_db_port": 5432,
+  "wms_db_name": "wms",
+  "wms_db_user": "postgres",
+  "wms_db_password_enc": "v1:x39bHslWRWAI6po9:fjrZ6isSbwFU7HxLnC3XqA==:hon9znlY",
+  "wms_webhook_url": null,
+  "wms_webhook_secret_enc": "v1:Yeahew4ebI+OtWos:SDpbTW/GLC7lRLJDTZcrcg==:taA78Q5M5T3dbZ+qoUGWqnhv",
+  "wms_base_url": "http://192.168.6.160:3000",
+  "wms_api_key_enc": null,
+  "oa_service_user_id": null,
+  "last_test_at": "2026-10-24T19:32:56.834Z",
+  "last_test_ok": false,
+  "last_test_error": "未填写数据库密码（WMS_DB_PASSWORD 为空）",
+  "updated_at": "2026-10-25T07:58:44.360Z",
+  "updated_by": "1"
+}

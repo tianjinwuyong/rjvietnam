@@ -241,3 +241,11 @@ database/backups/
 
 # 站点终端的设备凭据由部署时逐台写入，不进 git（模板 station-config.example.js）
 apps/station-agent/public/station-config.js
+# WorkBuddy local project data (memory, config, logs) — never commit
+.workbuddy/
+
+# ---- 来自 feature/oa-workspace 的忽略项（合并保留） ----
+tmp/
+out/
+.DS_Store
+Thumbs.db

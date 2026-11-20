@@ -1,0 +1,3257 @@
+[
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/template",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/import",
+    "auth": "no",
+    "perm": "attend:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/raw",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/summary",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/compute",
+    "auth": "no",
+    "perm": "attend:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/rules",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/rules/:code",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/rules",
+    "auth": "no",
+    "perm": "attend:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "PUT",
+    "path": "/api/attendance/rules/:code",
+    "auth": "no",
+    "perm": "attend:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "DELETE",
+    "path": "/api/attendance/rules/:code",
+    "auth": "no",
+    "perm": "attend:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/calendar/:yearMonth",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "PUT",
+    "path": "/api/attendance/calendar/:yearMonth",
+    "auth": "no",
+    "perm": "attend:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/schedule/template",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/schedule/import",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/schedule/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/schedule",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/schedule/cell",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/schedule/batch",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "DELETE",
+    "path": "/api/attendance/schedule",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/shifts",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "PUT",
+    "path": "/api/attendance/shifts/:code",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/anomalies/detect",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/anomalies/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/anomalies/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/anomalies",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/anomalies/:id/resolve",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/anomalies/:id/unresolve",
+    "auth": "no",
+    "perm": "attend:schedule"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/anomalies/remedy-stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/anomalies/:id/remedy-preview",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/anomalies/:id/miss-card",
+    "auth": "no",
+    "perm": "attend:remedy"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/anomalies/:id/clear-remedy",
+    "auth": "no",
+    "perm": "attend:remedy"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/comp/overrides",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/comp/overrides",
+    "auth": "no",
+    "perm": "attend:comp"
+  },
+  {
+    "file": "attendance.js",
+    "method": "DELETE",
+    "path": "/api/attendance/comp/overrides/:id",
+    "auth": "no",
+    "perm": "attend:comp"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/comp/balance",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/comp/ledger",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/comp/batch",
+    "auth": "no",
+    "perm": "attend:comp"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/comp/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/attendance/comp/overdue",
+    "auth": "no",
+    "perm": "attend:comp"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/attendance/comp/offset-annual",
+    "auth": "no",
+    "perm": "attend:comp"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/structures",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/structures/:id",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/salary/structures",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "PUT",
+    "path": "/api/salary/structures/:id",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/salary/structures/:id/approve",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/classes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/classes/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/salary/classes",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "PUT",
+    "path": "/api/salary/classes/:id",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "DELETE",
+    "path": "/api/salary/classes/:id",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/assignments",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/salary/assignments",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/salary/assignments/batch",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "POST",
+    "path": "/api/salary/generate",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/performance-records",
+    "auth": "no",
+    "perm": "salary:manage"
+  },
+  {
+    "file": "attendance.js",
+    "method": "GET",
+    "path": "/api/salary/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "POST",
+    "path": "/api/auth/login",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "POST",
+    "path": "/api/auth/feishu/login",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "POST",
+    "path": "/api/auth/logout",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "PUT",
+    "path": "/api/auth/language",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "GET",
+    "path": "/api/i18n/dict",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "GET",
+    "path": "/api/auth/profile",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "POST",
+    "path": "/api/auth/password",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "GET",
+    "path": "/api/notifications",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "auth.js",
+    "method": "POST",
+    "path": "/api/notifications/read",
+    "auth": "yes",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/next-code",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/doc-drafts/latest",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/doc-drafts",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/doc-drafts/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/doc-drafts",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "PUT",
+    "path": "/api/doc-drafts/:id",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "DELETE",
+    "path": "/api/doc-drafts/:id",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/public-list",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/seals",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "PUT",
+    "path": "/api/docs/seals/:type",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/external",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/reviews",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/ledger/:type",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/ledger/:type/export",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/borrow/:id/return",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/cron/scan",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/issue/feed",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/issue/feed/:id/read",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/issue/feed/:id/reads",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "PUT",
+    "path": "/api/docs/:id",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/lock",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/heartbeat",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/unlock",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/draft",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/version",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/version-lang",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/submit-issue",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/issue-status",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/review-action",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/publish",
+    "auth": "no",
+    "perm": "doc:issue"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/obsolete",
+    "auth": "no",
+    "perm": "doc:issue"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/submit-obsolete",
+    "auth": "no",
+    "perm": "doc:issue"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/obsolete-status",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/destroy",
+    "auth": "no",
+    "perm": "doc:issue"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/issue-records",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/issue-records",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/borrow",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/borrow",
+    "auth": "no",
+    "perm": "doc:borrow"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/relations",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/relations",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/sealed-file",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "GET",
+    "path": "/api/docs/:id/attachments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/attachments",
+    "auth": "no",
+    "perm": "doc:edit"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/external-review",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/review-plan",
+    "auth": "no",
+    "perm": "doc:manage"
+  },
+  {
+    "file": "doc.js",
+    "method": "POST",
+    "path": "/api/docs/:id/print-log",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/meta/:type/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/folder/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/breadcrumb/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/folder",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "PUT",
+    "path": "/api/drive/folder/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "DELETE",
+    "path": "/api/drive/folder/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/file",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "PUT",
+    "path": "/api/drive/file/:id/content",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "PUT",
+    "path": "/api/drive/file/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "DELETE",
+    "path": "/api/drive/file/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/acl/:folderId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "PUT",
+    "path": "/api/drive/acl/:folderId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "DELETE",
+    "path": "/api/drive/acl/:folderId/:userId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/file/:id/move",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/file/:id/copy",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/folder/:id/move",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/folder/:id/copy",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/trash",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/trash/:type/:id/restore",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/trash/:type/:id/purge",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/search",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "POST",
+    "path": "/api/drive/share",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/share/:token",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/audit",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "drive.js",
+    "method": "GET",
+    "path": "/api/drive/audit/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "exam.js",
+    "method": "GET",
+    "path": "/api/exams",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "GET",
+    "path": "/api/exams/my",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "exam.js",
+    "method": "GET",
+    "path": "/api/exams/attempts/:attemptId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams/attempts/:attemptId/submit",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams/attempts/:attemptId/retake",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "exam.js",
+    "method": "GET",
+    "path": "/api/exams/:id/attempts",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams/:id/publish",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams/:id/close",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "GET",
+    "path": "/api/exams/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "PUT",
+    "path": "/api/exams/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "DELETE",
+    "path": "/api/exams/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "GET",
+    "path": "/api/exams/:id/questions",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams/:id/questions",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "POST",
+    "path": "/api/exams/:id/questions/import",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "PUT",
+    "path": "/api/exams/:id/questions/:qid",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "exam.js",
+    "method": "DELETE",
+    "path": "/api/exams/:id/questions/:qid",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/flows",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/flows/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/instances",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/instances/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/attachments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "PATCH",
+    "path": "/api/instances/:id/form-data",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances",
+    "auth": "no",
+    "perm": "flow:submit"
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/submit",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/handover/items",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/handover",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/handover/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/handover",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/handover/blockers/:userId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/tasks/:id/approve",
+    "auth": "no",
+    "perm": "flow:approve"
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/tasks/batch-approve",
+    "auth": "no",
+    "perm": "flow:approve"
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/return",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/tasks/:id/transfer",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/assign-node",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/urge",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/terminate",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/cc",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/archive",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/temp-add",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/instances/:id/withdraw",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/flows/:id/candidates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/ledger/:code",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/stats/overview",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/stats/calendar",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "PUT",
+    "path": "/api/flows/:id/config",
+    "auth": "no",
+    "perm": "flow:config"
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/flows",
+    "auth": "no",
+    "perm": "flow:config"
+  },
+  {
+    "file": "flow.js",
+    "method": "GET",
+    "path": "/api/flows/:id/versions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/flows/:id/versions",
+    "auth": "no",
+    "perm": "flow:config"
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/flows/:id/versions/:vid/release",
+    "auth": "no",
+    "perm": "flow:config"
+  },
+  {
+    "file": "flow.js",
+    "method": "POST",
+    "path": "/api/flows/:id/versions/:vid/rollback",
+    "auth": "no",
+    "perm": "flow:config"
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/series",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/series",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/series/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "PUT",
+    "path": "/api/meeting/series/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "DELETE",
+    "path": "/api/meeting/series/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/series/:id/follow",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/series/:id/follow/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "PUT",
+    "path": "/api/meeting/decisions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "DELETE",
+    "path": "/api/meeting/decisions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/decisions/:id/submissions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/decisions/:id/deliverables",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/actions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/actions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "PUT",
+    "path": "/api/meeting/actions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "DELETE",
+    "path": "/api/meeting/actions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/progress",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/claim",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/done",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/close",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/reopen",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/cancel",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/actions/:id/submissions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/actions/:id/deliverables",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/submissions/:id/review",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/submissions/:id/attachments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/minutes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/my",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "PUT",
+    "path": "/api/meeting/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "DELETE",
+    "path": "/api/meeting/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/schedule",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/reschedule",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/cancel",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/start",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/end",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/close",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/:id/attendees",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/attendees",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "PUT",
+    "path": "/api/meeting/:id/attendees/:aid",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "DELETE",
+    "path": "/api/meeting/:id/attendees/:aid",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/attendees/:aid/attend",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/notify",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "PUT",
+    "path": "/api/meeting/:id/minutes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/minutes/confirm",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/:id/decisions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/decisions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/:id/actions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/actions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "GET",
+    "path": "/api/meeting/:id/review",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "meeting.js",
+    "method": "POST",
+    "path": "/api/meeting/:id/review/:rid",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/knowledge",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge",
+    "auth": "no",
+    "perm": "knowledge:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge/:id/approve",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge/:id/view",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge/:id/download",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge/:id/version",
+    "auth": "no",
+    "perm": "knowledge:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/knowledge/:id/versions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/training",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/training",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/questions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/questions/import",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/exam/submit",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/certificates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/by-code/:code",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/template",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/import",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/equipment/:id",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/equipment/:id",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/:id/history",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/:id/scan-log",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/calibrations",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/calibrations",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/equipment/calibrations/:id",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/equipment/calibrations/:id",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/alerts",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/alerts/scan",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/inspect/templates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/inspect/templates/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/inspect/templates",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/equipment/inspect/templates/:id",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/equipment/inspect/templates/:id",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/inspect/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/inspect/records/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/inspect/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/equipment/inspect/records/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/inspect/records/:id/report-issue",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/inspect/records/:id/attachments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/inspect/tasks/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/inspect/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/tasks/generate",
+    "auth": "no",
+    "perm": "equip:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/tasks",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/equipment/tasks/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/equipment/tasks/:id/done",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/ipqc/templates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/ipqc/templates/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/ipqc/templates",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/ipqc/templates/:id",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/ipqc/templates/:id",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/ipqc/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/ipqc/records/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/ipqc/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/ipqc/records/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/ipqc/records/:id/report-issue",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/ipqc/records/:id/attachments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/ipqc/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/ipqc/tasks/generate",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/ipqc/tasks/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/fai/templates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/fai/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/fai/templates/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/fai/templates",
+    "auth": "no",
+    "perm": "fai:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/fai/templates/:id",
+    "auth": "no",
+    "perm": "fai:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/fai/templates/:id",
+    "auth": "no",
+    "perm": "fai:manage"
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/fai/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/fai/records/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/fai/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/fai/records/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/fai/records/:id/report-issue",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/fai/records/:id/attachments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/stats/advanced",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/knowledge/favorites",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/knowledge/search",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/knowledge/likes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/knowledge/stats",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge/:id/like",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/knowledge/:id/favorite",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/calendar/events",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/calendar",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/calendar",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/calendar/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/calendar/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/calendar/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/announcements/unread",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/announcements",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/announcements",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "GET",
+    "path": "/api/announcements/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "PUT",
+    "path": "/api/announcements/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/announcements/:id/publish",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "POST",
+    "path": "/api/announcements/:id/read",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "modules.js",
+    "method": "DELETE",
+    "path": "/api/announcements/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/integration/iqc/lots",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/lots",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/lots/:id",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/lots/:id/claim",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/lots/:id/release",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/templates",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/lots/:id/sheet",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/lots/:id/record",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/lots/:id/record/save",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/records/:id/submit",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/stats",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/records/:id/report",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/jobs/retry-backfill",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/wms-link",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "GET",
+    "path": "/api/iqc/reconcile",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/jobs/release-stale",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-iqc.js",
+    "method": "POST",
+    "path": "/api/iqc/records/:id/approve",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-mrb.js",
+    "method": "POST",
+    "path": "/api/integration/mrb",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "oa-mrb.js",
+    "method": "GET",
+    "path": "/api/mrb/list",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-mrb.js",
+    "method": "GET",
+    "path": "/api/mrb/:id",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-mrb.js",
+    "method": "POST",
+    "path": "/api/mrb/:id/decision",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-mrb.js",
+    "method": "POST",
+    "path": "/api/mrb/:id/resubmit",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oa-mrb.js",
+    "method": "POST",
+    "path": "/api/mrb/:id/reject",
+    "auth": "no",
+    "perm": "ipqc:manage"
+  },
+  {
+    "file": "oqc.js",
+    "method": "GET",
+    "path": "/api/oqc/sampling/options",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "oqc.js",
+    "method": "GET",
+    "path": "/api/oqc/sampling",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "GET",
+    "path": "/api/qc/templates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "GET",
+    "path": "/api/qc/templates/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/templates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "PUT",
+    "path": "/api/qc/templates/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "DELETE",
+    "path": "/api/qc/templates/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/templates/:id/duplicate",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "GET",
+    "path": "/api/qc/templates/:id/items",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "PUT",
+    "path": "/api/qc/templates/:id/items",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/templates/:id/import-section",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "GET",
+    "path": "/api/qc/standard-items",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/standard-items/save-all",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/standard-items/bulk",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/standard-items",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "PUT",
+    "path": "/api/qc/standard-items/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "DELETE",
+    "path": "/api/qc/standard-items/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "GET",
+    "path": "/api/qc/templates/:id/materials",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "POST",
+    "path": "/api/qc/templates/:id/materials",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "DELETE",
+    "path": "/api/qc/templates/:id/materials/:materialCode",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "qc-library.js",
+    "method": "GET",
+    "path": "/api/qc/materials/:code/templates",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "quality.js",
+    "method": "GET",
+    "path": "/api/quality/wms-iqc/dashboard",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "quality.js",
+    "method": "GET",
+    "path": "/api/quality/wms-iqc/defects",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "GET",
+    "path": "/api/equipment/stocktakes/scope-preview",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "GET",
+    "path": "/api/equipment/stocktakes/mobile-tasks",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "POST",
+    "path": "/api/equipment/stocktakes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "PUT",
+    "path": "/api/equipment/stocktakes/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "DELETE",
+    "path": "/api/equipment/stocktakes/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "GET",
+    "path": "/api/equipment/stocktakes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "GET",
+    "path": "/api/equipment/stocktakes/:id/report",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "GET",
+    "path": "/api/equipment/stocktakes/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "POST",
+    "path": "/api/equipment/stocktakes/:id/submit",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "POST",
+    "path": "/api/equipment/stocktakes/:id/withdraw",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "POST",
+    "path": "/api/equipment/stocktakes/:id/submit-finish",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "POST",
+    "path": "/api/equipment/stocktakes/:id/withdraw-finish",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "stocktake.js",
+    "method": "POST",
+    "path": "/api/equipment/stocktakes/:id/check",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/departments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/departments",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "PUT",
+    "path": "/api/departments/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "DELETE",
+    "path": "/api/departments/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/onboardings",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/onboardings/import",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/onboardings/batch-confirm",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/onboardings/:id/reveal",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/onboardings/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/onboardings",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "PUT",
+    "path": "/api/onboardings/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/onboardings/:id/confirm",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/onboardings/:id/cancel",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/sensitive-viewers",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/sensitive-viewers",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "DELETE",
+    "path": "/api/sensitive-viewers/:userId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/sensitive-logs",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/users",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/users",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "PUT",
+    "path": "/api/users/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/users/:id/transfers",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/users/:id/reset-password",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/roles",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/config",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "PUT",
+    "path": "/api/config",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/upload",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/files/*",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/audit",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/import/template",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/positions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/sections",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/positions/all",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/org/positions",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "PUT",
+    "path": "/api/org/positions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "DELETE",
+    "path": "/api/org/positions/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/org/import",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/export",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/minutes/template",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/minutes/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/minutes",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "GET",
+    "path": "/api/org/minutes/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/org/minutes",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "system.js",
+    "method": "POST",
+    "path": "/api/org/minutes/import",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "system.js",
+    "method": "PUT",
+    "path": "/api/org/minutes/:id",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "system.js",
+    "method": "DELETE",
+    "path": "/api/org/minutes/:id",
+    "auth": "no",
+    "perm": "org:manage"
+  },
+  {
+    "file": "template-field.js",
+    "method": "GET",
+    "path": "/api/template-fields",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "template-field.js",
+    "method": "GET",
+    "path": "/api/template-fields/builtin/:scope",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "template-field.js",
+    "method": "POST",
+    "path": "/api/template-fields",
+    "auth": "no",
+    "perm": "template:field"
+  },
+  {
+    "file": "template-field.js",
+    "method": "PUT",
+    "path": "/api/template-fields/:id",
+    "auth": "no",
+    "perm": "template:field"
+  },
+  {
+    "file": "template-field.js",
+    "method": "DELETE",
+    "path": "/api/template-fields/:id",
+    "auth": "no",
+    "perm": "template:field"
+  },
+  {
+    "file": "template-field.js",
+    "method": "GET",
+    "path": "/api/template-fields/values/:scope/:templateId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/members/preview",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/plans",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/plans/:id/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/plans/:id",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "POST",
+    "path": "/api/training/plans",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "PUT",
+    "path": "/api/training/plans/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "DELETE",
+    "path": "/api/training/plans/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/plans/:id/members",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "POST",
+    "path": "/api/training/plans/:id/members/import",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "POST",
+    "path": "/api/training/plans/:id/members/remove",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "POST",
+    "path": "/api/training/plans/:id/records/generate",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/records/export",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/records/by-user/:userId",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "GET",
+    "path": "/api/training/records",
+    "auth": "no",
+    "perm": ""
+  },
+  {
+    "file": "training.js",
+    "method": "POST",
+    "path": "/api/training/records/batch",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "PUT",
+    "path": "/api/training/records/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  },
+  {
+    "file": "training.js",
+    "method": "DELETE",
+    "path": "/api/training/records/:id",
+    "auth": "no",
+    "perm": "train:manage"
+  }
+]

@@ -1,0 +1,51 @@
+﻿@import "tailwindcss";
+@import "tw-animate-css";
+@import "./tailwind-theme.css";
+@import "./typography.css";
+@import "./pda.css";
+@import "./theme/theme-compat.css";
+
+@config "../../tailwind.config.ts";
+/* 检验报告全白样式 */
+.iqc-inspect-page,
+.iqc-inspect-page .card,
+.iqc-inspect-page .card-content,
+.iqc-inspect-page table,
+.iqc-inspect-page thead,
+.iqc-inspect-page th,
+.iqc-inspect-page td {
+  background-color: #ffffff !important;
+  border-color: #9ca3af !important;
+}
+/* 检验报表表格线：编辑页 / 模板预览共用（此前依赖外层容器样式，预览改版后丢失） */
+.iqc-paper table,
+.iqc-inspect-page table {
+  border-collapse: collapse;
+  width: 100%;
+}
+.iqc-paper th,
+.iqc-paper td,
+.iqc-inspect-page th,
+.iqc-inspect-page td {
+  border: 1px solid #6b7280;
+}
+
+/* 表格外框，避免只有内部格线、外沿发虚 */
+.iqc-paper table,
+.iqc-inspect-page table {
+  border: 1px solid #6b7280;
+}
+
+/* 检验报表内的小输入格（测量数据等）必须有可见边框；蓝色高亮框保持原样 */
+.iqc-paper table input:not(.border-blue-400),
+.iqc-inspect-page table input:not(.border-blue-400) {
+  border: 1px solid #9ca3af;
+  border-radius: 2px;
+  background: #fff;
+}
+@media print {
+  .iqc-paper table input,
+  .iqc-inspect-page table input {
+    border: 1px solid #000 !important;
+  }
+}
