@@ -3796,7 +3796,11 @@ export function createMesrjRouter({ authenticateJWT }) {
     if (skipped.length) msg += `；${skipped.length} 个已过站冻结、未动`;
     return ok(res, {
       done, skipped,
-      mo_n: done.reduce((a, x) => a + Object.keys(x.steps || {}).length, 0),
+      // syncModelGroups returns entries of two shapes: applied groups carry `steps`,
+      // frozen ones carry only `reason`. `x.steps || {}` read as if the property always
+      // existed -- it does not, so TS2339 flagged it and a group with no steps counted
+      // as zero by luck rather than by intent. `in` narrows the union and says so.
+      mo_n: done.reduce((a, x) => a + ("steps" in x ? Object.keys(x.steps).length : 0), 0),
     }, msg);
   });
 

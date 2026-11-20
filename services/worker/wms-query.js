@@ -246,7 +246,7 @@ async function getHealth() {
       material_code: r.material_code,
       material_name_zh: r.name_zh,
       open_hours: r.msd_open_at
-        ? Math.round(EXTRACT(EPOCH FROM (NOW() - r.msd_open_at)) / 3600.0 * 10) / 10
+        ? Math.round(((Date.now() - new Date(r.msd_open_at).getTime()) / 3_600_000) * 10) / 10
         : null,
       limit_hours: r.msd_limit_hours,
     })),

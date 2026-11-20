@@ -10,11 +10,13 @@ COPY integrations/ integrations/
 COPY packages/ packages/
 COPY services/ services/
 
-# Copy workspace root files
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# Copy workspace manifests. package-lock.json is the authoritative lockfile for this
+# npm-workspaces repo; the pnpm lock this file used to copy did not exist, so the
+# install below resolved fresh versions on every build.
+COPY package.json package-lock.json ./
 
-# Install all deps at workspace root
-RUN npm install --omit=dev --ignore-scripts
+# `npm ci` fails when the lockfile disagrees with package.json -- which is the point.
+RUN npm ci --omit=dev --ignore-scripts
 
 EXPOSE 8080
 

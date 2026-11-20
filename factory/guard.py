@@ -37,6 +37,10 @@ PROTECTED = [
     "FACTORY.md",
     "CLAUDE.md",
     "AGENTS.md",
+    # AGENT.md was the original mission brief and still carries the only prose
+    # description of product scope. It was NOT protected, so a builder could rewrite
+    # the document that defines what it is allowed to build.
+    "AGENT.md",
     # The PRD the mission was compressed from.
     "docs/*.prd.md",
     # The locks: thresholds a human chose, and the ratchet floor. Protected so that
