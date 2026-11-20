@@ -25,6 +25,7 @@ import {
 } from "./views-w12";
 import { DwellView } from "./views-w13";
 import { BindView, DecodeView } from "./views-w14";
+import { ShiftBoardView } from "./views-w15";
 
 interface SysInfo {
   sys_name: string;
@@ -161,6 +162,8 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     // W14 绑码 / 解码（SN 绑定关系）
     if (active === "exec.bind") return <BindView locale={locale} />;
     if (active === "exec.decode") return <DecodeView locale={locale} />;
+    // W15 班次填报看板 / 汇总
+    if (active === "exec.shiftreport") return <ShiftBoardView locale={locale} />;
     // W7 设备接口：DeviceConfig / StationPass / MachineData / Packing / itf 日志
     if (active === "dev.deviceconfig") return <DeviceConfigView locale={locale} />;
     if (active === "dev.stationpass") return <StationPassView locale={locale} />;

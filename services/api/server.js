@@ -14203,9 +14203,24 @@ api.use("/hr", async (_req, _res, next) => {
 
 // ── Authorization Middleware ───────────────────────────────────────
 
+// 声明顺序早于 app.use(authenticateJWT)（第 34047 行）的路由走到这里时 req.user 还是空的，
+// 带着有效 JWT 也一律 401（2026-11-20 现场：/api/manager/line-assignments）。
+// authenticateJWT 是同步的，这里惰性补一次校验：不改挂载顺序，也不影响设备免登录路径。
+function ensureAuthenticated(req) {
+  if (req.user) return true;
+  let denied = false;
+  const probe = {
+    status() { denied = true; return probe; },
+    json() { denied = true; return probe; },
+    setHeader() { return probe; },
+  };
+  authenticateJWT(req, probe, () => {});
+  return !denied && Boolean(req.user);
+}
+
 function requirePermission(...requiredPerms) {
   return (req, res, next) => {
-    if (!req.user || !Array.isArray(req.user.permissions)) {
+    if (!ensureAuthenticated(req) || !Array.isArray(req.user.permissions)) {
       return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
     }
     const hasAll = req.user.permissions.includes("*") || requiredPerms.every((p) => req.user.permissions.includes(p));
@@ -14220,7 +14235,7 @@ function requirePermission(...requiredPerms) {
 // Checks req.user.roleKey against allowed role codes.
 function requireRole(...allowedRoles) {
   return (req, res, next) => {
-    if (!req.user) {
+    if (!ensureAuthenticated(req)) {
       return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
     }
     const roleKey = req.user.roleKey || "";
