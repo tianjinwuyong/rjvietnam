@@ -1,141 +1,240 @@
-# ============================================================
-# SMT Factory System — .gitignore
-# ============================================================
-
-# Dependencies
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# Build outputs
-dist/
-build/
-*.tgz
-
-# Environment & secrets
 .env
-.env.local
-.env.*.local
-*.pem
-*.key
+.env.*
+!.env.example
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Local/runtime state and generated artifacts
+.codex-logs/
+.codex-runtime/
+.codex-temp/
+.omo/
+.omp/
+.runtime/
+.skills/
+.tmp/
+node_modules/
+**/node_modules/
+build/
+**/build/
+dist/
+**/dist/
+runtime-logs/
+test-results/
+backups/
+database/
+data/
+storage/
+coverage/
+.cache/
+**/.cache/
+**/.gradle/
+**/src/main/assets/
+**/playwright-screenshots/
+**/e2e/report/
+**/reports/
+*.pid
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs (runtime + scratch)
+# Logs, databases, dumps, and local state
 *.log
-*.out.log
-*.stderr.log
-*.stdout.log
-server.log
-server.err
-web.log
-web-stderr.log
-web-stdout.log
-watchdog.log
-watchdog-live.out.log
-api.log
-api-stderr.log
-api-stdout.log
-api-debug.stderr.log
-api-debug.stdout.log
-api-restart.out.log
-api-restart2.out.log
-factory3d-dev.log
-web-3d-video.out.log
-web-live.out.log
-runtime-start.stderr.log
-runtime-start.stdout.log
-runtime_start_20260819.out.log
+*.out
+*.err
+*.sqlite
+*.sqlite-*
+*.db
+*.sql
+*.dump
+*.bak
+*_tmp.*
+*_tmp*
 
-# Scratch / temp files (the 526 untracked files referenced in eval)
-test_*.*
-test-*.*
-_*_tmp.*
-_*.tmp
-_*.cjs
-_*.mjs
-pw-*.cjs
-pw-*.js
-*.spec.ts
-temp-*.*
-debug-*.*
-diag-*.*
-fix-*.*
-check-*.*
-migrate-*.*
-reconcile-*.*
-reset-*.*
-verify-*.*
-clear-*.*
-dedup-*.*
-extract-*.*
-find-*.*
-gen-*.*
-get-*.*
-list-*.*
-patch-*.*
-seed-*.*
-stats-*.*
-sync-*.*
-audit-*.*
-check_*.*
-debug_*.*
-diag_*.*
-fix_*.*
-migrate_*.*
-seed_*.*
-stats_*.*
-sync_*.*
-audit_*.*
-
-# Screenshots & images
+# Local captures and generated media/data
 *.png
 *.jpg
 *.jpeg
-
-# Office / documents
-*.xlsx
-*.doc
-*.docx
-*.pptx
 *.pdf
+*.xlsx
+*.xls
+*.csv
+*.mp4
+*.html
 
-# Local DB / runtime data
-*.sqlite
-*.sqlite3
-*.rdb
-.aof
+# Local scripts that may contain credentials, diagnostics, or machine paths
+_*.js
+_*.mjs
+_*.cjs
+pw-*.js
+pw-*.cjs
+debug_*
+diag*
+query_*
+check_*
+verify_*
+test_*.py
+test_*.js
+test_*.mjs
+test_*.cjs
 
-# Hermes / OpenCode agent runtime
-.hermes/
-.antigravity/
-.opencode/
+# Machine-specific diagnostics and generated working files
+*.stderr.log
+*.stdout.log
+*.state.json
+*.timestamp-*.mjs
+temp-*
 
-# CodeDen / agent session artifacts
-.session/
+# Local snapshots, backups, and large generated layout data
+*-last-state.json
+*-sop-state.json
+*.bak*
+*.reenc
+docs/factory-layout-wms.json
+services/api/server.js
+services/api/server.js.testbak.js
+scripts/deploy-retest-agents-winrm.ps1
+scripts/generate-all-stations.py
+scripts/pmc-status-check.ps1
+scripts/wo-simulation.ps1
+tests/auth.test.ts
 
-# ============================================================
-# End of .gitignore
-# ============================================================
+# Appended to your .gitignore by `factory init`.
 
-# Local scratch archive (logs, screenshots, tarballs moved off the repo root)
-archive/
+# THE FACTORY'S OWN BYTECODE. Every factory script is Python, and running one inside a
+# worktree writes `factory/__pycache__/*.pyc` -- inside `factory/`, which is on the
+# PROTECTED list. A builder's `git add -A` then sweeps them in and the guard blocks the
+# change for touching a protected path, which is exactly right and completely useless:
+# the lap dies with five .pyc files named as the violation and the actual work sitting
+# beside them, correct and unmergeable.
+__pycache__/
+*.pyc
+*.pyo
 
-# Local credential material and builder run artifacts
+# factory: runtime state, never committed
+.factory/runs/
+.factory/ledger.jsonl
+.factory/locks-runtime/
+.factory/findings/
+.factory/needs-human.md
+.factory/escalations.log
+.factory/trigger.json
+.factory/deployed.json
+.factory/deploy-history.log
+.factory/STOP
+# The singleton's pid file. Per-machine runtime state: committing it puts one
+# machine's pid in another machine's checkout, where it is at best noise and at
+# worst a number that happens to belong to something else and wedges the loop.
+.factory/loop.pid
+.factory/assumptions/
+.factory/followups/
+
+# What the agent-driven rungs wrote THIS run. Evidence for one gate, not source.
+# Committing them would let a stale result from a build that no longer exists be
+# read as the current answer.
+harness/.results/
+.factory/holdout/.results/
+
+# Secrets. THE PRE-FLIGHT REFUSES TO START while any of these is unignored, and that
+# refusal is the point: an empty `git check-ignore` result means the next run that
+# commits publishes your key. On a public repo that is publication, not a mistake you
+# can take back -- rotating afterwards is the cleanup, not the fix.
+#
+# Being unable to EDIT a protected file does not stop a broad `git add` from
+# committing one that appears for the first time next month, which is why this list
+# is separate from the protected list and checked before every committing workflow.
+.env
+.env.*
+!.env.example
+*.pem
 secrets.json
 credentials.json
-.factory/runs/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
+
+# ---------------------------------------------------------------------------
+# Baseline hygiene (added with the 2026-11 baseline snapshot).
+# Everything below is local runtime state, scratch diagnostics, or build output.
+# ---------------------------------------------------------------------------
+
+# Logs and captured process output
+logs/
+**/logs/
+*.stderr.log
+*.stdout.log
+*.log
+
+# Test / Playwright output
+test-results/
+**/test-results/
+.playwright-mcp/
+.playwright/
+playwright-report/
+
+# Build + packaging output
+web-dist-*.tgz
+apps/web/dist-*.tar.gz
+apps/web/dist-*.tgz
+
+# Root-level screenshots and captures (*.png is already ignored repo-wide above)
+/*.png
+/*.jpg
+/*.jpeg
+
+# One-off scratch scripts written at the repo root.
+# These are anchored with a leading slash on purpose: an unanchored
+# "q*.cjs" also matched services/api/query_*.cjs, and opencode still
+# hashed those files into its snapshot trees. A file whose blob was
+# missing from .git/objects made `git write-tree` fail with
+# "invalid object ... for 'scripts/quick_get.cjs'", which broke every
+# snapshot the agent took (agent appeared stuck, snapshot never landed).
+/*_tmp.mjs
+/*_tmp.cjs
+/*_tmp.js
+/.tmp-*
+/.tmp-*.cjs
+/pw-*.cjs
+/pw-*.js
+/q*.cjs
+/diag*.bat
+/diag*.ps1
+
+# Python virtualenvs (services/api/.venv-ocr is ~13k files of vendored OCR deps)
+**/.venv/
+**/.venv-*/
+**/venv/
+
+# Stray nested copy of the tree (accidental `cp -r` of the repo into itself);
+# tracked through the real root paths, never through this duplicate.
+/smt-factory-system/
+
+# Vendored third-party checkouts / removed service dirs that are git repos in
+# their own right — they cannot be committed as content, and they are not
+# submodules of this project.
+/tools/VibeVoice/
+/integrations/openmes-source.removed/
+
+# Machine/runtime state — never source
+*.pid
+.codex-*
+.runtime/
+runtime-logs/
+backups/
+artifacts/
+tmp/
+
+# --- Migrations and seeds are SOURCE, not generated artifacts ----------------
+# The blanket `database/` (line 22) and `*.sql` (line 42) rules exist to keep
+# dumps, local schema sketches and one-off query files out of git. Applied
+# migrations and seeds are the opposite: they ARE the schema, they are
+# append-only, and the project cannot be rebuilt without them. Re-include the
+# two directories explicitly; everything else under database/ stays ignored.
+!database/
+database/*
+!database/migrations/
+!database/migrations/**
+!database/seeds/
+!database/seeds/**
+!database/docker/
+!database/docker/**
+!database/*.md
+
 
 # pg_dump 产物（mesrj-scheduler backup.dir 默认落这里）
 database/backups/
