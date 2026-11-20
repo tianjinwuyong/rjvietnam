@@ -1,6 +1,18 @@
 export { apiClient, authStorage, API_BASE } from "./client";
 export type { ApiError, Envelope, ListEnvelope, MutateEnvelope, ApiClientError } from "./client";
 
+export {
+  setAgentProvenance,
+  getAgentProvenance,
+  clearAgentProvenance,
+  isPendingHumanApproval,
+  isAgentProcessing,
+  approvalBadgeClass,
+  AGENT_PROCESSING,
+  PENDING_HUMAN_APPROVAL,
+} from "./agentProvenance";
+export type { AgentProvenance } from "./agentProvenance";
+
 export { authApi } from "./auth";
 export type { LoginResult, SessionResult } from "./auth";
 

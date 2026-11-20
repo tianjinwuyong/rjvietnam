@@ -53,6 +53,42 @@ export interface AgentProfile {
 // ── 种子数据 ──────────────────────────────────────────────────────
 
 export const AGENT_PROFILES: AgentProfile[] = [
+  // ── DeepSeek 超级智能体（跨域超级大脑） ──────────────────────────────────────
+  // 定位：比厂长更高一层的「超级智能体」，不绑定单一部门，
+  // 负责跨域协同决策、全局 KPI 诊断、复杂异常的深度推理与方案生成。
+  // 用 DeepSeek（cloud，OpenAI 兼容）——推理能力强、成本低于 GPT-4o，
+  // 适合承担需要长链思考的超级角色。
+  {
+    id: "super-001",
+    name_zh: "DeepSeek 超级智能体",
+    name_en: "DeepSeek Super Agent",
+    name_vi: "Siêu agent DeepSeek",
+    gender: "male",
+    role: "super-agent",
+    level: 1,
+    domain: "cmd",
+    parentId: null,
+    childIds: ["ceo-001"],
+    responsibilities_zh: "跨域超级大脑：统筹 MES/WMS/PMC/Quality/Sales/HR/Finance 七大域的协同决策，诊断全局 KPI 异常，生成跨部门改善方案，对重大经营决策做深度推理与风险评估。",
+    responsibilities_en: "Cross-domain super brain: coordinates decisions across MES/WMS/PMC/Quality/Sales/HR/Finance, diagnoses global KPI anomalies, generates cross-department improvement plans, performs deep reasoning and risk assessment on major business decisions.",
+    responsibilities_vi: "Siêu não liên domain: điều phối quyết toán MES/WMS/PMC/Quality/Sales/HR/Finance, chẩn đoán KPI toàn cầu, xây dựng cải tiến liên bộ phận, suy luận sâu và đánh giá rủi ro quyết định chiến lược.",
+    reportChannels: ["跨域协同决策报告", "全局 KPI 诊断", "重大决策风险评估", "改善方案生成"],
+    status: "active",
+    counterpartName: "系统",
+    counterpartContact: "AI",
+    reports: ["跨域协同决策报告", "全局 KPI 诊断报告", "重大决策风险评估报告", "改善方案生成报告"],
+    capabilities: ["跨域协同决策", "全局 KPI 诊断", "深度推理", "风险评估", "改善方案生成", "多语言输出(zh/vi/en)"],
+    agentName: "RuiJing-Super-Agent",
+    llm: "deepseek-chat",
+    api: "/api/agents/super",
+    skills: ["cross-domain-reasoning", "kpi-diagnosis", "risk-assessment", "improvement-planning", "multi-language"],
+    currentTasks: [
+      { task: "Q3 全局 KPI 诊断", plan: "七大域 KPI 汇总分析，识别异常根因", completion: 60 },
+      { task: "跨部门改善方案生成", plan: "针对换线时间与客诉压降生成协同方案", completion: 30 },
+    ],
+    knowledgeBase: ["全局KPI看板", "跨域协同SOP", "改善案例库", "风险评估模型"],
+  },
+
   // ── 管理层 ────────────────────────────────────────────────
   {
     id: "ceo-001",
@@ -63,7 +99,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
     role: "factory-director",
     level: 1,
     domain: "cmd",
-    parentId: null,
+    parentId: "super-001",
     childIds: ["dir-mes-001", "dir-wms-001", "dir-pmc-001", "dir-quality-001", "dir-sales-001", "dir-service-001"],
     responsibilities_zh: "全面负责 SMT 工厂生产运营统筹，协调各部门资源，监控 KPI，确保交期与质量目标的达成。",
     responsibilities_en: "Overall coordination of SMT factory operations, resource alignment across departments, KPI monitoring, delivery and quality target achievement.",
@@ -482,7 +518,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
     reports: ["技术咨询处理报表", "工单跟进统计", "产品规格数据库更新"],
     capabilities: ["技术咨询", "工单跟踪", "产品规格说明", "RMA流程"],
     agentName: "RuiJing-Service-Derek",
-    llm: "glm4:9b",
+    llm: "deepseek-chat",
     api: "/api/agents/service/derek",
     skills: ["专业知识", "技术说明", "工单管理", "SMT规格"],
     currentTasks: [
@@ -590,7 +626,7 @@ export const AGENT_PROFILES: AgentProfile[] = [
     reports: ["情绪感知分析", "投诉预防报告", "服务改进建议"],
     capabilities: ["情绪感知", "性格分析", "矛盾化解", "投诉预防"],
     agentName: "RuiJing-Service-Emily",
-    llm: "deepseek-r1:7b",
+    llm: "deepseek-chat",
     api: "/api/agents/service/emily",
     skills: ["情绪感知", "性格分析", "共情沟通", "预防升级"],
     currentTasks: [

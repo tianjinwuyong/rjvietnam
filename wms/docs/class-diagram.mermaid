@@ -1,0 +1,114 @@
+%% F-11 数据模型与服务（Mermaid classDiagram）
+%% 只列与"待检隔离"相关的核心实体；stock_status 值域 good / pending_qc / defective / rework
+
+classDiagram
+    class Inventory {
+        +uuid id
+        +uuid materialId
+        +uuid locationId
+        +string batchNo_NOT_NULL_default_empty
+        +uuid supplierId
+        +numeric quantity
+        +string stockStatus_good_pending_qc_defective_rework
+        +date productionDate
+        +boolean locked
+        +string lockReason
+        +boolean isSpecialAdmit
+        +string specialAdmitRef
+        +string labelNo_unique
+        +uniqKey() materialId_locationId_batchNo_stockStatus
+        +isReleasable() boolean
+    }
+
+    class IqcLot {
+        +uuid id
+        +string lotNo_unique
+        +string inspectionNo_unique
+        +date receiptDate_firstArrival
+        +date lastReceiptDate_mergedArrival
+        +uuid supplierId
+        +uuid materialId
+        +numeric totalQty_releaseBudget
+        +date productionDate
+        +string batchNo_physical
+        +string locationCodes
+        +int boxCount
+        +string status_pending_inspecting_reviewPending_rejected_pass_fail
+        +string inspectionResult
+        +uniqKey() supplierId_materialId_productionDate_batchNo_where_active
+        +physicalBatchNo() string
+        +isActive() boolean
+    }
+
+    class IqcReport {
+        +uuid id
+        +uuid lotId_unique
+        +string reportNo_unique
+        +string finalResult_pass_fail
+        +string reviewStatus_casKey
+        +uuid reviewerId
+    }
+
+    class ReceiptOrder {
+        +uuid id
+        +string receiptNo_unique
+        +date receiptDate
+        +uuid materialId
+        +uuid supplierId
+        +string batchNo
+        +numeric quantity
+        +uuid locationId
+        +string qrContent_unique
+        +string status_received_pendingIqc_iqcPass_iqcFail
+    }
+
+    class IqcLotReceipt {
+        +uuid id
+        +uuid lotId
+        +uuid receiptId
+        +uniqKey() lotId_receiptId
+    }
+
+    class ReceiptService {
+        +scanReceipt(qr, locationId, qty, userId) ReceiptOrder
+        +batchReceipt(items, locationId, userId) ReceiptOrder[]
+        +submitIqc(operatorId) SubmitIqcResult
+        -reserveLabelNos(n) string[]
+        -nextInspectionNo(tx, datePart) string
+    }
+
+    class IqcService {
+        +reviewReport(id, reviewerId, name, remark) IqcReport
+        +rejectReport(id, reviewerId, reason) IqcReport
+        +judgeLot(lotId, result) IqcLotWithDetail
+        +exemptConfirmLot(lotId, operatorId, name, remark) IqcLotWithDetail
+        +submitInspection(payload) any
+        +getPendingList(params) PaginatedResponse
+        -finalizeLotInventory(tx, lot, finalResult) void
+        -syncExpiryStockToPending() number
+    }
+
+    class InventoryService {
+        +getInventorySummary() list
+        +doTransfer(body, no, status) StockTransfer
+        +doMoveSingle(params) StockTransfer
+        +lockInventory(body) Inventory
+        +unlockInventory(body) Inventory
+        +getExpiryWarningList(type) list
+    }
+
+    class MrbService {
+        +initiateMrb(payload) MrbReview
+        -upsertInventoryRow(tx, opts) InventoryRowRef
+    }
+
+    Inventory "1" --> "0..*" IqcLot : 同一 material_plus_batch 的待检桶由 finalize 按数量迁移
+    IqcLot "1" --> "0..1" IqcReport : lotId unique
+    IqcLot "1" --> "0..*" IqcLotReceipt : 关联收货单
+    ReceiptOrder "1" --> "0..1" IqcLotReceipt : 一张收货单只提交一次
+    ReceiptService ..> Inventory : upsert stockStatus=pending_qc
+    ReceiptService ..> IqcLot : 建批或并批（4 列键）
+    IqcService ..> Inventory : 放行迁移 pending_qc -> good
+    IqcService ..> IqcLot : CAS 状态机
+    MrbService ..> Inventory : defective 或特采入库
+    InventoryService ..> Inventory : 移库与锁定（不碰 pending_qc）

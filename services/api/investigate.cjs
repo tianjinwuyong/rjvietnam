@@ -1,5 +1,5 @@
 const pg = require('pg');
-const pool = new pg.Pool({ host: '127.0.0.1', port: 5432, database: 'smt_factory', user: 'postgres', password: 'postgres' });
+const pool = new pg.Pool({ host: '127.0.0.1', port: 5432, database: 'factory', options: "-c search_path=rjvn,public", user: 'postgres', password: 'postgres' });
 async function main() {
   // Check current lot state
   const lot = await pool.query("SELECT id, lot_no, received_qty, reserved_qty FROM material_lots WHERE lot_no = 'LOT-26071020017'");

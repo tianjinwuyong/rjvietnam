@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { apiClient } from "../api/client";
+import { AgentStateBadge } from "../components/AgentStateBadge";
 
 type GovernanceData = {
   metrics: { pending: number; appealed: number; approved: number; executed_today: number };
@@ -239,7 +240,7 @@ export function HrGovernance({ locale }: { locale: Locale }) {
           <tbody>{data?.actions.length ? data.actions.map((item) => (
             <tr key={item.id}>
               <td>{item.actionNo}</td><td>{item.employeeCode} {item.employeeName}</td><td>{item.actionType}</td>
-              <td>{item.reasonCode}</td><td>{item.riskLevel}</td><td><span className="badge badge-info">{item.status}</span></td>
+              <td>{item.reasonCode}</td><td>{item.riskLevel}</td><td><AgentStateBadge status={item.status} locale={locale} /></td>
               <td>
                 {item.status === "PENDING_APPROVAL" && item.requiredApprovals
                   .filter((role) => !item.approvals.some((approval) => approval.role === role))

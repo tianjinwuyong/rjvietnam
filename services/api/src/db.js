@@ -16,7 +16,8 @@ function getPool() {
       port: Number(process.env.PGPORT ?? 5432),
       user: process.env.PGUSER ?? "postgres",
       password: password,
-      database: process.env.PGDATABASE ?? "smt_factory",
+      database: process.env.PGDATABASE ?? "factory",
+      options: "-c search_path=rjvn,public",
       // MES 3D snapshot polling can keep a connection busy while a large
       // JSON payload is being delivered. Keep enough headroom for the
       // interactive PDA/MES transaction endpoints instead of letting a few
@@ -32,7 +33,7 @@ function getPool() {
     pool.on("error", (err) => {
       console.error("[PostgreSQL] pool error:", err.message);
     });
-    console.log(`[PostgreSQL] pool created for ${host}:${process.env.PGPORT ?? 5432}/${process.env.PGDATABASE ?? "smt_factory"}`);
+    console.log(`[PostgreSQL] pool created for ${host}:${process.env.PGPORT ?? 5432}/${process.env.PGDATABASE ?? "factory"}`);
   }
   return pool;
 }

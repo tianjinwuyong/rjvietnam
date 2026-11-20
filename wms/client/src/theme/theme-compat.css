@@ -1,0 +1,215 @@
+/* ==========================================================================
+   主题兼容层
+   --------------------------------------------------------------------------
+   页面里存在大量「语义化之前」写死的颜色工具类（bg-white / text-gray-500 /
+   bg-red-100 …）。换到深色主题时如果不管它们，会出现白卡片、灰字糊在深底上。
+
+   这里只在 html[data-wms-mode='dark'] 下做兜底：
+   - 白色面 / 灰色面 → 语义变量（card / muted）；
+   - 灰色文字 → foreground / muted-foreground 的合理层级；
+   - 浅色状态底色（*-50 / *-100）→ 同色系半透明底；
+   - 深色状态文字（*-500…*-900）→ 同色系亮色，保证对比度。
+   浅色主题不做任何干预，保持原有观感。
+   注：以下规则未包在 @layer 里，优先级天然高于 Tailwind 的 utilities 层。
+   ========================================================================== */
+
+/* ---------- 1. 白色/浅灰面板 ---------- */
+html[data-wms-mode='dark'] [class~='bg-white'] {
+  background-color: var(--card);
+}
+html[data-wms-mode='dark'] [class~='bg-white/95'],
+html[data-wms-mode='dark'] [class~='bg-white/90'],
+html[data-wms-mode='dark'] [class~='bg-white/85'],
+html[data-wms-mode='dark'] [class~='bg-white/80'],
+html[data-wms-mode='dark'] [class~='bg-white/72'],
+html[data-wms-mode='dark'] [class~='bg-white/60'],
+html[data-wms-mode='dark'] [class~='bg-white/50'],
+html[data-wms-mode='dark'] [class~='hover:bg-white/90']:hover {
+  background-color: color-mix(in srgb, var(--card) 88%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-gray-50'],
+html[data-wms-mode='dark'] [class~='hover:bg-gray-50']:hover,
+html[data-wms-mode='dark'] [class~='bg-[#f2f2f7]'],
+html[data-wms-mode='dark'] [class~='bg-[#F2F2F7]'],
+html[data-wms-mode='dark'] [class~='bg-[#f3f3f3]'],
+html[data-wms-mode='dark'] [class~='bg-[#fafafa]'],
+html[data-wms-mode='dark'] [class~='bg-[#FAFAFB]'],
+html[data-wms-mode='dark'] [class~='bg-[#F7F7FA]'],
+html[data-wms-mode='dark'] [class~='bg-[#E5E5EA]'] {
+  background-color: var(--muted);
+}
+html[data-wms-mode='dark'] [class~='bg-gray-100'] {
+  background-color: var(--muted);
+}
+
+/* ---------- 2. 灰色文字层级 ---------- */
+html[data-wms-mode='dark'] [class~='text-gray-900'],
+html[data-wms-mode='dark'] [class~='text-gray-800'] {
+  color: var(--foreground);
+}
+html[data-wms-mode='dark'] [class~='text-gray-700'] {
+  color: color-mix(in srgb, var(--foreground) 86%, var(--background));
+}
+html[data-wms-mode='dark'] [class~='text-gray-600'] {
+  color: color-mix(in srgb, var(--foreground) 74%, var(--background));
+}
+html[data-wms-mode='dark'] [class~='text-gray-500'] {
+  color: var(--muted-foreground);
+}
+html[data-wms-mode='dark'] [class~='text-gray-400'] {
+  color: color-mix(in srgb, var(--muted-foreground) 78%, transparent);
+}
+
+/* ---------- 3. 边框 ---------- */
+html[data-wms-mode='dark'] [class~='border-gray-100'],
+html[data-wms-mode='dark'] [class~='border-gray-200'],
+html[data-wms-mode='dark'] [class~='border-gray-300'],
+html[data-wms-mode='dark'] [class~='border-gray-400'],
+html[data-wms-mode='dark'] [class~='border-white/60'],
+html[data-wms-mode='dark'] [class~='border-white/50'] {
+  border-color: var(--border);
+}
+
+/* ---------- 4. 浅色状态底：换成半透明同色 ---------- */
+html[data-wms-mode='dark'] [class~='bg-red-50'],
+html[data-wms-mode='dark'] [class~='bg-red-50/70'],
+html[data-wms-mode='dark'] [class~='bg-red-50/30'],
+html[data-wms-mode='dark'] [class~='bg-red-100'],
+html[data-wms-mode='dark'] [class~='bg-rose-50/50'] {
+  background-color: color-mix(in srgb, #ef4444 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-green-50'],
+html[data-wms-mode='dark'] [class~='bg-green-50/40'],
+html[data-wms-mode='dark'] [class~='bg-green-100'],
+html[data-wms-mode='dark'] [class~='bg-emerald-50'] {
+  background-color: color-mix(in srgb, #22c55e 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-amber-50'],
+html[data-wms-mode='dark'] [class~='bg-amber-50/70'],
+html[data-wms-mode='dark'] [class~='bg-amber-100'],
+html[data-wms-mode='dark'] [class~='bg-yellow-50'],
+html[data-wms-mode='dark'] [class~='bg-yellow-100'],
+html[data-wms-mode='dark'] [class~='bg-[#FFF8E6]'] {
+  background-color: color-mix(in srgb, #f59e0b 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-orange-50'],
+html[data-wms-mode='dark'] [class~='bg-orange-100'],
+html[data-wms-mode='dark'] [class~='bg-[#FFF1F0]'] {
+  background-color: color-mix(in srgb, #f97316 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-blue-50'],
+html[data-wms-mode='dark'] [class~='bg-blue-100'],
+html[data-wms-mode='dark'] [class~='bg-[#EAF2FF]'] {
+  background-color: color-mix(in srgb, #3b82f6 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-purple-100'] {
+  background-color: color-mix(in srgb, #a855f7 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-[#E8F7EE]'] {
+  background-color: color-mix(in srgb, #22c55e 15%, transparent);
+}
+html[data-wms-mode='dark'] [class~='bg-[#007AFF]'] {
+  background-color: var(--primary);
+  color: var(--primary-foreground);
+}
+html[data-wms-mode='dark'] [class~='bg-[#FF9500]'] {
+  background-color: var(--accent);
+}
+html[data-wms-mode='dark'] [class~='bg-[#FF3B30]'] {
+  background-color: var(--destructive);
+}
+
+/* ---------- 5. 深色状态文字：换成同色系亮色 ---------- */
+html[data-wms-mode='dark'] [class~='text-red-500'],
+html[data-wms-mode='dark'] [class~='text-red-600'],
+html[data-wms-mode='dark'] [class~='text-red-700'],
+html[data-wms-mode='dark'] [class~='text-red-800'] {
+  color: #ff9a92;
+}
+html[data-wms-mode='dark'] [class~='text-green-600'],
+html[data-wms-mode='dark'] [class~='text-green-700'],
+html[data-wms-mode='dark'] [class~='text-green-800'],
+html[data-wms-mode='dark'] [class~='text-emerald-800'] {
+  color: #5ee2a0;
+}
+html[data-wms-mode='dark'] [class~='text-amber-600'],
+html[data-wms-mode='dark'] [class~='text-amber-700'],
+html[data-wms-mode='dark'] [class~='text-amber-800'],
+html[data-wms-mode='dark'] [class~='text-amber-900'],
+html[data-wms-mode='dark'] [class~='text-yellow-700'],
+html[data-wms-mode='dark'] [class~='text-yellow-800'] {
+  color: #f5c453;
+}
+html[data-wms-mode='dark'] [class~='text-orange-500'],
+html[data-wms-mode='dark'] [class~='text-orange-600'],
+html[data-wms-mode='dark'] [class~='text-orange-700'],
+html[data-wms-mode='dark'] [class~='text-orange-800'] {
+  color: #ffab6b;
+}
+html[data-wms-mode='dark'] [class~='text-blue-500'],
+html[data-wms-mode='dark'] [class~='text-blue-600'],
+html[data-wms-mode='dark'] [class~='text-blue-700'],
+html[data-wms-mode='dark'] [class~='text-blue-800'],
+html[data-wms-mode='dark'] [class~='text-blue-900'] {
+  color: #7dc0ff;
+}
+html[data-wms-mode='dark'] [class~='text-purple-800'] {
+  color: #d0a6ff;
+}
+
+/* ---------- 6. 状态色边框：降成半透明，避免深底上一圈亮线 ---------- */
+html[data-wms-mode='dark'] [class~='border-red-200'],
+html[data-wms-mode='dark'] [class~='border-red-300'],
+html[data-wms-mode='dark'] [class~='border-red-400'],
+html[data-wms-mode='dark'] [class~='border-red-500/40'],
+html[data-wms-mode='dark'] [class~='border-emerald-200'] {
+  border-color: color-mix(in srgb, #ef4444 45%, transparent);
+}
+html[data-wms-mode='dark'] [class~='border-green-200'],
+html[data-wms-mode='dark'] [class~='border-green-300'] {
+  border-color: color-mix(in srgb, #22c55e 45%, transparent);
+}
+html[data-wms-mode='dark'] [class~='border-amber-200'],
+html[data-wms-mode='dark'] [class~='border-amber-300'] {
+  border-color: color-mix(in srgb, #f59e0b 45%, transparent);
+}
+html[data-wms-mode='dark'] [class~='border-orange-300'] {
+  border-color: color-mix(in srgb, #f97316 45%, transparent);
+}
+html[data-wms-mode='dark'] [class~='border-blue-100'],
+html[data-wms-mode='dark'] [class~='border-blue-200'],
+html[data-wms-mode='dark'] [class~='border-blue-300'],
+html[data-wms-mode='dark'] [class~='border-blue-400'] {
+  border-color: color-mix(in srgb, #3b82f6 45%, transparent);
+}
+
+/* ---------- 7. 表单 ---------- */
+/* 浅色下输入框靠底色区分，深色下底色与卡片太接近，补一条细边框保证可辨认（聚焦时仍用主色） */
+html[data-wms-mode='dark'] input:not([type='checkbox']):not([type='radio']):not(:focus),
+html[data-wms-mode='dark'] textarea:not(:focus),
+html[data-wms-mode='dark'] select:not(:focus) {
+  border-color: var(--border);
+}
+html[data-wms-mode='dark'] input::placeholder,
+html[data-wms-mode='dark'] textarea::placeholder {
+  color: color-mix(in srgb, var(--muted-foreground) 85%, transparent);
+}
+html[data-wms-mode='dark'] {
+  scrollbar-color: #39424f transparent;
+}
+
+/* ---------- 8. IQC 检验单（打印用）强制保持白纸黑字 ---------- */
+html[data-wms-mode='dark'] .iqc-inspect-page,
+html[data-wms-mode='dark'] .iqc-inspect-page * {
+  color: #1c1c1e !important;
+}
+html[data-wms-mode='dark'] .iqc-inspect-page [class*='bg-gray-'] {
+  background-color: #f3f4f6 !important;
+}
+
+/* ---------- 9. 主题切换的轻微过渡（只作用于大面积容器，避免表格重绘抖动） ---------- */
+html[data-wms-theme] body,
+html[data-wms-theme] aside[data-sidebar],
+html[data-wms-theme] main {
+  transition: background-color 180ms ease, color 180ms ease, border-color 180ms ease;
+}

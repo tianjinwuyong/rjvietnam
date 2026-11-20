@@ -71,6 +71,7 @@ const TIERS = {
   local:   { tasks: ["analysis", "validator", "general"],             desc: "Ornith → phi4 → qwen2.5" },
   premium: { tasks: ["premium", "analysis", "validator", "general"],  desc: "MiniMax-M2.7 → Ornith → phi4 → qwen2.5" },
   cloud:   { tasks: ["openai", "premium", "analysis", "validator"],   desc: "GPT-4o → minimax-m3 → Ornith → phi4" },
+  deepseek:{ tasks: ["deepseek", "premium", "analysis", "validator"], desc: "DeepSeek → MiniMax → Ornith → phi4" },
 };
 
 // ── Logging ───────────────────────────────────────────────────────────
@@ -193,6 +194,15 @@ async function minimaxComplete(model, prompt, timeoutMs = 120000) {
   }
 }
 
+/**
+ * DeepSeek cloud call (OpenAI-compatible API).
+ *
+ * DeepSeek 官方 API 就是 OpenAI 兼容协议，所以这里复用同一套 fetch 逻辑，
+ * 只换环境变量名与默认 base url。
+ *   DEEPSEEK_API_KEY   —— 必填（https://platform.deepseek.com/api_keys 申请）
+ *   DEEPSEEK_BASE_URL  —— 可选，默认 https://api.deepseek.com/v1
+ *   DEEPSEEK_MODEL     —— 可选，默认 deepseek-chat
+ */
 async function deepseekComplete(model, prompt, timeoutMs = 120000) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new Error("DEEPSEEK_API_KEY not set");
@@ -203,11 +213,19 @@ async function deepseekComplete(model, prompt, timeoutMs = 120000) {
     const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-      body: JSON.stringify({ model: model || process.env.DEEPSEEK_MODEL || "deepseek-chat", messages: [{ role: "user", content: prompt }], stream: false }),
+      body: JSON.stringify({
+        model: model || process.env.DEEPSEEK_MODEL || "deepseek-chat",
+        messages: [{ role: "user", content: prompt }],
+        stream: false,
+      }),
       signal: controller.signal,
     });
-    if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${res.statusText}`);
-    return (await res.json()).choices?.[0]?.message?.content || "";
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      throw new Error(`DeepSeek ${res.status}: ${res.statusText}${body ? ` | ${body.slice(0, 300)}` : ""}`);
+    }
+    const data = await res.json();
+    return data.choices?.[0]?.message?.content || "";
   } catch (err) {
     if (err.name === "AbortError") throw new Error(`DeepSeek timeout (${timeoutMs}ms)`);
     throw err;
