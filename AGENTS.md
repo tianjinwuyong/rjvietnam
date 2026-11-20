@@ -43,15 +43,16 @@
 
 ### Splitting server.js — the recipe that works
 
-One domain is out of the monolith as the reference implementation: **28 maintenance routes** (753 lines) now live in `services/api/src/routes/maintenance.js`, exported as `registerMaintenanceRoutes(app, deps)` and invoked from `server.js` **at the line the block used to occupy** — mounting it anywhere else silently changes which middleware has already run.
+Two domains are out as reference implementations: **28 maintenance routes** (753 lines) in `services/api/src/routes/maintenance.js`, and **38 PMC routes** (1,287 lines) in `src/routes/pmc.js`. Both export `registerXxxRoutes(app, deps)` and are invoked from `server.js` **at the line the block used to occupy** — mounting anywhere else silently changes which middleware has already run. `server.js` is 48,586 → 47,308 lines.
 
 1. Pick a contiguous run of one prefix with **no module-level declarations** in it (`awk 'NR>=A && NR<=B && /^(const|let|function|class) /'`). Those blocks move without touching anything else.
 2. Cut the range into a register in the editor, paste it into `src/routes/<domain>.js` inside `export function registerXxxRoutes(app, deps) { … }`.
 3. Let `tsc --checkJs` name the dependencies: every free identifier is a **TS2304**, and that list *is* the destructuring line. Do not hand-maintain it.
 4. Replace the block in `server.js` with `registerXxxRoutes(app, { …deps });` and add one import.
-5. Verify, in this order: `node --check server.js`, `npm run check:route-census` (**total must not shrink** — that is the whole point of the census), `npm run check:auth-order` (must stay `stranded=0`), then boot and hit one moved path. A **403** with a valid token proves the route is registered and behind the permission gate; **404** means the mount is missing.
+5. Verify, in this order: `node --check server.js`, `npm run check:route-census` (**total must not shrink** — that is the whole point of the census), `npm run check:auth-order` (must stay `stranded=0`), `npx tsc -p tsconfig.api.json --noEmit | grep src/routes/<domain>` (must be empty: no TS2304 means the dependency closure is complete), `npm run test:unit`, then boot and call a moved path.
+6. **The 404 rule does not work in this app.** An unknown path is answered by the SPA catch-all with **200**, so "404 means the mount is missing" is false here, and an unauthenticated 401 proves nothing either because the auth gate rejects before routing. Use a valid token and read the status of a *known* handler: **200** for a route whose handler has no permission check (proves it ran), **403** for a guarded one (proves it registered and the gate sees it). The census is the real proof that nothing was lost; the live call only proves the process still routes.
 
-Measured on the maintenance slice: `ROUTE_CENSUS_OK total=2726 baseline=2726`, `AUTH_ORDER_OK stranded=0`, `SERVER_PARSES`, `/maintenance/equipment` → 403 while `/wms/raw-material-inventory` → 200 on the same token.
+Measured on both slices: `ROUTE_CENSUS_OK total=2726 baseline=2726`, `AUTH_ORDER_OK stranded=0`, `API_TYPES 595/595`, `unit 362 passed`. Live: `/maintenance/equipment` → 403, `/pmc/closed-loop/dashboard` → 403, `/pmc/delivery-watch` → 200 (runs its SQL), `/pmc/patrol-state` → 200 (uses the injected `fs`), `/wms/raw-material-inventory` → 200.
 
 ## Known Issues / Gotchas
 - **Dev server**: keep React 18.3.1 + Vite 5.4.21 exactly — upgrading triggers "Invalid hook call".
