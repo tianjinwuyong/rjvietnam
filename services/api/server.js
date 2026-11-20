@@ -44638,10 +44638,17 @@ app.get("/maintenance/inspection/templates", requirePermission("maintenance.read
 app.get("/maintenance/inspection/assignments", requirePermission("maintenance.read"), async (req, res) => {
   try {
     const { equipmentId, status, limit = 200 } = req.query;
-    let where = "WHERE 1=1";
-    const params = [Number(limit)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE ia.equipment_id = $1`; }
-    if (status) { params.push(status); where += ` AND ia.status = $${params.length}`; }
+    const filterParams = [];
+    const filters = [];
+    // The console filters by asset code (EQ-0001) while the column is a machines(id) FK,
+    // so a bare code never matched and a numeric string used to raise a cast error.
+    if (equipmentId) {
+      filterParams.push(equipmentId);
+      const p = `$${filterParams.length}`;
+      filters.push(`ia.machine_id = COALESCE((SELECT ea2.machine_id FROM equipment_assets ea2 WHERE ea2.asset_code = ${p}), CASE WHEN ${p} ~ '^[0-9]+$' THEN ${p}::bigint END)`);
+    }
+    if (status) { filterParams.push(status); filters.push(`ia.status = $${filterParams.length}`); }
+    const params = [...filterParams, Number(limit)];
     const r = await query(`
       SELECT ia.*, it.template_name, ea.asset_code, ea.name_zh AS equipment_name
       FROM inspection_assignments ia
@@ -44697,9 +44704,14 @@ app.patch("/maintenance/inspection/assignments/:id", requirePermission("maintena
 app.get("/maintenance/inspection/records", requirePermission("maintenance.read"), async (req, res) => {
   try {
     const { equipmentId, limit = 100, offset = 0 } = req.query;
-    let where = "";
-    const params = [Number(limit), Number(offset)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE ir.equipment_id = $1`; }
+    const filterParams = [];
+    const filters = [];
+    if (equipmentId) {
+      filterParams.push(equipmentId);
+      const p = `$${filterParams.length}`;
+      filters.push(`ir.machine_id = COALESCE((SELECT ea2.machine_id FROM equipment_assets ea2 WHERE ea2.asset_code = ${p}), CASE WHEN ${p} ~ '^[0-9]+$' THEN ${p}::bigint END)`);
+    }
+    const filterSql = filters.length ? `WHERE ${filters.join(" AND ")}` : "";
     const r = await query(`
       SELECT ir.*, it.template_name, ea.asset_code, ea.name_zh AS equipment_name
       FROM inspection_records ir
@@ -44882,7 +44894,11 @@ app.get("/maintenance/oee", requirePermission("maintenance.read"), async (req, r
     // not by its own id. The day window used a hardcoded $2 that only exists when a
     // machine filter is applied, so the parameter index is computed instead.
     const params = [Number(days)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE mol.equipment_id = $1`; }
+    let machineFilter = "";
+    if (equipmentId) {
+      params.unshift(equipmentId);
+      machineFilter = `AND mol.machine_id = COALESCE((SELECT ea2.machine_id FROM equipment_assets ea2 WHERE ea2.asset_code = $1), CASE WHEN $1 ~ '^[0-9]+$' THEN $1::bigint END)`;
+    }
     const r = await query(`
       SELECT mol.*, ea.asset_code, ea.name_zh AS equipment_name
       FROM machine_oee_logs mol
