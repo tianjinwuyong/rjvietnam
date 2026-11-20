@@ -1,0 +1,15 @@
+{
+  "keys": [
+    "GET /api/lifecycle/alerts-with-actions",
+    "GET /api/lifecycle/lots",
+    "GET /api/lifecycle/openings",
+    "GET /api/lifecycle/reinspection",
+    "GET /api/lifecycle/scrapping",
+    "GET /api/lifecycle/summary",
+    "PATCH /api/lifecycle/scrapping/:id",
+    "POST /api/lifecycle/openings",
+    "POST /api/lifecycle/reinspection",
+    "POST /api/lifecycle/scrapping"
+  ],
+  "note": "Dead permission guards: app-level routes whose guard cannot run because a router copy answers first. Lower with --update; never raise."
+}

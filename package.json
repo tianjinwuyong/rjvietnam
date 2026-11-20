@@ -26,8 +26,12 @@
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
     "migrate": "node scripts/migrate.mjs",
     "migrate:seed": "node scripts/migrate.mjs --seed",
+    "typecheck:api": "node scripts/typecheck-api.mjs",
+    "check:i18n": "node scripts/check-i18n-trilingual.mjs",
+    "check:auth-order": "node scripts/check-auth-order.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
-    "check:schema-drift": "node scripts/check-schema-drift.mjs --probe-schema"
+    "check:route-census": "node scripts/check-route-census.mjs",
+    "check:route-shadowing": "node scripts/check-route-shadowing.mjs"
   },
   "workspaces": [
     "apps/*",
