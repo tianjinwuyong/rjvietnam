@@ -6,16 +6,56 @@
 // the derived sample size, defect capture, completion with the AQL verdict and the
 // supplier-debt settlement, and the two-stage special-approval chain.
 //
-// NOTE, unfixed here: these handlers were written against a MySQL client and run on a
-// node-postgres pool. `const [rows] = await client.query(...)` destructures a pg Result
-// (not iterable), `?` placeholders are taken literally by pg, and `rows.insertId` does not
-// exist in pg. /api/wms/incoming and /api/wms/iqc/rules answer 404-shaped errors at
-// runtime for that reason -- the routes register and dispatch, the SQL never runs.
+// NOTE: these handlers were originally written against a MySQL client (mysql2)
+// and now run on a node-postgres pool. The two APIs disagree in three places:
+//
+//   * placeholders       MySQL '?'       vs pg '$1, $2, ...'
+//   * result shape       mysql2 [rows]   vs pg { rows, rowCount } (not iterable)
+//   * insert identity    rows.insertId   vs RETURNING id
+//
+// Rather than rewrite roughly 100 placeholders by hand, the mismatch is
+// translated at the single boundary below. Before this shim existed every one
+// of these 14 routes threw "(intermediate value) is not iterable" -- the SQL
+// never ran.
+
+/**
+ * Rewrite MySQL '?' placeholders into pg's positional '$1..$n'.
+ * Every '?' in this file is a SQL placeholder (the JS ternaries are outside the
+ * query strings), so a positional walk is sufficient.
+ */
+function toPgSql(sql) {
+  let i = 0;
+  return String(sql).replace(/\?/g, () => `$${++i}`);
+}
+
+/**
+ * Wrap a pg client so it answers in the mysql2 shape this file was written for.
+ * INSERTs get "RETURNING id" appended so rows.insertId keeps working.
+ */
+function mysqlCompatClient(raw) {
+  return {
+    release: () => raw.release(),
+    async query(sql, params = []) {
+      let text = toPgSql(sql);
+      const isInsert = /^\s*insert\s+/i.test(text) && !/\breturning\b/i.test(text);
+      if (isInsert) text += " RETURNING id";
+      const res = await raw.query(text, params);
+      if (isInsert) {
+        return [
+          { insertId: res.rows[0] ? res.rows[0].id : null, affectedRows: res.rowCount, rows: res.rows },
+          res.fields || [],
+        ];
+      }
+      return [res.rows, res.fields || []];
+    },
+  };
+}
+
 export function registerWmsReceivingIqcRoutes(app, deps) {
   const { getClient, requirePermission, query, settleDebtOnReceipt, publishSupplierIqcResult } = deps;
 
 app.post("/api/wms/incoming", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const {
       lot_no, material_code, material_name, supplier_code, supplier_name,
@@ -42,7 +82,7 @@ app.post("/api/wms/incoming", requirePermission("wms.write"), async (req, res) =
 });
 
 app.get("/api/wms/incoming", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { limit=50, offset=0, lot_no, material_code, supplier_code, iqc_status, packaging_status,
             date_from, date_to } = req.query;
@@ -68,7 +108,7 @@ app.get("/api/wms/incoming", requirePermission("wms.read"), async (req, res) => 
 });
 
 app.get("/api/wms/incoming/:id", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const [rows] = await client.query("SELECT * FROM wms_incoming_records WHERE id=?", [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: "NOT_FOUND" });
@@ -79,7 +119,7 @@ app.get("/api/wms/incoming/:id", requirePermission("wms.read"), async (req, res)
 });
 
 app.put("/api/wms/incoming/:id", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const fields = [];
     const vals = [];
@@ -105,7 +145,7 @@ app.put("/api/wms/incoming/:id", requirePermission("wms.write"), async (req, res
 // ── WMS IQC 来料检验 ─────────────────────────────────────────────────────────
 
 app.get("/api/wms/iqc/rules", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const [rows] = await client.query("SELECT * FROM iqc_aql_rules WHERE active=1 ORDER BY material_category, supplier_grade");
     res.json(rows);
@@ -114,7 +154,7 @@ app.get("/api/wms/iqc/rules", requirePermission("wms.read"), async (req, res) =>
 });
 
 app.get("/api/wms/iqc/sampling-plans", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { aql_level } = req.query;
     let sql = "SELECT * FROM iqc_sampling_plans";
@@ -128,7 +168,7 @@ app.get("/api/wms/iqc/sampling-plans", requirePermission("wms.read"), async (req
 });
 
 app.post("/api/wms/iqc/inspections", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { incoming_record_id, lot_no, material_code, supplier_code, batch_size, inspector_id, inspection_types } = req.body;
     if (!incoming_record_id || !lot_no || !batch_size) {
@@ -137,24 +177,49 @@ app.post("/api/wms/iqc/inspections", requirePermission("wms.write"), async (req,
     // 查 AQL 规则（默认 1.0）
     const [rules] = await client.query("SELECT * FROM iqc_aql_rules WHERE active=1 LIMIT 1");
     const aqlLevel = rules.length ? rules[0].aql_critical || '1.0' : '1.0';
-    // 查抽样计划
+    // The canonical sampling-plan table is keyed by AQL level and carries a single
+    // accept/reject pair (accept_point / reject_point); it has no batch-size band
+    // and no per-class ac_*/re_* columns. Pick the plan for this AQL level and
+    // derive the acceptance numbers from that pair.
     const [plans] = await client.query(
-      "SELECT * FROM iqc_sampling_plans WHERE batch_size_min<=? AND batch_size_max>=? AND aql_level=? LIMIT 1",
-      [batch_size, batch_size, aqlLevel]
+      "SELECT * FROM iqc_sampling_plans WHERE aql_level=? AND active=1 ORDER BY sample_size LIMIT 1",
+      [aqlLevel]
     );
     let sample_size = 0, ac_c=1, re_c=2, ac_m=2, re_m=3, ac_min=3, re_min=4;
     if (plans.length) {
       sample_size = plans[0].sample_size;
-      ac_c = plans[0].ac_critical; re_c = plans[0].re_critical;
-      ac_m = plans[0].ac_major; re_m = plans[0].re_major;
-      ac_min = plans[0].ac_minor; re_min = plans[0].re_minor;
+      ac_c = plans[0].accept_point ?? 0;
+      re_c = plans[0].reject_point ?? 1;
+      ac_m = ac_c; re_m = re_c;
+      ac_min = ac_c; re_min = re_c;
+    }
+    // Canonical `iqc_inspections` requires inspection_no / material_lot_id /
+    // operator_id / result, none of which the original MySQL-era INSERT supplied.
+    // Resolve them here: the lot from its lot_no, the operator from the caller's
+    // session (falling back to the admin account for system writes), and a
+    // generated inspection number. The row starts at result='pending' and is
+    // updated when /complete records the AQL verdict.
+    const inspectionNo = `IQC-${Date.now().toString(36).toUpperCase()}`;
+    const [lotRows] = await client.query(
+      "SELECT id FROM material_lots WHERE lot_no=? LIMIT 1", [lot_no]);
+    const lotId = lotRows.length ? lotRows[0].id : null;
+    if (!lotId) {
+      return res.status(400).json({ error: "LOT_NOT_FOUND", message: `no material_lots.lot_no=${lot_no}` });
+    }
+    const [opRows] = await client.query(
+      "SELECT id FROM users WHERE username='admin' ORDER BY id LIMIT 1");
+    const operatorId = (req.user && req.user.userId) || (opRows.length ? opRows[0].id : null);
+    if (!operatorId) {
+      return res.status(500).json({ error: "NO_OPERATOR", message: "no operator account available" });
     }
     const [rows] = await client.query(
       `INSERT INTO iqc_inspections
-        (incoming_record_id,lot_no,material_code,supplier_code,batch_size,sample_size,aql_level,
-         ac_critical,re_critical,ac_major,re_major,ac_minor,re_minor,inspector_id,inspection_types,submitted_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
-      [incoming_record_id,lot_no,material_code||'',supplier_code||'',batch_size,sample_size,aqlLevel,
+        (inspection_no,material_lot_id,operator_id,inspection_type,result,
+         incoming_record_id,lot_no,material_code,supplier_code,batch_size,sample_size,aql_level,
+         ac_critical,re_critical,ac_major,re_major,ac_minor,re_minor,inspector_id,inspection_types,inspection_date)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,NOW())`,
+      [inspectionNo, lotId, operatorId, 'incoming', 'pending',
+       incoming_record_id, lot_no, material_code||'', supplier_code||'', batch_size, sample_size, aqlLevel,
        ac_c,re_c,ac_m,re_m,ac_min,re_min,inspector_id||null,inspection_types?JSON.stringify(inspection_types):null]
     );
     // 更新来料记录状态为已送检
@@ -167,19 +232,19 @@ app.post("/api/wms/iqc/inspections", requirePermission("wms.write"), async (req,
 });
 
 app.get("/api/wms/iqc/inspections", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { limit=50, offset=0, result, date_from, date_to, supplier_code } = req.query;
     let where = [];
     let params = [];
     if (result) { where.push("result=?"); params.push(result); }
-    if (date_from) { where.push("submitted_at >= ?"); params.push(date_from); }
-    if (date_to) { where.push("submitted_at <= ?"); params.push(date_to); }
+    if (date_from) { where.push("created_at >= ?"); params.push(date_from); }
+    if (date_to) { where.push("created_at <= ?"); params.push(date_to); }
     if (supplier_code) { where.push("supplier_code LIKE ?"); params.push("%"+supplier_code+"%"); }
     const whereStr = where.length ? "WHERE " + where.join(" AND ") : "";
     const [countRows] = await client.query(`SELECT COUNT(*) as total FROM iqc_inspections ${whereStr}`, params);
     const [rows] = await client.query(
-      `SELECT * FROM iqc_inspections ${whereStr} ORDER BY submitted_at DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM iqc_inspections ${whereStr} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
       [...params, parseInt(limit), parseInt(offset)]
     );
     res.json({ items: rows, total: countRows[0].total, offset: parseInt(offset), limit: parseInt(limit) });
@@ -189,7 +254,7 @@ app.get("/api/wms/iqc/inspections", requirePermission("wms.read"), async (req, r
 });
 
 app.get("/api/wms/iqc/inspections/:id", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const [rows] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
     if (!rows.length) return res.status(404).json({ error: "NOT_FOUND" });
@@ -203,7 +268,7 @@ app.get("/api/wms/iqc/inspections/:id", requirePermission("wms.read"), async (re
 });
 
 app.post("/api/wms/iqc/inspections/:id/defects", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { defect_type, defect_location, defect_count, severity, photo_url } = req.body;
     if (!defect_type || !defect_count) {
@@ -222,7 +287,7 @@ app.post("/api/wms/iqc/inspections/:id/defects", requirePermission("wms.write"),
 });
 
 app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     // 查送检记录
     const [insp] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
@@ -247,7 +312,7 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
              (dc.minor >= i.ac_minor && dc.minor < i.re_minor)) result = 'conditional_pass';
     // 更新送检记录
     await client.query(
-      "UPDATE iqc_inspections SET result=?, completed_at=NOW() WHERE id=?",
+      "UPDATE iqc_inspections SET result=?, finished_at=NOW() WHERE id=?",
       [result, req.params.id]
     );
     // 更新来料记录状态
@@ -287,12 +352,12 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
 
 // 特采审批
 app.post("/api/wms/iqc/special-approvals", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { inspection_id, applicant_id, reason } = req.body;
     if (!inspection_id || !applicant_id) return res.status(400).json({ error: "MISSING_FIELDS" });
     const [rows] = await client.query(
-      `INSERT INTO iqc_special_approvals (inspection_id,applicant_id,reason,submitted_at)
+      `INSERT INTO iqc_special_approvals (inspection_id,applicant_id,reason,created_at)
        VALUES (?,?,?,NOW())`,
       [inspection_id, applicant_id, reason||null]
     );
@@ -304,7 +369,7 @@ app.post("/api/wms/iqc/special-approvals", requirePermission("wms.write"), async
 });
 
 app.patch("/api/wms/iqc/special-approvals/:id", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { status, approver_iqc_id, approver_engineering_id, notes } = req.body;
     const [rows] = await client.query("SELECT * FROM iqc_special_approvals WHERE id=?", [req.params.id]);
@@ -337,7 +402,7 @@ app.patch("/api/wms/iqc/special-approvals/:id", requirePermission("wms.write"), 
 });
 
 app.get("/api/wms/iqc/special-approvals", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
+  const client = mysqlCompatClient(await getClient());
   try {
     const { status } = req.query;
     let sql = `SELECT sa.*, i.lot_no, i.material_code, i.supplier_code
@@ -345,7 +410,7 @@ app.get("/api/wms/iqc/special-approvals", requirePermission("wms.read"), async (
                JOIN iqc_inspections i ON i.id=sa.inspection_id`;
     let params = [];
     if (status) { sql += " WHERE sa.status=?"; params.push(status); }
-    sql += " ORDER BY sa.submitted_at DESC";
+    sql += " ORDER BY sa.created_at DESC";
     const [rows] = await client.query(sql, params);
     res.json(rows);
   } catch (err) {
