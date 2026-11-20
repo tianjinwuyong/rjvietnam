@@ -23,7 +23,6 @@ import * as oqcCore from "./oqc-core.js";
 export function registerMesrjLegacyGaps(router, deps) {
   const {
     query, ok, fail, perm, anyPerm, doPassInner, snAlloc, snRuleOk,
-    agingDetail, traceMaterialByMaterial, bindMod, smtCore, panelSns, moMaterials, oqcCore,
     agingDetail, traceMaterialByMaterial, bindMod, smtCore, panelSns, moMaterials,
   } = deps;
 
