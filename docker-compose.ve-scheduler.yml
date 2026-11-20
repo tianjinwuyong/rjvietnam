@@ -1,0 +1,37 @@
+# ── ve-scheduler overlay for the rjms host ───────────────────────────────────
+# The host's /home/wy/smt-factory-system/docker-compose.yml is a hand-maintained
+# deployment copy that has diverged from docker-compose.prod.yml in this repo, so
+# the scheduler ships as an overlay instead of editing a file another operator
+# owns. Applied as:
+#   docker compose -f docker-compose.yml -f docker-compose.ve-scheduler.yml up -d ve-scheduler
+# The first file fixes the project name (smt-factory-system) and the external
+# network, so this service joins the same network as `postgres` and `api`.
+#
+# No build: section -- the image is built from `git archive HEAD` by
+# Dockerfile.ve-scheduler, which keeps a peer's uncommitted files out of it.
+# No secrets: the scheduler reaches the org only through the database, and the
+# cadence chain calls no LLM (runner/knowledge/competency/learning have zero
+# askLLM references), so no ollama reachability is needed from inside the netns.
+services:
+  ve-scheduler:
+    image: smt-factory-system-ve-scheduler:sync20261121
+    container_name: smt-ve-scheduler
+    restart: unless-stopped
+    command: ["node", "scripts/ve-scheduler.mjs", "--tick=60", "--no-rag"]
+    environment:
+      # byte-for-byte the api container's PG* set (read from docker inspect, not
+      # guessed): PGHOST=postgres PGUSER=PGPASSWORD=PGDATABASE=smt_factory
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: smt_factory
+      PGUSER: smt_factory
+      PGPASSWORD: smt_factory
+      TZ: Asia/Ho_Chi_Minh
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    stop_grace_period: 120s
+    networks:
+      - default
