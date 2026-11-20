@@ -22,7 +22,7 @@ import * as XLSX from "xlsx";
 export function registerMesrjLegacyGaps(router, deps) {
   const {
     query, ok, fail, perm, anyPerm, doPassInner, snAlloc, snRuleOk,
-    agingDetail, traceMaterialByMaterial, bindMod, smtCore, panelSns, moMaterials,
+    agingDetail, traceMaterialByMaterial, bindMod, smtCore, panelSns, moMaterials, oqcCore,
   } = deps;
 
   const str = (v) => String(v ?? "").trim();
@@ -352,6 +352,92 @@ export function registerMesrjLegacyGaps(router, deps) {
     await smtCore.baselineConfig({ enabled, lockHits });
     const stats = await smtCore.baselineStats();
     return ok(res, stats, "设置已保存");
+  });
+
+  // ── OQC 旧版别名（源 api/oqc.py：/oqc/list、/oqc/order、/oqc/po、/oqc/stock-in/batch）
+  // 新前端走 /oqc/pending_queue、/oqc/po_gap 等带下划线的名字；这四条是旧 PDA / 旧工作台用的，
+  // 逻辑直接复用 oqc-core（poSummary / poGap / canShip / stockIn），不是另起一套。
+  router.get("/oqc/list", async (req, res) => {
+    try {
+      const w = [], args = [];
+      for (const [key, col] of [["pallet_no", "o.pallet_no"], ["po_no", "o.po_no"], ["oqc_no", "o.oqc_no"]]) {
+        const v = str(req.query[key]);
+        if (v) { args.push(`%${v}%`); w.push(`${col} LIKE $${args.length}`); }
+      }
+      for (const [key, col] of [["result", "o.result"], ["status", "o.status"]]) {
+        const v = str(req.query[key]);
+        if (v) { args.push(v); w.push(`${col} = $${args.length}`); }
+      }
+      const d1 = str(req.query.from), d2 = str(req.query.to);
+      if (d1) { args.push(d1); w.push(`o.created_at >= $${args.length}::timestamptz`); }
+      if (d2) { args.push(`${d2} 23:59:59`); w.push(`o.created_at < $${args.length}::timestamptz`); }
+      const where = w.length ? ` WHERE ${w.join(" AND ")}` : "";
+      const page = Math.max(1, numv(req.query.page, 1));
+      const size = Math.min(200, Math.max(10, numv(req.query.size, 50)));
+      const total = Number((await query(
+        `SELECT COUNT(*)::int AS n FROM qlt_oqc_order o${where}`, args)).rows[0]?.n || 0);
+      const rows = (await query(
+        `SELECT o.*, p.total_qty, p.box_count
+           FROM qlt_oqc_order o LEFT JOIN prd_pallet p ON p.pallet_no = o.pallet_no${where}
+          ORDER BY o.id DESC LIMIT $${args.length + 1} OFFSET $${args.length + 2}`,
+        [...args, size, (page - 1) * size])).rows;
+      return ok(res, { total, page, size, rows });
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // 按栈板号 / 抽检单号查当前抽检单（含栈板信息）
+  router.get("/oqc/order", async (req, res) => {
+    try {
+      const oqcNo = str(req.query.oqc_no);
+      const palletNo = str(req.query.pallet_no);
+      if (!oqcNo && !palletNo) return fail(res, "请提供栈板号或抽检单号");
+      const order = oqcNo
+        ? (await query(`SELECT * FROM qlt_oqc_order WHERE oqc_no=$1 ORDER BY id DESC LIMIT 1`, [oqcNo])).rows[0]
+        : (await query(`SELECT * FROM qlt_oqc_order WHERE pallet_no=$1 ORDER BY id DESC LIMIT 1`, [palletNo])).rows[0];
+      const targetPallet = order?.pallet_no || palletNo;
+      const pallet = targetPallet ? (await query(
+        `SELECT pallet_no, mo_no, po_no, cust_code, product_code, box_count, total_qty,
+                status, oqc_status, oqc_time, release_locked, stock_in_status, stock_in_time
+           FROM prd_pallet WHERE pallet_no=$1`, [targetPallet])).rows[0] || null : null;
+      if (!order) return ok(res, { order: null, pallet }, "该栈板还没有抽检单，点「开始抽检」生成");
+      return ok(res, { order, pallet });
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // PO 抽检汇总 + 可出货判定 + 欠数（欠数只做参考，不做闸门）
+  router.get("/oqc/po", async (req, res) => {
+    try {
+      const poNo = str(req.query.po_no);
+      if (!poNo) return fail(res, "请提供 PO 号");
+      const data = await oqcCore.poSummary(poNo);
+      const [shipOk, shipWhy] = await oqcCore.canShip(poNo);
+      data.ship_allowed = shipOk;
+      data.ship_block_reason = shipWhy;
+      data.gap_info = await oqcCore.poGap(poNo);
+      return ok(res, data);
+    } catch (ex) { return fail(res, ex.message); }
+  });
+
+  // 按 PO 批量成品入库：只入库已合格且未入库的栈板，其余逐条报原因
+  router.post("/oqc/stock-in/batch", perm("prod.pack"), async (req, res) => {
+    try {
+      const poNo = str(req.body?.po_no);
+      if (!poNo) return fail(res, "请提供 PO 号");
+      const pallets = (await query(
+        `SELECT pallet_no FROM prd_pallet WHERE po_no=$1 AND status='已封板' ORDER BY pallet_no`,
+        [poNo])).rows;
+      if (!pallets.length) return fail(res, `PO【${poNo}】下没有已封板栈板`);
+      const operator = req.mesrjUser?.login_name || req.mesrjUser?.username || "";
+      const doneList = [], blocked = [];
+      for (const p of pallets) {
+        const [result, err] = await oqcCore.stockIn(p.pallet_no, operator);
+        if (err) blocked.push({ pallet_no: p.pallet_no, reason: err });
+        else doneList.push(p.pallet_no);
+      }
+      let msg = `入库成功 ${doneList.length} 个栈板`;
+      if (blocked.length) msg += `，${blocked.length} 个被拦截（未通过 OQC 或已入库）`;
+      return ok(res, { po_no: poNo, done: doneList, blocked }, msg);
+    } catch (ex) { return fail(res, ex.message); }
   });
 
   // ── 工单推送 WMS（源 api/wmsmo.py：/mo/<no>/push、/mo/push-all、/mo/list）─────
