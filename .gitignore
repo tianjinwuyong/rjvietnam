@@ -238,3 +238,6 @@ database/*
 
 # pg_dump 产物（mesrj-scheduler backup.dir 默认落这里）
 database/backups/
+
+# 站点终端的设备凭据由部署时逐台写入，不进 git（模板 station-config.example.js）
+apps/station-agent/public/station-config.js

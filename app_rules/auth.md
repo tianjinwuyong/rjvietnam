@@ -50,9 +50,23 @@
 - **Login throttle is per username, not per IP.** Five failures block that operator
   for 15 min; the IP key only guards sprays (50). `trust proxy` is off, so a tight
   IP limit from nginx would lock the whole site out.
-- **`/auth/station-login` is credential-free unless `STATION_LOGIN_KEY` is set.**
-  With it set, `x-station-key` must match. It is logged as a warning at boot while
-  unset, because it mints a full-permission session from a username alone.
+- **`/auth/station-login` needs a device credential once `STATION_LOGIN_KEY` is
+  set.** `x-station-key` must match, compared on sha256 digests with
+  `timingSafeEqual` (`stationKeyFailure()`) so the response time does not walk the
+  key byte by byte. No header is `401 STATION_KEY_MISSING`, a wrong one is
+  `401 STATION_KEY_INVALID`. Neither is audited: a mis-provisioned terminal retries
+  on a timer and would flood `audit_logs`, and the IP throttle already caps it.
+  While the variable is unset the boot log says so loudly, because the endpoint
+  then mints a full-permission session from a username alone.
+- **Terminals are provisioned at deploy time, not built with the key.** Copy
+  `apps/station-agent/public/station-config.example.js` to `station-config.js`
+  (gitignored) beside it with the value pasted in; the bundle reads
+  `window.__STATION_AGENT__.stationKey`, else sessionStorage `station_key`, and
+  sends the header. Set the key on the API **after** every terminal carries it —
+  an unprovisioned scanner cannot sign in at all. It stays empty in development
+  and under the harness on purpose: `harness/END-TO-END.md` J1 step 3 signs in
+  with no header, so switching it on locally breaks a protected journey. The prod
+  compose file takes it from the deploy host's `.env` (`${STATION_LOGIN_KEY:-}`).
 - The per-token `permissions[]` are frozen at login: a role change takes effect at
   the next sign-in, not mid-session.
 - **Station login is for floor roles only.** `services/api/src/auth/station-login-policy.js`

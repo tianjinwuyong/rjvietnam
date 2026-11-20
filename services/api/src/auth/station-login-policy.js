@@ -1,4 +1,5 @@
-// Who is allowed to use the credential-free station login.
+// Who may use the station login, and whether the terminal asking for it is a
+// station at all.
 //
 // `/auth/station-login` proves a *station*, not a *person*: the caller sends an
 // operator username and a station code and gets a JWT carrying that account's
@@ -6,6 +7,12 @@
 // tolerable while the accounts it can reach are the ones that stand at a machine.
 // An office role that can rewrite access control, HR records or money must come
 // through /api/auth/login with a password, so those roles are refused here.
+//
+// The endpoint is credential-free only while STATION_LOGIN_KEY is unset; once it
+// is set the caller must also present `x-station-key`, which is what
+// stationKeyFailure() at the bottom of this file compares.
+
+import { createHash, timingSafeEqual } from "node:crypto";
 
 // Permissions that mean "this account is not standing at a machine".
 // `smt.loading.approve` and `lifecycle.approve` are deliberately absent: quality,
@@ -60,4 +67,26 @@ export function createStationLoginPolicy({
       return { allowed: false, reason: "PRIVILEGED_ROLE", blocked };
     },
   };
+}
+
+/**
+ * Compare the presented station key with the configured one.
+ *
+ * Hashes are compared with timingSafeEqual so neither the length of the secret
+ * nor the position of its first differing byte shows up in the response time; a
+ * plain !== over a shared secret is a byte-at-a-time oracle in theory, and there
+ * is no reason to leave it in.
+ *
+ * @param {string|null|undefined} presented the x-station-key header, if any
+ * @param {string|null|undefined} configured the raw STATION_LOGIN_KEY value
+ * @returns {null|"STATION_KEY_MISSING"|"STATION_KEY_INVALID"} null when the
+ *   request may proceed, the reason it may not otherwise
+ */
+export function stationKeyFailure(presented, configured) {
+  const expected = String(configured ?? "").trim();
+  if (!expected) return null; // no station credential configured, nothing to check
+  const got = String(presented ?? "").trim();
+  if (!got) return "STATION_KEY_MISSING";
+  const digest = (value) => createHash("sha256").update(value).digest();
+  return timingSafeEqual(digest(got), digest(expected)) ? null : "STATION_KEY_INVALID";
 }

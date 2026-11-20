@@ -31,3 +31,11 @@ export declare const STATION_LOGIN_PRIVILEGED_DEFAULT: RegExp;
 export declare function createStationLoginPolicy(
   options?: StationLoginPolicyOptions,
 ): StationLoginPolicy;
+
+export type StationKeyFailure = null | "STATION_KEY_MISSING" | "STATION_KEY_INVALID";
+
+/** null when the request may proceed; the reason it may not otherwise. */
+export declare function stationKeyFailure(
+  presented: string | null | undefined,
+  configured: string | null | undefined,
+): StationKeyFailure;

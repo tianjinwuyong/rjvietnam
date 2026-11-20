@@ -55,7 +55,7 @@ import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
 import { envelope, listEnvelope, mutateEnvelope, errorEnvelope, successEnvelope } from "./src/shared/helpers.js";
 import { isRevokedToken, revokedTokens } from "./src/auth/revocation-registry.js";
 import { createAccountStateCache, createLoginThrottle } from "./src/auth/session-tokens.js";
-import { createStationLoginPolicy } from "./src/auth/station-login-policy.js";
+import { createStationLoginPolicy, stationKeyFailure as stationKeyFailureOf } from "./src/auth/station-login-policy.js";
 import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
 import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
 import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
@@ -13594,8 +13594,17 @@ const stationLoginPolicy = createStationLoginPolicy({
 });
 app.post("/auth/station-login", async (req, res) => {
   try {
-    if (STATION_LOGIN_KEY && req.headers["x-station-key"] !== STATION_LOGIN_KEY) {
-      return res.status(401).json(errorEnvelope("STATION_KEY_REQUIRED", "x-station-key header is required for station login"));
+    // One shared station credential, compared on digests so the response time
+    // does not walk the key byte by byte. A failure here is a device that was
+    // never provisioned or a bundle that predates the key, not a person's
+    // mistake, so it is not audited: a misconfigured terminal retries on a
+    // timer and would flood audit_logs. The IP throttle still caps it.
+    const stationKeyFailure = stationKeyFailureOf(req.headers["x-station-key"], STATION_LOGIN_KEY);
+    if (stationKeyFailure) {
+      const detail = stationKeyFailure === "STATION_KEY_MISSING"
+        ? "x-station-key header is required for station login on this factory"
+        : "x-station-key is not the key this factory was configured with";
+      return res.status(401).json(errorEnvelope(stationKeyFailure, detail));
     }
     const clientIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
     const throttleKey = `${STATION_LOGIN_THROTTLE_KEY}:${clientIp}`;
@@ -40619,6 +40628,10 @@ const server = app.listen(PORT, HOST, () => {
   revokedTokenRefresh.unref();
   if (!STATION_LOGIN_KEY) {
     console.warn("[auth] STATION_LOGIN_KEY is unset: /auth/station-login issues a full-permission JWT from operator+stationCode alone. Set it and send x-station-key to require a station credential.");
+  } else {
+    // A terminal without station-config.js now fails to sign in, and the only
+    // trace of why is here: say what the floor has to provision.
+    console.log(`[auth] station login requires x-station-key (${STATION_LOGIN_KEY.length}-char STATION_LOGIN_KEY set); unprovisioned terminals answer 401 STATION_KEY_MISSING`);
   }
   query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Initial lifecycle refresh failed:", error.message));
   // ── OA module boot (merged mode) ──────────────────────────────────

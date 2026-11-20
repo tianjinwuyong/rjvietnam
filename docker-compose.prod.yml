@@ -64,6 +64,13 @@ services:
       # station login refuses privileged ROLES by default, so the exception is the
       # person, not the role. Every use writes a STATION_LOGIN_EXCEPTION audit row.
       STATION_LOGIN_ALLOW_OPERATORS: MO_LI_BIN
+      # Station login also has to prove the *device*. The value lives in the
+      # deploy host's .env, never in this file: a secret committed to git is not
+      # a secret. Empty means the gate stays off, which is what development and
+      # the harness journeys need (harness/END-TO-END.md J1 step 3 signs in with
+      # no header at all). Provision every terminal's station-config.js BEFORE
+      # setting this, or the scanners answer 401 STATION_KEY_MISSING.
+      STATION_LOGIN_KEY: ${STATION_LOGIN_KEY:-}
       PGHOST: postgres
       PGPORT: 5432
       PGDATABASE: smt_factory

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createStationLoginPolicy } from "../services/api/src/auth/station-login-policy";
+import { createStationLoginPolicy, stationKeyFailure } from "../services/api/src/auth/station-login-policy";
 
 // Permission sets copied from the seeded roles (probed live 2026-11-20), so the
 // test fails if the rule starts disagreeing with the data it was written against.
@@ -79,5 +79,36 @@ describe("station login policy", () => {
     const policy = createStationLoginPolicy();
     expect(policy.check("rework", []).allowed).toBe(true);
     expect(policy.check("rework", null as unknown as string[]).allowed).toBe(true);
+  });
+});
+
+describe("station device credential", () => {
+  it("asks for nothing while the factory has no key", () => {
+    // Development and the harness journeys sign in without a header.
+    expect(stationKeyFailure(undefined, "")).toBe(null);
+    expect(stationKeyFailure(undefined, undefined)).toBe(null);
+    expect(stationKeyFailure("anything at all", "   ")).toBe(null);
+  });
+
+  it("separates an unprovisioned terminal from a wrong key", () => {
+    expect(stationKeyFailure(undefined, "AC-CABLE-01-key")).toBe("STATION_KEY_MISSING");
+    expect(stationKeyFailure("", "AC-CABLE-01-key")).toBe("STATION_KEY_MISSING");
+    expect(stationKeyFailure("AC-CABLE-02-key", "AC-CABLE-01-key")).toBe("STATION_KEY_INVALID");
+  });
+
+  it("accepts the key the factory was configured with", () => {
+    expect(stationKeyFailure("AC-CABLE-01-key", "AC-CABLE-01-key")).toBe(null);
+  });
+
+  it("survives the trailing whitespace a CRLF .env leaves behind", () => {
+    // services/api/.env is CRLF on this box: without the trim every terminal
+    // would be locked out by an invisible character.
+    expect(stationKeyFailure("AC-CABLE-01-key", "AC-CABLE-01-key\r\n")).toBe(null);
+  });
+
+  it("refuses a duplicated header rather than matching one half of it", () => {
+    // Node hands req.headers as an array when a client sends the header twice.
+    const presented = ["AC-CABLE-01-key", "AC-CABLE-01-key"] as unknown as string;
+    expect(stationKeyFailure(presented, "AC-CABLE-01-key")).toBe("STATION_KEY_INVALID");
   });
 });
