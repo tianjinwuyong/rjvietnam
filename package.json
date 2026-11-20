@@ -25,6 +25,7 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
     "migrate": "node scripts/migrate.mjs",
+    "admin:create": "node scripts/create-admin.mjs",
     "typecheck:api": "node scripts/typecheck-api.mjs",
     "check:i18n": "node scripts/check-i18n-trilingual.mjs",
     "check:auth-order": "node scripts/check-auth-order.mjs",
