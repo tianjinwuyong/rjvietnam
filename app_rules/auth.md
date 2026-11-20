@@ -57,8 +57,13 @@
   the next sign-in, not mid-session.
 - **Station login is for floor roles only.** `services/api/src/auth/station-login-policy.js`
   refuses any role holding `admin.*`, `finance.*`, `hr.admin`, `hr.salary` or `*`;
-  `STATION_LOGIN_ALLOW_ROLES` re-opens a named role on purpose. Floor approvals
-  (`smt.loading.approve`, `lifecycle.approve`) are deliberately not privileged.
+  `STATION_LOGIN_ALLOW_ROLES` re-opens a named role on purpose; `STATION_LOGIN_ALLOW_OPERATORS`
+  (comma-separated **usernames**) lets one person with an office role stand at a
+  machine — `MO_LI_BIN` (总经理, role `admin`) relies on it, set in
+  `docker-compose.prod.yml` and in both `.env` files. Such a session writes
+  `STATION_LOGIN_EXCEPTION` (`named:<user>@<station>:role:<code>`) so the grant is
+  visible, never silent. Floor approvals (`smt.loading.approve`,
+  `lifecycle.approve`) are deliberately not privileged.
 - **Deny paths are audited.** `audit_logs.action` gains `LOGIN_DENIED`
   (`reference_no` = `<reason>:<username>`) and `STATION_LOGIN_DENIED`
   (`role:<code>@<station>:<blocked perms>`). Only the auth boundary logs — a

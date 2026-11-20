@@ -46,6 +46,30 @@ describe("station login policy", () => {
     expect(policy.check("admin2", adminPerms).allowed).toBe(false);
   });
 
+  it("lets one named person stand at a station without re-opening their role", () => {
+    // MO_LI_BIN is the General Manager and holds role `admin`; the factory still
+    // needs him to sign in at a terminal, so the exception is per username and is
+    // reported as NAMED_OPERATOR so the route can audit it.
+    const policy = createStationLoginPolicy({ allowOperators: "MO_LI_BIN" });
+    const gm = policy.check("admin", adminPerms, "MO_LI_BIN");
+    expect(gm.allowed).toBe(true);
+    expect(gm.reason).toBe("NAMED_OPERATOR");
+
+    // Anyone else on the same role stays refused, and the exception is exact.
+    expect(policy.check("admin", adminPerms, "admin").allowed).toBe(false);
+    expect(policy.check("admin", adminPerms, "MO_LI_BIN_2").allowed).toBe(false);
+    expect(policy.check("admin", adminPerms).allowed).toBe(false);
+  });
+
+  it("does not need an exception for a floor account", () => {
+    const policy = createStationLoginPolicy({ allowOperators: "MO_LI_BIN" });
+    expect(policy.check("material_receiver", materialReceiverPerms, "VN_MATERIAL_RECEIVER")).toEqual({
+      allowed: true,
+      reason: null,
+      blocked: [],
+    });
+  });
+
   it("treats a wildcard permission as privileged", () => {
     const policy = createStationLoginPolicy();
     expect(policy.check("test", ["*"]).allowed).toBe(false);
