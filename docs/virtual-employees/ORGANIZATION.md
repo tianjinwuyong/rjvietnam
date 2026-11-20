@@ -114,8 +114,8 @@
 ## 4. 当前真实状态（不要高估）
 
 - 37 个在岗岗位中，**只有 `WMS-RECEIVING`、`WMS-INVENTORY`、`IQC` 有真实执行代码**，另有 `OPS` 的 Hermes 骨架和 `PURCHASING` 的任务驱动路径。
-- 报告实测：36/37 岗位 `tasks=0, events=0`；`receive_variance` 门 183 待批 / 0 批准（门已修好，存量未处置）。
-- 频率配置**尚未写回数据库**，也未被 runner 消费；DB 里仍是默认 300 秒。
+- 报告实测（2026-11-21 03:42Z 重算）：**7 个岗位有任务、8 个有事件** —— `WMS-RECEIVING` 269、`WMS-IQC-HANDOFF` 266、`OPS-SUPERVISOR` 80、`MAINTENANCE` 8、`WMS-INVENTORY` 3、`OA-DOCUMENT-CONTROL` 2、`IQC` 1；其余 30 个在岗岗位仍 `tasks=0, events=0`。待批积压已清零（见 §9），队列从 0 重新累积。
+- 频率配置的**消费方是调度器**（`dueNow()` / `dueJobs()` 直接读 `FREQUENCIES`，跑法 `npm run schedule:ve` 或 `start_dev.js` 子进程），但配置本身**未写回数据库**，DB 里仍是默认 300 秒；改频率目前只改代码。
 - 三个真源必须同步：运行时 `registry.js`（23 条，其中 `DATA-QUALITY` / `UI-DESIGN-QA` 标为占位 enabled=false）、报表镜像 `ve_reporting_lines`（迁移 324 种子，44 条）、能力契约 `services/api/src/virtual-employees/{skills-catalog,role-capabilities}.js`（44 岗全覆盖）。`npm run check:ve-capabilities -- --db` 实测三者一致：roles db=44 declared=44、permissions live=95 mirrored=95、在用门 unknown=0、enabled 冲突 0。改岗位必须同改三处。
 
 ## 5. 产物索引
@@ -208,7 +208,9 @@ npm run schedule:ve -- --once --limit=80                     # 按频率表跑�
 | 定时执行 | `services/api/src/agent/scheduler.js` + `scripts/ve-scheduler.mjs`（`start_dev.js` 第 5 个子进程） | EVENT/WATCH 按 intervalSeconds，BATCH 按越南本地 cron，DEMAND 永不自跑；last-run 存 `SCHEDULER_TICK` 事件，不加字段；会话级 advisory lock 保证一个库只有一个调度进程 |
 | L1 语料 | `knowledge.js --docs` → `ve/shared/controlled-docs` | 只收 published+public+L1/L2/L3（79 条），L4 表单排除；带 `docVersion` 与复审到期日 |
 
-实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号；两个进程争用同一个库时只有一个持锁，第二个退 0 且启动器不重启。**待批队列 275 条（`receive_variance` 265）仍未批准**——业务决定，工具已就绪。详见 `JOB-DESCRIPTIONS.md` §20–§23。
+实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号；两个进程争用同一个库时只有一个持锁，第二个退 0 且启动器不重启。详见 `JOB-DESCRIPTIONS.md` §20–§23。
 
-未做：生产侧（rjms compose）未加调度容器——属部署变更，需单独签字；`harness/**`、locks 未碰；旧向量集合仍未删（不可逆清单）。
+**存量审批已处置（2026-11-21 03:42Z）**：业务授权后以 `MO_LI_BIN`（莫立斌）为批准人，一次清掉 275 条 `WAITING_APPROVAL`（attempted 275 / approved 275 / refused 0）；写回创建 270 条后继草稿（IQC_SUBMIT 265、PM_SCHEDULE 4、LOCATION_BIND 1），5 条按设计不推进。库存与业务表零写入。旧向量集合 `smt_factory_memory` 决定**保留不删**。
+
+未做：生产侧（rjms compose）未加调度容器——属部署变更，需单独签字；`harness/**`、locks 未碰。
 

@@ -627,7 +627,7 @@
 1. 8 个 manager 把向量库当"最近状态"键值用：`loadState()` 先 `mem.search("most recent X state", 1)`、`saveState()` 每周期 `mem.store(..., {type:'*_state', state:{…}})`，而同一 state **已经**写进 JSON 文件。后果是每个周期往索引里灌一条近似重复的快照，检索只会返回"上周期的计数"。现在文件即状态源，向量只存经验：`wms/bom/finance/hr/mes/plant/pmc/procurement-manager.js`。
 2. HR 快照把考勤/请假明细整坨嵌入共享索引（个人数据 + 零检索价值）→ 同批移除。
 3. 我 v1 版 `knowledge.js` 的两处自伤：`ve/<id>/<topic>` 把一个岗位的空间切碎；把聚合统计当知识入库。已改为 `ve/<EMPLOYEE_ID>`（topic 进 metadata），统计交回报告。
-4. 旧集合 `smt_factory_memory`（768 维）：配置写的 `nomic-embed-text` **本机 ollama 根本没装**（装了 mxbai-embed-large / bge-large / bge-m3 / snowflake-arctic-embed），而所有写入都被 `try/catch` 降级成一条 WARN——"看起来在用，实际没在用"。已切 `bge-m3:latest`（已安装、1024 维、中/英/越三语）+ 新集合 `smt_factory_memory_v2`。旧集合仍在磁盘，**未删**（删库是不可逆动作，需人工批准）。
+4. 旧集合 `smt_factory_memory`（768 维）：配置写的 `nomic-embed-text` **本机 ollama 根本没装**（装了 mxbai-embed-large / bge-large / bge-m3 / snowflake-arctic-embed），而所有写入都被 `try/catch` 降级成一条 WARN——"看起来在用，实际没在用"。已切 `bge-m3:latest`（已安装、1024 维、中/英/越三语）+ 新集合 `smt_factory_memory_v2`。**决定（2026-11-21 人工签字）：旧集合保留不删**，作为污染样本与 768/1024 维度对照留在磁盘；任何读路径都不指向它。
 
 **改进（已执行）**
 
@@ -652,7 +652,7 @@
 - OA 受控文件（L1）已入库（2026-11-21，见 §23）：79 条 published+public+L1/L2/L3 进 `ve/shared/controlled-docs`，带 `docVersion` 与复审到期日；L4 空白表单排除。剩下的是**文件正文**没有进语料（现在入的是登记项＋版本＋复审期，正文需 OA 导出接口）。
 - "引用知识"≠"因知识改变判断"：四力权重仍按有/无 evidence，需要一条 A/B 或人工标注口径才能度量。
 - `/health` 的 `memories_total` 与新集合不同源（显示 0），不要用它的数字判断是否落库；以 `--remember` 的 `stored` 与 `KNOWLEDGE_COLLECTED` 事件为准。
-- 旧集合未删；删它属不可逆清单，需人工签字。
+- 旧集合 `smt_factory_memory` 已决定**保留**（2026-11-21 签字）：不再列入待拍板项。它不在任何读路径上；将来若要清理，需重新走不可逆签字。
 
 ## 19. 岗位技能与 MCP 契约（已实现并实测）
 
@@ -737,7 +737,11 @@ double approve refused true · re-advance idempotent { applied:true, duplicate:t
 ve actor refused VE_CANNOT_APPROVE · synthetic rows still open 0（已 CANCELLED + PROOF_CLEANED 事件）
 ```
 
-最初的 183 条存量 `receive_variance` 没有被批量批准——那是业务决定；调度器上线后把它补到 265 条（`npm run approve:ve -- --list` 实测：scanned 275 = receive_variance 265 + return_machine_to_service 4 + hand_over_package 3 + approve_document 2 + final_iqc_decision 1）。工具在：`--list`（按门分组的待批队列）→ `--gate=receive_variance --reviewer=<真人用户名> --confirm=<同一个用户名>`；没有默认批准人，`ve:` 身份一律拒绝，权限从 `users`→`role_permissions`→`permissions` 实测取，与 UI 走同一条判定。
+存量积压已清空（2026-11-21 03:42Z，业务授权后执行）：`npm run approve:ve -- --limit=300 --reviewer=MO_LI_BIN --confirm=MO_LI_BIN` → **attempted 275 / approved 275 / refused 0**，写回 **applied 270、WRITEBACK_UNSUPPORTED 5**（hand_over_package 3 + approve_document 2 按设计不推进，交接待签是 PDA 动作、文件批准在 OA 签核链内）。后继草稿任务：`WMS-IQC-HANDOFF-VIRTUAL-01/IQC_SUBMIT` 265、`MAINTENANCE-VIRTUAL-01/PM_SCHEDULE` 4、`WMS-RECEIVING-VIRTUAL-01/LOCATION_BIND` 1，全部 `status=OPEN`、`requires_human=false`、`requested_by=ve:writeback`。**没有任何库存/业务表被写**。批准人 `MO_LI_BIN`（莫立斌，roleId 20，65 条权限键，实测覆盖 wms.execute + quality.write）逐条写入 `HUMAN_APPROVED` 事件，`approved_by` 落 275 行。
+
+待批队列现在重新从 0 开始累积——调度器每 300 秒扫一次，新的收料差异会继续进门。这是正常态，不是回归。
+
+工具：`--list` 看按门分组的队列；批准必须 `--reviewer=<真人> --confirm=<同一个真人>`，没有默认批准人，`ve:` 身份一律拒绝，权限从 `users`→`role_permissions`→`permissions` 实测取（`users.role_id` 与 `user_roles` 两种授予路径取并集），与 UI 走同一条判定。
 
 ## 21. 定时执行终于有了执行者
 

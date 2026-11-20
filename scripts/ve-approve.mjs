@@ -72,15 +72,16 @@ try {
           candidates = (await query(
             `SELECT * FROM factory_virtual_employee_tasks WHERE id = ANY($1::int[]) ORDER BY id`, [ids])).rows;
         } else {
-          const queue2 = await pendingQueue({ query, gate: args.gate || null, employeeId: args.employee || null, limit });
-          const ids = queue2.gates.flatMap(g => g.sample);
+          // Same predicate and the same ordering as pendingQueue(), so the queue
+          // --list shows is exactly the set this call approves.
           candidates = (await query(
             `SELECT * FROM factory_virtual_employee_tasks
               WHERE status='WAITING_APPROVAL' AND requires_human
                 AND ($1::text IS NULL OR human_gate=$1)
                 AND ($2::text IS NULL OR employee_id=$2)
-              ORDER BY created_at LIMIT $3`, [args.gate || null, args.employee || null, limit])).rows;
-          void ids;
+              ORDER BY CASE priority WHEN 'URGENT' THEN 0 WHEN 'HIGH' THEN 1 WHEN 'NORMAL' THEN 2 ELSE 3 END,
+                       created_at
+              LIMIT $3`, [args.gate || null, args.employee || null, limit])).rows;
         }
         const results = [];
         for (const task of candidates) {

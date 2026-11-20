@@ -59,8 +59,8 @@ npm run report:ve -- --report=all --out=docs/virtual-employees/reports
 ## 6. 尚未实现（明确边界）
 
 - **没有 HTTP 接口与前端页面**：目前是 CLI + 库视图，没有 `/api/factory/virtual-employees/reports/*`，也没有 React 面板。
-- `ve_competency_snapshots` 只能由人工评估填入，尚无"纠正自动转训练案例 → 自动打分 → 生成快照"的链路；`competency` 报告因此全 0。
-- `--aggregate` 不会自动调度，需要 cron / 工作流调用；今日由手动运行验证。
+- `ve_competency_snapshots` 已由 `competency` job（周一 06:00，`npm run competency:ve`）自动填入：全员 `forces_assessed=4`；批量批准之后重算，**只有 `WMS-RECEIVING-VIRTUAL-01` 的 `min_level` 从 0 升到 1**（它的 `tasks_approved` 有值），其余 36 个在岗岗位仍全 0 —— 没有任何一力达到"主管与总监须 ≥3"的门槛。分数完全由数据量导出，缺"人工评估 → 签字存档"这一层：`factory_virtual_employee_training_cases` 至今只有 **1 条 `APPROVED`**（其余状态 0 条），够不到 `cases_approved >= 3` 的那一档。
+- `--aggregate` 已进日报调度（`scheduler.js` 的 `report` job，越南时间 07:15，见 `JOB-DESCRIPTIONS.md` §21–§22），但**每人每日 ≤30 单这条口径没有强制**：`approve:ve` 批量批准不计数、不告警（2026-11-21 一次批了 275 单，见 §9）。要真正约束需一个批准计数闸门，属策略决定。
 - 报告只读，不修改 `registry.js`；新增岗位仍需同时改 `registry.js` 与本迁移的数据行（两份真源，这是刻意的：注册表给运行时，关系表给报表与门）。
 
 ## 7. 验证记录
@@ -77,3 +77,20 @@ npm run report:ve -- --report=all --out=... → 7 份报告写出，行数 44/37
 ## 8. 后续修复（2026-11-20）
 
 `throughput` 报告里那 183 条 `receive_variance` 待批任务现在**可批**：`POST /api/factory/virtual-employees/tasks/:taskId/approve` 已接上 `humanGates` 服务端强制与人类审批人校验，详见 `JOB-DESCRIPTIONS.md` §14。存量任务**未被自动批准**——仍需业务负责人逐条或按授权批量决策。重跑 `npm run report:ve -- --aggregate && npm run report:ve -- --report=throughput` 即可看到批准数变化。
+
+## 9. 积压清零之后的吞吐（2026-11-21 03:42Z）
+
+业务授权后一次性批准全部待批：`approved_by=MO_LI_BIN` 275 行、`HUMAN_APPROVED` 事件 275 条、`WRITEBACK_APPLIED` 累计 272 条。`--aggregate` 重跑后 `rows=1110`，`throughput` 报告变成：
+
+| day | human_gate | employee_id | gated_tasks | approved | blocked |
+| --- | --- | --- | --- | --- | --- |
+| 2026-11-20 | receive_variance | WMS-RECEIVING-VIRTUAL-01 | 41 | 41 | 0 |
+| 2026-11-20 | return_machine_to_service | MAINTENANCE-VIRTUAL-01 | 2 | 2 | 0 |
+| 2026-11-20 | hand_over_package | WMS-INVENTORY-VIRTUAL-01 | 1 | 1 | 0 |
+| 2026-11-19 | receive_variance | WMS-RECEIVING-VIRTUAL-01 | 226 | 226 | 0 |
+| 2026-11-19 | hand_over_package / approve_document / return_machine_to_service / final_iqc_decision | 各自岗位 | 2 / 2 / 2 / 1 | 全部相等 | 0 |
+
+两点要如实说明：
+
+1. **`blocked` 归零、`approved` 补上，但 `p50_wait_ms` / `p90_wait_ms` 仍为空**。批准把任务从 `WAITING_APPROVAL` 放到 `OPEN`，`completed_at` 依然为空——等待时长要等任务真正执行完才计算得出来。这不是批准漏了什么，是这条指标本来依赖执行侧闭环。
+2. **每人每日 ≤30 单的口径这次被突破**：275 单在一次批处理里由同一人批准，报告不会自动告警（它按天聚合、按门分组，看不到单次批量）。批量批准是授权行为，但"一次 275 条"本身应当有约束，见 §6 尚未实现。
