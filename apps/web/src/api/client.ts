@@ -12,8 +12,17 @@ function defaultApiBase(): string {
 
 // Local development uses the API on this machine. Factory deployments can
 // override it with VITE_API_BASE=http://192.168.6.155:8080.
+//
+// The override is DEV-ONLY on purpose. A production build that bakes an
+// absolute API host into the bundle pins every browser to that one address:
+// the rjms bundle shipped with `VITE_API_BASE=http://192.168.6.155:8080`, so
+// sign-in posted to an address no outside browser could reach and the SPA sat
+// on the login screen with no error. Production is always served by nginx,
+// which proxies /api/ itself, so same-origin is the correct base there.
 const runtimeEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const API_BASE = String(runtimeEnv?.VITE_API_BASE || defaultApiBase()).replace(/\/$/, "");
+const API_BASE = String(
+  (runtimeEnv?.DEV && runtimeEnv?.VITE_API_BASE) || defaultApiBase(),
+).replace(/\/$/, "");
 const API_AUTH_BASE = `${API_BASE}/api`;
 
 export interface ApiError {
