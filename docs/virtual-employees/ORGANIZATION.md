@@ -191,6 +191,24 @@ npm run knowledge:ve -- --all --remember        # 7 岗采集本领域经验并�
 npm run knowledge:ve -- --employee=IQC-VIRTUAL-01 --dry-run   # 只采集不入库
 npm run runner:ve -- --employee=WMS-RECEIVING-VIRTUAL-01 --rag --limit=40  # 召回知识写入 input.evidence
 npm run competency:ve                            # 确定性四力合成（人工签署行不被覆盖）
+npm run knowledge:ve -- --docs --remember                   # OA 受控文件 L1 语料（79 条）
+npm run approve:ve -- --list                                # 待批队列（按门分组）
+npm run approve:ve -- --gate=X --reviewer=<真人> --confirm=<同一个真人>   # 人批，之后自动推进
+npm run schedule:ve -- --once --limit=80                     # 按频率表跑一轮（--dry-run 不写）
 ```
 
 详见 `JOB-DESCRIPTIONS.md` §17–§18。实测（记忆服务在线、新集合 `smt_factory_memory_v2`）：case id=1 `AUTO:1434:HUMAN_APPROVED` DRAFT→APPROVED；`--all --remember` 写入 5 条 `KNOWLEDGE_COLLECTED`，`ve/WMS-RECEIVING-VIRTUAL-01` 语义召回 5 条（top 0.568，带 sourceId）；`--rag` 一轮 scanned 40 / created 38 / cited 5，库内 48 条任务 `input.evidence` 非空；`competency:ve` 后 WMS-RECEIVING 的 `SMART_JUDGMENT` 0→2。不带 `--remember` 只采集不入库；记忆服务不可达时报 `MEMORY_SERVER_UNREACHABLE` 且退出码 1，不假装落库。
+
+## 9. 批准之后与定时执行（2026-11-21）
+
+| 能力 | 代码 | 边界 |
+| --- | --- | --- |
+| 批准唯一入口 | `services/api/src/agent/approval.js`（HTTP 路由与 `npm run approve:ve` 共用） | 批准人必须具名人类、必须持该域权限键、门必须注册在该岗；条件 UPDATE 防重复批准 |
+| 批准后推进 | `services/api/src/agent/writeback.js` | 12 个门有后继草稿任务，41 个门显式写明由人类执行；后继不得是写技能；推进失败不回滚人类的批准 |
+| 定时执行 | `services/api/src/agent/scheduler.js` + `scripts/ve-scheduler.mjs` | EVENT/WATCH 按 intervalSeconds，BATCH 按越南本地 cron，DEMAND 永不自跑；last-run 存 `SCHEDULER_TICK` 事件，不加字段 |
+| L1 语料 | `knowledge.js --docs` → `ve/shared/controlled-docs` | 只收 published+public+L1/L2/L3（79 条），L4 表单排除；带 `docVersion` 与复审到期日 |
+
+实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号。**183 条存量 `receive_variance` 仍未批准**——业务决定，工具已就绪。详见 `JOB-DESCRIPTIONS.md` §20–§22。
+
+未做：调度器未挂进 `start_dev.js`/生产守护（需与其他 lane 协调启动方式）；`harness/**`、locks 未碰；旧向量集合仍未删（不可逆清单）。
+

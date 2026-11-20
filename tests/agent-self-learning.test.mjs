@@ -3,7 +3,8 @@ import { learnFromCorrections, reviewTrainingRun, allEmployeeIds } from "../serv
 import { collectFieldKnowledge, allKnowledgeEmployeeIds, FIELD_QUERIES } from "../services/api/src/agent/knowledge.js";
 import { runEmployeeCycle } from "../services/api/src/agent/runner.js";
 import {
-  knowledgeVerdict, createKnowledgeService, employeeAgentId, SHARED_AGENT_ID, DISCARDED_TYPES,
+  knowledgeVerdict, createKnowledgeService, employeeAgentId, DISCARDED_TYPES,
+  SHARED_AGENT_ID, SHARED_NAMESPACES, sharedAgentId,
 } from "../services/_shared/memory-experience.js";
 
 describe("knowledge policy (one store, per-employee namespace)", () => {
@@ -40,22 +41,37 @@ describe("knowledge policy (one store, per-employee namespace)", () => {
     expect(calls[0].metadata.recordedAt).toBe("2026-11-20T00:00:00.000Z");
   });
 
-  it("recalls only own namespace plus the shared corpus, dropping expired hits", async () => {
+  it("namespaces the shared corpora without touching employee ids", () => {
+    expect(sharedAgentId()).toBe("ve/shared/general");
+    expect(sharedAgentId(true)).toBe("ve/shared/general");
+    expect(sharedAgentId("controlled-docs")).toBe("ve/shared/controlled-docs");
+    expect(sharedAgentId("ve/shared/exception-signatures")).toBe("ve/shared/exception-signatures");
+    expect(SHARED_NAMESPACES.every(s => s.startsWith("ve/shared/"))).toBe(true);
+  });
+
+  it("recalls own namespace plus every shared corpus, dropping expired hits", async () => {
     const seen = [];
     const svc = createKnowledgeService({ now: () => Date.parse("2026-11-20T00:00:00Z"),
       clientFactory: ({ agentId }) => ({ search: async (q, topK, threshold) => {
         seen.push({ agentId, q, topK, threshold });
         if (agentId === SHARED_AGENT_ID) return { results: [{ id: "sh1", score: 0.91, metadata: { type: "rule_reference" } }] };
+        if (agentId === "ve/shared/controlled-docs") return { results: [{ id: "doc1", score: 0.72, metadata: { type: "rule_reference", docVersion: "1.0", sourceType: "oa-doc-system", sourceId: 2229 } }] };
+        if (agentId !== "ve/IQC-VIRTUAL-01") return { results: [] };
         return { results: [
           { id: "own-new", score: 0.8, metadata: { type: "exception_signature", expiresAt: "2027-01-01T00:00:00Z", sourceId: 7 } },
           { id: "own-old", score: 0.95, metadata: { type: "exception_signature", expiresAt: "2020-01-01T00:00:00Z" } },
         ] };
       } }) });
     const out = await svc.recall({ employeeId: "IQC-VIRTUAL-01", query: "供应商缺陷", topK: 5 });
-    expect(seen.map(s => s.agentId).sort()).toEqual([SHARED_AGENT_ID, "ve/IQC-VIRTUAL-01"].sort());
+    expect(seen.map(s => s.agentId)).toEqual(["ve/IQC-VIRTUAL-01", ...SHARED_NAMESPACES]);
     expect(seen[0].threshold).toBe(0.35);
-    expect(out.results.map(r => r.id)).toEqual(["sh1", "own-new"]);
+    expect(out.results.map(r => r.id)).toEqual(["sh1", "own-new", "doc1"]);
     expect(out.cited[1]).toMatchObject({ agentId: "ve/IQC-VIRTUAL-01", sourceId: 7 });
+    expect(out.cited[2]).toMatchObject({ agentId: "ve/shared/controlled-docs", docVersion: "1.0", sourceType: "oa-doc-system" });
+    // a citation can be narrowed to one corpus, e.g. only controlled documents
+    const docsOnly = await svc.recall({ employeeId: "IQC-VIRTUAL-01", query: "检验标准", sharedOnly: "controlled-docs" });
+    expect(docsOnly.scopes).toEqual(["ve/shared/controlled-docs"]);
+    expect(docsOnly.results.map(r => r.id)).toEqual(["doc1"]);
   });
 });
 

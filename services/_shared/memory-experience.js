@@ -11,6 +11,20 @@
 import { createMemoryClient } from "./memory-client.js";
 
 export const SHARED_AGENT_ID = "ve/shared/general";
+export const SHARED_PREFIX = "ve/shared/";
+
+// The shared corpus is split so a citation says what kind of authority it is:
+// supervisor-approved practice, controlled documents (versioned), or exception
+// signatures. All three are readable by every employee; none of them is
+// somebody's private experience.
+export const SHARED_NAMESPACES = Object.freeze([
+  "ve/shared/general", "ve/shared/controlled-docs", "ve/shared/exception-signatures",
+]);
+
+export function sharedAgentId(which = "general") {
+  const name = String(which === true ? "general" : which || "general");
+  return name.startsWith(SHARED_PREFIX) ? name : `${SHARED_PREFIX}${name}`;
+}
 
 // Transient runtime snapshots belong in the JSON state file or PostgreSQL, not
 // in the vector index. They were the bulk of the old collection and made
@@ -29,7 +43,7 @@ export const ALLOWED_TYPES = Object.freeze([
 // runtime managers' corpora into an employee's judgement.
 export function veAgentIds(employeeIds, { includeShared = true } = {}) {
   const ids = [...new Set(employeeIds.map(employeeAgentId))];
-  return includeShared ? [...ids, SHARED_AGENT_ID] : ids;
+  return includeShared ? [...ids, ...SHARED_NAMESPACES] : ids;
 }
 export function employeeAgentId(employeeId) {
   return `ve/${String(employeeId).toUpperCase()}`;
@@ -64,7 +78,7 @@ export function createKnowledgeService({ clientFactory = createMemoryClient, now
 
   return {
     async remember({ employeeId, type, content, sourceType, sourceId, docVersion, expiresAt, shared = false }) {
-      const agentId = shared ? "ve/shared/general" : employeeAgentId(employeeId);
+      const agentId = shared ? sharedAgentId(shared) : employeeAgentId(employeeId);
       const meta = { type, sourceType, sourceId, docVersion, expiresAt, employeeId: shared ? null : employeeId };
       const verdict = knowledgeVerdict(agentId, content, meta);
       if (!verdict.accept) return { stored: false, reason: verdict.reason, agentId };
@@ -72,11 +86,13 @@ export function createKnowledgeService({ clientFactory = createMemoryClient, now
       return { stored: true, agentId, type };
     },
 
-    // Scoped retrieval: own namespace + the shared space. Another employee's
+    // Scoped retrieval: own namespace + the shared corpora. Another employee's
     // private experience is never pulled into a colleague's context; only the
-    // supervisor-approved shared corpus is.
-    async recall({ employeeId, query, topK = 5, threshold = 0.35 }) {
-      const scopes = [employeeAgentId(employeeId), SHARED_AGENT_ID];
+    // supervisor-approved and controlled-document spaces are.
+    async recall({ employeeId, query, topK = 5, threshold = 0.35, sharedOnly = null }) {
+      const scopes = sharedOnly
+        ? (Array.isArray(sharedOnly) ? sharedOnly.map(sharedAgentId) : [sharedAgentId(sharedOnly)])
+        : [employeeAgentId(employeeId), ...SHARED_NAMESPACES];
       const cut = now();
       const buckets = await Promise.all(scopes.map(agentId =>
         clientFor(agentId).search(query, topK, threshold)

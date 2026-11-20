@@ -38,7 +38,9 @@
     "knowledge:ve": "node scripts/ve-knowledge.mjs",
     "competency:ve": "node scripts/ve-competency.mjs",
     "check:ve-capabilities": "node scripts/check-ve-capabilities.mjs",
-    "doc:ve-capabilities": "node scripts/ve-capabilities-doc.mjs"
+    "doc:ve-capabilities": "node scripts/ve-capabilities-doc.mjs",
+    "approve:ve": "node scripts/ve-approve.mjs",
+    "schedule:ve": "node scripts/ve-scheduler.mjs"
   },
   "workspaces": [
     "apps/*",

@@ -649,7 +649,7 @@
 
 ### 18.5 缺口
 
-- OA 受控文件（L1）还没入库：需要文档导出接口 + `docVersion` 提取，是下一刀。
+- OA 受控文件（L1）已入库（2026-11-21，见 §22）：79 条 published+public+L1/L2/L3 进 `ve/shared/controlled-docs`，带 `docVersion` 与复审到期日；L4 空白表单排除。剩下的是**文件正文**没有进语料（现在入的是登记项＋版本＋复审期，正文需 OA 导出接口）。
 - "引用知识"≠"因知识改变判断"：四力权重仍按有/无 evidence，需要一条 A/B 或人工标注口径才能度量。
 - `/health` 的 `memories_total` 与新集合不同源（显示 0），不要用它的数字判断是否落库；以 `--remember` 的 `stored` 与 `KNOWLEDGE_COLLECTED` 事件为准。
 - 旧集合未删；删它属不可逆清单，需人工签字。
@@ -692,4 +692,85 @@ npm run check:ve-capabilities -- --db
 8 条 `HUMAN_ONLY_GATE`：OPS 的 6 个门、WMS-INVENTORY 的 hand_over/receive_package、APP-OPS 的 data_mutation、DATABASE 的 restore_database/delete_data、DATA-QUALITY 的 master_data_merge/bulk_correction、BACKUP 的 delete_backup、RELEASE 的 database_migration、UI-DESIGN-QA 的两个门——这些门登记在岗位上，是给**人类批准该岗起草的任务**用的，本来就不该有虚拟员工的写技能。
 
 曾经有的第 9 条 `ENABLED_FLAG_CONFLICT` 已消除：`registry.js` 现在按组织文档把 `DATA-QUALITY-VIRTUAL-01` 与 `UI-DESIGN-QA-VIRTUAL-01` 标为占位（`enabled:false`），与 `ve_reporting_lines` 一致。实测 `check:ve-capabilities -- --db` → `ENABLED flags=44 conflicts=0`。
+
+
+## 20. 批准之后发生什么（流程推进，不是代写业务账）
+
+代码：`services/api/src/agent/writeback.js`，批准的唯一入口 `services/api/src/agent/approval.js`（HTTP 路由与 CLI 共用）。
+
+### 20.1 为什么回写不改库存、不改单据
+
+库存是 `inventory_transactions` 推出来的，可追溯性要求"谁按了收货/放行/付款"必须落在那个具名操作员身上。所以人类批准之后，代理侧做的是**把工作推给下一手的岗位**（生成后继草稿任务），而不是替人类写业务表。没有后继动作的门，明确记 `WRITEBACK_UNSUPPORTED` 并写出原因，绝不静默什么都不做。
+
+### 20.2 门 → 后继（12 个有后继，其余 41 个显式声明由人类执行）
+
+| 批准的门 | 后继岗位 | 后继技能 |
+| --- | --- | --- |
+| `receive_variance` | `WMS-IQC-HANDOFF-VIRTUAL-01` | `IQC_SUBMIT` |
+| `final_iqc_decision` | `WMS-RECEIVING-VIRTUAL-01` | `LOCATION_BIND` |
+| `inventory_release` | `WMS-INVENTORY-VIRTUAL-01` | `LOCATION_OPTIMIZE` |
+| `exemption` | `IQC-VIRTUAL-01` | `SAMPLE_CALCULATION` |
+| `supplier_suspension` | `PURCHASING-VIRTUAL-01` | `REPLENISHMENT_REVIEW` |
+| `publish_rejection` | `SUPPLIER-COLLAB-VIRTUAL-01` | `IQC_FEEDBACK` |
+| `stop_line` | `MAINTENANCE-VIRTUAL-01` | `BREAKDOWN_ROUTE` |
+| `approve_scrap` | `QUALITY-VIRTUAL-01` | `NCR_ROUTE` |
+| `close_ncr` | `REPAIR-VIRTUAL-01` | `REWORK_ROUTE` |
+| `return_machine_to_service` | `MAINTENANCE-VIRTUAL-01` | `PM_SCHEDULE` |
+| `inventory_adjustment` | `WMS-COUNT-VIRTUAL-01` | `COUNT_PLAN` |
+| `release_expired_material` | `MSD-CONTROL-VIRTUAL-01` | `BAKING_ALERT` |
+
+三条硬约束（自检 `auditWritebackCoverage` 保证）：后继技能必须是该岗位**已声明**的技能；后继必须是草稿（`kind !== write`，不能再要求一次人工门）；每个已注册的门都必须有明确归宿（有后继或写明原因）。实测 `missing=[]`、`advancesToWrite=[]`。
+
+### 20.3 幂等与不撤销
+
+后继任务 `task_key = WB:<gate>:<rowKey>`，重复推进得到 `duplicate:true`；推进失败（例如死锁）只写 `WRITEBACK_FAILED` 事件，**不回滚人类已经做出的批准**。
+
+### 20.4 实测（本机，合成任务，验证后作废）
+
+```
+created synthetic task 203708   SYNTHETIC 验证用（批准→回写链路），非真实收料 WB-PROOF-…
+reviewer admin permissions=48 has wms.execute=true
+approve { ok:true, gate:'receive_variance', writeback:{applied:true, targetTaskId:203709} }
+events   HUMAN_APPROVED by admin | WRITEBACK_APPLIED by ve:WMS-RECEIVING-VIRTUAL-01
+successor 203709 WMS-IQC-HANDOFF-VIRTUAL-01 / IQC_SUBMIT status=OPEN requires_human=false requested_by=ve:writeback
+double approve refused true · re-advance idempotent { applied:true, duplicate:true }
+ve actor refused VE_CANNOT_APPROVE · synthetic rows still open 0（已 CANCELLED + PROOF_CLEANED 事件）
+```
+
+183 条存量 `receive_variance` 没有被批量批准——那是业务决定。工具在：`npm run approve:ve -- --list`（按门分组的待批队列）→ `--gate=receive_variance --reviewer=<真人用户名> --confirm=<同一个用户名>`；没有默认批准人，`ve:` 身份一律拒绝，权限从 `users`→`role_permissions`→`permissions` 实测取，与 UI 走同一条判定。
+
+## 21. 定时执行终于有了执行者
+
+代码：`services/api/src/agent/scheduler.js` + `scripts/ve-scheduler.mjs`（`npm run schedule:ve`）。
+
+| 类别 | 判定 | 说明 |
+| --- | --- | --- |
+| EVENT / WATCH | 距上次扫描 ≥ `intervalSeconds` | 确定性探针，不调模型 |
+| BATCH | cron 命中本地（Asia/Ho_Chi_Minh）分钟，同一分钟只一次 | 无 DST，固定 UTC+7，不引 ICU 时区库 |
+| DEMAND | 永不自跑 | 只有人或同事派单 |
+| 未声明频率 | `FREQUENCY_NOT_DECLARED` 上报 | 不悄悄跳过 |
+
+夜间批任务：`learn 22:30`、`knowledge 23:00`（含受控文件语料）、`competency 周一 06:00`、`report 07:15`。
+
+**last-run 状态不需要新字段**：`factory_virtual_employee_configs` 没有 `last_run_at`，加列属不可逆清单；所以调度器在有产出时写一条 `SCHEDULER_TICK` 事件（`employee_id` NOT NULL，job 归口 `OPS-SUPERVISOR`），重启后从事件恢复。没产出的轮次不记录——重复执行本来就由 `task_key` 幂等挡住。
+
+实测（同一分钟内跑两轮 `--once --limit=80`）：
+
+```
+pass1 created: OPS-SUPERVISOR 78 · WMS-RECEIVING 40 · WMS-INVENTORY 1 · MAINTENANCE 2
+ticks: 4 条 SCHEDULER_TICK（actor=scheduler，detail 带 created 数）
+pass2 fired: []        ← 从 tick 恢复的 lastRun 抑制了同分钟重跑
+```
+
+第一轮真实产出了 121 条任务（其中 78 条是 OPS 的审批升级提醒，40 条收料待批草稿），这是调度器上线后的正常首轮积压，不是错误；全部带 `task_key`，重复运行只记 duplicate。
+
+## 22. L1 受控文件语料（已入库）
+
+`npm run knowledge:ve -- --docs --dry-run` → `--docs --remember`：从 `oa.doc_system` 取 **已发布 + 公开 + L1/L2/L3**（79 条），跳过 181 条 L4 空白表单（近似重复的标题只会稀释召回）。每条内容为「受控文件 DT-SP-EN-002《设备设施控制程序》（L2/l2_procedure）当前版本 1.0；引用时必须带版本号，下次复审 2028-08-03」，元数据带 `docVersion`（=文件版本）与 `expiresAt`（=复审到期日），命名空间 `ve/shared/controlled-docs`。
+
+实测：79/79 写入、0 拒绝；`recall({employeeId:'IQC-VIRTUAL-01', query:'磁感类进料检验标准 版本 复审'})` 命中三条受控文件（0.743 / 0.657 / 0.645，均带 `docVersion:"1.0"`、`sourceType:"oa-doc-system"`、`sourceId`）；`sharedOnly:'controlled-docs'` 可把引用范围收窄到受控文件一种。
+
+两处真实缺陷是这轮实测暴露的，不是设计时想到的：汇总事件写 `employee_id=NULL` 违反 NOT NULL（现归口文控岗）；`next_review_date` 是 Date 对象，`String(...).slice(0,10)` 得到 `Mon Au` 这种垃圾（现显式格式化，畸形文本的 50 条已 `deleteAll()` 清掉重灌）。
+
+共享语料现在是三个，读侧都自动带上：`ve/shared/general`（主管批准的实践）、`ve/shared/controlled-docs`（受控文件）、`ve/shared/exception-signatures`（跨岗例外特征）。仍是一套 RAG、一个集合，隔离靠命名空间与 `recall()` 的 scope 白名单。
 
