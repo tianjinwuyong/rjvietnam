@@ -8,6 +8,8 @@
 //
 // Pure registrations -- the two module-level statements that follow this block in
 // server.js (`receivingVirtualEmployeeInterval` and its setInterval) stay there.
+import { capabilitiesFor, auditCapabilities, ALL_ROLE_IDS, MCP_SERVERS } from "../virtual-employees/capabilities.js";
+import { FACTORY_VIRTUAL_EMPLOYEES } from "../virtual-employees/registry.js";
 export function registerVirtualEmployeeRoutes(app, deps) {
   const {
     query, requirePermission, envelope, errorEnvelope, mutateEnvelope, listEnvelope,
@@ -159,6 +161,29 @@ app.post('/api/factory/virtual-employees/:id/tasks', async (req, res) => {
     await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'TASK_CREATED',$3::jsonb,$4)`, [employee.id,row.id,JSON.stringify({ taskType, requiresHuman, humanGate: humanGate || null }),req.user?.username || 'system']);
     res.status(201).json(mutateEnvelope(row));
   } catch (e) { res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_CREATE_FAILED', e.message)); }
+});
+// Capability contract for one role: which skills, the real permission key
+// behind each, the human gate blocking its write side, and the MCP servers it
+// may call. The 21 positions that live only in `ve_reporting_lines` answer
+// here too, so dispatch tooling has one place to ask.
+app.get('/api/factory/virtual-employees/:id/capabilities', (req, res) => {
+  try {
+    const caps = capabilitiesFor(req.params.id);
+    if (!caps) return res.status(404).json(errorEnvelope('ROLE_NOT_DECLARED', `no capability row for ${req.params.id}`));
+    const employee = getFactoryVirtualEmployee(req.params.id);
+    res.json(envelope({ ...caps,
+      registry: employee ? { level: employee.level, domain: employee.domain, mode: employee.mode, humanGates: employee.humanGates } : null,
+      rule: 'kind=write 的技能只产出带人工门的草稿任务；ve: 身份不能批准，批准人必须是具名人类' }));
+  } catch (e) { res.status(400).json(errorEnvelope('VE_CAPABILITIES_FAILED', e.message)); }
+});
+// Whole-org contract self-audit. `problems` must stay at zero: a skill whose
+// gate is not registered on the role would be refused at approval time, which
+// means the contract promised something the runtime cannot deliver.
+app.get('/api/factory/virtual-employees/capabilities/summary', (_req, res) => {
+  try {
+    const audit = auditCapabilities({ registryEntries: FACTORY_VIRTUAL_EMPLOYEES });
+    res.json(envelope({ ...audit, declaredRoles: ALL_ROLE_IDS.length, mcpServers: Object.keys(MCP_SERVERS).length }));
+  } catch (e) { res.status(500).json(errorEnvelope('VE_CAPABILITY_AUDIT_FAILED', e.message)); }
 });
 app.post('/api/factory/virtual-employees/tasks/:taskId/approve', async (req, res) => {
   try {

@@ -1,3 +1,5 @@
+import { skillsFor, mcpFor } from "./capabilities.js";
+
 export const FACTORY_VIRTUAL_EMPLOYEES = Object.freeze([
   employee('OPS-SUPERVISOR-VIRTUAL-01', '全厂运营虚拟主管 Hermes', 'cmd', 'SUPERVISOR', ['FACTORY_PATROL', 'KPI_MONITOR', 'EXCEPTION_ROUTE', 'CROSS_DOMAIN_COORDINATION', 'APPROVAL_COORDINATION', 'SHIFT_HANDOVER', 'WECHAT_NOTIFY'], ['release_inventory', 'approve_scrap', 'change_po', 'stop_line', 'approve_payment', 'final_iqc_decision'], '统一管理虚拟员工，验证事实、分配唯一主责、协调跨部门交接、跟踪时限并升级异常；不替代专业岗位或人工审批。', 'HERMES_OPS_SUPERVISOR_V1'),
   employee('WMS-RECEIVING-VIRTUAL-01', 'WMS 收料虚拟员工', 'wms', 'SPECIALIST', ['RECEIVING_VALIDATE', 'LABEL_PLAN', 'HIDDEN_PALLET_BIND', 'LOCATION_BIND', 'IQC_HANDOFF'], ['receive_variance', 'inventory_release'], '确保 PDA 收集的真实箱数据完成 PO 核对、MSL 解析、箱 QR 打印、仓位绑定并进入 IQC HOLD。'),
@@ -27,18 +29,15 @@ export const FACTORY_VIRTUAL_EMPLOYEES = Object.freeze([
 function employee(id, name, domain, level, capabilities, humanGates, jobDescription = '', promptProfile = '') {
   return {
     id, name, domain, level, capabilities, humanGates, jobDescription, promptProfile,
-    skills: id === 'UI-DESIGN-QA-VIRTUAL-01' ? [
-      'emil-design-eng',
-      'prototype',
-      'pick-ui-library',
-      'find-animation-opportunities',
-      'animate',
-      'review-animations',
-      'improve-animations',
-      'ask-sonner',
-      'animation-vocabulary',
-    ] : [],
-    enabled: true,
+    // Capability contract (see capabilities.js): skill ids resolve through the
+    // catalog, MCP servers are the union of what those skills need plus this
+    // employee's own memory namespace. Previously `skills` was a one-off literal
+    // for the UI role only.
+    skills: skillsFor(id) || [],
+    mcpServers: mcpFor(id) || [],
+    // The org chart marks these two as placeholders (ve_reporting_lines.enabled
+    // = false); the code registry mirrors that instead of claiming 23 active.
+    enabled: !['DATA-QUALITY-VIRTUAL-01', 'UI-DESIGN-QA-VIRTUAL-01'].includes(id),
     mode: id === 'IQC-VIRTUAL-01' ? 'ACTIVE_EXECUTOR' : 'GOVERNED_SCAFFOLD',
     status: 'IDLE',
     policy: { readAllowed: true, draftAllowed: true, externalWriteRequiresApproval: true, destructiveActionDenied: true },
