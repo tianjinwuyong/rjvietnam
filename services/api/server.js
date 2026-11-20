@@ -44793,6 +44793,9 @@ app.get("/maintenance/pm/schedule", requirePermission("maintenance.read"), async
   }
 });
 
+    // inspection_assignments keys on machine_id/shift_date. The filter and the LIMIT
+    // also shared $1 whenever equipmentId was present, so indices are built from the
+    // filter list and the limit is always the last parameter.
 // GET /maintenance/pm/execution-logs
 app.get("/maintenance/pm/execution-logs", requirePermission("maintenance.read"), async (req, res) => {
   try {
@@ -44822,8 +44825,9 @@ app.get("/maintenance/dashboard", requirePermission("maintenance.read"), async (
   try {
     const openWO = await query(`SELECT count(*) AS cnt FROM maintenance_work_orders WHERE status NOT IN ('fixed','closed')`);
     const criticalWO = await query(`SELECT count(*) AS cnt FROM maintenance_work_orders WHERE priority = 'critical' AND status NOT IN ('fixed','closed')`);
-    const todayInspections = await query(`SELECT count(*) AS cnt FROM inspection_assignments WHERE due_date = CURRENT_DATE`);
-    const overdueInspections = await query(`SELECT count(*) AS cnt FROM inspection_assignments WHERE due_date < CURRENT_DATE AND status != 'completed'`);
+    // inspection_assignments was rebuilt around machine_id/shift_date; due_date is gone.
+    const todayInspections = await query(`SELECT count(*) AS cnt FROM inspection_assignments WHERE shift_date = CURRENT_DATE`);
+    const overdueInspections = await query(`SELECT count(*) AS cnt FROM inspection_assignments WHERE shift_date < CURRENT_DATE AND status != 'completed'`);
     const avgDowntime = await query(`SELECT round(avg(downtime_minutes))::int AS avg FROM maintenance_work_orders WHERE downtime_minutes > 0`);
     const mtbf = await query(`SELECT round(avg(extract(epoch from (completed_at - issue_time))/60))::int AS mtbf_minutes FROM maintenance_work_orders WHERE status = 'fixed' AND completed_at IS NOT NULL`);
     res.json({
@@ -44845,14 +44849,25 @@ app.get("/maintenance/machine-status", requirePermission("maintenance.read"), as
   try {
     const r = await query(`
       SELECT ea.id, ea.asset_code, ea.name_zh AS equipment_name,
-             ea.operational_status, ea.last_maintenance_date, ea.next_pm_date,
-             mss.power_status, mss.running_status, mss.alarm_status, mss.updated_at AS snapshot_time
+             ea.status AS operational_status,
+             (SELECT MAX(wo.completed_at) FROM maintenance_work_orders wo
+               WHERE wo.equipment_id = ea.id AND wo.status = 'fixed') AS last_maintenance_date,
+             (SELECT MIN(mp.next_due_date) FROM maintenance_plans mp
+               WHERE mp.asset_id = ea.id AND mp.status = 'active') AS next_pm_date,
+             mss.status AS running_status,
+             -- the snapshot table carries one state, not separate power/alarm flags;
+             -- the keys stay so clients do not have to special-case the payload
+             NULL::text AS power_status,
+             NULL::text AS alarm_status,
+             mss.last_updated AS snapshot_time
       FROM equipment_assets ea
       LEFT JOIN machine_status_snapshots mss ON mss.equipment_id = ea.id
       ORDER BY ea.asset_code
       LIMIT 200
     `);
     res.json({ items: r.rows, total: r.rows.length });
+    // inspection_records keys on machine_id and records completed_at, not
+    // equipment_id/inspected_at; equipment_assets joins by its machine_id.
   } catch (err) {
     console.error("GET /maintenance/machine-status:", err.message);
     res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
@@ -44863,7 +44878,9 @@ app.get("/maintenance/machine-status", requirePermission("maintenance.read"), as
 app.get("/maintenance/oee", requirePermission("maintenance.read"), async (req, res) => {
   try {
     const { equipmentId, days = 7 } = req.query;
-    let where = "";
+    // machine_oee_logs keys on machine_id; equipment_assets links to it by machine_id,
+    // not by its own id. The day window used a hardcoded $2 that only exists when a
+    // machine filter is applied, so the parameter index is computed instead.
     const params = [Number(days)];
     if (equipmentId) { params.unshift(equipmentId); where = `WHERE mol.equipment_id = $1`; }
     const r = await query(`
@@ -44885,7 +44902,17 @@ app.get("/maintenance/oee", requirePermission("maintenance.read"), async (req, r
 // GET /maintenance/equipment — list all equipment
 app.get("/maintenance/equipment", requirePermission("maintenance.read"), async (req, res) => {
   try {
-    const r = await query(`SELECT id, asset_code, name_zh, machine_type, operational_status, line_id FROM equipment_assets ORDER BY asset_code ASC`);
+    // equipment_assets has neither machine_type nor operational_status: the live model
+    // keeps the human label on equipment_categories and the running state on `status`.
+    const r = await query(`
+      SELECT ea.id, ea.asset_code, ea.name_zh,
+             ec.name_zh AS machine_type,
+             ea.status AS operational_status,
+             ea.line_id
+      FROM equipment_assets ea
+      LEFT JOIN equipment_categories ec ON ec.id = ea.category_id
+      ORDER BY ea.asset_code ASC
+    `);
     res.json({ items: r.rows, total: r.rows.length });
   } catch (err) {
     console.error("GET /maintenance/equipment:", err.message);
@@ -44896,6 +44923,7 @@ app.get("/maintenance/equipment", requirePermission("maintenance.read"), async (
 // GET /maintenance/equipment/:id
 app.get("/maintenance/equipment/:id", requirePermission("maintenance.read"), async (req, res) => {
   try {
+    // inspection_abnormals keys on machine_id, not equipment_id.
     const { id } = req.params;
     const r = await query(`SELECT * FROM equipment_assets WHERE id = $1`, [id]);
     if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Equipment not found"));
@@ -44936,6 +44964,9 @@ app.get("/maintenance/card/:equipmentId", requirePermission("maintenance.read"),
     // Get PM template for this equipment category + level
     let templateQuery = `
       SELECT pt.*, ec.name_zh as category_name
+    // pm_assignments/pm_plans/pm_task_library are gone: the live model keeps one row
+    // per asset+template+frequency in pm_schedule_assignments, with the task text on
+    // pm_templates.
       FROM pm_templates pt
       LEFT JOIN equipment_categories ec on ec.id = pt.equipment_category_id
       WHERE pt.status = 'active'
@@ -44954,6 +44985,8 @@ app.get("/maintenance/card/:equipmentId", requirePermission("maintenance.read"),
       const taskResult = await query(`
         SELECT * FROM pm_template_tasks
         WHERE template_id = $1 AND status = 'active'
+    // pm_execution_logs keys on asset_id/template_id and records completed_date, not
+    // plan_id/equipment_id/executed_at; pm_plans and pm_task_library no longer exist.
         ORDER BY task_no ASC
       `, [template.id]);
       tasks = taskResult.rows;
