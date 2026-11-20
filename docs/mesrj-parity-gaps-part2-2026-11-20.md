@@ -142,9 +142,12 @@ API/envelope compatibility, permission wiring, status vocabularies and seed/data
 | 路由对账（`/exec/sn/rules`） | `835b5af0d5` | 段合计≠总长 → ok=false |
 | #14 现场参数 + #15 SPC 控制图 | 见 `315_mesrj_legacy_params.sql` | 参数可见 13/13、pallet 拦/放、SPC Cp/Cpk、AQL 默认值、`emp.require_emp` 拦/放、预警巡检落库 |
 
-仍未关闭：#7 备份（`public.prd_decode_log` 属主/序列 ACL 需 DBA）、#11 真数据导入（等 ops 拍切换）、
+仍未关闭：#11 真数据导入（等 ops 拍切换）、
 `material.low_pct` 的「按工单剩余可用量」判线（源 `core/material.py calc` 未移植，当前只用 `material.low_qty` 全局线）、
 `gkg.*`（新架构走 `POST /mesrj/gkg/scan` 手动导入）。
+
+已解除：#7 备份 —— `public.prd_decode_log` 属主已改为 `smt_factory`，调度器去掉 `--exclude-table`
+后全库 dump 成功（10.7 MB，`pg_restore -l` 可见该表），备份任务不再是阻塞项。
 
 Everything in Part 1 §4 (station-pass engine, SMT loading, rework, `/mes/*`, OQC AQL, pallet/panel extras,
 `/sys` CRUD, tri-lingual i18n) stays as-is and must not be regressed by the merge.

@@ -109,11 +109,11 @@ async function jobBackup() {
   const keep = await num("backup.keep", 7);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `smt_factory_${stamp}.dump`);
-  // prd_decode_log 是历史遗留的 postgres 属主表（app 角色无权限），pg_dump 连 LOCK 都拿不到，
-  // 一只坏表能把整库备份搞失败 —— 显式排除，其它表照常。
+  // 全库备份（含遗留的 public.prd_decode_log —— 2026-11-20 起属主已改为 smt_factory，
+  // pg_dump 不再被序列 ACL 卡住；之前排除它是权宜之计，排除等于丢历史数据）。
   const args = ["-h", process.env.PGHOST || "127.0.0.1", "-p", process.env.PGPORT || "5432",
     "-U", process.env.PGUSER || "smt_factory", "-d", process.env.PGDATABASE || "smt_factory",
-    "-Fc", "--no-owner", "--no-privileges", "--exclude-table=public.prd_decode_log", "-f", file];
+    "-Fc", "--no-owner", "--no-privileges", "-f", file];
   backupLast = Date.now();
   const res = await new Promise((resolve, reject) => {
     const dump = spawn(findPgDump(), args, { env: process.env, windowsHide: true });
@@ -125,9 +125,8 @@ async function jobBackup() {
   if (res.code !== 0 || !fs.existsSync(file) || fs.statSync(file).size < 1024) {
     const err = (res.err || "").trim().split("\n").slice(0, 3).join(" ");
     if (/权限不够|permission denied/i.test(err)) {
-      log("[备份] 跳过：库里有 app 角色读不了的遗留对象。请让 DBA 用超级用户执行一次：");
-      log("        ALTER TABLE public.prd_decode_log OWNER TO smt_factory;"
-        + "  -- 或 DROP TABLE public.prd_decode_log（本系统用的是 mesrj_decode_log）");
+      log("[备份] 跳过：库里有 app 角色读不了的遗留对象。用超级用户执行：");
+      log("        ALTER TABLE <表名> OWNER TO smt_factory;  -- 或 DROP（确认后用）");
     } else {
       log("[备份] 失败:", err || `退出码 ${res.code}`);
     }
