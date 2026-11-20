@@ -195,18 +195,41 @@ export function AoiStation({ locale }: { locale: Locale }) {
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
 
-  // Station configuration
-  const stationConfig: AoiStationConfig = {
-    stationCode: "AOI-01",
-    stationName: "AOI自动光学检测站",
-    nameZh: "AOI自动光学检测站",
-    nameEn: "AOI Station",
-    nameVi: "Trạm kiểm tra AOI",
-    lineCode: "LINE-01",
-    machineCode: "AOI-MACHINE-01",
-    programName: "AURORA-V2",
+  // Station identity comes from the MES station list; this screen used to carry a hardcoded one.
+  const [stationConfig, setStationConfig] = useState<AoiStationConfig>({
+    stationCode: "",
+    stationName: "",
+    nameZh: "",
+    nameEn: "",
+    nameVi: "",
+    lineCode: "",
+    machineCode: "",
+    programName: "",
     status: "active",
-  };
+  });
+
+  useEffect(() => {
+    mesApi
+      .getStations({ limit: 200 })
+      .then((res) => {
+        const list = res.items ?? [];
+        const pick =
+          list.find((s) => /AOI/i.test(s.stationType ?? "") || /AOI/i.test(s.code)) ?? null;
+        if (!pick) return;
+        setStationConfig({
+          stationCode: pick.code,
+          stationName: pick.nameZh,
+          nameZh: pick.nameZh,
+          nameEn: pick.nameEn,
+          nameVi: pick.nameVi,
+          lineCode: pick.lineCode,
+          machineCode: "",
+          programName: "",
+          status: "active",
+        });
+      })
+      .catch(() => {});
+  }, []);
 
   // Stats
   const totalCount = recentInspections.length;

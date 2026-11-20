@@ -13,16 +13,6 @@ interface IqcReportRow {
   inspector: string;
 }
 
-function randomDate(daysAgo: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - Math.floor(Math.random() * daysAgo));
-  return d.toISOString().slice(0, 10);
-}
-
-const suppliers = ["SUP-001 华新电子", "SUP-002 利尔电子", "SUP-003 泰科源", "SUP-DG-CONN 东莞连接器", "SUP-HN-PCB 河南PCB"];
-const materials = ["CAP-CER-100UF", "RES-SMD-10K", "IC-MCU-STM32", "LED-RED-0805", "CONN-USB-C-30P", "PCB-AURORA-CTRL"];
-const inspectors = ["VN_IQC_001", "VN_IQC_002", "VN_IQC_003", "CN_IQC_001"];
-const results: IqcReportRow["result"][] = ["pass", "pass", "pass", "pass", "pass", "pass", "pass", "fail", "hold"];
 
 
 
