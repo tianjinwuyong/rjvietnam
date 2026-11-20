@@ -53,6 +53,8 @@ import { mysqlQuery, mysqlGetOne, psQuery, psGetOne } from "./src/mysql.js";
 import { TtlCache } from "./src/_shared/cache.js";
 import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
 import { envelope, listEnvelope, mutateEnvelope, errorEnvelope, successEnvelope } from "./src/shared/helpers.js";
+import { createAccountStateCache, createLoginThrottle, createRevocationStore } from "./src/auth/session-tokens.js";
+import { createStationLoginPolicy } from "./src/auth/station-login-policy.js";
 import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
 import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
 import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
@@ -882,6 +884,69 @@ if (!JWT_SECRET || JWT_SECRET === "change_me_in_production") {
   throw new Error("JWT_SECRET must be configured with a non-placeholder value before the API can start");
 }
 const JWT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+// ── Session tokens ──────────────────────────────────────────────────────────
+// ONE signer and ONE verifier for every login path, so a hardening applied to
+// the JWT cannot be missing from the second copy of the same call. `jti` exists
+// only so a token can be revoked: /auth/logout used to answer `{revoked:true}`
+// while the token kept working for the rest of its 24 hours.
+//
+// A station-agent login carries no credential today, so it hands out a
+// full-permission session for any username that guesses right. Setting
+// STATION_LOGIN_KEY makes /auth/station-login prove it is a station through
+// `x-station-key`; leaving it unset keeps the pre-credential station agents
+// working and says so loudly at boot.
+const STATION_LOGIN_KEY = String(process.env.STATION_LOGIN_KEY ?? "").trim();
+const revokedTokens = createRevocationStore();
+// Two windows, not one. The username key is the account protection and stays
+// tight. The IP key cannot be tight here: `trust proxy` is off, so the nginx
+// front end makes every browser and PDA arrive as one address -- five wrong
+// guesses from one operator would lock the whole site out for 15 minutes. It is
+// only there to stop a spray across many usernames.
+const loginUserThrottle = createLoginThrottle({ windowMs: 15 * 60_000, maxFailures: 5 });
+const loginIpThrottle = createLoginThrottle({ windowMs: 15 * 60_000, maxFailures: 50 });
+const accountStates = createAccountStateCache({
+  lookup: async (userId) => {
+    const { rows } = await authPool.query("SELECT status FROM users WHERE id = $1", [userId]);
+    return rows.length ? rows[0].status : null;
+  },
+});
+
+function issueSessionToken(payload, expiresIn = "24h") {
+  return jwt.sign({ ...payload, jti: randomUUID() }, JWT_SECRET, { algorithm: "HS256", expiresIn });
+}
+
+function decodeSessionToken(token) {
+  // Pinned algorithm: jsonwebtoken would otherwise accept any HMAC variant the
+  // header claims, all verified against the same secret.
+  return jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+}
+
+function revokeSessionToken(payload, reason) {
+  if (!payload?.jti) return false;
+  if (!revokedTokens.add(payload.jti, payload.exp)) return false;
+  query(
+    `INSERT INTO auth_revoked_token (jti, user_id, expires_at, reason)
+     VALUES ($1, $2, to_timestamp($3), $4)
+     ON CONFLICT (jti) DO NOTHING`,
+    [payload.jti, payload.userId ?? null, payload.exp, reason],
+  ).catch((err) => console.error(`revoke ${reason}:`, err.message));
+  return true;
+}
+
+// Revocations must survive a restart, and the harness starts its own API
+// process that has to see the same list.
+async function loadRevokedTokens() {
+  try {
+    const { rows } = await query(
+      `SELECT jti, EXTRACT(EPOCH FROM expires_at)::bigint AS exp
+         FROM auth_revoked_token WHERE expires_at > now()`,
+    );
+    for (const row of rows) revokedTokens.add(row.jti, Number(row.exp));
+    if (rows.length) console.log(`[auth] loaded ${rows.length} revoked token(s)`);
+  } catch (err) {
+    console.error("[auth] revoked-token load skipped:", err.message);
+  }
+}
 const MES_SIGNATURE_MODE = String(process.env.MES_SIGNATURE_ENFORCEMENT ?? "enforce").trim().toLowerCase();
 const MES_SIGNATURE_FLAG_UNTIL = String(process.env.MES_SIGNATURE_FLAG_UNTIL ?? "").trim();
 
@@ -6270,7 +6335,7 @@ app.post('/api/station/pass-returns/:id/approve',async(req,res)=>{try{await Prom
   neuralBroadcast({from:'mes_server',to:'*',type:'PASS_RETURN_WAITING_RECEIPT',priority:'critical',stationCode:x.source_station,payload:{returnId:x.return_id,batchId:batch,sourceStation:x.source_station,destinationStation:x.destination_station,quantity:boards.length,timeoutSeconds:120}});res.json({ok:true});
  }catch(error){res.status(500).json(errorEnvelope('PASS_RETURN_APPROVE_FAILED',error.message));}});
 
-app.post("/api/station/handovers/:id/acknowledge-alarm",async(req,res)=>{
+app.post("/api/station/handovers/:id/acknowledge-alarm",authenticateJWT,async(req,res)=>{
   try{
     await stationHandoverAlarmReady;
     const actor=String(req.body?.actor||"MES_MANUAL_RELEASE").trim();
@@ -6335,7 +6400,7 @@ app.get("/api/station/scrap-assessments", async (_req, res) => {
   } catch (error) { res.status(500).json(errorEnvelope("SCRAP_ASSESSMENT_QUERY_FAILED", error.message)); }
 });
 
-app.put("/api/station/scrap-requests/:id/assessment", async (req, res) => {
+app.put("/api/station/scrap-requests/:id/assessment", authenticateJWT, async (req, res) => {
   try {
     await Promise.all([stationScrapColumnsReady, stationScrapAssessmentReady, stationScrapAuditReady]);
     const requestId = Number(req.params.id);
@@ -6361,7 +6426,7 @@ app.put("/api/station/scrap-requests/:id/assessment", async (req, res) => {
   } catch (error) { res.status(500).json(errorEnvelope("SCRAP_ASSESSMENT_FAILED", error.message)); }
 });
 
-app.post("/api/station/scrap-requests/:id/approve", async (req, res) => {
+app.post("/api/station/scrap-requests/:id/approve", authenticateJWT, async (req, res) => {
   try {
     await stationScrapColumnsReady;
     const requestId = Number(req.params.id);
@@ -6423,7 +6488,7 @@ app.post("/api/station/scrap-requests/:id/approve", async (req, res) => {
   } catch (error) { res.status(500).json(errorEnvelope("SCRAP_APPROVAL_FAILED", error.message)); }
 });
 
-app.post("/api/station/scrap-requests/:id/reject", async (req, res) => {
+app.post("/api/station/scrap-requests/:id/reject", authenticateJWT, async (req, res) => {
   try {
     await stationScrapColumnsReady;
     const requestId = Number(req.params.id);
@@ -7580,7 +7645,7 @@ app.get("/api/smt/loading/approvals/:sessionId", async (req, res) => {
   } catch (err) { res.status(500).json(errorEnvelope("SMT_LOADING_APPROVALS_FAILED", err.message)); }
 });
 
-app.post("/api/smt/loading/approvals/:sessionId/decision", async (req, res) => {
+app.post("/api/smt/loading/approvals/:sessionId/decision", authenticateJWT, async (req, res) => {
   const client = await pgPool.connect();
   try {
     const sessionId = Number(req.params.sessionId);
@@ -8446,7 +8511,7 @@ app.post("/api/smt/loading/offline-events", async (req, res) => {
   }
 });
 
-app.post("/api/smt/loading/offline-events/:eventId/leader-decision", async (req, res) => {
+app.post("/api/smt/loading/offline-events/:eventId/leader-decision", authenticateJWT, async (req, res) => {
   try {
     const p = req.body?.payload ?? req.body ?? {};
     const decision = String(p.decision || "").toUpperCase();
@@ -14077,7 +14142,7 @@ async function writeAuditLog({ actorId, action, entityType, entityId, referenceN
 
 // ── Auth Middleware ────────────────────────────────────────────────
 
-function authenticateJWT(req, res, next) {
+async function authenticateJWT(req, res, next) {
   if (req.method === "OPTIONS") return next();
   const sourceIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
   // Label parsing is a pre-receiving assist and may be called before PDA
@@ -14090,10 +14155,19 @@ function authenticateJWT(req, res, next) {
   if (req.method === "GET" && req.originalUrl.includes("/station/confirmed-motherboards/search/")) return next();
   // Public paths (req.path is relative to api router mount, so /api prefix already stripped)
   if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state") return next();
-  // Warehouse layout data — needed by PDA before login (no sensitive content, just area/position lookup)
-  if (req.path === "/api/wms/areas" || req.path === "/api/wms/location-map") return next();
+  // Warehouse layout data — needed by PDA before login (no sensitive content,
+  // just area/position lookup). The earlier form of this line tested for
+  // "/api/wms/areas", which never matched: req.path is already stripped of the
+  // /api mount, so the intended pre-login lookup was answering 401. The full
+  // path is kept for the app-level gate, where /api is still present.
+  if (req.path === "/wms/areas" || req.path === "/wms/location-map" ||
+      req.path === "/api/wms/areas" || req.path === "/api/wms/location-map") return next();
   if (req.path === "/meta/bootstrap") return next();
-  if (req.path.startsWith("/health") || req.path.startsWith("/openapi") || req.path.startsWith("/ai/health") || req.path.startsWith("/managers/")) return next();
+  // `/managers/` used to be open by prefix, which left /managers/message (an
+  // anonymous POST into the LLM manager reply path) and /managers/health (DB and
+  // filesystem detail) readable by anyone on the LAN. The dashboard sends its
+  // token, so they are gated like every other route now.
+  if (req.path.startsWith("/health") || req.path.startsWith("/openapi") || req.path.startsWith("/ai/health")) return next();
   // Station integration paths — no JWT required (but may require separate station-level auth)
   // NOTE: /mes/events requires JWT auth (station agents login via /auth/login)
   // /mes/spi/upload is posted by the SPI/AOI machine adapter
@@ -14133,7 +14207,17 @@ function authenticateJWT(req, res, next) {
     return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Missing token"));
   }
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = decodeSessionToken(token);
+    if (isRevoked(payload)) {
+      return res.status(401).json(errorEnvelope("TOKEN_REVOKED", "Token was revoked at logout"));
+    }
+    const status = await accountStates.get(payload.userId);
+    if (status === null) {
+      return res.status(401).json(errorEnvelope("AUTH_FAILED", "User not found"));
+    }
+    if (status !== "active") {
+      return res.status(403).json(errorEnvelope("ACCOUNT_LOCKED", "Account is not active"));
+    }
     req.user = {
       userId: payload.userId,
       username: payload.username,
@@ -14147,10 +14231,22 @@ function authenticateJWT(req, res, next) {
       userName: req.user.username,
       roleCode: req.user.roleKey,
     };
-    next();
-  } catch {
-    res.status(401).json(errorEnvelope("TOKEN_INVALID", "Token expired or invalid"));
+    return next();
+  } catch (err) {
+    if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError" || err?.name === "NotBeforeError") {
+      return res.status(401).json(errorEnvelope("TOKEN_INVALID", "Token expired or invalid"));
+    }
+    // A database outage behind the account check must not masquerade as "bad
+    // token": the caller would chase a phantom credential problem.
+    console.error("authenticateJWT:", err?.message);
+    return res.status(503).json(errorEnvelope("AUTH_UNAVAILABLE", "Authentication backend unavailable"));
   }
+}
+
+// A revoked token is dead the moment /auth/logout returns; the check is an
+// in-memory lookup because it runs on every authenticated request.
+function isRevoked(payload) {
+  return revokedTokens.has(payload?.jti);
 }
 
 // HR lifecycle routes use the legacy middleware name. Keep one canonical
@@ -14323,10 +14419,27 @@ async function getHrPdaAssignment(userId) {
   } : null;
 }
 
-// POST /auth/station-login — station-agent operator login via employee SN
-// Returns JWT token scoped to the station+operator (no password required)
+// POST /auth/station-login — station-agent operator login via employee SN.
+// Returns a JWT scoped to the station+operator. The credential is the station,
+// not the person: when STATION_LOGIN_KEY is configured an x-station-key header
+// must match it, otherwise anybody who can reach port 8080 and guess a username
+// mints a full-permission session without a password.
+const STATION_LOGIN_THROTTLE_KEY = "station-login";
+// Which roles may use it is a policy of its own so it can be tested without a
+// server: services/api/src/auth/station-login-policy.js.
+const stationLoginPolicy = createStationLoginPolicy({ allowRoles: process.env.STATION_LOGIN_ALLOW_ROLES });
 app.post("/auth/station-login", async (req, res) => {
   try {
+    if (STATION_LOGIN_KEY && req.headers["x-station-key"] !== STATION_LOGIN_KEY) {
+      return res.status(401).json(errorEnvelope("STATION_KEY_REQUIRED", "x-station-key header is required for station login"));
+    }
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+    const throttleKey = `${STATION_LOGIN_THROTTLE_KEY}:${clientIp}`;
+    const retryAfter = loginIpThrottle.retryAfter(throttleKey);
+    if (retryAfter > 0) {
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json(errorEnvelope("RATE_LIMITED", `Too many station logins. Retry in ${retryAfter}s.`));
+    }
     const { operator, stationCode } = req.body ?? {};
     if (!operator || !stationCode) {
       return res.status(400).json(errorEnvelope("VALIDATION", "operator and stationCode required"));
@@ -14338,12 +14451,14 @@ app.post("/auth/station-login", async (req, res) => {
       [operator],
     );
     if (result.rows.length === 0) {
+      loginIpThrottle.fail(throttleKey);
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Operator not found"));
     }
     const user = result.rows[0];
     if (user.status !== "active") {
       return res.status(403).json(errorEnvelope("ACCOUNT_LOCKED", "Account is not active"));
     }
+    loginIpThrottle.succeed(throttleKey);
     // Verify the station exists
     const stationResult = await pgPool.query(
       `SELECT code FROM stations WHERE code = $1 AND status IN ('running','idle')`,
@@ -14353,6 +14468,24 @@ app.post("/auth/station-login", async (req, res) => {
       return res.status(400).json(errorEnvelope("VALIDATION", "Station not found or not active"));
     }
     const permissions = await getPermissionsForRole(user.role_key);
+    // A station login is a floor credential, so it may only mint a session for a
+    // role that cannot administer permissions, HR records or money. Without this
+    // the credential-free endpoint made every privileged account on the site one
+    // guessed username away. STATION_LOGIN_ALLOW_ROLES re-opens a specific role
+    // deliberately (comma-separated role codes), because only the owner knows
+    // which of them stand at a station.
+    const stationAccess = stationLoginPolicy.check(user.role_key, permissions);
+    if (!stationAccess.allowed) {
+      writeAuditLog({
+        actorId: user.id,
+        action: "STATION_LOGIN_DENIED",
+        entityType: "auth",
+        referenceNo: `role:${user.role_key}@${stationCode}:${stationAccess.blocked.slice(0, 3).join("+")}`,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"],
+      }).catch(() => {});
+      return res.status(403).json(errorEnvelope("STATION_LOGIN_FORBIDDEN", "This role must sign in with a password"));
+    }
     // Token includes station scope for audit trail
     const tokenPayload = {
       userId: user.id,
@@ -14362,7 +14495,7 @@ app.post("/auth/station-login", async (req, res) => {
       stationCode,
     };
     const expiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
-    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: "24h" });
+    const token = issueSessionToken(tokenPayload);
     res.json(envelope({
       token,
       user: {
@@ -16160,6 +16293,35 @@ api.post("/auth/login", async (req, res) => {
     if (!username || !password) {
       return res.status(400).json(errorEnvelope("VALIDATION", "username and password required"));
     }
+    // The username key is the account lock: five failures block that operator.
+    // The IP key is only a spray guard (50 failures), because a proxied site
+    // reaches us from one address and a tight IP limit is a site-wide lockout.
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+    const userKey = `user:${String(username).trim().toLowerCase()}`;
+    const ipKey = `ip:${clientIp}`;
+    const retryAfter = Math.max(loginUserThrottle.retryAfter(userKey), loginIpThrottle.retryAfter(ipKey));
+    // app_rules/auth.md: every deny path must be auditable. The success path and
+    // logout were the only two written; a failed sign-in left no trace at all.
+    const auditDenied = (reason) => {
+      writeAuditLog({
+        action: "LOGIN_DENIED",
+        entityType: "auth",
+        referenceNo: `${reason}:${String(username).trim().slice(0, 60)}`,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"],
+      }).catch(() => {});
+    };
+    if (retryAfter > 0) {
+      auditDenied("RATE_LIMITED");
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json(errorEnvelope("RATE_LIMITED", `Too many failed sign-ins. Retry in ${retryAfter}s.`));
+    }
+
+    const noteFailure = () => {
+      loginUserThrottle.fail(userKey);
+      loginIpThrottle.fail(ipKey);
+    };
+    // Chinese display names that map onto a username, kept from the original handler.
     const loginName = String(username).trim() === "蒙营" ? "MENG_YING" : String(username).trim() === "莫立斌" ? "MO_LI_BIN" : String(username).trim();
     const result = await authPool.query(
       `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status, u.password_hash
@@ -16167,16 +16329,23 @@ api.post("/auth/login", async (req, res) => {
       [loginName],
     );
     if (result.rows.length === 0) {
+      noteFailure();
+      auditDenied("AUTH_FAILED");
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Invalid credentials"));
     }
     const user = result.rows[0];
     const passwordValid = verifyPasswordHash(password, user.password_hash);
     if (!passwordValid) {
+      noteFailure();
+      auditDenied("AUTH_FAILED");
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Invalid credentials"));
     }
     if (user.status !== "active") {
+      auditDenied("ACCOUNT_LOCKED");
       return res.status(403).json(errorEnvelope("ACCOUNT_LOCKED", "Account is not active"));
     }
+    loginUserThrottle.succeed(userKey);
+    loginIpThrottle.succeed(ipKey);
     // Multi-role: one person may hold several PDA roles (user_roles table).
     // users.role_id remains the primary role; every assigned role merges its
     // permissions and is returned in roles[] for PDA role switching.
@@ -16195,10 +16364,8 @@ api.post("/auth/login", async (req, res) => {
     const permissionSets = await Promise.all(allRoleKeys.map((k) => getPermissionsForRole(k)));
     const permissions = [...new Set(permissionSets.flat())];
     const expiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
-    const token = jwt.sign(
+    const token = issueSessionToken(
       { userId: user.id, username: user.username, roleKey: primaryRoleKey, roles: allRoleKeys, permissions },
-      JWT_SECRET,
-      { expiresIn: "24h" },
     );
     // Log audit event (fire-and-forget)
     writeAuditLog({
@@ -16232,7 +16399,10 @@ api.get("/auth/session", async (req, res) => {
     if (!token) {
       return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
     }
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = decodeSessionToken(token);
+    if (isRevoked(payload)) {
+      return res.status(401).json(errorEnvelope("TOKEN_REVOKED", "Token was revoked at logout"));
+    }
     const userResult = await pgPool.query(
       `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
@@ -16269,10 +16439,14 @@ api.post("/auth/logout", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     let actorId = null;
+    let revoked = false;
     if (authHeader?.startsWith("Bearer ")) {
       try {
-        const payload = jwt.verify(authHeader.slice(7), JWT_SECRET);
+        const payload = decodeSessionToken(authHeader.slice(7));
         actorId = payload.userId;
+        // The audit row is not a revocation: without this the response claimed
+        // `revoked:true` while the token stayed valid for its remaining hours.
+        revoked = revokeSessionToken(payload, "logout");
       } catch { /* token may already be expired — that's fine */ }
     }
     writeAuditLog({
@@ -16282,7 +16456,7 @@ api.post("/auth/logout", async (req, res) => {
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     }).catch((e) => console.error("audit log error:", e.message));
-    res.json(envelope({ revoked: true }));
+    res.json(envelope({ revoked }));
   } catch (err) {
     console.error("POST /auth/logout:", err.message);
     res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
@@ -16295,7 +16469,10 @@ api.get("/auth/me", async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!token) return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = decodeSessionToken(token);
+    if (isRevoked(payload)) {
+      return res.status(401).json(errorEnvelope("TOKEN_REVOKED", "Token was revoked at logout"));
+    }
     const userResult = await pgPool.query(
       `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
@@ -46431,6 +46608,29 @@ const server = app.listen(PORT, HOST, () => {
   const addr = server.address();
   const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
   console.log(`API service listening on http://${HOST}:${actualPort}`);
+  // ── Session-token state ───────────────────────────────────────────
+  // Runtime DDL for the app's own table (the same convention as the other
+  // CREATE TABLE IF NOT EXISTS blocks); migration 317 keeps the ledger honest.
+  void query(`
+    CREATE TABLE IF NOT EXISTS auth_revoked_token (
+      jti        text PRIMARY KEY,
+      user_id    bigint,
+      expires_at timestamptz NOT NULL,
+      reason     text NOT NULL DEFAULT 'logout',
+      revoked_at timestamptz NOT NULL DEFAULT now()
+    )`).then(() => loadRevokedTokens())
+    .catch(error => console.error("[auth] auth_revoked_token DDL failed:", error.message));
+  // A restart is not a logout, but a revocation has to survive one.
+  const revokedTokenRefresh = setInterval(() => {
+    revokedTokens.prune();
+    loginUserThrottle.prune();
+    loginIpThrottle.prune();
+    loadRevokedTokens().catch(() => {});
+  }, 5 * 60_000);
+  revokedTokenRefresh.unref();
+  if (!STATION_LOGIN_KEY) {
+    console.warn("[auth] STATION_LOGIN_KEY is unset: /auth/station-login issues a full-permission JWT from operator+stationCode alone. Set it and send x-station-key to require a station credential.");
+  }
   query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Initial lifecycle refresh failed:", error.message));
   // ── OA module boot (merged mode) ──────────────────────────────────
   // Mirrors the standalone OA server's start(): admin bootstrap → cron.

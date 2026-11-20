@@ -175,4 +175,14 @@ export const authStorage = {
   clearToken,
 };
 
+/**
+ * Headers for the few MES screens that still call `fetch()` directly instead of
+ * `apiClient`. The routes they hit are permission-checked at the API boundary,
+ * so an unauthenticated fetch is a 401 — the token has to travel with it.
+ */
+export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+}
+
 export { API_BASE };

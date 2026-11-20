@@ -22,7 +22,12 @@ const app = express();
 
 // ── Config ──────────────────────────────────────────────────────────────────
 const PORT        = Number(process.env.AGV_API_PORT ?? 8081);
-const JWT_SECRET  = process.env.JWT_SECRET ?? 'smt-factory-secret-2026';
+// Same rule as services/api/server.js: no placeholder, no default. A fallback
+// secret here would be a second, publicly-known key that verifies AGV tokens.
+const JWT_SECRET  = String(process.env.JWT_SECRET ?? '').trim();
+if (!JWT_SECRET || JWT_SECRET === 'change_me_in_production') {
+  throw new Error('JWT_SECRET must be configured with a non-placeholder value before the AGV API can start');
+}
 const JWT_EXPIRY  = process.env.JWT_EXPIRY ?? '24h';
 const PGHOST      = process.env.PGHOST ?? '127.0.0.1';
 const PGPORT      = Number(process.env.PGPORT ?? 5432);
@@ -510,7 +515,8 @@ app.use((err, _req, res, _next) => {
 app.listen(PORT, () => {
   console.log(`[AGV-API] listening on http://0.0.0.0:${PORT}`);
   console.log(`[AGV-API] PostgreSQL: ${PGHOST}:${PGPORT}/${PGDATABASE}`);
-  console.log(`[AGV-API] JWT secret: ${JWT_SECRET.slice(0, 8)}...`);
+  // Length only: logging a prefix of the signing key hands it to every log reader.
+  console.log(`[AGV-API] JWT secret loaded (${JWT_SECRET.length} chars)`);
 });
 
 export { app, pgPool };
