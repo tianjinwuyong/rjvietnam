@@ -111,8 +111,15 @@ BEGIN
     WHERE operator_id IS NULL;
   IF no_operator > 0 THEN problems := problems || format(' operator_null(%s)', no_operator); END IF;
 
+  -- Uniqueness must be checked WITHIN the imported set only. The target table
+  -- can legitimately hold several rows that share a tx_no (production keeps
+  -- ISSUE_TO_LINE and PUT_AWAY movements per receipt under one ticket number),
+  -- so counting duplicates across the whole table reports pre-existing rows
+  -- as if this import had created them.
   SELECT count(*) INTO dup_tx FROM (
-    SELECT tx_no FROM public.inventory_transactions GROUP BY tx_no HAVING count(*) > 1
+    SELECT tx_no FROM public.inventory_transactions
+    WHERE tx_no IN (SELECT tx_no FROM public.rjvn_inventory_transaction)
+    GROUP BY tx_no HAVING count(*) > 1
   ) d;
   IF dup_tx > 0 THEN problems := problems || format(' dup_tx_no(%s)', dup_tx); END IF;
 
