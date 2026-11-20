@@ -1,0 +1,473 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "虚拟员工汇报线",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "virtual-employee-reporting-lines.html",
+    "viewBox": [
+      1240,
+      694
+    ],
+    "views": [
+      {
+        "id": "lines",
+        "label": "汇报线",
+        "focus": [
+          "ops",
+          "WMS-SUPERVISOR",
+          "PMC",
+          "MES",
+          "QUALITY"
+        ],
+        "note": "总监 → 主管 → 专职，三条链每一段都唯一。"
+      },
+      {
+        "id": "platform",
+        "label": "平台线",
+        "focus": [
+          "ops",
+          "APP-OPS",
+          "APP-OPS-staff"
+        ],
+        "note": "D8 一人主管带 8 岗，是编制最宽的部门。"
+      },
+      {
+        "id": "human",
+        "label": "审批边界",
+        "focus": [
+          "human",
+          "ops"
+        ],
+        "note": "审批权不下放：虚拟员工只派工与建议。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "人类决策层",
+      "sublabel": "厂长 · 部门经理 · 班组长",
+      "pos": [
+        60,
+        16
+      ],
+      "size": [
+        230,
+        56
+      ],
+      "tag": "唯一审批权"
+    },
+    {
+      "id": "ops",
+      "type": "backend",
+      "label": "全厂运营虚拟总监",
+      "sublabel": "OPS-SUPERVISOR-VIRTUAL-01",
+      "pos": [
+        60,
+        330
+      ],
+      "size": [
+        230,
+        56
+      ],
+      "tag": "L4 · 唯一派工权"
+    },
+    {
+      "id": "WMS-SUPERVISOR",
+      "type": "security",
+      "label": "D1 来料与仓储主管",
+      "sublabel": "纯仲裁，不兼回路",
+      "pos": [
+        330,
+        46
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "6 名直接下属"
+    },
+    {
+      "id": "WMS-SUPERVISOR-staff",
+      "type": "backend",
+      "label": "WMS-SUPERVISOR-VIRTUAL-01 直属岗位",
+      "sublabel": "收料核验 · 来料交接 · 上架与库位 · 循环盘点 · 发料与配送 · 湿敏管控",
+      "pos": [
+        620,
+        46
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "6 岗"
+    },
+    {
+      "id": "PMC",
+      "type": "security",
+      "label": "D2 计划与采购主管",
+      "sublabel": "兼 MPS/MRP",
+      "pos": [
+        330,
+        124
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "2 名直接下属"
+    },
+    {
+      "id": "PMC-staff",
+      "type": "backend",
+      "label": "PMC-VIRTUAL-01 直属岗位",
+      "sublabel": "PO·ASN·ETA 跟单 · 供应商协同与退货",
+      "pos": [
+        620,
+        124
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "2 岗"
+    },
+    {
+      "id": "MES",
+      "type": "security",
+      "label": "D3 制造执行主管",
+      "sublabel": "兼工单·路线·过站",
+      "pos": [
+        330,
+        202
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "3 名直接下属"
+    },
+    {
+      "id": "MES-staff",
+      "type": "backend",
+      "label": "MES-VIRTUAL-01 直属岗位",
+      "sublabel": "SMT 上料与料盘消耗 · 安灯与换线 · 包装与出货",
+      "pos": [
+        620,
+        202
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "3 岗"
+    },
+    {
+      "id": "QUALITY",
+      "type": "security",
+      "label": "D4 品质主管",
+      "sublabel": "兼 NCR/CAPA/MRB",
+      "pos": [
+        330,
+        280
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "3 名直接下属"
+    },
+    {
+      "id": "QUALITY-staff",
+      "type": "backend",
+      "label": "QUALITY-VIRTUAL-01 直属岗位",
+      "sublabel": "来料检验 IQC · 出货检验 OQC · 追溯与 ECN",
+      "pos": [
+        620,
+        280
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "3 岗"
+    },
+    {
+      "id": "MAINTENANCE",
+      "type": "security",
+      "label": "D5 设备与工程主管",
+      "sublabel": "兼 PM 与备件",
+      "pos": [
+        330,
+        358
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "2 名直接下属"
+    },
+    {
+      "id": "MAINTENANCE-staff",
+      "type": "backend",
+      "label": "MAINTENANCE-VIRTUAL-01 直属岗位",
+      "sublabel": "站机群 AOI/ICT/FCT/ATE · 维修与返工",
+      "pos": [
+        620,
+        358
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "2 岗"
+    },
+    {
+      "id": "FINANCE",
+      "type": "security",
+      "label": "D6 商务与财务主管",
+      "sublabel": "兼三单匹配与欠款",
+      "pos": [
+        330,
+        436
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "2 名直接下属"
+    },
+    {
+      "id": "FINANCE-staff",
+      "type": "backend",
+      "label": "FINANCE-VIRTUAL-01 直属岗位",
+      "sublabel": "销售订单与交期 · 电子发票",
+      "pos": [
+        620,
+        436
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "2 岗"
+    },
+    {
+      "id": "HR",
+      "type": "security",
+      "label": "D7 行政与人事主管",
+      "sublabel": "兼主数据与考勤",
+      "pos": [
+        330,
+        514
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "2 名直接下属"
+    },
+    {
+      "id": "HR-staff",
+      "type": "backend",
+      "label": "HR-VIRTUAL-01 直属岗位",
+      "sublabel": "文控协调 · 安全",
+      "pos": [
+        620,
+        514
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "2 岗"
+    },
+    {
+      "id": "APP-OPS",
+      "type": "security",
+      "label": "D8 平台与 IT 主管",
+      "sublabel": "兼应用运维",
+      "pos": [
+        330,
+        592
+      ],
+      "size": [
+        250,
+        56
+      ],
+      "tag": "8 名直接下属"
+    },
+    {
+      "id": "APP-OPS-staff",
+      "type": "backend",
+      "label": "APP-OPS-VIRTUAL-01 直属岗位",
+      "sublabel": "基础设施 · 数据库 · 集成与数据质量 · 账号安全 · PDA 群 · 备份 · 发布与 UI · 指标看板",
+      "pos": [
+        620,
+        592
+      ],
+      "size": [
+        540,
+        56
+      ],
+      "tag": "8 岗"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "8 名部门主管 · 28 名专职 · 37 个在岗身份",
+      "wraps": [
+        "WMS-SUPERVISOR-staff",
+        "PMC-staff",
+        "MES-staff",
+        "QUALITY-staff",
+        "MAINTENANCE-staff",
+        "FINANCE-staff",
+        "HR-staff",
+        "APP-OPS-staff"
+      ],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "human-to-ops",
+      "from": "human",
+      "to": "ops",
+      "label": "任命 + 只授审批权",
+      "variant": "emphasis",
+      "labelAt": [
+        180,
+        240
+      ]
+    },
+    {
+      "id": "ops-to-WMS-SUPERVISOR",
+      "from": "ops",
+      "to": "WMS-SUPERVISOR",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "WMS-SUPERVISOR-to-staff",
+      "from": "WMS-SUPERVISOR",
+      "to": "WMS-SUPERVISOR-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-PMC",
+      "from": "ops",
+      "to": "PMC",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "PMC-to-staff",
+      "from": "PMC",
+      "to": "PMC-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-MES",
+      "from": "ops",
+      "to": "MES",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "MES-to-staff",
+      "from": "MES",
+      "to": "MES-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-QUALITY",
+      "from": "ops",
+      "to": "QUALITY",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "QUALITY-to-staff",
+      "from": "QUALITY",
+      "to": "QUALITY-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-MAINTENANCE",
+      "from": "ops",
+      "to": "MAINTENANCE",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "MAINTENANCE-to-staff",
+      "from": "MAINTENANCE",
+      "to": "MAINTENANCE-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-FINANCE",
+      "from": "ops",
+      "to": "FINANCE",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "FINANCE-to-staff",
+      "from": "FINANCE",
+      "to": "FINANCE-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-HR",
+      "from": "ops",
+      "to": "HR",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "HR-to-staff",
+      "from": "HR",
+      "to": "HR-staff",
+      "label": "汇报"
+    },
+    {
+      "id": "ops-to-APP-OPS",
+      "from": "ops",
+      "to": "APP-OPS",
+      "route": "orthogonal-h",
+      "variant": "emphasis"
+    },
+    {
+      "id": "APP-OPS-to-staff",
+      "from": "APP-OPS",
+      "to": "APP-OPS-staff",
+      "label": "汇报"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "汇报线规则",
+      "items": [
+        "每个岗位恰好一个直接上级，不存在双线汇报",
+        "主管兼 1 条主责回路时，该回路不另设岗位（避免上一版重复计数）",
+        "跨部门协作走总监派工，不允许横向自行改派任务"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "不可委派",
+      "items": [
+        "审批权只在人类层：11 类 humanGates 动作服务端强制拦截",
+        "主管可仲裁归属与优先级，但不能替下属签门",
+        "7 个停用占位不在此图，启用判据见岗位说明书 §11"
+      ]
+    }
+  ]
+}

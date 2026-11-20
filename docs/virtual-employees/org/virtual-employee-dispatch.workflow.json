@@ -1,0 +1,273 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "虚拟员工派工与审批闭环",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "virtual-employee-dispatch.html",
+    "views": [
+      {
+        "id": "happy",
+        "label": "主路径",
+        "focus": [
+          "event",
+          "sense",
+          "assign",
+          "breakdown",
+          "draft",
+          "gate",
+          "commit"
+        ],
+        "note": "从业务事件到带审计的业务写入，只有一个主责岗位。"
+      },
+      {
+        "id": "gate",
+        "label": "审批门",
+        "focus": [
+          "draft",
+          "gate",
+          "rework"
+        ],
+        "note": "触碰 humanGate 的动作一律停在人工签核，驳回只回补证，不回派工。"
+      },
+      {
+        "id": "own",
+        "label": "唯一主责",
+        "focus": [
+          "sense",
+          "assign",
+          "breakdown"
+        ],
+        "note": "运营总监只派工，部门主管只拆解，任何岗位都不能自行升级权限。"
+      }
+    ]
+  },
+  "lanes": [
+    {
+      "id": "signal",
+      "label": "触发与业务记录"
+    },
+    {
+      "id": "employee",
+      "label": "虚拟员工执行链"
+    },
+    {
+      "id": "human",
+      "label": "人工审批门",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "sense",
+      "label": "感知",
+      "fromCol": 0,
+      "toCol": 1
+    },
+    {
+      "id": "dispatch",
+      "label": "派工",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "release",
+      "label": "执行与放行",
+      "fromCol": 4,
+      "toCol": 5
+    }
+  ],
+  "groups": [
+    {
+      "id": "single_owner",
+      "label": "唯一主责",
+      "lane": "employee",
+      "fromCol": 2,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "no_delegate",
+      "label": "审批不可委派",
+      "lane": "human",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "event",
+    "sense",
+    "assign",
+    "breakdown",
+    "draft",
+    "gate",
+    "commit"
+  ],
+  "nodes": [
+    {
+      "id": "event",
+      "lane": "signal",
+      "col": 0,
+      "type": "messagebus",
+      "label": "业务事件",
+      "sublabel": "PDA 扫描 / 库存告警",
+      "width": 132
+    },
+    {
+      "id": "sense",
+      "lane": "employee",
+      "col": 1,
+      "type": "backend",
+      "label": "取证研判",
+      "sublabel": "Hermes · 记忆 + 技能",
+      "width": 132
+    },
+    {
+      "id": "assign",
+      "lane": "employee",
+      "col": 2,
+      "type": "security",
+      "label": "派发唯一主责",
+      "sublabel": "OPS-SUPERVISOR-VIRTUAL-01",
+      "tag": "task_key 幂等",
+      "width": 150
+    },
+    {
+      "id": "breakdown",
+      "lane": "employee",
+      "col": 3,
+      "type": "backend",
+      "label": "拆解到岗位",
+      "sublabel": "7 个部门主管",
+      "width": 132
+    },
+    {
+      "id": "draft",
+      "lane": "employee",
+      "col": 4,
+      "type": "backend",
+      "label": "执行草稿",
+      "sublabel": "只读 + 草稿 · 受控 API",
+      "width": 150
+    },
+    {
+      "id": "gate",
+      "lane": "human",
+      "col": 5,
+      "type": "security",
+      "label": "人工审批门",
+      "sublabel": "班组长 / 经理 / OA",
+      "tag": "11 类不可委派",
+      "width": 132
+    },
+    {
+      "id": "rework",
+      "lane": "human",
+      "col": 4,
+      "type": "external",
+      "label": "退回补证",
+      "sublabel": "证据不足 / 超权限",
+      "width": 132
+    },
+    {
+      "id": "commit",
+      "lane": "signal",
+      "col": 5,
+      "type": "database",
+      "label": "业务写入 + 审计",
+      "sublabel": "任务表 / 事件表",
+      "width": 150
+    }
+  ],
+  "edges": [
+    {
+      "id": "event-sense",
+      "from": "event",
+      "to": "sense",
+      "label": "上报",
+      "variant": "emphasis"
+    },
+    {
+      "id": "sense-assign",
+      "from": "sense",
+      "to": "assign",
+      "label": "建议 + 证据",
+      "variant": "default"
+    },
+    {
+      "id": "assign-breakdown",
+      "from": "assign",
+      "to": "breakdown",
+      "label": "工单",
+      "variant": "emphasis"
+    },
+    {
+      "id": "breakdown-draft",
+      "from": "breakdown",
+      "to": "draft",
+      "label": "岗位任务",
+      "variant": "default"
+    },
+    {
+      "id": "draft-gate",
+      "from": "draft",
+      "to": "gate",
+      "label": "需人工确认",
+      "variant": "security"
+    },
+    {
+      "id": "gate-commit",
+      "from": "gate",
+      "to": "commit",
+      "label": "批准",
+      "variant": "emphasis"
+    },
+    {
+      "id": "gate-rework",
+      "from": "gate",
+      "to": "rework",
+      "label": "驳回",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "rework-draft",
+      "from": "rework",
+      "to": "draft",
+      "label": "补证重做",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "三层不变式",
+      "items": [
+        "人类只做审批，虚拟员工永远不能自批",
+        "一个事件只有一个主责岗位，其余只能交接不能抢单",
+        "所有写入经过 Express 权限与审计，Hermes 不得直连数据库"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "审批门的真实边界",
+      "items": [
+        "11 类动作已在注册表 humanGates 中声明（批准 PO、改价、停线、放行物料等）",
+        "驳回只退回到补证，不重新派工，避免责任漂移",
+        "每一次事件都写入 factory_virtual_employee_events 供追溯"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "当前落地程度",
+      "items": [
+        "已实现执行器：OPS-SUPERVISOR / WMS-RECEIVING / WMS-INVENTORY / IQC",
+        "任务驱动：PURCHASING 生成任务后停在 WAITING_APPROVAL",
+        "其余 18 个岗位仅注册表条目，本结构为补齐目标"
+      ]
+    }
+  ]
+}
