@@ -5,6 +5,7 @@
 // 全部函数只依赖 pg query，供 mesrj.js 路由层调用。
 // ============================================================================
 import { query } from "../db.js";
+import * as dwell from "./dwell.js";
 
 // ── 段（源 core/seg.py）─────────────────────────────────────────────────────
 // 分现场段（中文，顺序即机板的打印顺序：AI 段先进机器、贴片段合并上 SMT 产台）
@@ -3195,6 +3196,25 @@ export async function doPassInner(d = {}, user = null, remoteAddr = "") {
     }
   }
 
+  // ---------- 6.5 时效（停留超时）校验 ----------
+  //   从上一站最后一次过站 → 现在，超过规则允许的停留小时数：
+  //   action=拦截 → 直接拦下（没做处置不许流下去）；action=预警 → 放行但落预警 + 回执带文案。
+  //   只取**别的工位**上的最近一条 OK 过站，返修回原站重测不会被自己误判。
+  let dwellHit = null;
+  try {
+    dwellHit = await dwell.checkOnPass(sn, stationCode, moNo);
+    if (dwellHit) {
+      if (dwellHit.action === dwell.ACTION_BLOCK) {
+        await dwell.raiseAlert(sn, stationCode, dwellHit, moNo, "过站拦截");
+        return blocked("DWELL_TIME",
+          `时效超期：${dwellHit.msg}。请先确认（烘烤 / 复检 / 申请特批）再过站`,
+          { dwell: dwellHit });
+      }
+      await dwell.raiseAlert(sn, stationCode, dwellHit, moNo, "过站预警");
+    }
+  } catch (e) {
+    console.log("[时效管控] 校验失败（不影响过站）:", e?.message || e);
+  }
   // ---------- 7. 记录过站 ----------
   const passTime = nowStr();
   const seqNo = Number(step.seq_no || 0);
@@ -3279,12 +3299,16 @@ export async function doPassInner(d = {}, user = null, remoteAddr = "") {
   if (result === "OK" && nxt) {
     msg += `　→ 下一站：${nxt.station_name || ""} ${nxt.station_code}`;
   }
+  if (dwellHit) {
+    msg += `　⚠ 时效超期 ${dwellHit.rule_name}（${dwellHit.hours.toFixed(1)}H / 限 ${dwellHit.max_hours.toFixed(1)}H）`;
+  }
   return {
     ok: true,
     data: {
       accepted: true, allow: result === "OK", blocked: false, rule: "",
       sn, sn_status: newStatus, station_code: stationCode, station_name: st.station_name,
       mo_no: moNo, result, is_retest: isRetest, created_sn: createdSn, action,
+      dwell_warn: dwellHit || null,
       next_station: (result === "OK" && nxt)
         ? { station_code: nxt.station_code, station_name: nxt.station_name, seq_no: nxt.seq_no }
         : null,

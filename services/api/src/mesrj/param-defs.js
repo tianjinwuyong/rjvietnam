@@ -82,5 +82,29 @@ export const PARAM_DEFS = [
     "type": "text",
     "default": "",
     "desc": "存放 .btw 模板的目录，如 E:\\5.越南瑞晶&东泰\\生产资料\\打印标签"
+  },
+  {
+    "group": "时效管控",
+    "key": "dwell.auto_enabled",
+    "name": "时效定时扫描",
+    "type": "bool",
+    "default": "1",
+    "desc": "关闭后只保留过站实时校验，不做定时呆滞扫描（源 run.py 的 dwell 扫描线程）。"
+  },
+  {
+    "group": "时效管控",
+    "key": "dwell.scan_minutes",
+    "name": "扫描间隔（分钟）",
+    "type": "num",
+    "default": "60",
+    "desc": "定时扫描「卡在原地不动」的在制 SN 的间隔，最小 10 分钟。"
+  },
+  {
+    "group": "时效管控",
+    "key": "dwell.days",
+    "name": "扫描回看天数",
+    "type": "num",
+    "default": "7",
+    "desc": "只扫最近 N 天内有过过站的 SN，避免老库存反复报。"
   }
 ];

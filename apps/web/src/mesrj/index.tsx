@@ -23,6 +23,7 @@ import {
   RepairBoardView, RepairDeskView, OeeView, SpcView, OutputView, AlertView,
   ShopfloorBoardView, PoExportView,
 } from "./views-w12";
+import { DwellView } from "./views-w13";
 
 interface SysInfo {
   sys_name: string;
@@ -154,6 +155,8 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "exec.agingdetail") return <AgingDetailView locale={locale} />;
     if (active === "exec.tracesn") return <TraceMaterialBySnView locale={locale} />;
     if (active === "exec.tracematerial") return <TraceMaterialByMaterialView locale={locale} />;
+    // W13 时效（停留超时）管控
+    if (active === "exec.dwell") return <DwellView locale={locale} />;
     // W7 设备接口：DeviceConfig / StationPass / MachineData / Packing / itf 日志
     if (active === "dev.deviceconfig") return <DeviceConfigView locale={locale} />;
     if (active === "dev.stationpass") return <StationPassView locale={locale} />;
