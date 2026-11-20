@@ -75,6 +75,9 @@ import manuLineRouter from "./src/routes/manu-line.js";
 import { createStationPassRouter } from "./src/routes/station-pass.js";
 import { createOqcAqlRouter } from "./src/routes/oqc-aql.js";
 import { createMesrjRouter } from "./src/routes/mesrj.js";
+// 旧版 MES-ruijing 站点根路径兼容表（/exec/pass 等 → /mesrj/exec/pass）
+// 旧版 MES-ruijing 根路径 → /api/mesrj/*（307 保留方法/请求体）
+import { MESRJ_API_PREFIX, legacyMesrjTarget } from "./src/mesrj/legacy-paths.js";
 import { createMrbRouter } from "./src/routes/mrb.js";
 import { createSupplierDebtRouter, settleDebtOnReceipt } from "./src/routes/supplier-debt-hooks.js";
 import { createSupplierReturnRouter } from "./src/routes/supplier-return.js";
@@ -3206,6 +3209,20 @@ app.get("/api/pda/events", (req, res) => {
   const heartbeat = setInterval(() => { try { res.write(": heartbeat\n\n"); } catch { clearInterval(heartbeat); neuralBus.delete(sub); } }, 30000);
   req.on("close", () => { clearInterval(heartbeat); neuralBus.delete(sub); });
 });
+
+// ── 认证挂载：这些根路径路由注册在全局 app.use(authenticateJWT)（约 34071 行）之前，
+//    原本依赖全局门禁，实际 req.user 为空 —— 带合法 JWT 也返回 401。
+//    这里按前缀显式补挂，不移动全局门禁、不改公开路径白名单。
+//    /wms/receiving 下的 live-state / label-ai / po-queue 已在 authenticateJWT 白名单内。
+app.use("/wms/receiving", authenticateJWT);
+app.use("/wms/pda-devices", authenticateJWT);
+// /api/wms/pda-devices 同样在全局门禁之前注册（检查脚本按 /api 前缀跳过，但实际同样 401）。
+app.use("/api/wms/pda-devices", authenticateJWT);
+app.use("/hr/grievance-cases", authenticateJWT);
+app.use("/quality/iqc-defect-cases", authenticateJWT);
+app.use("/quality/iqc-mrb-tasks", authenticateJWT);
+app.use("/quality/iqc-scrap-finance-approvals", authenticateJWT);
+app.use("/quality/iqc-reinspections", authenticateJWT);
 
 app.get("/wms/receiving/live-state", (req, res) => {
   res.json({ ok: true, data: wmsReceivingLiveDraft });
@@ -12725,7 +12742,7 @@ app.post('/qms/iqc/inspection-levels/record', requirePermission('quality.execute
 app.get("/wms/receiving/qr-bindings", requirePermission("wms.view"), async (_req,res)=>{
    try{ await iqcDefectLoopReady; const r=await query(`SELECT material_lot_id AS id,COALESCE(document_no,material_qr) AS document_no,material_lot_id,material_qr,pallet_qr,
      COALESCE(source_type,'PO_RECEIPT') AS source_type,COALESCE(warehouse_code,'') AS warehouse_code,location_code,
-     COALESCE(status,CASE WHEN ml.iqc_status='released' THEN 'RELEASED' WHEN ml.iqc_status IN('pending','hold') THEN 'IQC_PENDING' ELSE 'CREATED' END) AS status,
+     COALESCE(q.status,CASE WHEN ml.iqc_status='released' THEN 'RELEASED' WHEN ml.iqc_status IN('pending','hold') THEN 'IQC_PENDING' ELSE 'CREATED' END) AS status,
      COALESCE(quantity,ml.received_qty) AS quantity,ml.lot_no,m.code AS material_code,m.name_zh AS material_name,m.uom,ml.received_at,q.msd_level,q.qr_payload,
      EXTRACT(EPOCH FROM (NOW()-COALESCE(q.registered_at,ml.received_at)))/60 AS waiting_minutes
      FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id JOIN materials m ON m.id=ml.material_id
@@ -14155,7 +14172,7 @@ async function authenticateJWT(req, res, next) {
   }
   if (req.method === "GET" && req.originalUrl.includes("/station/confirmed-motherboards/search/")) return next();
   // Public paths (req.path is relative to api router mount, so /api prefix already stripped)
-  if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state") return next();
+  if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state" || req.path === "/wms/receiving/po-queue") return next();
   // Warehouse layout data — needed by PDA before login (no sensitive content,
   // just area/position lookup). The earlier form of this line tested for
   // "/api/wms/areas", which never matched: req.path is already stripped of the
@@ -44604,34 +44621,6 @@ app.get("/hr/checkin/history", async (req, res) => {
 // used to be, so every middleware above them still runs above them.
 registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvelope });
 
-      LEFT JOIN equipment_assets ea ON ea.id = ia.equipment_id
-      ORDER BY ia.due_date ASC
-      LEFT JOIN equipment_assets ea ON ea.id = ir.equipment_id
-      ORDER BY ir.inspected_at DESC
-    const cnt = await query(`SELECT count(*) AS total FROM inspection_records ir ${where}`, params.slice(0,-2));
-    const params = [Number(limit)];
-    if (status) { params.unshift(status); where = `WHERE ia.status = $1`; }
-      LEFT JOIN equipment_assets ea ON ea.id = ia.equipment_id
-      LIMIT $1
-      SELECT pma.*, pt.task_name, pt.machine_type, ea.asset_code, ea.name_zh AS equipment_name
-      FROM pm_assignments pma
-      LEFT JOIN pm_plans pp ON pp.id = pma.plan_id
-      LEFT JOIN pm_task_library pt ON pt.id = pp.task_id
-      LEFT JOIN equipment_assets ea ON ea.id = pma.equipment_id
-      ORDER BY pma.due_date ASC
-    let where = "";
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE pp.equipment_id = $1`; }
-      SELECT mel.*, ea.asset_code, ea.name_zh AS equipment_name, pt.task_name
-      LEFT JOIN pm_plans pp ON pp.id = mel.plan_id
-      LEFT JOIN pm_task_library pt ON pt.id = pp.task_id
-      LEFT JOIN equipment_assets ea ON ea.id = mel.equipment_id
-      ${where}
-      ORDER BY mel.executed_at DESC
-      LIMIT $1
-      LEFT JOIN machine_status_snapshots mss ON mss.equipment_id = ea.id
-      LEFT JOIN equipment_assets ea ON ea.id = mol.equipment_id
-      ${where}
-      AND mol.log_date >= NOW() - ($2 || ' days')::interval
 // ═══════════════════════════════════════════════════════════════════════════
 // AOI STATION API (MySQL)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -45866,6 +45855,23 @@ app.post("/qms/ai-inspections/:id/review", requirePermission("quality.execute"),
     await client.query("ROLLBACK").catch(()=>{});
     res.status(500).json(errorEnvelope("AI_INSPECTION_REVIEW_FAILED", error.message));
   } finally { client.release(); }
+});
+
+// ── 旧版 MES-ruijing 站点根路径兼容 ────────────────────────────────────
+// 合并前旧站（Python/FastAPI）把这些接口直接挂在站点根，例如 POST /exec/pass、
+// GET /aoi/dash。mesrj 路由接管之后，旧书签 / 缓存的前端包 / 车间设备集成会撞
+// 404，所以这里按 src/mesrj/legacy-paths.js 的清单做 307 重定向。
+// 307 保留请求方法与请求体（过站、绑码多为 POST）；301 会把 POST 降级成 GET。
+// 只登记 mesrj 路由里真有处理器的路径（321/405），没有实现的保持 404。
+// 目标必须是 /api/mesrj/*：router 挂在 api 路由器下（server.js: api.use("/mesrj")，
+// app.use("/api", api)）；写成 /mesrj/* 会落进下面的 SPA handler 返回 index.html。
+// 挂载位置在全部真实路由之后：任何 SMT 自己的路由都优先，绝不会被这里遮蔽。
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS" || req.method === "HEAD") return next();
+  const target = legacyMesrjTarget(req.path);
+  if (!target) return next();
+  const suffix = req.originalUrl.slice(req.path.length);
+  return res.redirect(307, `${MESRJ_API_PREFIX}${target}${suffix}`);
 });
 
 const spaDist = path.join(__dirname, "..", "..", "apps", "web", "dist");
