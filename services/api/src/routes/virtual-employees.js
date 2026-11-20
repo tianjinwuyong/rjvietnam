@@ -8,9 +8,10 @@
 //
 // Pure registrations -- the two module-level statements that follow this block in
 // server.js (`receivingVirtualEmployeeInterval` and its setInterval) stay there.
-import { mintServiceToken, serviceActorFor, validateGateForApproval, canHumanApprove, humanDomainPermission } from "../virtual-employees/service-identity.js";
+import { mintServiceToken, serviceActorFor, validateGateForApproval, canHumanApprove, humanDomainPermission, hasServiceToken } from "../virtual-employees/service-identity.js";
 import { capabilitiesFor, auditCapabilities, ALL_ROLE_IDS, MCP_SERVERS } from "../virtual-employees/capabilities.js";
 import { FACTORY_VIRTUAL_EMPLOYEES } from "../virtual-employees/registry.js";
+import { approveTask } from "../agent/approval.js";
 
 export function registerVirtualEmployeeRoutes(app, deps) {
   const {
@@ -206,21 +207,23 @@ app.post('/api/factory/virtual-employees/tasks/:taskId/approve', async (req, res
     await factoryVirtualEmployeesReady;
     const found = (await query(`SELECT * FROM factory_virtual_employee_tasks WHERE id=$1`, [req.params.taskId])).rows[0];
     if (!found) return res.status(404).json(errorEnvelope('TASK_NOT_FOUND', 'task not found'));
-    const employee = getFactoryVirtualEmployee(found.employee_id);
-    const human = canHumanApprove(req, employee);
-    if (!human.ok) {
-      const status = human.code === 'UNAUTHORIZED' ? 401 : 403;
-      return res.status(status).json(errorEnvelope(human.code, human.required ? `Missing required permission: ${human.required}` : 'a virtual employee cannot approve its own gate'));
+    // One approval path for HTTP and CLI (`agent/approval.js`): human identity,
+    // domain permission, gate contract, conditional UPDATE, then the advance.
+    const result = await approveTask({ query, task: found, employee: getFactoryVirtualEmployee(found.employee_id),
+      actor: req.user?.username, permissions: req.user?.permissions || [], serviceToken: hasServiceToken(req),
+      writeback: process.env.VE_WRITEBACK !== 'off' });
+    if (!result.ok) {
+      const status = result.code === 'UNAUTHORIZED' ? 401
+        : ['FORBIDDEN', 'VE_CANNOT_APPROVE', 'VE_CANNOT_ACT_AS_HUMAN'].includes(result.code) ? 403 : 409;
+      const message = result.required ? `Missing required permission: ${result.required}`
+        : result.code === 'VE_CANNOT_APPROVE' ? 'a virtual employee cannot approve its own gate'
+        : `approval rejected: ${result.code}`;
+      return res.status(status).json(errorEnvelope(result.code, message));
     }
-    const gate = validateGateForApproval(employee, found);
-    if (!gate.ok) return res.status(409).json(errorEnvelope(gate.code, `approval rejected: ${gate.code}`));
-    const row = (await query(`UPDATE factory_virtual_employee_tasks SET status='OPEN',approved_by=$1,updated_at=NOW() WHERE id=$2 AND status='WAITING_APPROVAL' RETURNING *`, [human.actor, found.id])).rows[0];
-    if (!row) return res.status(409).json(errorEnvelope('TASK_NOT_WAITING', 'task is no longer waiting for approval'));
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'HUMAN_APPROVED',$3::jsonb,$4)`, [row.employee_id,row.id,JSON.stringify({ humanGate: gate.gate, taskType: row.task_type, approvedBy: human.actor }),human.actor]);
-    if (row.employee_id === 'WMS-RECEIVING-VIRTUAL-01') {
-      neuralBroadcast({ from: row.employee_id, to: 'wms_receiving_archify', type: 'WMS_RECEIVING_EMPLOYEE_STATUS', priority: 'info', payload: { taskId: row.id, taskType: row.task_type, title: row.title, status: 'OPEN', input: row.input, approvedBy: row.approved_by } });
+    if (result.task.employee_id === 'WMS-RECEIVING-VIRTUAL-01') {
+      neuralBroadcast({ from: result.task.employee_id, to: 'wms_receiving_archify', type: 'WMS_RECEIVING_EMPLOYEE_STATUS', priority: 'info', payload: { taskId: result.task.id, taskType: result.task.task_type, title: result.task.title, status: 'OPEN', input: result.task.input, approvedBy: result.task.approved_by } });
     }
-    res.json(mutateEnvelope(row));
+    res.json({ ...mutateEnvelope(result.task), writeback: result.writeback });
   } catch (e) { res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_APPROVAL_FAILED', e.message)); }
 });
 app.get('/api/factory/virtual-employees/events/audit', async (req, res) => {
