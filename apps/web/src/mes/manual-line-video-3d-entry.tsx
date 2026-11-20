@@ -25,8 +25,6 @@ const Text = DreiText as any;
 const GREEN = "#197d4b";
 const STEEL = "#dce3e7";
 const IS_AUTO_LINE = window.location.pathname.includes("auto-line-video-3d");
-// Real MES is the default source of truth. Mock data is opt-in for demos only.
-const USE_CODEX_MOCK = new URLSearchParams(window.location.search).get("mock") === "1";
 const SIM_BOARD_INTERVAL_MS = 5000;
 const MANUAL_STATIONS = [
   ["pda_load", "PDA扫码上料"],
@@ -191,7 +189,7 @@ type MesRow = {
   lastSyncAt?: number;
   dataError?: string;
   syncState?: "LIVE" | "DEGRADED" | "UNAVAILABLE";
-  dataSource?: "MES" | "MOCK";
+  dataSource?: "MES";
   currentNgCount?: number;
   repairStatus?: string;
   repairCurrentWorkOrder?: string;
@@ -244,24 +242,6 @@ type ManualLineWorkOrder = {
   }>;
 };
 
-// Local-only fixture used when the API is unavailable or has no released order.
-// It is deliberately marked so it can never be mistaken for production data.
-const CODEX_MOCK_MANUAL_WO: ManualLineWorkOrder = {
-  workOrderCode: "CODEX-MOCK-MANUAL-LOADING",
-  status: "MOCK_RELEASED",
-  plannedQty: 10,
-  productCode: "CODEX-MOCK-PCBA",
-  productNameZh: "CODEX Mock Manual-Line Product",
-  lineCode: "L004",
-  materialCount: 3,
-  boundMaterialCount: 0,
-  materialLoadingStatus: "MOCK_OPEN",
-  materials: [
-    { materialCode: "CODEX-MOCK-PCB", requiredQty: 10, bound: false },
-    { materialCode: "CODEX-MOCK-R-10K", requiredQty: 20, bound: false },
-    { materialCode: "CODEX-MOCK-C-100N", requiredQty: 20, bound: false },
-  ],
-};
 
 type BucketSnapshot = {
   stationCode?: string;
@@ -1321,7 +1301,7 @@ function useManualLineMesData() {
             time: 0,
           }),
           online: true,
-          dataSource: "MOCK",
+          dataSource: "MES",
           lastSyncAt: Date.now(),
           sn: detail.sn,
           time: Date.now(),
@@ -2903,15 +2883,15 @@ function AutoDownstreamConveyor() {
   );
 }
 
-function LineStatusBillboard({ mes, locale, started }: { mes: Record<string, MesRow>; locale: LineLocale; started: boolean }) {
+function LineStatusBillboard({ mes, locale }: { mes: Record<string, MesRow>; locale: LineLocale }) {
   return (
     <Html position={[36, 7.2, 2.2]} center distanceFactor={12} transform sprite>
-      <LineStatusPanel mes={mes} locale={locale} started={started} />
+      <LineStatusPanel mes={mes} locale={locale} />
     </Html>
   );
 }
 
-function LineStatusPanel({ mes, locale, started }: { mes: Record<string, MesRow>; locale: LineLocale; started: boolean }) {
+function LineStatusPanel({ mes, locale }: { mes: Record<string, MesRow>; locale: LineLocale }) {
   const row = mes.pda_load;
   const bound = row?.boundMaterialCount ?? 0;
   const total = row?.materialCount ?? 0;
@@ -2934,10 +2914,10 @@ function LineStatusPanel({ mes, locale, started }: { mes: Record<string, MesRow>
   return (
     <div className="manual-line-status-panel" style={{ width: 300, padding: "10px 12px", borderRadius: 12, background: "rgba(8,31,53,.94)", color: "#e8f3ff", border: "2px solid #38bdf8", boxShadow: "0 8px 24px rgba(0,0,0,.3)", fontFamily: "Arial" }}>
         <div style={{ fontSize: 14, fontWeight: 900, letterSpacing: .6 }}>MANUAL LINE · LINE STATUS</div>
-        <div style={{ marginTop: 6, fontSize: 12, color: "#7dd3fc" }}>{row?.workOrderCode || (USE_CODEX_MOCK ? "CODEX-MOCK-MANUAL-LOADING" : "NO MES WORK ORDER")} · L004</div>
+        <div style={{ marginTop: 6, fontSize: 12, color: "#7dd3fc" }}>{row?.workOrderCode || "NO MES WORK ORDER"} · L004</div>
         <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 12 }}>
           <span>MES: <b style={{ color: degradedCount || unavailableCount ? "#fbbf24" : "#86efac" }}>{degradedCount || unavailableCount ? `${degradedCount} ERR / ${unavailableCount} OFF` : "ONLINE"}</b></span>
-          <span>WO: <b>{row?.workOrderStatus || row?.status || (USE_CODEX_MOCK ? "MOCK_RELEASED" : "NO DATA")}</b></span>
+          <span>WO: <b>{row?.workOrderStatus || row?.status || "NO DATA"}</b></span>
           <span>Source: <b>{row?.dataSource || "MES"}</b></span>
           <span>Sync: <b>{row?.lastSyncAt ? new Date(row.lastSyncAt).toLocaleTimeString("en-GB", { hour12: false }) : "--:--:--"}</b></span>
           <span>Materials: <b>{bound}/{total}</b></span>
@@ -2961,8 +2941,6 @@ function LineStatusPanel({ mes, locale, started }: { mes: Record<string, MesRow>
         {jammedStations.length > 0 && <div style={{ marginTop: 7, padding: "6px 8px", borderRadius: 6, background: "#7f1d1d", color: "#fee2e2", fontSize: 11, fontWeight: 800 }}>JAMMED STATIONS: {jammedStations.map(([code]) => code).join(", ")}</div>}
         {row?.materialStarvationRisk && <div style={{ marginTop: 7, padding: "6px 8px", borderRadius: 6, background: "#7f1d1d", color: "#fee2e2", fontSize: 11, fontWeight: 800 }}>MATERIAL STARVATION RISK · REQUEST FEEDING</div>}
         <div style={{ marginTop: 8, height: 8, borderRadius: 8, background: "#334155", overflow: "hidden" }}><div style={{ width: `${total ? Math.round((bound / total) * 100) : 0}%`, height: "100%", background: "#22c55e", transition: "width .3s" }} /></div>
-        <button type="button" onClick={() => window.dispatchEvent(new Event("manual-line-mock-start"))} style={{ marginTop: 9, width: "100%", padding: "7px 10px", border: 0, borderRadius: 7, background: started ? "#166534" : "#f59e0b", color: "#fff", fontWeight: 800, cursor: "pointer" }}>{started ? "● LOADING RUNNING" : "▶ START MOCK LOADING"}</button>
-        <div style={{ marginTop: 5, fontSize: 10, color: "#cbd5e1" }}>{locale === "zh-CN" ? "模拟物料消耗，仅用于验证" : locale === "vi-VN" ? "Mô phỏng tiêu hao vật tư (kiểm thử)" : "Mock material consumption (test only)"}</div>
     </div>
   );
 }
@@ -2973,14 +2951,12 @@ function Hall({
   onOpenChat,
   onFocusLayout,
   activeFlow,
-  mockLoadingStarted,
 }: {
   mes: Record<string, MesRow>;
   locale: LineLocale;
   onOpenChat: (code: string, name: string) => void;
   onFocusLayout: (x: number, y: number, z: number) => void;
   activeFlow: { code: string; sn: string; status: string } | null;
-  mockLoadingStarted: boolean;
 }) {
   return (
     <>
@@ -3117,8 +3093,7 @@ function Hall({
 }
 
 function App() {
-  const [manualWorkOrders, setManualWorkOrders] = useState<ManualLineWorkOrder[]>(USE_CODEX_MOCK ? [CODEX_MOCK_MANUAL_WO] : []);
-  const [mockLoadingStarted, setMockLoadingStarted] = useState(false);
+  const [manualWorkOrders, setManualWorkOrders] = useState<ManualLineWorkOrder[]>([]);
   const mesData = useManualLineMesData();
   const mes = useMemo(() => {
     const next = { ...mesData };
@@ -3149,7 +3124,7 @@ function App() {
           if (!material) return false;
           return Number(material.availableQty ?? 0) <= Number(material.safetyStockQty ?? 0);
         })(),
-        dataSource: USE_CODEX_MOCK ? "MOCK" : "MES",
+        dataSource: "MES",
         lastSyncAt: Date.now(),
       };
     }
@@ -3158,9 +3133,7 @@ function App() {
   const onlineStationCount = MES_STATIONS.filter(([code]) => Boolean(mes[code]?.online)).length;
   const mesSnapshotCount = MES_STATIONS.filter(([code]) => mesData[code]?.dataSource === "MES").length;
   const latestMesSyncAt = Math.max(0, ...Object.values(mesData).map((row) => Number(row.lastSyncAt || 0)));
-  const mesSyncState = USE_CODEX_MOCK
-    ? "MOCK DEMO"
-    : mesSnapshotCount === MES_STATIONS.length
+  const mesSyncState = mesSnapshotCount === MES_STATIONS.length
       ? "MES LIVE"
       : mesSnapshotCount > 0
         ? "MES PARTIAL"
@@ -3257,10 +3230,6 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     const loadWorkOrders = async () => {
-      if (USE_CODEX_MOCK) {
-        setManualWorkOrders([CODEX_MOCK_MANUAL_WO]);
-        return;
-      }
       try {
         const response = await fetch(
           "/api/smt/loading/work-orders?lineCode=L004&lineType=MANUAL&pdaId=MANUAL-LINE-3D",
@@ -3279,23 +3248,6 @@ function App() {
     void loadWorkOrders();
     const timer = window.setInterval(loadWorkOrders, 2000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
-  useEffect(() => {
-    if (!USE_CODEX_MOCK || !mockLoadingStarted) return;
-    const timer = window.setInterval(() => {
-      setManualWorkOrders((current) => current.map((wo) => {
-        if (wo.workOrderCode !== CODEX_MOCK_MANUAL_WO.workOrderCode) return wo;
-        const total = wo.materialCount ?? wo.materials?.length ?? 0;
-        const next = Math.min(total, (wo.boundMaterialCount ?? 0) + 1);
-        return { ...wo, boundMaterialCount: next, materials: (wo.materials ?? []).map((material, index) => ({ ...material, bound: index < next })) };
-      }));
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [mockLoadingStarted]);
-  useEffect(() => {
-    const start = () => setMockLoadingStarted(true);
-    window.addEventListener("manual-line-mock-start", start);
-    return () => window.removeEventListener("manual-line-mock-start", start);
   }, []);
   useEffect(() => {
     const update = () => setIsFullscreen(Boolean(document.fullscreenElement));
@@ -3597,7 +3549,6 @@ function App() {
           mes={mes}
           locale={locale}
           activeFlow={activeFlow}
-          mockLoadingStarted={mockLoadingStarted}
           onFocusLayout={(x, y, z) => {
             setCameraTarget([x, y, z, 1]);
             setCameraRequest((value) => value + 1);
@@ -3652,7 +3603,7 @@ function App() {
           >
             ×
           </button>
-          <LineStatusPanel mes={mes} locale={locale} started={mockLoadingStarted} />
+          <LineStatusPanel mes={mes} locale={locale} />
         </div>
       )}
       {!IS_AUTO_LINE && showUi && (
@@ -4483,7 +4434,7 @@ function App() {
           MES 实时同步 · {onlineStationCount}/{MES_STATIONS.length} 工站在线
         </div>
       </div>
-      <div style={{ marginTop: 4, fontSize: 10, fontWeight: 800, color: mesSyncState === "MES LIVE" ? "#15803d" : mesSyncState === "MOCK DEMO" ? "#b45309" : "#b91c1c" }}>
+      <div style={{ marginTop: 4, fontSize: 10, fontWeight: 800, color: mesSyncState === "MES LIVE" ? "#15803d" : "#b91c1c" }}>
         {mesSyncState} · {mesSnapshotCount}/{MES_STATIONS.length} snapshots · {onlineStationCount}/{MES_STATIONS.length} online
         {latestMesSyncAt > 0 && <span style={{ marginLeft: 5, fontWeight: 600, color: "#64748b" }}>· {new Date(latestMesSyncAt).toLocaleTimeString("en-GB", { hour12: false })}</span>}
       </div>

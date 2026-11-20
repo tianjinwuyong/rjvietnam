@@ -24,24 +24,10 @@ const materials = ["CAP-CER-100UF", "RES-SMD-10K", "IC-MCU-STM32", "LED-RED-0805
 const inspectors = ["VN_IQC_001", "VN_IQC_002", "VN_IQC_003", "CN_IQC_001"];
 const results: IqcReportRow["result"][] = ["pass", "pass", "pass", "pass", "pass", "pass", "pass", "fail", "hold"];
 
-function generateMockData(): IqcReportRow[] {
-  const rows: IqcReportRow[] = [];
-  for (let i = 0; i < 60; i++) {
-    rows.push({
-      date: randomDate(30),
-      materialCode: materials[Math.floor(Math.random() * materials.length)],
-      lotNo: `LOT-${randomDate(30).replace(/-/g, "")}-${String(100 + i).padStart(3, "0")}`,
-      supplier: suppliers[Math.floor(Math.random() * suppliers.length)],
-      result: results[Math.floor(Math.random() * results.length)],
-      qty: Math.round(1000 + Math.random() * 50000),
-      inspector: inspectors[Math.floor(Math.random() * inspectors.length)],
-    });
-  }
-  return rows.sort((a, b) => b.date.localeCompare(a.date));
-}
+
 
 export function WmsIqcReport({ locale }: { locale: Locale }) {
-  const [data] = useState<IqcReportRow[]>(generateMockData);
+  const [data] = useState<IqcReportRow[]>([]);
   const [dateFrom, setDateFrom] = useState(() => {
     const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10);
   });

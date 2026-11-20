@@ -38,85 +38,7 @@ export const DEFECT_CODE_REFS: DefectCodeRef[] = [
   { code: "CRACK", nameZh: "裂纹", nameEn: "Crack", nameVi: "Vết nứt", category: "component" },
 ];
 
-// ── Mock Recent Inspections ────────────────────────────────────────────
 
-const MOCK_RECENT: AoiInspectionRecord[] = [
-  {
-    id: "AOI-20260703-001",
-    pcbSerial: "PCB260703010001",
-    workOrderCode: "WO-20260703-001",
-    machineCode: "AOI-01",
-    program: "AURORA-V2",
-    result: "PASS",
-    defectCount: 0,
-    defectCodes: [],
-    defectLocations: [],
-    inspectedAt: new Date(Date.now() - 300000).toISOString(),
-    operator: "VN_OP_001",
-    boardId: "BRD-20260703-001",
-    stationCode: "AOI-01",
-  },
-  {
-    id: "AOI-20260703-002",
-    pcbSerial: "PCB260703010002",
-    workOrderCode: "WO-20260703-001",
-    machineCode: "AOI-01",
-    program: "AURORA-V2",
-    result: "FAIL",
-    defectCount: 2,
-    defectCodes: ["SMT-MISSING", "SOLDER-BRIDGE"],
-    defectLocations: ["U12", "R45"],
-    inspectedAt: new Date(Date.now() - 240000).toISOString(),
-    operator: "VN_OP_001",
-    boardId: "BRD-20260703-002",
-    stationCode: "AOI-01",
-  },
-  {
-    id: "AOI-20260703-003",
-    pcbSerial: "PCB260703010003",
-    workOrderCode: "WO-20260703-001",
-    machineCode: "AOI-01",
-    program: "AURORA-V2",
-    result: "PASS",
-    defectCount: 0,
-    defectCodes: [],
-    defectLocations: [],
-    inspectedAt: new Date(Date.now() - 180000).toISOString(),
-    operator: "VN_OP_001",
-    boardId: "BRD-20260703-003",
-    stationCode: "AOI-01",
-  },
-  {
-    id: "AOI-20260703-004",
-    pcbSerial: "PCB260703010004",
-    workOrderCode: "WO-20260703-001",
-    machineCode: "AOI-01",
-    program: "AURORA-V2",
-    result: "FAIL",
-    defectCount: 1,
-    defectCodes: ["AOI-OPEN"],
-    defectLocations: ["P1"],
-    inspectedAt: new Date(Date.now() - 120000).toISOString(),
-    operator: "VN_OP_001",
-    boardId: "BRD-20260703-004",
-    stationCode: "AOI-01",
-  },
-  {
-    id: "AOI-20260703-005",
-    pcbSerial: "PCB260703010005",
-    workOrderCode: "WO-20260703-001",
-    machineCode: "AOI-01",
-    program: "AURORA-V2",
-    result: "PASS",
-    defectCount: 0,
-    defectCodes: [],
-    defectLocations: [],
-    inspectedAt: new Date(Date.now() - 60000).toISOString(),
-    operator: "VN_OP_001",
-    boardId: "BRD-20260703-005",
-    stationCode: "AOI-01",
-  },
-];
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -249,9 +171,25 @@ const CSS = `
 
 export function AoiStation({ locale }: { locale: Locale }) {
   const [scanInput, setScanInput] = useState("");
+  const [workOrderCode, setWorkOrderCode] = useState("");
+  const signedInUser = (() => {
+    try {
+      return JSON.parse(sessionStorage.getItem("smt_user") ?? sessionStorage.getItem("demo_user") ?? "{}")?.username ?? "";
+    } catch {
+      return "";
+    }
+  })();
   const [currentBoard, setCurrentBoard] = useState<AoiInspectionRecord | null>(null);
   const [defectEntries, setDefectEntries] = useState<Array<{ code: string; location: string }>>([]);
-  const [recentInspections, setRecentInspections] = useState<AoiInspectionRecord[]>(MOCK_RECENT);
+  const [recentInspections, setRecentInspections] = useState<AoiInspectionRecord[]>([]);
+  // The recent-inspection panel used to start from a hardcoded demo list; it now loads the
+  // last 20 records from the AOI API and stays empty if that call fails.
+  useEffect(() => {
+    aoiApi
+      .getRecords({ limit: 20 })
+      .then((r) => setRecentInspections((r.items ?? []) as AoiInspectionRecord[]))
+      .catch(() => setRecentInspections([]));
+  }, []);
   const [loading, setLoading] = useState(false);
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const scanInputRef = useRef<HTMLInputElement>(null);
@@ -282,14 +220,16 @@ export function AoiStation({ locale }: { locale: Locale }) {
   const handleScan = useCallback((barcode: string) => {
     if (!barcode.trim()) return;
     const pcbSerial = barcode.trim().toUpperCase();
+    if (!workOrderCode.trim()) {
+      setFeedback({ type: "error", message: "先扫描/输入工单号再扫描 PCB 序列号" });
+      return;
+    }
     const now = new Date().toISOString();
-    const dateStr = now.slice(0, 10).replace(/-/g, "");
-    const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, "0");
 
     const newBoard: AoiInspectionRecord = {
-      id: `AOI-${dateStr}-${seq}`,
+      id: `pending-${pcbSerial}`,
       pcbSerial,
-      workOrderCode: "WO-20260703-001",
+      workOrderCode: workOrderCode.trim().toUpperCase(),
       machineCode: stationConfig.machineCode,
       program: stationConfig.programName,
       result: "PASS",
@@ -297,8 +237,8 @@ export function AoiStation({ locale }: { locale: Locale }) {
       defectCodes: [],
       defectLocations: [],
       inspectedAt: now,
-      operator: "VN_OP_001",
-      boardId: `BRD-${dateStr}-${pcbSerial.slice(-4)}`,
+      operator: "",
+      boardId: pcbSerial,
       stationCode: stationConfig.stationCode,
     };
 
@@ -326,11 +266,11 @@ export function AoiStation({ locale }: { locale: Locale }) {
           program: currentBoard.program,
           result: "PASS",
           boardId: currentBoard.boardId,
-          operator: currentBoard.operator,
+          operator: currentBoard.operator || signedInUser,
           stationCode: currentBoard.stationCode,
         });
       } catch {
-        // Continue with mock
+        // Record write failed; the MES event below is still the source of truth.
       }
       // Try MES event
       try {
@@ -379,10 +319,10 @@ export function AoiStation({ locale }: { locale: Locale }) {
           defectCodes,
           defectLocations,
           boardId: currentBoard.boardId,
-          operator: currentBoard.operator,
+          operator: currentBoard.operator || signedInUser,
           stationCode: currentBoard.stationCode,
         });
-      } catch { /* continue with mock */ }
+      } catch { /* MES event is best-effort */ }
 
       try {
         await mesApi.postEvent({
@@ -440,6 +380,17 @@ export function AoiStation({ locale }: { locale: Locale }) {
           </div>
 
           {!currentBoard ? (
+            <>
+            <div style={{ display: "flex", gap: 8, width: "100%", marginBottom: 10 }}>
+              <input
+                type="text"
+                className="aoi-scan-input"
+                style={{ flex: 1 }}
+                placeholder={t("common.workOrder" as TranslationKey, locale)}
+                value={workOrderCode}
+                onChange={(e) => setWorkOrderCode(e.target.value)}
+              />
+            </div>
             <div className="aoi-scan-input-container">
               <ScanBarcode size={24} className="aoi-scan-icon" />
               <input
@@ -452,6 +403,7 @@ export function AoiStation({ locale }: { locale: Locale }) {
                 onKeyDown={handleScanKeyDown}
               />
             </div>
+            </>
           ) : (
             <div className="aoi-work-order-display">
               <div className="aoi-wo-field">
@@ -539,7 +491,7 @@ export function AoiStation({ locale }: { locale: Locale }) {
         <div className="aoi-recent-inspections">
           <div className="aoi-recent-header">
             <h3><Clock size={16} />{t("aoi.recentInspections" as TranslationKey, locale)}</h3>
-            <button type="button" onClick={() => setRecentInspections(MOCK_RECENT)}
+            <button type="button" onClick={() => { aoiApi.getRecords({ limit: 20 }).then((r) => setRecentInspections((r.items ?? []) as AoiInspectionRecord[])).catch(() => setRecentInspections([])); }}
               style={{ background: "none", border: "none", color: "#888", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontSize: 12 }}>
               <RefreshCw size={12} />{t("common.refresh" as TranslationKey, locale)}
             </button>

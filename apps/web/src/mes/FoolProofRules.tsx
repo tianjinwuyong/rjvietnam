@@ -76,11 +76,12 @@ export function FoolProofRules({ locale }: { locale: Locale }) {
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!form.stationId) { setError("Station required"); return; }
     if (!form.feederSlot) { setError("Feeder slot required"); return; }
     setSubmitting(true);
     setError("");
     const payload = {
-      stationId: Number(form.stationId) || 9, // default AOI-01 for demo
+      stationId: Number(form.stationId),
       feederSlot: form.feederSlot,
       materialId: form.materialId ? Number(form.materialId) : undefined,
       materialReelCode: form.materialReelCode || undefined,

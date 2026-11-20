@@ -27,11 +27,6 @@ type BoundMaterial = {
   received_at?: string;
 };
 
-const DEMO_BOUND_MATERIALS: BoundMaterial[] = [
-  { id: -2001, lot_no: "TEST-PO-20260827-01", material_code: "SMT-R-10K-0603", material_name_zh: "Chip Resistor 10K 0603", document_no: "QR-TEST-0001", pallet_qr: "TEST-PALLET-001", quantity: 5000, warehouse_code: "IQC_HOLD", location_code: "IQC-A01-01", source_type: "PO_RECEIPT", status: "IQC_PENDING", received_at: "2026-08-27T08:20:00+07:00" },
-  { id: -2002, lot_no: "TEST-PO-20260827-02", material_code: "SMT-C-100N-0402", material_name_zh: "MLCC Capacitor 100nF 0402", document_no: "QR-TEST-0002", pallet_qr: "TEST-PALLET-002", quantity: 12000, warehouse_code: "IQC_HOLD", location_code: "IQC-A01-02", source_type: "PO_RECEIPT", status: "IQC_PENDING", received_at: "2026-08-27T07:45:00+07:00" },
-  { id: -2003, lot_no: "TEST-PO-20260827-03", material_code: "SMT-LED-GRN-0805", material_name_zh: "Green LED 0805", document_no: "QR-TEST-0003", pallet_qr: "TEST-PALLET-003", quantity: 3000, warehouse_code: "IQC_HOLD", location_code: "IQC-A01-03", source_type: "PO_RECEIPT", status: "IQC_PENDING", received_at: "2026-08-27T06:10:00+07:00" },
-];
 
 export function WmsReceiving({ locale }: { locale: Locale }) {
   const copy = COPY[locale];
@@ -122,7 +117,7 @@ export function WmsReceiving({ locale }: { locale: Locale }) {
   };
 
   const pendingCount = queue.filter((row) => row.iqc_status === "pending").length;
-  const displayedBoundMaterials = boundMaterials.length ? boundMaterials : DEMO_BOUND_MATERIALS;
+  const displayedBoundMaterials = boundMaterials;
   const boundPendingCount = displayedBoundMaterials.filter((row) => String(row.status || "IQC_PENDING").includes("PENDING")).length;
   const boundOverdueCount = displayedBoundMaterials.filter((row) => row.received_at && (Date.now() - new Date(row.received_at).getTime()) > 24 * 60 * 60 * 1000).length;
   return <div className="screen-stack">

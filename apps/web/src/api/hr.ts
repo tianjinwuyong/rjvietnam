@@ -131,12 +131,6 @@ export interface HrDashboardSummary {
   leaveRequests: { status: string; cnt: number }[];
 }
 
-function isDemoMode(): boolean {
-  // HR is an authoritative production domain. Never substitute fictional
-  // employees, attendance, leave, payroll, or organization data.
-  return false;
-}
-
 function delay<T>(value: T, ms = 150): Promise<T> {
   return new Promise((resolve) => setTimeout(() => resolve(value), ms));
 }
@@ -228,91 +222,11 @@ export interface SalarySummary {
   totals: { total_net: number; total_gross: number };
 }
 
-const DEMO_DEPARTMENTS: Department[] = [
-  { id: 1, code: "MGMT", name_zh: "管理层", name_en: "Management", name_vi: "Quản lý", parentId: null, deptType: "management", headcountTarget: 3, memberCount: 1, status: "active", managerId: 1, managerCode: "VN001", managerNameZh: "李伟", managerTitleZh: "厂长", createdAt: "" },
-  { id: 2, code: "PMC", name_zh: "计划部", name_en: "Planning", name_vi: "Kế hoạch", parentId: null, deptType: "planning", headcountTarget: 4, memberCount: 3, status: "active", managerId: 2, managerCode: "VN002", managerNameZh: "陈计划", managerTitleZh: "PMC 主管", createdAt: "" },
-  { id: 3, code: "WH", name_zh: "仓库部", name_en: "Warehouse", name_vi: "Kho", parentId: null, deptType: "warehouse", headcountTarget: 6, memberCount: 2, status: "active", managerId: 5, managerCode: "VN005", managerNameZh: "阮仓库", managerTitleZh: "仓库主管", createdAt: "" },
-  { id: 4, code: "IQC", name_zh: "品质部", name_en: "Quality", name_vi: "Chất lượng", parentId: null, deptType: "quality", headcountTarget: 5, memberCount: 1, status: "active", managerId: 12, managerCode: "VN012", managerNameZh: "阮氏云", managerTitleZh: "品质主管", createdAt: "" },
-  { id: 5, code: "SMT", name_zh: "SMT 生产部", name_en: "SMT Production", name_vi: "Sản xuất SMT", parentId: null, deptType: "production", headcountTarget: 12, memberCount: 5, status: "active", managerId: 7, managerCode: "VN007", managerNameZh: "范文龙", managerTitleZh: "SMT 生产主管", createdAt: "" },
-  { id: 6, code: "ENG", name_zh: "工程部", name_en: "Engineering", name_vi: "Kỹ thuật", parentId: null, deptType: "engineering", headcountTarget: 4, memberCount: 2, status: "active", managerId: 13, managerCode: "VN013", managerNameZh: "黎工", managerTitleZh: "工程主管", createdAt: "" },
-  { id: 7, code: "ADMIN", name_zh: "行政部", name_en: "Admin", name_vi: "Hành chính", parentId: null, deptType: "admin", headcountTarget: 3, memberCount: 1, status: "active", managerId: 15, managerCode: "VN015", managerNameZh: "行政文", managerTitleZh: "行政主管", createdAt: "" },
-];
 
-const DEMO_EMPLOYEES: Employee[] = [
-  { id: 1, code: "VN001", displayName: "Li Wei", name_zh: "李伟", name_en: "李伟", name_vi: "Lý Vĩ", gender: "M", phone: "+84 90 123 0001", email: "liwei@ruijing.vn", hireDate: "2024-01-15", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 1, departmentCode: "MGMT", departmentNameZh: "管理层", positionId: 1, positionTitleZh: "厂长", positionTitleEn: "Factory Director", positionTitleVi: "Giám đốc nhà máy", managerId: null, managerNameZh: null, avatar_url: null },
-  { id: 2, code: "VN002", displayName: "Chen PMC", name_zh: "陈计划", name_en: "陈计划", name_vi: "Trần Kế Hoạch", gender: "M", phone: "+84 90 123 0002", email: "chen.pmc@ruijing.vn", hireDate: "2024-02-01", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 2, departmentCode: "PMC", departmentNameZh: "计划部", positionId: 2, positionTitleZh: "PMC 主管", positionTitleEn: "PMC Manager", positionTitleVi: "Trưởng phòng PMC", managerId: 1, managerNameZh: "李伟", avatar_url: null },
-  { id: 3, code: "VN003", displayName: "Chen Planner", name_zh: "陈计划员", name_en: "陈计划员", name_vi: "Trần Kế Hoạch Viên", gender: "F", phone: "+84 90 123 0003", email: "chen.planner@ruijing.vn", hireDate: "2024-03-10", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 2, departmentCode: "PMC", departmentNameZh: "计划部", positionId: 10, positionTitleZh: "PMC 计划员", positionTitleEn: "PMC Planner", positionTitleVi: "Nhân viên kế hoạch", managerId: 2, managerNameZh: "陈计划", avatar_url: null },
-  { id: 4, code: "VN004", displayName: "Chen Planner II", name_zh: "陈计划员2", name_en: "陈计划员2", name_vi: "Trần KH2", gender: "F", phone: "+84 90 123 0004", email: "chen.planner2@ruijing.vn", hireDate: "2024-06-20", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 2, departmentCode: "PMC", departmentNameZh: "计划部", positionId: 10, positionTitleZh: "PMC 计划员", positionTitleEn: "PMC Planner", positionTitleVi: "Nhân viên kế hoạch", managerId: 2, managerNameZh: "陈计划", avatar_url: null },
-  { id: 5, code: "VN005", displayName: "Nguyen Warehouse", name_zh: "阮仓库", name_en: "阮仓库", name_vi: "Nguyễn Kho", gender: "M", phone: "+84 90 123 0005", email: "nguyen.wh@ruijing.vn", hireDate: "2024-01-20", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 3, departmentCode: "WH", departmentNameZh: "仓库部", positionId: 3, positionTitleZh: "仓库主管", positionTitleEn: "Warehouse Manager", positionTitleVi: "Trưởng phòng kho", managerId: 1, managerNameZh: "李伟", avatar_url: null },
-  { id: 6, code: "VN006", displayName: "Tran Hong", name_zh: "陈氏红", name_en: "陈氏红", name_vi: "Trần Thị Hồng", gender: "F", phone: "+84 90 123 0006", email: "tran.hong@ruijing.vn", hireDate: "2024-03-05", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 3, departmentCode: "WH", departmentNameZh: "仓库部", positionId: 11, positionTitleZh: "仓管员", positionTitleEn: "Warehouse Staff", positionTitleVi: "Nhân viên kho", managerId: 5, managerNameZh: "阮仓库", avatar_url: null },
-  { id: 7, code: "VN007", displayName: "Pham Van Long", name_zh: "范文龙", name_en: "范文龙", name_vi: "Phạm Văn Long", gender: "M", phone: "+84 90 123 0007", email: "pham.long@ruijing.vn", hireDate: "2024-02-15", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 5, departmentCode: "SMT", departmentNameZh: "SMT 生产部", positionId: 8, positionTitleZh: "SMT 技术员", positionTitleEn: "SMT Technician", positionTitleVi: "Kỹ thuật viên SMT", managerId: 5, managerNameZh: "阮仓库", avatar_url: null },
-  { id: 8, code: "VN008", displayName: "Le Thi Mai", name_zh: "黎氏梅", name_en: "黎氏梅", name_vi: "Lê Thị Mai", gender: "F", phone: "+84 90 123 0008", email: "le.mai@ruijing.vn", hireDate: "2024-04-01", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 5, departmentCode: "SMT", departmentNameZh: "SMT 生产部", positionId: 13, positionTitleZh: "操作员", positionTitleEn: "Operator", positionTitleVi: "Nhân viên vận hành", managerId: 7, managerNameZh: "范文龙", avatar_url: null },
-  { id: 9, code: "VN009", displayName: "Hoang Van Cuong", name_zh: "黄文强", name_en: "黄文强", name_vi: "Hoàng Văn Cường", gender: "M", phone: "+84 90 123 0009", email: "hoang.cuong@ruijing.vn", hireDate: "2024-04-01", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 5, departmentCode: "SMT", departmentNameZh: "SMT 生产部", positionId: 13, positionTitleZh: "操作员", positionTitleEn: "Operator", positionTitleVi: "Nhân viên vận hành", managerId: 7, managerNameZh: "范文龙", avatar_url: null },
-  { id: 10, code: "VN010", displayName: "Vu Thi Huong", name_zh: "武氏香", name_en: "武氏香", name_vi: "Vũ Thị Hương", gender: "F", phone: "+84 90 123 0010", email: "vu.huong@ruijing.vn", hireDate: "2024-04-15", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 5, departmentCode: "SMT", departmentNameZh: "SMT 生产部", positionId: 13, positionTitleZh: "操作员", positionTitleEn: "Operator", positionTitleVi: "Nhân viên vận hành", managerId: 7, managerNameZh: "范文龙", avatar_url: null },
-  { id: 11, code: "VN011", displayName: "Dang Van Nam", name_zh: "邓文南", name_en: "邓文南", name_vi: "Đặng Văn Nam", gender: "M", phone: "+84 90 123 0011", email: "dang.nam@ruijing.vn", hireDate: "2024-05-01", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 5, departmentCode: "SMT", departmentNameZh: "SMT 生产部", positionId: 13, positionTitleZh: "操作员", positionTitleEn: "Operator", positionTitleVi: "Nhân viên vận hành", managerId: 7, managerNameZh: "范文龙", avatar_url: null },
-  { id: 12, code: "VN012", displayName: "Nguyen Thi Van", name_zh: "阮氏云", name_en: "阮氏云", name_vi: "Nguyễn Thị Vân", gender: "F", phone: "+84 90 123 0012", email: "nguyen.van@ruijing.vn", hireDate: "2024-02-20", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 4, departmentCode: "IQC", departmentNameZh: "品质部", positionId: 12, positionTitleZh: "IQC 检验员", positionTitleEn: "IQC Inspector", positionTitleVi: "Nhân viên IQC", managerId: 1, managerNameZh: "李伟", avatar_url: null },
-  { id: 13, code: "VN013", displayName: "Le Engineer", name_zh: "黎工", name_en: "黎工", name_vi: "Lê Kỹ Sư", gender: "M", phone: "+84 90 123 0013", email: "le.eng@ruijing.vn", hireDate: "2024-03-01", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 6, departmentCode: "ENG", departmentNameZh: "工程部", positionId: 14, positionTitleZh: "工艺工程师", positionTitleEn: "Process Engineer", positionTitleVi: "Kỹ sư quy trình", managerId: 1, managerNameZh: "李伟", avatar_url: null },
-  { id: 14, code: "VN014", displayName: "Pham Van Toan", name_zh: "范文全", name_en: "范文全", name_vi: "Phạm Văn Toàn", gender: "M", phone: "+84 90 123 0014", email: "pham.toan@ruijing.vn", hireDate: "2024-05-10", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 6, departmentCode: "ENG", departmentNameZh: "工程部", positionId: 15, positionTitleZh: "设备工程师", positionTitleEn: "Equipment Engineer", positionTitleVi: "Kỹ sư thiết bị", managerId: 13, managerNameZh: "黎工", avatar_url: null },
-  { id: 15, code: "VN015", displayName: "Admin Van", name_zh: "行政文", name_en: "行政文", name_vi: "Hành Chính Văn", gender: "F", phone: "+84 90 123 0015", email: "admin.van@ruijing.vn", hireDate: "2024-06-01", dateOfBirth: null, idCardNo: null, address: null, status: "active", departmentId: 7, departmentCode: "ADMIN", departmentNameZh: "行政部", positionId: 16, positionTitleZh: "行政专员", positionTitleEn: "Admin Officer", positionTitleVi: "Nhân viên hành chính", managerId: 1, managerNameZh: "李伟", avatar_url: null },
-];
 
-const DEMO_ATTENDANCE: AttendanceRecord[] = [
-  { id: 1, date: "2026-06-16", clockIn: "07:55", clockOut: "17:05", status: "normal", employeeCode: "VN001", employeeNameZh: "李伟", departmentName: "管理层", positionTitle: "厂长" },
-  { id: 2, date: "2026-06-16", clockIn: "07:50", clockOut: "17:10", status: "normal", employeeCode: "VN002", employeeNameZh: "陈计划", departmentName: "计划部", positionTitle: "PMC 主管" },
-  { id: 3, date: "2026-06-16", clockIn: "08:05", clockOut: "17:00", status: "normal", employeeCode: "VN003", employeeNameZh: "陈计划员", departmentName: "计划部", positionTitle: "PMC 计划员" },
-  { id: 4, date: "2026-06-16", clockIn: "08:30", clockOut: "17:15", status: "late", employeeCode: "VN004", employeeNameZh: "陈计划员2", departmentName: "计划部", positionTitle: "PMC 计划员" },
-  { id: 5, date: "2026-06-16", clockIn: "07:45", clockOut: "16:55", status: "normal", employeeCode: "VN005", employeeNameZh: "阮仓库", departmentName: "仓库部", positionTitle: "仓库主管" },
-  { id: 6, date: "2026-06-16", clockIn: "07:50", clockOut: "17:00", status: "normal", employeeCode: "VN006", employeeNameZh: "陈氏红", departmentName: "仓库部", positionTitle: "仓管员" },
-  { id: 7, date: "2026-06-16", clockIn: "07:55", clockOut: "17:30", status: "normal", employeeCode: "VN007", employeeNameZh: "范文龙", departmentName: "SMT 生产部", positionTitle: "SMT 技术员" },
-  { id: 8, date: "2026-06-16", clockIn: "07:40", clockOut: "16:50", status: "normal", employeeCode: "VN008", employeeNameZh: "黎氏梅", departmentName: "SMT 生产部", positionTitle: "操作员" },
-  { id: 9, date: "2026-06-16", clockIn: "09:00", clockOut: "17:00", status: "late", employeeCode: "VN009", employeeNameZh: "黄文强", departmentName: "SMT 生产部", positionTitle: "操作员" },
-  { id: 10, date: "2026-06-16", clockIn: "07:50", clockOut: "17:05", status: "normal", employeeCode: "VN010", employeeNameZh: "武氏香", departmentName: "SMT 生产部", positionTitle: "操作员" },
-  { id: 11, date: "2026-06-16", clockIn: "07:55", clockOut: "17:00", status: "normal", employeeCode: "VN011", employeeNameZh: "邓文南", departmentName: "SMT 生产部", positionTitle: "操作员" },
-  { id: 12, date: "2026-06-16", clockIn: "07:48", clockOut: "17:02", status: "normal", employeeCode: "VN012", employeeNameZh: "阮氏云", departmentName: "品质部", positionTitle: "IQC 检验员" },
-  { id: 13, date: "2026-06-16", clockIn: "08:15", clockOut: "17:20", status: "normal", employeeCode: "VN013", employeeNameZh: "黎工", departmentName: "工程部", positionTitle: "工艺工程师" },
-  { id: 14, date: "2026-06-16", clockIn: "07:50", clockOut: "17:10", status: "normal", employeeCode: "VN014", employeeNameZh: "范文全", departmentName: "工程部", positionTitle: "设备工程师" },
-  { id: 15, date: "2026-06-16", clockIn: "07:55", clockOut: "16:45", status: "early", employeeCode: "VN015", employeeNameZh: "行政文", departmentName: "行政部", positionTitle: "行政专员" },
-];
 
-const DEMO_LEAVE: LeaveRequest[] = [
-  { id: 1, leaveType: "annual", startDate: "2026-06-20", endDate: "2026-06-25", reason: "Family vacation", status: "approved", approvedAt: "2026-06-15T09:00:00Z", employeeCode: "VN003", employeeNameZh: "陈计划员", departmentName: "计划部", positionTitle: "PMC 计划员", approverCode: "VN002", approverName: "陈计划" },
-  { id: 2, leaveType: "sick", startDate: "2026-06-18", endDate: "2026-06-18", reason: "Doctor appointment", status: "approved", approvedAt: "2026-06-17T08:00:00Z", employeeCode: "VN008", employeeNameZh: "黎氏梅", departmentName: "SMT 生产部", positionTitle: "操作员", approverCode: "VN002", approverName: "陈计划" },
-  { id: 3, leaveType: "personal", startDate: "2026-06-23", endDate: "2026-06-23", reason: "Personal matter", status: "pending", approvedAt: null, employeeCode: "VN009", employeeNameZh: "黄文强", departmentName: "SMT 生产部", positionTitle: "操作员", approverCode: null, approverName: null },
-  { id: 4, leaveType: "annual", startDate: "2026-07-01", endDate: "2026-07-05", reason: "Home visit", status: "pending", approvedAt: null, employeeCode: "VN004", employeeNameZh: "陈计划员2", departmentName: "计划部", positionTitle: "PMC 计划员", approverCode: null, approverName: null },
-];
 
 // ── Org chart data from dm/组织架构.md ──────────────────────────
-const DEMO_ORG_NODES: OrgChartNode[] = [
-  { id: 1, code: "HQ", name_zh: "公司总负责人", name_en: "Headquarters", name_vi: "Tổng công ty", parent_id: null, dept_type: "management", status: "active", managerId: null, managerNameZh: "张先生", managerTitleZh: "CEO", memberCount: 1, level: 0 },
-  { id: 2, code: "HN", name_zh: "华南工厂", name_en: "South China Factory", name_vi: "Nhà máy Hoa Nam", parent_id: 1, dept_type: "management", status: "active", managerId: null, managerNameZh: "赵明军", managerTitleZh: "总负责人", memberCount: 1, level: 1 },
-  { id: 3, code: "PROD", name_zh: "生产部", name_en: "Production", name_vi: "Sản xuất", parent_id: 1, dept_type: "production", status: "active", managerId: null, managerNameZh: "***", managerTitleZh: "负责人（精干）", memberCount: 3, level: 1 },
-  { id: 4, code: "ENG", name_zh: "工程部", name_en: "Engineering", name_vi: "Kỹ thuật", parent_id: 1, dept_type: "engineering", status: "active", managerId: null, managerNameZh: "黎管", managerTitleZh: "负责人（中干）", memberCount: 5, level: 1 },
-  { id: 5, code: "QC", name_zh: "品质部", name_en: "Quality", name_vi: "Chất lượng", parent_id: 1, dept_type: "quality", status: "active", managerId: null, managerNameZh: "***", managerTitleZh: "负责人（中干）", memberCount: 6, level: 1 },
-  { id: 6, code: "SUPPLY", name_zh: "供应货部", name_en: "Supply", name_vi: "Cung ứng", parent_id: 1, dept_type: "warehouse", status: "active", managerId: null, managerNameZh: "Tina", managerTitleZh: "负责人", memberCount: 3, level: 1 },
-  { id: 7, code: "FIN", name_zh: "财务部", name_en: "Finance", name_vi: "Tài chính", parent_id: 1, dept_type: "finance", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "负责人", memberCount: 2, level: 1 },
-  // 生产部下属
-  { id: 31, code: "SMTL", name_zh: "SMT组长", name_en: "SMT Leader", name_vi: "Tổ trưởng SMT", parent_id: 3, dept_type: "production", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 32, code: "AUTOL", name_zh: "自动/线线组长", name_en: "Auto Line Leader", name_vi: "Tổ trưởng dây chuyền", parent_id: 3, dept_type: "production", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 33, code: "CLERK", name_zh: "文员/考勤", name_en: "Clerk", name_vi: "Văn thư", parent_id: 3, dept_type: "production", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  // 工程部下属
-  { id: 41, code: "PE", name_zh: "PE / 维修", name_en: "PE / Maintenance", name_vi: "PE / Bảo trì", parent_id: 4, dept_type: "engineering", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 42, code: "SMTT", name_zh: "SMT技术负责人", name_en: "SMT Tech Lead", name_vi: "Kỹ thuật SMT", parent_id: 4, dept_type: "engineering", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 43, code: "TE", name_zh: "TE", name_en: "Test Engineering", name_vi: "Kỹ thuật thử nghiệm", parent_id: 4, dept_type: "engineering", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 44, code: "ME", name_zh: "ME", name_en: "Manufacturing Engineering", name_vi: "Kỹ thuật sản xuất", parent_id: 4, dept_type: "engineering", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 2, level: 2 },
-  { id: 45, code: "SYSADM", name_zh: "系统维护", name_en: "System Admin", name_vi: "Quản trị hệ thống", parent_id: 4, dept_type: "engineering", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  // 品质部下属
-  { id: 51, code: "DEP_IQC", name_zh: "IQC", name_en: "IQC", name_vi: "IQC", parent_id: 5, dept_type: "quality", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 2, level: 2 },
-  { id: 52, code: "IPQC", name_zh: "IPQC", name_en: "IPQC", name_vi: "IPQC", parent_id: 5, dept_type: "quality", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 53, code: "OQC", name_zh: "OQC", name_en: "OQC", name_vi: "OQC", parent_id: 5, dept_type: "quality", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 2, level: 2 },
-  { id: 54, code: "PQC", name_zh: "PQC", name_en: "PQC", name_vi: "PQC", parent_id: 5, dept_type: "quality", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 55, code: "QMS", name_zh: "体系管理", name_en: "QMS", name_vi: "Quản lý hệ thống", parent_id: 5, dept_type: "quality", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  // 供应货部下属
-  { id: 61, code: "PMC", name_zh: "PC / MC", name_en: "PC / MC", name_vi: "PC / MC", parent_id: 6, dept_type: "planning", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 62, code: "WHMAT", name_zh: "材料仓管员", name_en: "Material Keeper", name_vi: "Thủ kho vật tư", parent_id: 6, dept_type: "warehouse", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  { id: 63, code: "WHFIN", name_zh: "成品仓管员", name_en: "Finished Goods Keeper", name_vi: "Thủ kho thành phẩm", parent_id: 6, dept_type: "warehouse", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 1, level: 2 },
-  // 财务部下属
-  { id: 71, code: "ACC", name_zh: "会计 / 出纳", name_en: "Accountant", name_vi: "Kế toán", parent_id: 7, dept_type: "finance", status: "active", managerId: null, managerNameZh: "", managerTitleZh: "", memberCount: 2, level: 2 },
-];
 
 export const hrApi = {
   async getDepartments(): Promise<ListEnvelope<Department>> {
@@ -320,9 +234,7 @@ export const hrApi = {
   },
 
   async getOrgChart(): Promise<Envelope<{ items: OrgChartNode[] }>> {
-    if (isDemoMode()) {
-      return delay({ data: { items: DEMO_ORG_NODES }, meta: { serverTime: new Date().toISOString() } });
-    }
+
     return apiClient.get<Envelope<{ items: OrgChartNode[] }>>("/hr/org-chart");
   },
 
@@ -343,43 +255,18 @@ export const hrApi = {
     },
 
   async getEmployee(code: string): Promise<EmployeeDetail> {
-    if (isDemoMode()) {
-      const emp = DEMO_EMPLOYEES.find((e) => e.code === code);
-      if (!emp) throw new Error("Employee not found");
-      return { ...emp, terminationDate: null, departmentNameEn: emp.departmentNameZh, departmentNameVi: emp.name_vi, positionLevel: 3, managerNameEn: emp.managerNameZh ?? null, managerNameVi: emp.managerNameZh ?? null, workHistory: [] };
-    }
+
     return apiClient.get<EmployeeDetail>(`/hr/employees/${code}`);
   },
 
   async getPositions(departmentId?: number): Promise<ListEnvelope<Position>> {
-    if (isDemoMode()) {
-      const DEMO_POSITIONS: Position[] = [
-        { id: 1, code: "DIR-01", title_zh: "厂长", title_en: "Factory Director", title_vi: "Giám đốc nhà máy", level: 5, isShiftLeader: false, departmentCode: "MGMT", departmentNameZh: "管理层" },
-        { id: 2, code: "MGR-02", title_zh: "PMC 主管", title_en: "PMC Manager", title_vi: "Trưởng phòng PMC", level: 4, isShiftLeader: false, departmentCode: "PMC", departmentNameZh: "计划部" },
-        { id: 10, code: "STAFF-01", title_zh: "PMC 计划员", title_en: "PMC Planner", title_vi: "Nhân viên kế hoạch", level: 1, isShiftLeader: false, departmentCode: "PMC", departmentNameZh: "计划部" },
-        { id: 3, code: "MGR-03", title_zh: "仓库主管", title_en: "Warehouse Manager", title_vi: "Trưởng phòng kho", level: 4, isShiftLeader: false, departmentCode: "WH", departmentNameZh: "仓库部" },
-        { id: 11, code: "STAFF-02", title_zh: "仓管员", title_en: "Warehouse Staff", title_vi: "Nhân viên kho", level: 1, isShiftLeader: false, departmentCode: "WH", departmentNameZh: "仓库部" },
-        { id: 4, code: "MGR-04", title_zh: "SMT 生产主管", title_en: "SMT Production Manager", title_vi: "Trưởng phòng SMT", level: 4, isShiftLeader: false, departmentCode: "SMT", departmentNameZh: "SMT 生产部" },
-        { id: 8, code: "SUP-01", title_zh: "SMT 技术员", title_en: "SMT Technician", title_vi: "Kỹ thuật viên SMT", level: 3, isShiftLeader: false, departmentCode: "SMT", departmentNameZh: "SMT 生产部" },
-        { id: 13, code: "STAFF-04", title_zh: "操作员", title_en: "Operator", title_vi: "Nhân viên vận hành", level: 1, isShiftLeader: false, departmentCode: "SMT", departmentNameZh: "SMT 生产部" },
-        { id: 12, code: "STAFF-03", title_zh: "IQC 检验员", title_en: "IQC Inspector", title_vi: "Nhân viên IQC", level: 1, isShiftLeader: false, departmentCode: "IQC", departmentNameZh: "品质部" },
-        { id: 14, code: "STAFF-05", title_zh: "工艺工程师", title_en: "Process Engineer", title_vi: "Kỹ sư quy trình", level: 1, isShiftLeader: false, departmentCode: "ENG", departmentNameZh: "工程部" },
-        { id: 15, code: "STAFF-06", title_zh: "设备工程师", title_en: "Equipment Engineer", title_vi: "Kỹ sư thiết bị", level: 1, isShiftLeader: false, departmentCode: "ENG", departmentNameZh: "工程部" },
-        { id: 16, code: "STAFF-07", title_zh: "行政专员", title_en: "Admin Officer", title_vi: "Nhân viên hành chính", level: 1, isShiftLeader: false, departmentCode: "ADMIN", departmentNameZh: "行政部" },
-      ];
-      const items = departmentId ? DEMO_POSITIONS.filter((p) => p.id === departmentId) : DEMO_POSITIONS;
-      return delay({ items, total: items.length });
-    }
+
     const qs = departmentId ? `?departmentId=${departmentId}` : "";
     return apiClient.get<ListEnvelope<Position>>(`/hr/positions${qs}`);
   },
 
   async getLeaveRequests(params?: { status?: string; employeeId?: number; limit?: number; offset?: number }): Promise<ListEnvelope<LeaveRequest>> {
-    if (isDemoMode()) {
-      let items = [...DEMO_LEAVE];
-      if (params?.status) items = items.filter((l) => l.status === params.status);
-      return delay({ items, total: items.length });
-    }
+
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.employeeId) qs.set("employeeId", String(params.employeeId));
@@ -390,24 +277,16 @@ export const hrApi = {
   },
 
   async createLeaveRequest(payload: { leaveType: string; startDate: string; endDate: string; reason?: string }): Promise<{ item: LeaveRequest }> {
-    if (isDemoMode()) {
-      return delay({ item: { id: Date.now(), ...payload, reason: payload.reason ?? null, status: "pending", approvedAt: null, employeeCode: "VN001", employeeNameZh: "Current User", departmentName: "SMT 生产部", positionTitle: "操作员", approverCode: null, approverName: null } });
-    }
+
     return apiClient.post<{ item: LeaveRequest }>("/hr/leave-requests", { payload });
   },
 
   async updateLeaveRequest(id: number, status: "approved" | "rejected"): Promise<MutateEnvelope<{ id: number; status: string }>> {
-    if (isDemoMode()) return delay({ item: { id, status }, auditEventId: id });
     return apiClient.patch<MutateEnvelope<{ id: number; status: string }>>(`/hr/leave-requests/${id}`, { payload: { status } });
   },
 
   async getAttendance(params?: { date?: string; employeeId?: number; limit?: number; offset?: number }): Promise<ListEnvelope<AttendanceRecord>> {
-    if (isDemoMode()) {
-      let items = [...DEMO_ATTENDANCE];
-      if (params?.date) items = items.filter((a) => a.date === params.date);
-      if (params?.employeeId) items = items.filter((a) => a.id === params.employeeId);
-      return delay({ items, total: items.length });
-    }
+
     const qs = new URLSearchParams();
     if (params?.date) qs.set("date", params.date);
     if (params?.employeeId) qs.set("employeeId", String(params.employeeId));
@@ -418,27 +297,7 @@ export const hrApi = {
   },
 
   async getDashboard(): Promise<HrDashboardSummary> {
-    if (isDemoMode()) {
-      return delay({
-        employees: [
-          { status: "active", cnt: 14 },
-          { status: "inactive", cnt: 1 },
-        ],
-        departments: [
-          { deptType: "production", cnt: 1 },
-          { deptType: "quality", cnt: 1 },
-          { deptType: "engineering", cnt: 1 },
-          { deptType: "warehouse", cnt: 1 },
-          { deptType: "admin", cnt: 1 },
-          { deptType: "management", cnt: 1 },
-          { deptType: "planning", cnt: 1 },
-        ],
-        leaveRequests: [
-          { status: "approved", cnt: 2 },
-          { status: "pending", cnt: 2 },
-        ],
-      });
-    }
+
     return apiClient.get<HrDashboardSummary>("/hr/dashboard");
   },
 
@@ -451,27 +310,7 @@ export const hrApi = {
     parentId?: number;
     managerId?: number;
   }): Promise<MutateEnvelope<Department>> {
-    if (isDemoMode()) {
-      const newDept: Department = {
-        id: Date.now(),
-        code: payload.code,
-        name_zh: payload.name_zh,
-        name_en: payload.name_en,
-        name_vi: payload.name_vi,
-        parentId: payload.parentId ?? null,
-        deptType: payload.deptType,
-        headcountTarget: 0,
-        memberCount: 0,
-        status: "active",
-        managerId: payload.managerId ?? null,
-        managerCode: null,
-        managerNameZh: null,
-        managerTitleZh: null,
-        createdAt: new Date().toISOString(),
-      };
-      DEMO_DEPARTMENTS.push(newDept);
-      return delay({ item: newDept, auditEventId: Date.now() });
-    }
+
     return apiClient.post<MutateEnvelope<Department>>("/hr/departments", { payload });
   },
 
@@ -484,23 +323,12 @@ export const hrApi = {
     managerId: number | null;
     status: string;
   }>): Promise<MutateEnvelope<Department>> {
-    if (isDemoMode()) {
-      const idx = DEMO_DEPARTMENTS.findIndex((d) => d.id === id);
-      if (idx === -1) throw new Error("Department not found");
-      DEMO_DEPARTMENTS[idx] = { ...DEMO_DEPARTMENTS[idx], ...payload };
-      return delay({ item: DEMO_DEPARTMENTS[idx], auditEventId: id });
-    }
+
     return apiClient.patch<MutateEnvelope<Department>>(`/hr/departments/${id}`, { payload });
   },
 
   async deleteDepartment(id: number): Promise<MutateEnvelope<{ id: number }>> {
-    if (isDemoMode()) {
-      const idx = DEMO_DEPARTMENTS.findIndex((d) => d.id === id);
-      if (idx !== -1) {
-        DEMO_DEPARTMENTS.splice(idx, 1);
-      }
-      return delay({ item: { id }, auditEventId: id });
-    }
+
     return apiClient.delete<MutateEnvelope<{ id: number }>>(`/hr/departments/${id}`);
   },
 

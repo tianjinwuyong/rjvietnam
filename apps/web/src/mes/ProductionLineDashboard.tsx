@@ -221,9 +221,11 @@ function StationDrawer({
       .finally(() => setLoading(false));
   }, [station.code]);
 
-  const output = Math.floor(Math.random() * 500) + 100;
-  const ngCount = Math.floor(Math.random() * 10);
-  const yield_ = output > 0 ? ((1 - ngCount / output) * 100).toFixed(1) : "100.0";
+  // Counters come from the station's recent MES events; nothing is generated.
+  const passCount = events.filter((e) => e.result === "PASS").length;
+  const ngCount = events.filter((e) => e.result === "FAIL").length;
+  const output = passCount + ngCount;
+  const yield_ = output > 0 ? ((passCount / output) * 100).toFixed(1) : "—";
 
   return (
     <>
@@ -363,7 +365,7 @@ function StationDrawer({
                     {locale === "zh-CN" ? "今日产出" : locale === "vi-VN" ? "Sản lượng" : "Output"}
                   </div>
                   <div style={{ fontSize: 28, fontWeight: 700, color: "var(--ok)" }}>
-                    {output.toLocaleString()}
+                    {output > 0 ? output.toLocaleString() : "—"}
                   </div>
                 </div>
                 <div style={{
@@ -391,9 +393,9 @@ function StationDrawer({
                   <div style={{
                     fontSize: 28,
                     fontWeight: 700,
-                    color: parseFloat(yield_) >= 98 ? "var(--ok)" : "var(--warn)"
+                    color: yield_ === "—" ? "var(--muted)" : parseFloat(yield_) >= 98 ? "var(--ok)" : "var(--warn)"
                   }}>
-                    {yield_}%
+                    {yield_ === "—" ? "—" : yield_ + "%"}
                   </div>
                 </div>
                 <div style={{

@@ -8,7 +8,6 @@ import { Trash2, AlertTriangle } from "lucide-react";
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi } from "../api/wms";
-import { materialLots as _demoLots } from "../data";
 
 export interface ScrapRecord {
   id: string;
@@ -29,9 +28,16 @@ const SCRAP_REASONS = [
   { value: "obsolete",    label_zh: "淘汰",     label_en: "Obsolete",    label_vi: "Lỗi thời" },
 ];
 
+let txCounter = 0;
+
+/** Monotonic per-session transaction label: two records can never collide. */
 function txSeq(prefix: string): string {
-  return `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(Math.floor(Math.random() * 999) + 1).padStart(3, "0")}`;
+  txCounter += 1;
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `${prefix}-${date}-${String(txCounter).padStart(3, "0")}`;
 }
+
+
 
 function localeLabel(item: { label_zh: string; label_en: string; label_vi: string }, locale: Locale): string {
   if (locale === "vi-VN") return item.label_vi;
@@ -62,7 +68,9 @@ export function WmsScrapFlow({ locale, onScrap }: {
       const record: ScrapRecord = {
         id: txSeq("SCP"),
         lotNo: lotInput.trim().toUpperCase(),
-        materialCode: _demoLots.find((l) => l.lotNo === lotInput.trim().toUpperCase())?.materialCode ?? lotInput.trim(),
+        // The material code used to be read from the demo lot list; the API call above
+        // already validated the lot, so the scanned code is what this record reports.
+        materialCode: lotInput.trim(),
         qty: Number(qtyInput),
         reason: localeLabel(SCRAP_REASONS.find((r) => r.value === reason)!, locale),
         operator: "VN_WH_010",

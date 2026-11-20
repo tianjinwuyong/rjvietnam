@@ -33,11 +33,7 @@ interface IqcAqlRule {
   aql_critical: number; aql_major: number; aql_minor: number;
 }
 
-const IQC_DEMO_INSPECTIONS: IqcInspection[] = [
-  { id: -3001, incoming_record_id: -1001, lot_no: "TEST-PO-20260827-01", material_code: "SMT-R-10K-0603", supplier_code: "TEST-SUPPLIER", batch_size: 5000, sample_size: 40, aql_level: "II", inspector_id: "IQC_TESTER", inspection_types: ["identity", "quantity", "packaging", "label", "visual", "dimension", "electrical", "solderability", "msd", "esd", "documentation", "risk", "functional"], result: "pending", submitted_at: "2026-08-28T08:30:00+07:00", completed_at: "", defects: [] },
-  { id: -3002, incoming_record_id: -1002, lot_no: "TEST-PO-20260827-02", material_code: "SMT-C-100N-0402", supplier_code: "TEST-SUPPLIER", batch_size: 12000, sample_size: 80, aql_level: "II", inspector_id: "IQC_TESTER", inspection_types: ["identity", "quantity", "packaging", "label", "visual", "dimension", "electrical", "solderability", "msd", "esd", "documentation", "risk", "functional"], result: "pass", submitted_at: "2026-08-27T10:00:00+07:00", completed_at: "2026-08-27T10:20:00+07:00", defects: [] },
-  { id: -3003, incoming_record_id: -1003, lot_no: "TEST-PO-20260827-03", material_code: "SMT-LED-GRN-0805", supplier_code: "TEST-SUPPLIER", batch_size: 3000, sample_size: 50, aql_level: "II", inspector_id: "IQC_TESTER", inspection_types: ["identity", "quantity", "packaging", "label", "visual", "dimension", "electrical", "solderability", "msd", "esd", "documentation", "risk", "functional"], result: "fail", submitted_at: "2026-08-27T09:00:00+07:00", completed_at: "2026-08-27T09:15:00+07:00", defects: [{ id: -301, defect_type: "OXIDATION", defect_location: "焊端", defect_count: 2, severity: "major", photo_url: "" }] },
-];
+
 
 const IQC_ROLE_PAGE_LINKS = [["IQC检验", "iqc"], ["IQC复检", "iqcReinspection"], ["IQC报表", "iqcReport"], ["PDA检验历史", "pdaHistory"], ["PDA收料", "pdaReceiving"], ["PDA盘点", "pdaCycleCount"], ["PDA物料消耗", "pdaConsumption"], ["MSD管控", "pdaMsd"], ["PDA设备中心", "syncHealth"]] as const;
 
@@ -50,11 +46,7 @@ interface IqcQueueRecord {
 
 const PDA_IQC_SYNC_KEY = "wms_iqc_pda_sync_records";
 
-const IQC_PO_DEMO_MATERIALS: IqcQueueRecord[] = [
-  { id: -1001, lot_no: "TEST-PO-20260827-01", material_code: "SMT-R-10K-0603", material_name: "Chip Resistor 10KΩ 0603", material_qr: "TEST-QR-R0603-001", pallet_qr: "TEST-PALLET-001", source_type: "PO_RECEIPT", quantity: 5000, uom: "PCS", warehouse_code: "IQC_HOLD", location_code: "IQC-A01-01", received_at: "2026-08-27T08:20:00+07:00", waiting_minutes: 38, status: "IQC_PENDING" },
-  { id: -1002, lot_no: "TEST-PO-20260827-02", material_code: "SMT-C-100N-0402", material_name: "MLCC Capacitor 100nF 0402", material_qr: "TEST-QR-C0402-002", pallet_qr: "TEST-PALLET-002", source_type: "PO_RECEIPT", quantity: 12000, uom: "PCS", warehouse_code: "IQC_HOLD", location_code: "IQC-A01-02", received_at: "2026-08-27T07:45:00+07:00", waiting_minutes: 73, status: "IQC_PENDING" },
-  { id: -1003, lot_no: "TEST-PO-20260827-03", material_code: "SMT-LED-GRN-0805", material_name: "Green LED 0805", material_qr: "TEST-QR-LED0805-003", pallet_qr: "TEST-PALLET-003", source_type: "PO_RECEIPT", quantity: 3000, uom: "PCS", warehouse_code: "IQC_HOLD", location_code: "IQC-A01-03", received_at: "2026-08-27T06:10:00+07:00", waiting_minutes: 168, status: "IQC_PENDING" },
-];
+
 
 // SMT incoming-IQC checklist. Selected items are stored on each inspection.
 const SMT_IQC_ITEMS = [
@@ -257,11 +249,11 @@ export function WmsIqc({ locale }: { locale: Locale }) {
     (typeof wmsApi.getIqcWaitingQueue === "function" ? wmsApi.getIqcWaitingQueue() : Promise.resolve({ items: [], total: 0 }))
       .then((q: { items: IqcQueueRecord[]; total: number }) => {
         const realItems = (q.items || []).filter((item: IqcQueueRecord) => ["IQC_PENDING", "CREATED"].includes(String(item.status)));
-        setIqcQueue(realItems.length ? realItems : IQC_PO_DEMO_MATERIALS);
+        setIqcQueue(realItems);
       })
       .catch((e: unknown) => {
         console.error("IQC receiving queue failed", e);
-        setIqcQueue(IQC_PO_DEMO_MATERIALS);
+        setIqcQueue([]);
       });
     try {
       const [p, inspections, r] = await Promise.all([
@@ -273,8 +265,8 @@ export function WmsIqc({ locale }: { locale: Locale }) {
       const inspectionRows: IqcInspection[] = inspections.items || [];
       const pendingInspections = inspectionRows.filter(row => String(row.result).toLowerCase() === "pending");
       const completedInspections = inspectionRows.filter(row => String(row.result).toLowerCase() !== "pending");
-      setSubmitted(pendingInspections.length ? pendingInspections : IQC_DEMO_INSPECTIONS.filter(row => row.result === "pending"));
-      setHistory(completedInspections.length ? completedInspections : IQC_DEMO_INSPECTIONS.filter(row => row.result !== "pending"));
+      setSubmitted(pendingInspections);
+      setHistory(completedInspections);
       setRules(r || []);
     } catch (e) {
       console.error(e);
@@ -287,7 +279,7 @@ export function WmsIqc({ locale }: { locale: Locale }) {
   const pendingCount = pending.length;
   const submittedCount = submitted.length;
   const historyCount = history.length;
-  const visibleIqcQueue = iqcQueue.length ? iqcQueue : IQC_PO_DEMO_MATERIALS;
+  const visibleIqcQueue = iqcQueue;
   const runVirtualEmployee = async () => {
     const item = visibleIqcQueue[0]; if (!item || !iqcGuidance) return;
     setVirtualStatus("RUNNING");
@@ -349,21 +341,6 @@ export function WmsIqc({ locale }: { locale: Locale }) {
     setSaving(true);
     try {
       const rec = selected as IncomingRecord;
-      if (rec.id < 0) {
-        const demoInspection: IqcInspection = {
-          id: rec.id, incoming_record_id: rec.id, lot_no: rec.lot_no, material_code: rec.material_code,
-          supplier_code: rec.supplier_code || "TEST-SUPPLIER", batch_size: Number(submitForm.batch_size), sample_size: guidedSample,
-          aql_level: "II", inspector_id: submitForm.inspector_id || "IQC_TESTER", inspection_types: submitForm.inspection_types,
-          result: "pending", submitted_at: new Date().toISOString(), completed_at: "", defects: [],
-        };
-        setSubmitted(previous => [demoInspection, ...previous.filter(item => item.id !== demoInspection.id)]);
-        setIqcQueue(previous => previous.filter(item => item.id !== rec.id));
-        setShowSubmitModal(false); setSelected(null); setSubmitForm({ batch_size: "", inspector_id: "", inspection_types: [] });
-        setView("submitted");
-        showFeedback(true, "TEST IQC档案已建立，请完成检验判定");
-        setSaving(false);
-        return;
-      }
       await wmsApi.createIqcInspection({
         incoming_record_id: rec.id,
         lot_no: rec.lot_no,
@@ -555,10 +532,7 @@ export function WmsIqc({ locale }: { locale: Locale }) {
         </div>
       </section>
 
-      {false && poIqcQueue.length === 0 && <section style={{ background: "#fffbeb", border: "1px dashed #f59e0b", borderRadius: 10, padding: 16, marginBottom: 20 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}><div><h3 style={{ margin: 0, color: "#92400e" }}>测试物料展示 / IQC demo materials</h3><p style={{ margin: "4px 0 0", color: "#92400e", fontSize: 12 }}>当前没有真实 PO 收货记录，以下 TEST 数据仅用于演示页面，不写入库存。</p></div><span style={{ background: "#fef3c7", color: "#92400e", padding: "4px 8px", borderRadius: 4, fontSize: 12, fontWeight: 700 }}>TEST DATA</span></div>
-        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, background: "#fff" }}><thead><tr>{["批次", "物料", "物料QR", "栈板QR", "数量", "待检仓位", "等待"].map(h => <th key={h} style={{ padding: "8px", textAlign: "left", color: "#92400e", whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead><tbody>{IQC_PO_DEMO_MATERIALS.map(item => <tr key={item.id} style={{ borderTop: "1px solid #fde68a" }}><td style={{ padding: "8px", fontFamily: "monospace" }}>{item.lot_no}</td><td style={{ padding: "8px" }}><strong>{item.material_code}</strong><br /><span style={{ color: "#64748b" }}>{item.material_name}</span></td><td style={{ padding: "8px", fontFamily: "monospace" }}>{item.material_qr}</td><td style={{ padding: "8px", fontFamily: "monospace" }}>{item.pallet_qr}</td><td style={{ padding: "8px" }}>{item.quantity} {item.uom}</td><td style={{ padding: "8px" }}>{item.location_code}</td><td style={{ padding: "8px", color: Number(item.waiting_minutes) > 60 ? "#dc2626" : "#475569" }}>{item.waiting_minutes} min</td></tr>)}</tbody></table></div>
-      </section>}
+      
 
       <section style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 10, padding: 16, marginBottom: 20 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>

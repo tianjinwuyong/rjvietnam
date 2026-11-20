@@ -9,7 +9,6 @@ import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import type { InventoryTransaction } from "../api/wms";
 import { wmsApi } from "../api/wms";
-import { materialLots as _demoLots } from "../data";
 
 export interface ReturnRecord {
   id: string;
@@ -31,9 +30,16 @@ const RETURN_REASONS = [
   { value: "other",   label_zh: "其他",       label_en: "Other",          label_vi: "Khác" },
 ];
 
+let txCounter = 0;
+
+/** Monotonic per-session transaction label: two records can never collide. */
 function txSeq(prefix: string): string {
-  return `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(Math.floor(Math.random() * 999) + 1).padStart(3, "0")}`;
+  txCounter += 1;
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `${prefix}-${date}-${String(txCounter).padStart(3, "0")}`;
 }
+
+
 
 function localeLabel(item: { label_zh: string; label_en: string; label_vi: string }, locale: Locale): string {
   if (locale === "vi-VN") return item.label_vi;
@@ -70,13 +76,16 @@ export function WmsReturnFlow({ locale, txLog, onReturn }: {
       const record: ReturnRecord = {
         id: txSeq("RTN"),
         lotNo: lotInput.trim().toUpperCase(),
-        materialCode: _demoLots.find((l) => l.lotNo === lotInput.trim().toUpperCase())?.materialCode ?? lotInput.trim(),
+        // The lot's material code and location used to be read out of the demo lot list.
+        // The API call above is what validates the lot, so the scan and an explicit
+        // placeholder are reported instead of invented master data.
+        materialCode: lotInput.trim(),
         qty: Number(qtyInput),
         reason: localeLabel(RETURN_REASONS.find((r) => r.value === reason)!, locale),
         workOrderCode: workOrder.trim() || "—",
         operator: "VN_WH_010",
         returnedAt: new Date().toISOString(),
-        locationCode: _demoLots.find((l) => l.lotNo === lotInput.trim().toUpperCase())?.locationCode ?? "A01-02-03",
+        locationCode: "—",
       };
       onReturn(record);
       setFeedback({ ok: true, msg: `${record.lotNo}: +${record.qty.toLocaleString()} ${t("wms.returned", locale)}` });

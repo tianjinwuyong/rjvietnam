@@ -16,25 +16,11 @@ interface ExpiryLot {
   alertLevel: "expired" | "critical" | "warning" | "normal";
 }
 
-const _mockExpiryLots: ExpiryLot[] = [
-  { id: 1, materialCode: "CAP-CER-100UF", materialNameZh: "贴片电容 100μF", lotNo: "LOT-20250115-001", receivedDate: "2025-01-15", expiryDate: "2025-06-15", remainingDays: -12, qty: 5000, location: "STORE-001-A1", alertLevel: "expired" },
-  { id: 2, materialCode: "RES-SMD-10K", materialNameZh: "贴片电阻 10KΩ", lotNo: "LOT-20250301-002", receivedDate: "2025-03-01", expiryDate: "2025-09-01", remainingDays: 66, qty: 15000, location: "STORE-001-A2", alertLevel: "critical" },
-  { id: 3, materialCode: "LED-RED-0805", materialNameZh: "红色LED 0805", lotNo: "LOT-20250410-003", receivedDate: "2025-04-10", expiryDate: "2025-10-10", remainingDays: 105, qty: 8000, location: "STORE-001-B1", alertLevel: "warning" },
-  { id: 4, materialCode: "IC-MCU-STM32", materialNameZh: "STM32单片机", lotNo: "LOT-20250601-004", receivedDate: "2025-06-01", expiryDate: "2027-06-01", remainingDays: 730, qty: 500, location: "STORE-001-C2", alertLevel: "normal" },
-  { id: 5, materialCode: "CONN-USB-C-30P", materialNameZh: "USB-C连接器", lotNo: "LOT-20250520-005", receivedDate: "2025-05-20", expiryDate: "2025-08-20", remainingDays: 54, qty: 3000, location: "STORE-002-A1", alertLevel: "critical" },
-  { id: 6, materialCode: "PCB-AURORA-CTRL", materialNameZh: "控制板PCB", lotNo: "LOT-20250610-006", receivedDate: "2025-06-10", expiryDate: "2026-06-10", remainingDays: 348, qty: 200, location: "STORE-002-B2", alertLevel: "normal" },
-  { id: 7, materialCode: "CAP-CER-100UF", materialNameZh: "贴片电容 100μF", lotNo: "LOT-20250201-007", receivedDate: "2025-02-01", expiryDate: "2025-08-01", remainingDays: 35, qty: 12000, location: "STORE-001-A1", alertLevel: "critical" },
-  { id: 8, materialCode: "RES-SMD-10K", materialNameZh: "贴片电阻 10KΩ", lotNo: "LOT-20250620-008", receivedDate: "2025-06-20", expiryDate: "2026-06-20", remainingDays: 358, qty: 20000, location: "STORE-001-A2", alertLevel: "normal" },
-  { id: 9, materialCode: "LED-RED-0805", materialNameZh: "红色LED 0805", lotNo: "LOT-20250625-009", receivedDate: "2025-06-25", expiryDate: "2025-09-25", remainingDays: 90, qty: 25000, location: "STORE-001-B1", alertLevel: "warning" },
-  { id: 10, materialCode: "CONN-USB-C-30P", materialNameZh: "USB-C连接器", lotNo: "LOT-20250401-010", receivedDate: "2025-04-01", expiryDate: "2025-07-01", remainingDays: 4, qty: 1000, location: "STORE-002-A1", alertLevel: "critical" },
-  { id: 11, materialCode: "IC-MCU-STM32", materialNameZh: "STM32单片机", lotNo: "LOT-20241115-011", receivedDate: "2024-11-15", expiryDate: "2026-11-15", remainingDays: 506, qty: 300, location: "STORE-001-C2", alertLevel: "normal" },
-  { id: 12, materialCode: "CAP-CER-100UF", materialNameZh: "贴片电容 100μF", lotNo: "LOT-20241201-012", receivedDate: "2024-12-01", expiryDate: "2025-06-01", remainingDays: -26, qty: 8000, location: "STORE-001-A1", alertLevel: "expired" },
-];
 
 const alertColors: Record<string, string> = { expired: "var(--danger)", critical: "var(--warn)", warning: "#f59e0b", normal: "var(--ok)" };
 
 export function WmsExpiryControl({ locale }: { locale: Locale }) {
-  const [lots] = useState<ExpiryLot[]>(_mockExpiryLots);
+  const [lots] = useState<ExpiryLot[]>([]);
   const [filterLevel, setFilterLevel] = useState("");
 
   const stats = useMemo(() => ({
