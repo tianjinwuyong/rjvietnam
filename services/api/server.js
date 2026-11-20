@@ -73,6 +73,11 @@ import manuLineRouter from "./src/routes/manu-line.js";
 import { createStationPassRouter } from "./src/routes/station-pass.js";
 import { createOqcAqlRouter } from "./src/routes/oqc-aql.js";
 import { createMesrjRouter } from "./src/routes/mesrj.js";
+import { createMrbRouter } from "./src/routes/mrb.js";
+import { createSupplierDebtRouter, settleDebtOnReceipt } from "./src/routes/supplier-debt-hooks.js";
+import { createSupplierReturnRouter } from "./src/routes/supplier-return.js";
+import { createNoticesRouter } from "./src/routes/notices.js";
+import { createOaIntegrationRouter } from "./src/routes/oa-integration.js";
 import { canonicalLineCode, canonicalStationCode } from "./src/shared/station-identity.js";
 import { evaluateVisualInspection, DEFAULT_POLICY as VISUAL_INSPECTION_POLICY } from "./src/visual-inspection.js";
 import { evaluateProductGate } from "./src/product-gate.js";
@@ -129,7 +134,14 @@ for (const method of ["get", "post", "put", "patch", "delete"]) {
 // Security finding 3: this used to be registered ~200 route definitions further
 // down the file, so every route declared above it was reachable without a JWT.
 // Registering it before the first route guarantees no api route escapes the gate.
+const DEVICE_OPEN_PATHS = ["/mesrj/DeviceConfig", "/mesrj/StationPass",
+  "/mesrj/MachineData", "/mesrj/Packing"];
 api.use((req, res, next) => {
+  // 设备侧路径（ICT/FCT/贴标机等）只持 X-Api-Key，没有 JWT。这几个前缀下的
+  // 每一个处理器都自己调 requireDeviceKey / 内联 sys_api_key 校验，所以在这里
+  // 放行不会漏鉴权；/mesrj/* 其余路径仍由 mesrj 路由器内的 authenticateJWT 兜底。
+  // (源 legacy 直连 devsrc.py，没有 JWT 这一层；不放开就等于设备全线 401。)
+  if (DEVICE_OPEN_PATHS.some(p => req.path.startsWith(p))) return next();
   // Assignment lookup is a read-only station handshake; the PDA supplies its
   // device identity and line in the query before an operator JWT is present.
   if (req.path === "/dispatch/assignments" && req.method === "GET") return next();
@@ -9266,6 +9278,15 @@ api.use("/mes/station-pass", createStationPassRouter({ authenticateJWT, requireP
 api.use("/qms/oqc-aql", createOqcAqlRouter({ authenticateJWT, requirePermission }));
 // MES-ruijing 移植（W2 基座：sys/md/basic + CRUD 引擎；设备接口走 X-Api-Key）
 api.use("/mesrj", createMesrjRouter({ authenticateJWT }));
+// MRB (物料评审) — grafted from WMS-20261019; downstream of IQC fails
+api.use("/mrb", createMrbRouter({ authenticateJWT }));
+// Supplier-debt write hooks (create / settle) — writes originate from MRB & IQC
+api.use("/supplier-debt", createSupplierDebtRouter({ authenticateJWT }));
+// Supplier-return order lifecycle (reference supplier-return module)
+api.use("/supplier-return", createSupplierReturnRouter({ authenticateJWT }));
+// Notifications + OA integration (reference compatibility surfaces)
+api.use("/notices", createNoticesRouter({ authenticateJWT }));
+api.use("/integration/oa", createOaIntegrationRouter({ authenticateJWT }));
 
 // ── Finance Routes ─────────────────────────────────────────────────────────
 // GET /api/finance/ar-invoices
@@ -14105,6 +14126,7 @@ function authenticateJWT(req, res, next) {
       roleKey: "TEST",
       permissions: ["*"]
     };
+    req.userContext = { userId: req.user.userId, userName: req.user.username, roleCode: req.user.roleKey };
     return next();
   }
   if (!token) {
@@ -14117,6 +14139,13 @@ function authenticateJWT(req, res, next) {
       username: payload.username,
       roleKey: payload.roleKey,
       permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
+    };
+    // WMS-20261019 reference compatibility: controllers read req.userContext
+    // with { userId, userName, roleCode }. Map from SMT's req.user once here.
+    req.userContext = {
+      userId: req.user.userId,
+      userName: req.user.username,
+      roleCode: req.user.roleKey,
     };
     next();
   } catch {
@@ -15529,6 +15558,21 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
     // 更新来料记录状态
     const incoming_status = result === 'pass' ? 'approved' : (result === 'conditional_pass' ? 'pending' : 'pending');
     await client.query("UPDATE wms_incoming_records SET iqc_status=? WHERE id=?", [incoming_status, i.incoming_record_id]);
+    // Reference WMS: an IQC pass on a receipt clears any pending supplier debt
+    // for this supplier+material (idempotent per debt/receipt pair).
+    if (result === 'pass' && i.supplier_code && i.material_code) {
+      try {
+        const sup = (await query(`SELECT id FROM suppliers WHERE code=$1 LIMIT 1`, [i.supplier_code])).rows[0]?.id;
+        const mat = (await query(`SELECT id FROM materials WHERE code=$1 LIMIT 1`, [i.material_code])).rows[0]?.id;
+        if (sup && mat) {
+          await settleDebtOnReceipt({
+            supplierId: sup, materialId: mat, qty: i.batch_size || i.quantity || 0,
+            receiptId: i.incoming_record_id, receiptNo: `IQC-${req.params.id}`,
+            result: 'pass', userId: req.user?.userId,
+          });
+        }
+      } catch (debtErr) { console.error('settleDebtOnReceipt failed:', debtErr.message); }
+    }
     const [updated] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
     const ngQuantity=defectDetails.reduce((sum,row)=>sum+Number(row.defect_count||0),0);
     const supplierCommunication=await publishSupplierIqcResult({
@@ -48209,6 +48253,14 @@ app.get("/api/repair-station/export", async (req, res) => {
 // SMT user: req.user = { userId, username, roleKey }
 // Applicant/approver always from login identity (ignore request body), role from sysAccount table
 
+// Reference: over-picking.service.ts generateOrderNo() — CB + YYYYMMDD + 4-digit sequence
+async function nextOverPickingOrderNo() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const seq = Number((await query(`SELECT nextval('seq_over_picking_no') AS n`)).rows[0]?.n || 1);
+  return `CB${dateStr}${String(seq).padStart(4, "0")}`;
+}
+
 app.post("/api/over-picking", authenticateJWT, requireRole("admin", "production_material_smt", "production_material_dip", "production_material_assembly", "production_material_packing"), async (req, res) => {
   try {
     const { workOrderNo, items, remark } = req.body || {};
@@ -48217,14 +48269,39 @@ app.post("/api/over-picking", authenticateJWT, requireRole("admin", "production_
     const userRole = req.user?.roleKey;
     if (!workOrderNo) return res.status(400).json(errorEnvelope("VALIDATION", "workOrderNo is required"));
     if (!Array.isArray(items) || items.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "items array required"));
-    const { rows } = await query(`INSERT INTO over_picking_orders(work_order_no,status,applicant_id,applicant_name,applicant_role,remark)
-      VALUES($1,'pending',$2,$3,$4,$5) RETURNING *`, [workOrderNo, userId, userName, userRole, remark||null]);
-    const orderId = rows[0].id;
-    for (const it of items) {
-      await query(`INSERT INTO over_picking_items(order_id,material_code,material_name,qty,unit)
-        VALUES($1,$2,$3,$4,$5)`, [orderId, it.materialCode, it.materialName, it.qty||0, it.unit||"PCS"]);
-    }
-    res.json(successEnvelope(rows[0]));
+    const orderNo = await nextOverPickingOrderNo();
+    // Reference CreateDto: qty and quantity carry the same value; amount = qty * unitPrice.
+    const normalized = items.map((it) => {
+      const qty = Number(it.qty ?? it.quantity ?? 0) || 0;
+      const unitPrice = Number(it.unitPrice ?? it.unit_price ?? 0) || 0;
+      return {
+        materialCode: it.materialCode,
+        materialName: it.materialName ?? null,
+        specification: it.specification ?? null,
+        qty, unitPrice,
+        amount: Number(it.amount ?? qty * unitPrice) || 0,
+        unit: it.unit || "PCS",
+        workSection: it.workSection ?? null,
+        reason: it.reason ?? null,
+      };
+    });
+    const totalQty = normalized.reduce((s, x) => s + x.qty, 0);
+    const totalAmount = normalized.reduce((s, x) => s + x.amount, 0);
+    await query('BEGIN');
+    try {
+      const { rows } = await query(`INSERT INTO over_picking_orders(order_no,work_order_no,status,applicant_id,applicant_name,applicant_role,remark,total_qty,total_amount)
+        VALUES($1,$2,'pending',$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [orderNo, workOrderNo, userId, userName, userRole, remark||null, totalQty, totalAmount]);
+      const orderId = rows[0].id;
+      for (const it of normalized) {
+        await query(`INSERT INTO over_picking_items(order_id,material_code,material_name,qty,unit,quantity,unit_price,amount,specification,work_section,reason)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [orderId, it.materialCode, it.materialName, it.qty, it.unit, it.qty, it.unitPrice, it.amount,
+           it.specification, it.workSection, it.reason]);
+      }
+      await query('COMMIT');
+      res.json(successEnvelope(rows[0]));
+    } catch (error) { await query('ROLLBACK'); throw error; }
   } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_CREATE_FAILED", error.message)); }
 });
 
@@ -48284,12 +48361,44 @@ app.post("/api/over-picking/:id/approve", authenticateJWT, requireRole("admin", 
     const userId = req.user?.userId;
     const userName = req.user?.username;
     const userRole = req.user?.roleKey;
-    const order = (await query(`SELECT id,status FROM over_picking_orders WHERE id=$1`, [id])).rows[0];
+    const order = (await query(`SELECT id,status,work_order_no AS "workOrderNo" FROM over_picking_orders WHERE id=$1`, [id])).rows[0];
     if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
     if (order.status !== "pending") return res.status(409).json(errorEnvelope("OVER_PICKING_INVALID_STATE", "Order is not pending"));
-    await query(`UPDATE over_picking_orders SET status=$1,approver_id=$2,approver_name=$3,approver_role=$4,approval_remark=$5,approved_at=now(),updated_at=now()
-      WHERE id=$6 RETURNING id`, [pass ? "approved" : "rejected", userId, userName, userRole, approvalRemark||null, id]);
-    res.json(successEnvelope({ id, status: pass ? "approved" : "rejected" }));
+
+    let pickingId = null, pickingNo = null, totalQty = 0;
+    if (pass) {
+      const items = (await query(`SELECT material_code AS "materialCode",material_name AS "materialName",qty,unit
+        FROM over_picking_items WHERE order_id=$1 ORDER BY id`, [id])).rows;
+      if (!items.length) return res.status(400).json(errorEnvelope("OVER_PICKING_NO_ITEMS", "Order has no material items"));
+      await query('BEGIN');
+      try {
+        const now = new Date();
+        const prefix = `PK${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+        const last = (await query(`SELECT picking_no FROM wms_picking_orders WHERE picking_no LIKE $1 ORDER BY picking_no DESC LIMIT 1`, [`${prefix}%`])).rows[0]?.picking_no;
+        const seq = last ? Number(String(last).slice(prefix.length)) + 1 : 1;
+        pickingNo = `${prefix}${String(seq).padStart(4, "0")}`;
+        totalQty = items.reduce((s, x) => s + Number(x.qty || 0), 0);
+        const po = (await query(
+          `INSERT INTO wms_picking_orders (picking_no,work_order_no,work_section,total_qty,status,applicant_name,source,created_at)
+           VALUES ($1,$2,'smt',$3,'approved',$4,'over_picking',now()) RETURNING id`,
+          [pickingNo, order.workOrderNo, totalQty, userName]
+        )).rows[0];
+        pickingId = po.id;
+        for (const it of items) {
+          await query(
+            `INSERT INTO wms_picking_order_items (picking_id,material_code,material_name,unit,pick_qty,actual_qty,created_at)
+             VALUES ($1,$2,$3,$4,$5,0,now())`,
+            [pickingId, it.materialCode, it.materialName, it.unit || "PCS", it.qty]
+          );
+        }
+        await query('COMMIT');
+      } catch (e) { await query('ROLLBACK'); throw e; }
+    }
+    await query(`UPDATE over_picking_orders SET status=$1,approver_id=$2,approver_name=$3,approver_role=$4,
+      approval_remark=$5,approved_at=now(),picking_id=$7,picking_no=$8,total_qty=COALESCE($9,total_qty),updated_at=now()
+      WHERE id=$6 RETURNING id`,
+      [pass ? "approved" : "rejected", userId, userName, userRole, approvalRemark||null, id, pickingId, pickingNo, totalQty]);
+    res.json(successEnvelope({ id, status: pass ? "approved" : "rejected", pickingId, pickingNo }));
   } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_APPROVE_FAILED", error.message)); }
 });
 
@@ -48309,23 +48418,37 @@ app.post("/api/over-picking/:id/cancel", authenticateJWT, requireRole("admin", "
 // Role sets from reference: REWORK_START_ROLES = ['admin','wh_keeper','wh_manager','sqe']
 // REWORK_FINISH_ROLES = ['admin','sqe','quality_manager']
 // REWORK_REINSPECT_ROLES = ['admin','iqc_inspector','iqc_manager','quality_manager']
-// Status values: pending, started, finished, reinspected_ok, reinspected_ng
+// Status values: pending, reworking, pending_reinspect, passed, failed
+// (the pre-312 names started/finished/reinspected_ok/reinspected_ng are still
+//  accepted as input aliases and normalized to the reference vocabulary)
 // SMT user: req.user = { userId, username, roleKey }
+
+const REWORK_STATUS_ALIASES = {
+  started: "reworking",
+  finished: "pending_reinspect",
+  reinspected_ok: "passed",
+  reinspected_ng: "failed",
+};
+function normalizeReworkStatus(value) {
+  const raw = String(value || "").trim();
+  return REWORK_STATUS_ALIASES[raw] || raw;
+}
 
 app.get("/api/rework/list", authenticateJWT, async (req, res) => {
   try {
     const { page = 1, pageSize = 20, reworkNo, status, materialCode } = req.query;
     const conditions = []; const params = []; let idx = 1;
     if (reworkNo) { conditions.push(`rework_no ILIKE $${idx++}`); params.push(`%${reworkNo}%`); }
-    if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(normalizeReworkStatus(status)); }
     if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
     const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
     params.push(limit, offset);
-    const rows = await query(`SELECT id,rework_no AS "reworkNo",mrb_no AS "mrbNo",material_code AS "materialCode",
+    const rows = await query(`SELECT id,rework_no AS "reworkNo",mrb_no AS "mrbNo",material_id AS "materialId",
+      material_lot_id AS "materialLotId",material_code AS "materialCode",
       material_name AS "materialName",supplier_code AS "supplierCode",supplier_name AS "supplierName",
       batch_no AS "batchNo",quantity,unit,status,finish_time AS "finishTime",finish_by AS "finishBy",
-      finish_remark AS "finishRemark",created_at AS "createdAt",updated_at AS "updatedAt"
+      finish_remark AS "finishRemark",reinspect_result AS "reinspectResult",created_at AS "createdAt",updated_at AS "updatedAt"
       FROM rework_orders ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
     const totalRows = await query(`SELECT count(*) FROM rework_orders ${where}`, params.slice(0,-2));
     res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
@@ -48334,17 +48457,27 @@ app.get("/api/rework/list", authenticateJWT, async (req, res) => {
 
 app.get("/api/rework/pending-count", authenticateJWT, async (req, res) => {
   try {
-    const rows = await query(`SELECT status, count(*)::int as cnt FROM rework_orders WHERE status IN ('pending','started')
-      GROUP BY status`);
+    const rows = await query(`SELECT status, count(*)::int as cnt FROM rework_orders
+      WHERE status IN ('pending','reworking','pending_reinspect') GROUP BY status`);
     const counts = {}; for (const r of rows.rows) counts[r.status] = r.cnt;
-    res.json(successEnvelope(counts));
+    const total = Object.values(counts).reduce((a, n) => a + Number(n), 0);
+    res.json(successEnvelope({ ...counts, pendingReinspect: counts.pending_reinspect || 0, total }));
   } catch (error) { res.status(500).json(errorEnvelope("REWORK_PENDING_COUNT_FAILED", error.message)); }
 });
 
 app.get("/api/rework/detail/:id", authenticateJWT, async (req, res) => {
   try {
     const id = Number(req.params.id);
-    const row = (await query(`SELECT * FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    const row = (await query(`SELECT id,rework_no AS "reworkNo",mrb_no AS "mrbNo",mrb_id AS "mrbId",
+      disposition_id AS "dispositionId",material_id AS "materialId",material_lot_id AS "materialLotId",
+      material_code AS "materialCode",material_name AS "materialName",supplier_code AS "supplierCode",
+      supplier_name AS "supplierName",batch_no AS "batchNo",quantity,unit,status,
+      source_location_id AS "sourceLocationId",target_location_id AS "targetLocationId",
+      finish_time AS "finishTime",finish_by AS "finishBy",finish_by_name AS "finishByName",
+      finish_remark AS "finishRemark",reinspect_time AS "reinspectTime",reinspect_by AS "reinspectBy",
+      reinspect_result AS "reinspectResult",reinspect_remark AS "reinspectRemark",
+      remark,created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM rework_orders WHERE id=$1`, [id])).rows[0];
     if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
     res.json(successEnvelope(row));
   } catch (error) { res.status(500).json(errorEnvelope("REWORK_DETAIL_FAILED", error.message)); }
@@ -48356,9 +48489,9 @@ app.post("/api/rework/start", authenticateJWT, requireRole("admin", "wh_keeper",
     const userId = req.user?.userId;
     const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
     if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
-    if (row.status !== "pending") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending orders can be started"));
-    await query(`UPDATE rework_orders SET status='started',updated_at=now() WHERE id=$1 RETURNING id`, [id]);
-    res.json(successEnvelope({ id, status: "started" }));
+    if (normalizeReworkStatus(row.status) !== "pending") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending orders can be started"));
+    await query(`UPDATE rework_orders SET status='reworking',remark=COALESCE($2,remark),updated_at=now() WHERE id=$1 RETURNING id`, [id, remark || null]);
+    res.json(successEnvelope({ id, status: "reworking" }));
   } catch (error) { res.status(500).json(errorEnvelope("REWORK_START_FAILED", error.message)); }
 });
 
@@ -48369,23 +48502,86 @@ app.post("/api/rework/finish", authenticateJWT, requireRole("admin", "sqe", "qua
     const userName = req.user?.username;
     const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
     if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
-    if (row.status !== "started") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only started orders can be finished"));
-    await query(`UPDATE rework_orders SET status='finished',finish_time=now(),finish_by=$2,finish_by_name=$3,
+    if (!["pending", "reworking"].includes(normalizeReworkStatus(row.status))) return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending/reworking orders can be finished"));
+    await query(`UPDATE rework_orders SET status='pending_reinspect',finish_time=now(),finish_by=$2,finish_by_name=$3,
       finish_remark=$4,updated_at=now() WHERE id=$1 RETURNING id`, [id, userId, userName, remark||null]);
-    res.json(successEnvelope({ id, status: "finished" }));
+    res.json(successEnvelope({ id, status: "pending_reinspect" }));
   } catch (error) { res.status(500).json(errorEnvelope("REWORK_FINISH_FAILED", error.message)); }
 });
 
 app.post("/api/rework/reinspect", authenticateJWT, requireRole("admin", "iqc_inspector", "iqc_manager", "quality_manager"), async (req, res) => {
   try {
-    const { id, result, remark } = req.body || {};
-    const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
-    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
-    if (row.status !== "finished") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only finished orders can be reinspected"));
-    const newStatus = result === "pass" ? "reinspected_ok" : "reinspected_ng";
-    await query(`UPDATE rework_orders SET status=$2,finish_remark=$3,updated_at=now() WHERE id=$1 RETURNING id`,
-      [id, newStatus, remark||null]);
-    res.json(successEnvelope({ id, status: newStatus }));
+    const { id, result, remark, materialLotId } = req.body || {};
+    if (!["pass", "fail"].includes(result)) {
+      return res.status(400).json(errorEnvelope("REWORK_INVALID_RESULT", "result must be pass or fail"));
+    }
+    const inspector = Number(req.user?.userId);
+    if (!Number.isFinite(inspector) || inspector <= 0) {
+      return res.status(400).json(errorEnvelope("REWORK_NO_OPERATOR", "Authenticated operator required"));
+    }
+    const order = (await query(`SELECT id,rework_no,status,material_id,material_lot_id,material_code,batch_no,
+      quantity,source_location_id,target_location_id FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (normalizeReworkStatus(order.status) !== "pending_reinspect") {
+      return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending_reinspect orders can be reinspected"));
+    }
+
+    // Resolve the physical lot: explicit payload → order link → material_code + batch_no.
+    let lotId = Number(materialLotId || order.material_lot_id || 0) || null;
+    if (materialLotId && !lotId) {
+      return res.status(400).json(errorEnvelope("REWORK_LOT_NOT_FOUND", "materialLotId is not a valid id"));
+    }
+    if (!lotId && order.material_code) {
+      const found = (await query(
+        `SELECT l.id FROM material_lots l JOIN materials m ON m.id = l.material_id
+          WHERE m.code = $1 AND ($2::text IS NULL OR l.lot_no = $2::text)
+          ORDER BY l.created_at DESC LIMIT 1`,
+        [order.material_code, order.batch_no || null])).rows[0];
+      lotId = found?.id || null;
+    }
+    if (materialLotId && lotId) {
+      const exists = (await query(`SELECT id FROM material_lots WHERE id=$1`, [lotId])).rows[0];
+      if (!exists) return res.status(400).json(errorEnvelope("REWORK_LOT_NOT_FOUND", "materialLotId does not exist"));
+    }
+
+    const newStatus = result === "pass" ? "passed" : "failed";
+    const inventory = { applied: false, lotId, iqcStatus: null };
+
+    await query('BEGIN');
+    try {
+      await query(`UPDATE rework_orders SET status=$2,reinspect_result=$3,reinspect_remark=$4,
+        reinspect_by=$5,reinspect_time=now(),material_lot_id=COALESCE(material_lot_id,$6),updated_at=now()
+        WHERE id=$1 RETURNING id`,
+        [id, newStatus, result, remark||null, inspector, lotId]);
+
+      if (lotId) {
+        // pass → released (issueable); fail → rejected (blocked, reopen MRB)
+        const iqcStatus = result === "pass" ? "released" : "rejected";
+        const updated = (await query(
+          `UPDATE material_lots
+              SET iqc_status=$2::text,
+                  lot_status=CASE WHEN $2::text='released' AND lot_status='reserved' THEN 'open' ELSE lot_status END,
+                  updated_at=now()
+            WHERE id=$1 RETURNING id,iqc_status,lot_status`,
+          [lotId, iqcStatus])).rows[0];
+        if (updated) {
+          await query(
+            `INSERT INTO inventory_transactions
+               (tx_no,action,material_lot_id,qty,from_location_id,to_location_id,operator_id,occurred_at,
+                reference_type,reference_no,updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,now(),'rework',$8,now())`,
+            [`RW-${order.rework_no}`, result === "pass" ? "IQC_RELEASE" : "IQC_REJECT", lotId,
+             Number(order.quantity) || 0, order.source_location_id, order.target_location_id,
+             inspector, order.rework_no]);
+          inventory.applied = true;
+          inventory.iqcStatus = updated.iqc_status;
+        }
+      }
+
+      await query('COMMIT');
+    } catch (e) { await query('ROLLBACK'); throw e; }
+
+    res.json(successEnvelope({ id: Number(id), status: newStatus, inventory }));
   } catch (error) { res.status(500).json(errorEnvelope("REWORK_REINSPECT_FAILED", error.message)); }
 });
 
@@ -48536,11 +48732,8 @@ app.get("/api/defective-move/detail/:id", authenticateJWT, async (req, res) => {
 async function nextDefectiveMoveNo() {
   const now = new Date();
   const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
-  const prefix = `DM${dateStr}`;
-  const { rows } = await query(`SELECT move_no FROM defective_move_tasks WHERE move_no LIKE $1 ORDER BY move_no DESC LIMIT 1`, [`${prefix}%`]);
-  const last = rows[0]?.move_no;
-  const seq = last ? Number(String(last).slice(prefix.length)) + 1 : 1;
-  return `${prefix}${String(seq).padStart(4, "0")}`;
+  const seq = Number((await query(`SELECT nextval('seq_defective_move_no') AS n`)).rows[0]?.n || 1);
+  return `DM${dateStr}${String(seq).padStart(4, "0")}`;
 }
 
 app.post("/api/defective-move/create", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
@@ -48555,7 +48748,7 @@ app.post("/api/defective-move/create", authenticateJWT, requireRole("wh_keeper",
     const dup = (await query(`SELECT move_no FROM defective_move_tasks WHERE inventory_id=$1 AND status IN ('pending_confirm','pending') LIMIT 1`, [inventoryId])).rows[0];
     if (dup) return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_DUPLICATED", `Inventory already has a pending move task (${dup.move_no})`));
     const moveNo = await nextDefectiveMoveNo();
-    const rows = await query(`INSERT INTO defective_move_tasks(move_no,inventory_id,quantity,reason,remark,to_location_id,status,created_by,created_by_name,from_stock_status)
+    const { rows } = await query(`INSERT INTO defective_move_tasks(move_no,inventory_id,quantity,reason,remark,to_location_id,status,created_by,created_by_name,from_stock_status)
       VALUES($1,$2,$3,$4,$5,$6,'pending_confirm',$7,$8,'good') RETURNING id,move_no,status`,
       [moveNo, inventoryId, qty, String(reason).trim(), remark ? String(remark).trim() : null, toLocationId || null, userId, userName]);
     res.json(successEnvelope(rows[0]));
@@ -48636,7 +48829,8 @@ app.post("/api/defective-move/:id/complete", authenticateJWT, requireRole("wh_ke
     if (!toCode) return res.status(400).json(errorEnvelope("VALIDATION", "Please scan the defective warehouse location code"));
     const loc = (await query(`SELECT id,code,status FROM storage_locations WHERE code=$1`, [toCode])).rows[0];
     if (!loc || loc.status !== "active") return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_LOCATION_INVALID", `Location ${toCode} is not an active location`));
-    const row = (await query(`SELECT id,status,material_code AS "materialCode",quantity FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    const row = (await query(`SELECT id,move_no AS "moveNo",inventory_id AS "inventoryId",status,material_code AS "materialCode",quantity
+      FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
     if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
     if (row.status !== "pending") return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", row.status === "pending_confirm" ? "Task has not been confirmed by a warehouse manager" : "Task is already completed or cancelled"));
     // 全量复核扫码内容（防绕过前端）：物料码必须一致
@@ -48652,10 +48846,34 @@ app.post("/api/defective-move/:id/complete", authenticateJWT, requireRole("wh_ke
         return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Barcode does not match this task (material ${expectMaterial})`));
       }
     }
-    await query(`UPDATE defective_move_tasks SET status='completed',to_location_id=$2,executed_by=$3,executed_at=now(),updated_at=now()
-      WHERE id=$1 RETURNING id`, [id, loc.id, operatorId]);
-    res.json(successEnvelope({ success: true, quantity: Number(row.quantity || 0), toLocationCode: toCode, status: "completed" }));
-  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_COMPLETE_FAILED", error.message)); }
+    const qty = Number(row.quantity || 0);
+    await query('BEGIN');
+    const fromLoc = row.inventoryId
+      ? (await query(`SELECT storage_location_id AS "fromLocationId" FROM material_lots WHERE id=$1`, [row.inventoryId])).rows[0]?.fromLocationId || null
+      : null;
+    await query(`UPDATE defective_move_tasks
+      SET status='completed',to_location_id=$2,executed_by=$3,executed_at=now(),updated_at=now(),
+          scan_codes=$4,scan_to_code=$5,scan_at=now()
+      WHERE id=$1 RETURNING id`, [id, loc.id, operatorId, JSON.stringify(codes), toCode]);
+    // Reference WMS writes balanced stock movements for the transfer.
+    await query(
+      `INSERT INTO inventory_transactions (tx_no,action,material_lot_id,qty,from_location_id,to_location_id,
+         operator_id,tx_status,reference_type,reference_no,occurred_at,updated_at)
+       VALUES ($1,'TRANSFER',$2,$3,$4,NULL,$5,'posted','defective_move',$6,now(),now())`,
+      [`DM-OUT-${row.moveNo}`, row.inventoryId || 0, qty, fromLoc, operatorId, row.moveNo]
+    );
+    await query(
+      `INSERT INTO inventory_transactions (tx_no,action,material_lot_id,qty,from_location_id,to_location_id,
+         operator_id,tx_status,reference_type,reference_no,occurred_at,updated_at)
+       VALUES ($1,'TRANSFER',$2,$3,NULL,$4,$5,'posted','defective_move',$6,now(),now())`,
+      [`DM-IN-${row.moveNo}`, row.inventoryId || 0, qty, loc.id, operatorId, row.moveNo]
+    );
+    await query('COMMIT');
+    res.json(successEnvelope({ success: true, quantity: qty, toLocationCode: toCode, status: "completed" }));
+  } catch (error) {
+    try { await query('ROLLBACK'); } catch { /* ignore */ }
+    res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_COMPLETE_FAILED", error.message));
+  }
 });
 
 // ── Grafted WMS routes: wms-hr (api/wms-hr) ──
@@ -48768,10 +48986,10 @@ app.get("/api/wms-sales/customers", authenticateJWT, async (req, res) => {
     const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
     const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
     params.push(limit, offset);
-    const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,contact_person AS "contactPerson",contact_phone AS "contactPhone",
-      contact_email AS "contactEmail",address,tax_code AS "taxCode",payment_term AS "paymentTerm",currency,status,remark,
-      created_by AS "createdBy",created_at AS "createdAt",updated_at AS "updatedAt"
-      FROM customers ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,contact_name AS "contactName",contact_phone AS "contactPhone",
+      delivery_address AS "address",tax_registration_no AS "taxCode",payment_terms_days AS "paymentTerm",default_currency_code AS "currency",status,
+      updated_at AS "updatedAt"
+      FROM customers ${where} ORDER BY id DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
     const totalRows = await query(`SELECT count(*) FROM customers ${where}`, params.slice(0,-2));
     res.json(successEnvelope({ list: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
   } catch (error) { res.status(500).json(errorEnvelope("SALES_CUSTOMERS_FAILED", error.message)); }
@@ -48797,8 +49015,8 @@ app.post("/api/wms-sales/customers", authenticateJWT, requireRole("sales_manager
     const userId = req.user?.userId || "";
     if (!customerName || !String(customerName).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "customerName is required"));
     const code = nextCustomerCode();
-    const rows = await query(`INSERT INTO customers(code,name_zh,name_en,name_vi,contact_person,contact_phone,contact_email,address,tax_code,payment_term,currency,status,remark,created_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active',$12,$13) RETURNING *`,
+    const rows = await query(`INSERT INTO customers(code,name_zh,name_en,name_vi,contact_name,contact_phone,delivery_address,tax_registration_no,payment_terms_days,default_currency_code,status)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$12) RETURNING *`,
       [code, String(customerName).trim(), customerNameEn ? String(customerNameEn).trim() : null, customerNameVi ? String(customerNameVi).trim() : null,
         contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, contactEmail ? String(contactEmail).trim() : null,
         address ? String(address).trim() : null, taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
@@ -48814,10 +49032,10 @@ app.put("/api/wms-sales/customers/:id", authenticateJWT, requireRole("sales_mana
     if (!customerName || !String(customerName).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "customerName is required"));
     const row = (await query(`SELECT id FROM customers WHERE id=$1`, [id])).rows[0];
     if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
-    await query(`UPDATE customers SET name_zh=$1,name_en=$2,name_vi=$3,contact_person=$4,contact_phone=$5,contact_email=$6,address=$7,tax_code=$8,payment_term=$9,currency=$10,remark=$11,status=COALESCE($12,status),updated_at=now() WHERE id=$13`,
+    await query(`UPDATE customers SET name_zh=$1,name_en=$2,name_vi=$3,contact_name=$4,contact_phone=$5,delivery_address=$6,tax_registration_no=$7,payment_terms_days=$8,default_currency_code=$9,remark=$10,status=COALESCE($11,status),updated_at=now() WHERE id=$12`,
       [String(customerName).trim(), customerNameEn ? String(customerNameEn).trim() : null, customerNameVi ? String(customerNameVi).trim() : null,
-        contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, contactEmail ? String(contactEmail).trim() : null,
-        address ? String(address).trim() : null, taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
+        contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, address ? String(address).trim() : null,
+        taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
         currency ? String(currency).trim() : "VND", remark ? String(remark).trim() : null, status ? String(status) : null, id]);
     res.json(successEnvelope({ id }));
   } catch (error) { res.status(500).json(errorEnvelope("SALES_UPDATE_CUSTOMER_FAILED", error.message)); }
