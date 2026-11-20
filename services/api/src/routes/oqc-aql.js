@@ -28,15 +28,31 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
     return Number.isFinite(n) ? n : d;
   };
 
-  const normalize = (body = {}) => ({
-    lotQty: asNum(body.lotQty ?? body.totalQty, 0),
-    poNo: String(body.poNo ?? body.po_no ?? body.customerPoNo ?? "").trim(),
-    palletNo: String(body.palletNo ?? body.pallet_no ?? "").trim(),
-    aqlMa: asNum(body.aqlMa, 1.0),
-    aqlMi: asNum(body.aqlMi, 2.5),
-    level: String(body.level ?? "II").trim().toUpperCase() || "II",
-    severity: String(body.severity ?? "normal").trim().toLowerCase() || "normal",
-  });
+  // 默认值优先取现场参数（源 core/oqc_aql.py 的 oqc.aql_*），请求体显式给了才覆盖。
+  const paramDefaults = async () => {
+    const rows = (await query(
+      "SELECT param_key, param_val FROM sys_param WHERE param_key LIKE 'oqc.aql%'")).rows;
+    const m = Object.fromEntries(rows.map(r => [r.param_key, r.param_val]));
+    return {
+      ma: asNum(m["oqc.aql_ma"], 1.0),
+      mi: asNum(m["oqc.aql_mi"], 2.5),
+      level: String(m["oqc.aql_level"] || "II").trim().toUpperCase() || "II",
+      severity: String(m["oqc.aql_severity"] || "normal").trim().toLowerCase() || "normal",
+    };
+  };
+
+  const normalize = (body = {}, dflt = null) => {
+    const d = dflt || { ma: 1.0, mi: 2.5, level: "II", severity: "normal" };
+    return {
+      lotQty: asNum(body.lotQty ?? body.totalQty, 0),
+      poNo: String(body.poNo ?? body.po_no ?? body.customerPoNo ?? "").trim(),
+      palletNo: String(body.palletNo ?? body.pallet_no ?? "").trim(),
+      aqlMa: asNum(body.aqlMa, d.ma),
+      aqlMi: asNum(body.aqlMi, d.mi),
+      level: String(body.level ?? d.level).trim().toUpperCase() || d.level,
+      severity: String(body.severity ?? d.severity).trim().toLowerCase() || d.severity,
+    };
+  };
 
   /** Reconstruct a plan from the stored batch row (for judging). */
   const planFromRow = (row) => {
@@ -64,8 +80,8 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
   };
 
   // ── 抽样方案预览 ─────────────────────────────────────────────────────────
-  router.get("/plan", authenticateJWT, requirePermission("qms.read"), (req, res) => {
-    const { lotQty, aqlMa, aqlMi, level, severity } = normalize(req.query);
+  router.get("/plan", authenticateJWT, requirePermission("qms.read"), async (req, res) => {
+    const { lotQty, aqlMa, aqlMi, level, severity } = normalize(req.query, await paramDefaults());
     const plan = plansFor(lotQty, aqlMa, aqlMi, level, severity);
     if (!plan.ok) return res.status(400).json(errorEnvelope("AQL_PLAN_INVALID", plan.note));
     return res.json(envelope(plan));
@@ -105,7 +121,8 @@ export function createOqcAqlRouter({ authenticateJWT, requirePermission }) {
   // ── 新建批 ───────────────────────────────────────────────────────────────
   router.post("/batches", authenticateJWT, requirePermission("quality.inspect"), async (req, res) => {
     const body = req.body?.payload ?? req.body ?? {};
-    const { lotQty: requestedQty, poNo, palletNo, aqlMa, aqlMi, level, severity } = normalize(body);
+    const { lotQty: requestedQty, poNo, palletNo, aqlMa, aqlMi, level, severity } =
+      normalize(body, await paramDefaults());
     // 批量未填时按 PO 从 prd_pallet / prd_box 自动推导（源 core/oqc_aql.py _po_lot_qty）
     let lotQty = requestedQty;
     let lotBasis = null;

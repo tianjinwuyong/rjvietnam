@@ -7,6 +7,7 @@
  * 移植范围：
  *   - 时效扫描   dwell.scan()            dwell.auto_enabled / dwell.scan_minutes / dwell.days
  *   - 物料预警   prd_alert 低库存         material.auto_enabled / material.scan_minutes / material.low_qty
+ *   - 预警巡检   alert.checkAlerts()      alert.scan_minutes
  *   - 数据库备份 pg_dump + 保留 N 份       backup.enabled / backup.interval_hours / backup.keep / backup.dir
  * 未移植：AOI/SPI 同步（新架构由 services/aoi-api 独立服务承担）、WMS 同步（WMS 模块）、
  *         GKG CSV 扫描（保留 POST /mesrj/gkg/scan 手动导入）。
@@ -22,6 +23,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { query, getParam } from "./src/db.js";
 import * as dwell from "./src/mesrj/dwell.js";
+import * as alert from "./src/mesrj/alert.js";
 
 // 与 server.js 同一份 .env（PostgreSQL 连接参数）
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -142,8 +144,19 @@ async function jobBackup() {
   }
 }
 
+// ── 预警巡检（源 run.py 的 alert 扫描线程）─────────────────────────────────
+let alertLast = 0;
+async function jobAlert() {
+  const every = (await num("alert.scan_minutes", 10)) * 60000;
+  if (!ONCE && Date.now() - alertLast < every) return;
+  alertLast = Date.now();
+  const created = await alert.checkAlerts();
+  log(`[预警] 巡检完成：新触发 ${created.length} 条`);
+}
+
 // ── 调度 ────────────────────────────────────────────────────────────────────
-const jobs = [["时效", jobDwell, 60000], ["物料", jobMaterial, 60000], ["备份", jobBackup, 3600000]];
+const jobs = [["时效", jobDwell, 60000], ["物料", jobMaterial, 60000],
+  ["预警", jobAlert, 60000], ["备份", jobBackup, 3600000]];
 let stopping = false;
 
 async function tick() {

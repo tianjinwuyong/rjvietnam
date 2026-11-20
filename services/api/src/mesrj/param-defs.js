@@ -106,5 +106,109 @@ export const PARAM_DEFS = [
     "type": "num",
     "default": "7",
     "desc": "只扫最近 N 天内有过过站的 SN，避免老库存反复报。"
+  },
+  {
+    "group": "防呆 · 装箱与栈板",
+    "key": "pallet.check_ng",
+    "name": "上栈板前查未处理不良",
+    "type": "bool",
+    "default": "1",
+    "desc": "1 = 外箱里还有未处理不良的 SN 时不许上栈板；0 = 只记录不拦（源 api/pallet.py）。"
+  },
+  {
+    "group": "防呆 · 员工工号",
+    "key": "emp.require_emp",
+    "name": "过站必须识别工号",
+    "type": "bool",
+    "default": "0",
+    "desc": "1 = 设备过站没带工号直接拒收。分两步上线用：工牌发齐、员工档案维护好之后再打开（源 core/emp.py）。"
+  },
+  {
+    "group": "镭雕发码",
+    "key": "laser.keep_alive",
+    "name": "保持长连接",
+    "type": "bool",
+    "default": "0",
+    "desc": "1 = 镭雕机连上来后不主动关连接（有的设备重连很慢）；0 = 发完即关。"
+  },
+  {
+    "group": "镭雕发码",
+    "key": "laser.close_drain_ms",
+    "name": "断开前等待（毫秒）",
+    "type": "num",
+    "default": "",
+    "desc": "关连接前等设备把回包收完的时间，留空按 200ms。设备日志报「回包丢失」时调大。"
+  },
+  {
+    "group": "OQC AQL",
+    "key": "oqc.aql_level",
+    "name": "默认检验水平",
+    "type": "text",
+    "default": "II",
+    "desc": "I / II / III，新建抽检批时页面没选就按这个（源 core/oqc_aql.py）。"
+  },
+  {
+    "group": "OQC AQL",
+    "key": "oqc.aql_severity",
+    "name": "默认检验严格度",
+    "type": "text",
+    "default": "normal",
+    "desc": "normal / tightened / reduced（源 core/oqc_aql.py）。"
+  },
+  {
+    "group": "OQC AQL",
+    "key": "oqc.aql_ma",
+    "name": "默认 AQL（主要）",
+    "type": "num",
+    "default": "1.0",
+    "desc": "主要缺陷 AQL 值，缺省 1.0（源 core/oqc_aql.py）。"
+  },
+  {
+    "group": "OQC AQL",
+    "key": "oqc.aql_mi",
+    "name": "默认 AQL（次要）",
+    "type": "num",
+    "default": "2.5",
+    "desc": "次要缺陷 AQL 值，缺省 2.5（源 core/oqc_aql.py）。"
+  },
+  {
+    "group": "OQC AQL",
+    "key": "oqc.aql_lot_basis",
+    "name": "批量口径",
+    "type": "text",
+    "default": "pallet",
+    "desc": "pallet = 按栈板数量定批；box = 按外箱数量定批（源 core/oqc_aql.py）。"
+  },
+  {
+    "group": "OQC AQL",
+    "key": "oqc.sample_boxes",
+    "name": "抽检箱数",
+    "type": "num",
+    "default": "",
+    "desc": "固定抽几箱；留空按 AQL 抽样方案自动算（源 core/oqc.py）。"
+  },
+  {
+    "group": "报表 · SPC",
+    "key": "spc.lsl",
+    "name": "SPC 控制下限",
+    "type": "num",
+    "default": "",
+    "desc": "不良率低于这个值不算异常；留空不判（源 api/analyze.py）。"
+  },
+  {
+    "group": "报表 · SPC",
+    "key": "spc.usl",
+    "name": "SPC 控制上限",
+    "type": "num",
+    "default": "",
+    "desc": "不良率高于这个值标超限；留空不判（源 api/analyze.py）。"
+  },
+  {
+    "group": "预警中心",
+    "key": "alert.scan_minutes",
+    "name": "预警巡检间隔（分钟）",
+    "type": "num",
+    "default": "10",
+    "desc": "定时按 cfg_alert_rule 评估机台不良率的间隔（源 run.py 的 alert 扫描线程）。"
   }
 ];

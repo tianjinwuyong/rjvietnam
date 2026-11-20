@@ -91,7 +91,12 @@ async function handle(sock, remote) {
   } catch (e) {
     log(`[拒绝发号] ${ip}：${e?.message || e}（耗时 ${Date.now() - t0}ms）`);
   } finally {
-    setTimeout(() => sock.destroy(), 50);
+    // 收尾策略（源 laser_sn_server.py）：laser.keep_alive=1 时不主动关连接（老设备重连慢），
+    // 否则等 laser.close_drain_ms（默认 200ms）让设备把回包收完再断。
+    if (String(await getParam("laser.keep_alive", "0")).trim() !== "1") {
+      const drain = Number(await getParam("laser.close_drain_ms", "200"));
+      setTimeout(() => sock.destroy(), Number.isFinite(drain) && drain >= 0 ? drain : 200);
+    }
   }
 }
 

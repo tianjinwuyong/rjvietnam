@@ -128,6 +128,23 @@ API/envelope compatibility, permission wiring, status vocabularies and seed/data
 | 11 | Legacy data import to PG (master data + history) | P1 | PG seeds empty; no sqlite importer | write exporter |
 | 12 | `prd_shift_report.start_time/end_time`, `prd_aoi_result.raw_z` | P2 | live schema diff | re-add columns or prove unused |
 | 13 | Device path aliases `/DeviceConfig/PanelQuery`, `/StationPass/{SubmitPanel,FixTime}`, `/oldmes/push` | P2 | `api/devsrc.py`, `api/board.py` | decide/retire |
+| 14 | 现场参数缺口：13 个 legacy `get_param` 键在新库没有行/没有消费方（`pallet.check_ng`、`emp.require_emp`、`laser.{keep_alive,close_drain_ms}`、`oqc.aql_{level,severity,ma,mi,lot_basis}`、`oqc.sample_boxes`、`spc.{lsl,usl}`、`alert.scan_minutes`） | P2 | `api/pallet.py`、`core/emp.py`、`core/oqc_aql.py`、`api/analyze.py`、`run.py`、`设备对接工具/镭雕机/laser_sn_server.py` | 迁移 315 补行 + PARAM_DEFS 暴露 + 逐项接线（见下） |
+| 15 | SPC 退化成「工位不良率」汇总，丢了控制图（`prd_test` 参数点、均值±3σ、`spc.lsl/usl` 的 Cp/Cpk、超限点） | P2 | `api/analyze.py` `spc_params` / `report_spc` vs `mesrj.js` | 按源重写 `/report/spc/params` + `/report/spc` |
+
+### E.1 关闭记录（2026-11-20 第 4/5 波）
+
+| 缺口 | 提交 | 验证 |
+|---|---|---|
+| #4 镭雕发码 | `b6b7210be7` | 真发码/游标/面板分组/超量拦截/TCP 往返 |
+| #8 打印代理 | `b090d0aef0` | 夹具任务 → 代理单轮 → 已打印 + 心跳参数 |
+| #13 设备别名 + 设备侧 JWT 闸误拦 | `0a60176331` | 7 项（含无 key 401、每块 NG/DefectCode、FixTime 时限） |
+| #13 `/oldmes/push` 假占位（表都不存在） | `b8586f8d72` | 新增/覆盖/看板取 ATE/空包拒绝 |
+| 路由对账（`/exec/sn/rules`） | `835b5af0d5` | 段合计≠总长 → ok=false |
+| #14 现场参数 + #15 SPC 控制图 | 见 `315_mesrj_legacy_params.sql` | 参数可见 13/13、pallet 拦/放、SPC Cp/Cpk、AQL 默认值、`emp.require_emp` 拦/放、预警巡检落库 |
+
+仍未关闭：#7 备份（`public.prd_decode_log` 属主/序列 ACL 需 DBA）、#11 真数据导入（等 ops 拍切换）、
+`material.low_pct` 的「按工单剩余可用量」判线（源 `core/material.py calc` 未移植，当前只用 `material.low_qty` 全局线）、
+`gkg.*`（新架构走 `POST /mesrj/gkg/scan` 手动导入）。
 
 Everything in Part 1 §4 (station-pass engine, SMT loading, rework, `/mes/*`, OQC AQL, pallet/panel extras,
 `/sys` CRUD, tri-lingual i18n) stays as-is and must not be regressed by the merge.

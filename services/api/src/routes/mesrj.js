@@ -72,6 +72,8 @@ import {
 } from "../mesrj/packcode.js";
 // 时效管控（源 api/dwell.py + core/dwell.py）
 import * as dwell from "../mesrj/dwell.js";
+// 预警巡检（源 analyze.py alert center）
+import * as alertMod from "../mesrj/alert.js";
 import * as laser from "../mesrj/laser.js";
 // 绑码 / 解码（源 api/bind.py）
 import * as bindMod from "../mesrj/bind.js";
@@ -1068,6 +1070,9 @@ export function createMesrjRouter({ authenticateJWT }) {
       const mark = String(d.Mark || "").trim();
       const emp = String(d.Emp || "").trim();
       const now = nowStr();
+      if (String(await getParam("emp.require_emp", "0")).trim() === "1" && !emp) {
+        return res.json({ Success: false, Message: "未识别到员工工号（emp.require_emp=1 时不允许过站）" });
+      }
 
       // 4) 逐块过站（与新系统 /StationPass/Scan 同一张 prd_pass，不另立一套规则）
       const okList = [], blocked = [];
@@ -1288,9 +1293,14 @@ export function createMesrjRouter({ authenticateJWT }) {
       if (!stationCode) return fail(res, "缺少 station_code");
       const snRow = (await query("SELECT * FROM prd_sn WHERE sn=$1", [sn])).rows[0];
       if (!snRow) return fail(res, `SN ${sn} 不存在`);
+      // 过站必须识别工号（源 core/emp.py require_emp）：默认关；工牌发齐后再打开。
+      const empNo = String(d.emp_no || d.Emp || "").trim();
+      if (String(await getParam("emp.require_emp", "0")).trim() === "1" && !empNo) {
+        return fail(res, "未识别到员工工号（emp.require_emp=1 时不允许过站）");
+      }
       const passRow = {
         sn, station_code: stationCode, result,
-        operator: machineNo || "machine",
+        operator: empNo || machineNo || "machine",
         pass_time: nowStr(), mark: `device:${machineNo || ""}`,
       };
       await query(
@@ -8515,6 +8525,14 @@ export function createMesrjRouter({ authenticateJWT }) {
     const boxes = _boxesOf(p);
     if (boxes.includes(boxNo)) return fail(res, `外箱 ${boxNo} 已在栈板上`);
     if (boxes.length >= Number(p.capacity || 0)) return fail(res, `栈板已满（${p.box_count}/${p.capacity}）`);
+    // 防呆：箱内还有未处理不良的 SN 不许上栈板（源 api/pallet.py pallet.check_ng）
+    if (String(await getParam("pallet.check_ng", "1")).trim() !== "0") {
+      const sns = String(b.sn_list || "").split(",").map(s => s.trim()).filter(Boolean).slice(0, 100);
+      for (const s of sns) {
+        const ng = await guard_open_ng(s);
+        if (ng) return fail(res, `外箱 ${boxNo} 里的 ${s} 还有未处理不良，不能上栈板`);
+      }
+    }
     boxes.push(boxNo);
     const totalQty = Number(p.total_qty || 0) + Number(b.qty || 0);
     await query("UPDATE prd_pallet SET box_count=$1,total_qty=$2,box_list=$3,updated_at=$4 WHERE pallet_no=$5",
@@ -9365,26 +9383,87 @@ export function createMesrjRouter({ authenticateJWT }) {
     return ok(res, out);
   });
 
-  // ── SPC 参数（源 analyze.py SPC 参数）──
+  // ── SPC 参数（源 analyze.py spc_params）──
+  //   可做控制图的「工位 + 数值参数」：prd_test 里数据够 2 条、且值能转成数字。
   router.get("/report/spc/params", requireMesrjPerm(null), async (_req, res) => {
-    const rows = await query(
-      "SELECT th_key, th_name, th_value, th_unit, apply_to, action, enabled FROM cfg_threshold WHERE enabled=1 ORDER BY id");
-    return ok(res, { params: rows.rows });
+    const rows = (await query(
+      `SELECT station_code, param_key, COUNT(*)::int AS n, COUNT(DISTINCT sn)::int AS sns
+         FROM prd_test GROUP BY station_code, param_key ORDER BY n DESC`)).rows;
+    const params = [];
+    for (const r of rows) {
+      if (Number(r.n || 0) < 2) continue;
+      const sample = (await query(
+        `SELECT param_val FROM prd_test WHERE station_code=$1 AND param_key=$2
+            AND param_val IS NOT NULL AND param_val<>'' LIMIT 1`, [r.station_code, r.param_key])).rows[0];
+      if (!sample || !Number.isFinite(Number(sample.param_val))) continue;
+      params.push({ station_code: r.station_code, param_key: r.param_key, n: r.n, sns: r.sns });
+    }
+    return ok(res, { params });
   });
 
-  // ── SPC（源 analyze.py SPC 数据）──
-  router.get("/report/spc", requireMesrjPerm(null), async (_req, res) => {
-    const rows = await query(
-      `SELECT station_code,
-              COUNT(*) AS total,
-              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty,
-              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) NOT IN ('NG','FAIL') OR pass_ng='' THEN 1 END) AS good_qty,
-              ROUND(100.0 * COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) / NULLIF(COUNT(*),0), 2) AS ng_rate
-       FROM prd_machine_data
-       WHERE created_at >= now() - interval '7 days'
-       GROUP BY station_code
-       ORDER BY total DESC`);
-    return ok(res, { rows: rows.rows });
+  // ── SPC 控制图（源 analyze.py report_spc）──
+  //   给了 station+param 就按「每件一件一个值」画控制图：均值 ±3σ、超限点 ooc，
+  //   规格限 spc.lsl / spc.usl 都在时同时给 Cp / Cpk。
+  //   没给就退回工位不良率汇总（页面原有的大盘口径）。
+  router.get("/report/spc", requireMesrjPerm(null), async (req, res) => {
+    const station = String(req.query.station || "").trim();
+    const param = String(req.query.param || "").trim();
+    if (!station || !param) {
+      const rows = await query(
+        `SELECT station_code,
+                COUNT(*) AS total,
+                COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty,
+                COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) NOT IN ('NG','FAIL') OR pass_ng='' THEN 1 END) AS good_qty,
+                ROUND(100.0 * COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) / NULLIF(COUNT(*),0), 2) AS ng_rate
+         FROM prd_machine_data
+         WHERE created_at >= now() - interval '7 days'
+         GROUP BY station_code
+         ORDER BY total DESC`);
+      return ok(res, { rows: rows.rows });
+    }
+    const where = ["station_code=$1", "param_key=$2"], args = [station, param];
+    const d1 = String(req.query.d1 || "").trim();
+    const d2 = String(req.query.d2 || "").trim();
+    if (d1) { args.push(d1); where.push(`test_time::date >= $${args.length}`); }
+    if (d2) { args.push(d2); where.push(`test_time::date <= $${args.length}`); }
+    const all = (await query(
+      `SELECT sn, param_val, result, test_time FROM prd_test WHERE ${where.join(" AND ")}
+        ORDER BY test_time, id`, args)).rows;
+    const latest = new Map();
+    for (const r of all) latest.set(r.sn, r);
+    const points = [];
+    for (const r of latest.values()) {
+      const v = Number(r.param_val);
+      if (!Number.isFinite(v)) continue;
+      points.push({ sn: r.sn, val: v, result: r.result, time: tsLocal(r.test_time) });
+    }
+    const vals = points.map(p => p.val);
+    if (vals.length < 2) {
+      return ok(res, { points, stats: null, msg: "数据不足（<2 点），无法绘制控制图", station, param });
+    }
+    const n = vals.length;
+    const mean = vals.reduce((a, b) => a + b, 0) / n;
+    const std = Math.sqrt(vals.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1));
+    const ucl = mean + 3 * std, lcl = mean - 3 * std;
+    const numOf = v => {
+      const s = String(v ?? "").trim();
+      return s === "" ? null : (Number.isFinite(Number(s)) ? Number(s) : null);
+    };
+    const usl = numOf(await getParam("spc.usl", ""));
+    const lsl = numOf(await getParam("spc.lsl", ""));
+    let cp = null, cpk = null;
+    if (usl !== null && lsl !== null && std > 0) {
+      cp = (usl - lsl) / (6 * std);
+      cpk = Math.min((usl - mean) / (3 * std), (mean - lsl) / (3 * std));
+    }
+    for (const p of points) p.ooc = p.val > ucl || p.val < lcl;
+    const r4 = x => Math.round(x * 10000) / 10000;
+    return ok(res, {
+      points, station, param,
+      stats: { n, mean: r4(mean), std: r4(std), ucl: r4(ucl), lcl: r4(lcl),
+        cp: cp === null ? null : Math.round(cp * 1000) / 1000,
+        cpk: cpk === null ? null : Math.round(cpk * 1000) / 1000, usl, lsl },
+    });
   });
 
   // ── 预警规则 ──
@@ -9424,51 +9503,10 @@ export function createMesrjRouter({ authenticateJWT }) {
   });
 
   // ── 预警检查（源 analyze.py alert center）──
-  // 评估已启用的预警规则（以最近 1 天机台数据按工位不良率为当前指标），触发则落库 prd_alert 并返回
+  //   评估启用的规则（近 1 天机台数据按工位不良率），触发的落库并返回；
+  //   mesrj-scheduler 用同一份 src/mesrj/alert.js 定时跑（alert.scan_minutes）。
   router.get("/alert/check", requireMesrjPerm(null), async (_req, res) => {
-    const rules = await query("SELECT * FROM cfg_alert_rule WHERE enabled=1 ORDER BY id");
-    const stats = await query(
-      `SELECT station_code,
-              COUNT(*) AS total,
-              COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) AS ng_qty,
-              ROUND(100.0 * COUNT(CASE WHEN UPPER(COALESCE(pass_ng,'')) IN ('NG','FAIL') THEN 1 END) / NULLIF(COUNT(*),0), 2) AS ng_rate
-       FROM prd_machine_data
-       WHERE created_at >= now() - interval '1 day'
-       GROUP BY station_code`);
-    const byStation = {};
-    for (const s of stats.rows) byStation[s.station_code] = s;
-
-    const hit = (cond, rate, val) => {
-      const c = String(cond || "").trim();
-      if (c === ">") return rate > val;
-      if (c === ">=") return rate >= val;
-      if (c === "<") return rate < val;
-      if (c === "<=") return rate <= val;
-      if (c === "=" || c === "==") return rate === val;
-      return false;
-    };
-
-    for (const r of rules.rows) {
-      const val = Number(r.value || 0);
-      const triggered = [];
-      for (const [code, s] of Object.entries(byStation)) {
-        if (hit(r.cond, Number(s.ng_rate || 0), val)) triggered.push(code);
-      }
-      if (!triggered.length) continue;
-      for (const code of triggered) {
-        const exists = await query(
-          "SELECT id FROM prd_alert WHERE rule_key=$1 AND station_code=$2 AND status='待处理' LIMIT 1",
-          [r.rule_key, code]);
-        if (exists.rows.length > 0) continue;
-        await query(
-          `INSERT INTO prd_alert (rule_key,rule_name,level,title,detail,ref_sn,station_code,status,created_at)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,'待处理',now())`,
-          [r.rule_key, r.rule_name, r.level || "普通",
-           `预警触发：${r.rule_name || r.rule_key}`,
-           `工位 ${code} 不良率 ${Number(s.ng_rate || 0)}% 超过阈值 ${val}${r.unit || ""}`,
-           "", code]);
-      }
-    }
+    await alertMod.checkAlerts();
     const rows = await query("SELECT * FROM prd_alert WHERE status='待处理' ORDER BY id DESC LIMIT 100");
     return ok(res, { alerts: rows.rows });
   });
