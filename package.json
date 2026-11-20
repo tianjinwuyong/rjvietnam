@@ -31,7 +31,8 @@
     "check:auth-order": "node scripts/check-auth-order.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:route-census": "node scripts/check-route-census.mjs",
-    "check:route-shadowing": "node scripts/check-route-shadowing.mjs"
+    "check:route-shadowing": "node scripts/check-route-shadowing.mjs",
+    "check:register-deps": "node scripts/check-register-deps.mjs"
   },
   "workspaces": [
     "apps/*",
