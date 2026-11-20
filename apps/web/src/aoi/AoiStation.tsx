@@ -15,6 +15,7 @@ import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { t } from "../i18n";
 import type { TranslationKey } from "../i18n";
 import { mesApi } from "../api/mes";
+import { resolveOperator } from "./operator";
 import { aoiApi } from "./api";
 import type { DefectCodeRef } from "./types";
 import type { AoiInspectionRecord, AoiStation } from "./api";
@@ -266,7 +267,7 @@ export function AoiStation({ locale }: { locale: Locale }) {
           program: currentBoard.program,
           result: "PASS",
           boardId: currentBoard.boardId,
-          operator: currentBoard.operator || signedInUser,
+          operator: resolveOperator(currentBoard, signedInUser),
           stationCode: currentBoard.stationCode,
         });
       } catch {
@@ -278,7 +279,7 @@ export function AoiStation({ locale }: { locale: Locale }) {
           pcbSerial: currentBoard.pcbSerial,
           stationCode: stationConfig.stationCode,
           machineCode: stationConfig.machineCode,
-          operator: "VN_OP_001",
+          operator: resolveOperator(currentBoard, signedInUser),
           eventType: "aoi_inspection",
           result: "PASS",
         });
@@ -319,7 +320,7 @@ export function AoiStation({ locale }: { locale: Locale }) {
           defectCodes,
           defectLocations,
           boardId: currentBoard.boardId,
-          operator: currentBoard.operator || signedInUser,
+          operator: resolveOperator(currentBoard, signedInUser),
           stationCode: currentBoard.stationCode,
         });
       } catch { /* MES event is best-effort */ }
@@ -329,7 +330,7 @@ export function AoiStation({ locale }: { locale: Locale }) {
           pcbSerial: currentBoard.pcbSerial,
           stationCode: stationConfig.stationCode,
           machineCode: stationConfig.machineCode,
-          operator: "VN_OP_001",
+          operator: resolveOperator(currentBoard, signedInUser),
           eventType: "aoi_inspection",
           result: "FAIL",
         });

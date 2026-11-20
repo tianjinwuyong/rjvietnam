@@ -7,6 +7,14 @@ const TOKEN_KEY = 'mes_station_token';
 const OPERATOR_KEY = 'mes_station_operator';
 const STATION_KEY = 'mes_station_code';
 
+// Device provisioning is injected at runtime by the terminal image — the same
+// mechanism the PDA dashboard uses for its MES credentials — so no key lives in
+// the bundle. Declared, not cast: that declaration is the contract with the
+// injector.
+declare global {
+  var __STATION_AGENT__: { stationKey?: string } | undefined;
+}
+
 function _loadToken(): string | null {
   try { return localStorage.getItem(TOKEN_KEY); } catch { return null; }
 }
@@ -43,6 +51,17 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+// Empty means "this terminal has no key"; the server asks for one exactly when
+// STATION_LOGIN_KEY is configured. The shape is declared at the top of the file.
+function readStationKey(): string {
+  try {
+    return globalThis.__STATION_AGENT__?.stationKey ?? sessionStorage.getItem('station_key') ?? '';
+  } catch {
+    // No sessionStorage (tests, node): the injected value is enough.
+    return globalThis.__STATION_AGENT__?.stationKey ?? '';
+  }
+}
+
 // ── Auth ─────────────────────────────────────────────────────────────────────
 
 interface StationLoginResult {
@@ -53,9 +72,14 @@ interface StationLoginResult {
 
 /** POST /auth/station-login — operator SN + stationCode → JWT */
 export async function loginStation(operator: string, stationCode: string): Promise<StationLoginResult> {
+  const stationKey = readStationKey();
   const res = await fetch(`${API_BASE}/auth/station-login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    // Sent only when this terminal was provisioned with a key; the server demands
+    // it exactly when STATION_LOGIN_KEY is configured.
+    headers: stationKey
+      ? { 'Content-Type': 'application/json', 'x-station-key': stationKey }
+      : { 'Content-Type': 'application/json' },
     body: JSON.stringify({ operator, stationCode }),
   });
   if (!res.ok) throw new Error(await res.text());
