@@ -649,7 +649,7 @@
 
 ### 18.5 缺口
 
-- OA 受控文件（L1）已入库（2026-11-21，见 §23）：79 条 published+public+L1/L2/L3 进 `ve/shared/controlled-docs`，带 `docVersion` 与复审到期日；L4 空白表单排除。剩下的是**文件正文**没有进语料（现在入的是登记项＋版本＋复审期，正文需 OA 导出接口）。
+- OA 受控文件（L1）已入库（2026-11-21，见 §24）：79 条 published+public+L1/L2/L3 进 `ve/shared/controlled-docs`，带 `docVersion` 与复审到期日；L4 空白表单排除。剩下的是**文件正文**没有进语料（现在入的是登记项＋版本＋复审期，正文需 OA 导出接口）。
 - "引用知识"≠"因知识改变判断"：四力权重仍按有/无 evidence，需要一条 A/B 或人工标注口径才能度量。
 - `/health` 的 `memories_total` 与新集合不同源（显示 0），不要用它的数字判断是否落库；以 `--remember` 的 `stored` 与 `KNOWLEDGE_COLLECTED` 事件为准。
 - 旧集合 `smt_factory_memory` 已决定**保留**（2026-11-21 签字）：不再列入待拍板项。它不在任何读路径上；将来若要清理，需重新走不可逆签字。
@@ -790,9 +790,33 @@ launcher 子进程: {"hydrated":4,"lockKey":748312,…}
 停掉 launcher 后 : {"hydrated":4,"lockKey":748312,…}  exit 0   ← 锁随连接消失
 ```
 
-生产侧（rjms compose）没动：那属于部署变更，要单独签字。
+生产侧另有一节：见 §23（镜像已建、容器未启）。
 
-## 23. L1 受控文件语料（已入库）
+## 23. 调度器上生产（镜像已建，容器未启）
+
+代码：`Dockerfile.ve-scheduler` + `docker-compose.prod.yml` 的 `ve-scheduler` 服务。
+
+| 决定 | 理由 |
+| --- | --- |
+| 独立镜像，不改 `Dockerfile.api` | `Dockerfile.api` 有意不 COPY `scripts/`；为调度器加一行就会重建正在被切换的 api 镜像。独立镜像对切换零干扰 |
+| COPY 集合与 api 一致（apps/packages/services/database/integrations）+ `scripts/` | `npm ci` 在这份 package.json 上要解析声明的 workspace；少 apps/ 或 packages/ 是**安装失败**，不是运行失败 |
+| `--no-rag` | 生产没部署 `services/memory`，`:9876` 无人监听；带 RAG 只会把失败往事件表里灌。memory 上线后去掉这个 flag |
+| 只 `depends_on: api (healthy)` | `factory_virtual_employee_*` 表由 API 启动期 DDL 创建；调度器全程只连数据库，不走 HTTP，所以不注入任何密钥 |
+| `stop_grace_period: 120s` | SIGTERM 要走"释放 advisory lock → 归还连接 → pool.end()"，而一个 tick 可能正跑在子脚本里 |
+| 构建上下文 = `git archive HEAD` | 只装已提交内容，绝不把别人的未提交 WIP 打进生产镜像 |
+
+主机上的实测（`100.116.166.118`，未启动任何容器、未改 `/home/wy/smt-factory-system` 任何文件，构建在隔离目录 `/home/wy/ve-sched-build`）：
+
+```
+镜像      smt-factory-system-ve-scheduler:sync20261121
+EXPORTS=  JOBS,SCHEDULER_LOCK_KEY,SCHEDULER_OWNER,...,acquireSchedulerLock,...   ← 锁代码确实在生产镜像里（主机旧副本没有）
+ROLES=    23        script --check OK
+--dry-run 首次停在 connect ECONNREFUSED 127.0.0.1:5432（compose 用 PGHOST=postgres 提供）
+```
+
+**尚未 `up -d`，两个原因**：(1) 迁移 `324_virtual_employee_reporting_system.sql` 不在生产台账、生产库里 `ve_%` 对象为 0 —— 不上它，`competency`/`report` 两个 job 会夜夜失败，而迁移属不可逆清单，需要主人签字；(2) 有 peer 正在做 api 切换/数据整合。这两点在邮箱里都已问过。
+
+## 24. L1 受控文件语料（已入库）
 
 `npm run knowledge:ve -- --docs --dry-run` → `--docs --remember`：从 `oa.doc_system` 取 **已发布 + 公开 + L1/L2/L3**（79 条），跳过 181 条 L4 空白表单（近似重复的标题只会稀释召回）。每条内容为「受控文件 DT-SP-EN-002《设备设施控制程序》（L2/l2_procedure）当前版本 1.0；引用时必须带版本号，下次复审 2028-08-03」，元数据带 `docVersion`（=文件版本）与 `expiresAt`（=复审到期日），命名空间 `ve/shared/controlled-docs`。
 
