@@ -206,12 +206,12 @@ npm run schedule:ve -- --once --limit=80                     # 按频率表跑�
 | 批准唯一入口 | `services/api/src/agent/approval.js`（HTTP 路由与 `npm run approve:ve` 共用） | 批准人必须具名人类、必须持该域权限键、门必须注册在该岗；条件 UPDATE 防重复批准 |
 | 批准后推进 | `services/api/src/agent/writeback.js` | 12 个门有后继草稿任务，41 个门显式写明由人类执行；后继不得是写技能；推进失败不回滚人类的批准 |
 | 定时执行 | `services/api/src/agent/scheduler.js` + `scripts/ve-scheduler.mjs`（`start_dev.js` 第 5 个子进程） | EVENT/WATCH 按 intervalSeconds，BATCH 按越南本地 cron，DEMAND 永不自跑；last-run 存 `SCHEDULER_TICK` 事件，不加字段；会话级 advisory lock 保证一个库只有一个调度进程 |
-| 生产容器 | `Dockerfile.ve-scheduler` + `docker-compose.prod.yml` 的 `ve-scheduler` | 独立镜像（`Dockerfile.api` 有意不 COPY `scripts/`）；`--tick=60 --no-rag`（生产无 memory server）；`depends_on: api healthy`；镜像已构建、**容器未启** —— 324 未上生产 + 生产正在 restore |
+| 生产容器 | `Dockerfile.ve-scheduler` + `docker-compose.ve-scheduler.yml`（overlay，不覆盖主机那份手工 compose） | **已上线**：`smt-ve-scheduler` 每 60s 一跳、advisory lock 生效（第二实例 `SCHEDULER_ALREADY_RUNNING` 退 0）、其它容器未被牵连；`--tick=60 --no-rag`（生产无 memory server） |
 | L1 语料 | `knowledge.js --docs` → `ve/shared/controlled-docs` | 只收 published+public+L1/L2/L3（79 条），L4 表单排除；带 `docVersion` 与复审到期日 |
 
-实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号；两个进程争用同一个库时只有一个持锁，第二个退 0 且启动器不重启；生产镜像内 `acquireSchedulerLock` 导出可见、registry 加载 23 岗、`--dry-run` 打到生产库读得到数据。详见 `JOB-DESCRIPTIONS.md` §20–§24。
+实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；本地调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号；生产上第一轮 `OPS-SUPERVISOR scanned:5 created:5`、报表 job `AGGREGATED rows=1110`、`oa.doc_system` 在生产有 L1 1/L2 30/L3 48/L4 181。详见 `JOB-DESCRIPTIONS.md` §20–§24。
 
 **存量审批已处置（2026-11-21 03:42Z）**：业务授权后以 `MO_LI_BIN`（莫立斌）为批准人，一次清掉 275 条 `WAITING_APPROVAL`（attempted 275 / approved 275 / refused 0）；写回创建 270 条后继草稿（IQC_SUBMIT 265、PM_SCHEDULE 4、LOCATION_BIND 1），5 条按设计不推进。库存与业务表零写入。旧向量集合 `smt_factory_memory` 决定**保留不删**。
 
-未做：`smt-ve-scheduler` 未 `up -d`（缺 324 的生产签字；且生产库 21:08 起被 purge+`pg_restore` 重写中）；跨谱系合并已完成在 `merge/origin-main-20261121`（`2f95873`）但未落到共享分支；`harness/**`、locks、ratchet 基线未碰。
+未做：**生产待批 200 条**（`receive_variance` 191 等）需要一个真实的生产 reviewer 用户名，之前批掉的 275 条属本地库；12+ 个岗位有频率无探针（`NO_PROBE`），要补的是探针不是配置；跨谱系合并已完成为 `merge/origin-main-ready`（`16dfc17`，可 fast-forward 到当前尖端）但未落到共享分支；`harness/**`、locks、ratchet 基线未碰。
 

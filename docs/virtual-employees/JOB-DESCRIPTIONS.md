@@ -790,11 +790,11 @@ launcher 子进程: {"hydrated":4,"lockKey":748312,…}
 停掉 launcher 后 : {"hydrated":4,"lockKey":748312,…}  exit 0   ← 锁随连接消失
 ```
 
-生产侧另有一节：见 §23（镜像已建、容器未启）。
+生产侧另有一节：见 §23（已上线，含迁移 324 的上法与实测）。
 
-## 23. 调度器上生产（镜像已建，容器未启）
+## 23. 调度器上生产（已上线）
 
-代码：`Dockerfile.ve-scheduler` + `docker-compose.prod.yml` 的 `ve-scheduler` 服务。
+代码：`Dockerfile.ve-scheduler`（独立镜像）+ `docker-compose.prod.yml` 里的 `ve-scheduler` 服务定义 + `docker-compose.ve-scheduler.yml`（**overlay**：主机那份 `docker-compose.yml` 是手工维护的部署副本，已与仓库分叉，所以不覆盖它，用 `-f 主文件 -f overlay` 叠加）。
 
 | 决定 | 理由 |
 | --- | --- |
@@ -805,16 +805,36 @@ launcher 子进程: {"hydrated":4,"lockKey":748312,…}
 | `stop_grace_period: 120s` | SIGTERM 要走"释放 advisory lock → 归还连接 → pool.end()"，而一个 tick 可能正跑在子脚本里 |
 | 构建上下文 = `git archive HEAD` | 只装已提交内容，绝不把别人的未提交 WIP 打进生产镜像 |
 
-主机上的实测（`100.116.166.118`，未启动任何容器、未改 `/home/wy/smt-factory-system` 任何文件，构建在隔离目录 `/home/wy/ve-sched-build`）：
+打包阶段的主机实测（构建在隔离目录 `/home/wy/ve-sched-build`，上下文 = `git archive HEAD`）：
 
 ```
 镜像      smt-factory-system-ve-scheduler:sync20261121
-EXPORTS=  JOBS,SCHEDULER_LOCK_KEY,SCHEDULER_OWNER,...,acquireSchedulerLock,...   ← 锁代码确实在生产镜像里（主机旧副本没有）
-ROLES=    23        script --check OK
---dry-run 首次停在 connect ECONNREFUSED 127.0.0.1:5432（compose 用 PGHOST=postgres 提供）
+EXPORTS=  ... SCHEDULER_LOCK_KEY, acquireSchedulerLock, ...   ← 锁代码在生产镜像里（主机旧副本没有）
+ROLES=    23        ve-scheduler.mjs --check OK；learn 的 dryRun 修复也在镜像内（第 93 行）
+overlay 合并        docker compose -f docker-compose.yml -f docker-compose.ve-scheduler.yml config --services
+                    → postgres prometheus api ve-scheduler web grafana metabase nodered
 ```
 
-**尚未 `up -d`，两个原因**：(1) 迁移 `324_virtual_employee_reporting_system.sql` 不在生产台账（实测 `select count(*) from _migrations where filename like '324%'` = 0），生产库 `ve_%` 对象为 0 —— 不上它，`competency`/`report` 两个 job 会夜夜失败，而迁移属不可逆清单，需要主人签字；(2) 生产库自 21:08 起被 purge + `pg_restore` 重写（`pg_restore` 持续 36 分钟以上、已进入 `ALTER TABLE ... ADD CONSTRAINT` 阶段），期间 `smt-api`/`smt-web` 仍 healthy 对外应答，实测 `materials=1017` 而 `inventory_transactions=0`、`material_lots=0`。**恢复完成之前，任何生产数字都没有意义**，包括我自己前面量的那些，所以这里只写「镜像已建、容器未启」。
+上线后的生产实测（`2026-11-21 06:30` 越南本地时间）：
+
+```
+容器      smt-ve-scheduler Up；smt-api / smt-web / smt-postgres 全部 healthy，未被牵连
+启动行    {"hydrated":0,"lockKey":748312,"note":"last-run 状态从 SCHEDULER_TICK 事件恢复"}
+第一轮    OPS-SUPERVISOR-VIRTUAL-01 EVENT every 300s scanned:5 created:5 duplicate:0
+节奏      每 60s 一跳；EVENT 岗位按 300s 到点才动作（06:31、06:32 两轮对 OPS-SUPERVISOR 无动作，属正常）
+锁        第二实例 → {"skipped":"SCHEDULER_ALREADY_RUNNING","lockKey":748312} exit 0
+报表 job  ve-report.mjs --aggregate → AGGREGATED rows=1110（324 的在生产对象真的能用）
+数据源    oa.doc_system 在生产存在：L1 1 / L2 30 / L3 48 / L4 181（今晚 23:00 的 knowledge job 有料）
+```
+
+迁移 `324_virtual_employee_reporting_system.sql` 已按签字上生产：**用镜像里自带的 `scripts/migrate.mjs` 跑，但把 migrations 目录裁成只含 324**（主机 `--plan` 原本列出 10 条 pending：313/314/315×2/316/317/318/320/321/324 —— 直接跑会把另外 9 条一起上，那不是批准范围）。结果：台账 `399|324…|hash=19fa4ffc`，3 张表 + 8 个视图，`ve_reporting_lines=44` 行，属主 `smt_factory`（不是 postgres，否则 API 会 permission denied），再 `--plan` 为 0 pending。
+
+关于那次 `pg_restore`：恢复结束后虚拟员工数据**没有丢** —— 生产 `factory_virtual_employee_tasks` 从恢复中途的 0 回到 **186**（20:37 那份 `smt_factory_pre_purge.dump` 里就有），加上调度器新建的 19 条 = 205。中途量到的 `inventory_transactions=0 / material_lots=0` 是恢复未完成的瞬时状态，现已是 `inv=1152 / lots=647 / materials=1030 / locations=213`。
+
+两个新暴露的事实（都不是配置能掩盖的）：
+
+1. **12+ 个岗位声明了频率却没有探针**：`ANDON / APP-OPS / DATABASE / E-INVOICE / INFRA / INTEGRATION / MES / MSD-CONTROL / OQC / PACK / PDA-FLEET / PURCHASING / STATION-EQUIP …` 每轮都是 `skipped:"NO_PROBE"`。频率表写了 37 条，真正有探针的只有少数几个岗位；这些等于"有排班、没活干"，要补的是探针本身，不是配置。
+2. **生产待批队列 200 条**：`receive_variance 191 / return_machine_to_service 4 / hand_over_package 3 / final_iqc_decision 2`。之前批准的 275 条是**本地开发库**的事，生产这边一条没批过，需要一个真实的生产 reviewer 用户名才能动。
 
 ## 24. L1 受控文件语料（已入库）
 
