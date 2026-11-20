@@ -4446,10 +4446,40 @@ export function createMesrjRouter({ authenticateJWT }) {
     const aoi = (await query(
       "SELECT final_result, test_time, device_name, project_name, file_name FROM prd_aoi_board WHERE board_sn=$1 ORDER BY test_time DESC",
       [sn])).rows;
+
     const passes = (await query(
       "SELECT station_code, result, ng_code, pass_time, mark FROM prd_pass WHERE sn=$1 ORDER BY pass_time DESC",
       [sn])).rows;
     return ok(res, { sn, aoi, passes });
+  });
+  // ── SN 规则自检（源 api/exec.py /exec/sn/rules + sn_generate_warn）──
+  //   段长合计和总长不一致时页面直接置灰「发码」，别等人点了才报错。
+  //   gen_warn 只提示不拦（客户规格允许镭雕机自己取号，挡死现场没法干活）。
+  router.get("/exec/sn/rules", requireMesrjPerm(null), async (_req, res) => {
+    const rows = (await query(
+      `SELECT sn_type, total_len, segments, reset_cycle, enabled, remark
+         FROM cfg_sn_rule ORDER BY id`)).rows;
+    const out = rows.map(r => {
+      let segs = [];
+      try {
+        const arr = JSON.parse(r.segments || "[]");
+        segs = Array.isArray(arr) ? arr : [];
+      } catch { segs = []; }
+      const segSum = segs.reduce((s, x) => s + Number((x && x.len) || 0), 0);
+      const total = Number(r.total_len || 0);
+      return {
+        sn_type: r.sn_type, total_len: total, seg_sum: segSum,
+        reset_cycle: r.reset_cycle, enabled: r.enabled,
+        ok: !!(segSum && (!total || segSum === total)),
+        gen_warn: String(r.sn_type || "").trim() === "PCBA"
+          ? "PCBA 镭雕码现场通常是镭雕机自己取号（序列连续递增）。如果这台设备也会自增，"
+            + "MES 再发一遍会和它撞号 —— 发之前先确认设备是怎么取号的。"
+          : "",
+        segs: segs.map(x => ({ name: x && x.name, type: x && x.type, len: x && x.len,
+          value: (x && x.value) || "" })),
+      };
+    });
+    return ok(res, out);
   });
 
   // ── 工位下一站（给定 SN，返回下一待过站工位） ──
