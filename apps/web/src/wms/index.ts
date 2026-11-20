@@ -35,6 +35,7 @@ export type WmsTabKey =
   | "mrb"
   | "supplierReturnOrder"
   | "iqcTemplates"
+  | "graftOps"
   | "substitution"
   | "notices";
 
@@ -71,6 +72,7 @@ export const wmsTabKeys: WmsTabKey[] = [
   "mrb",
   "supplierReturnOrder",
   "iqcTemplates",
+  "graftOps",
   "substitution",
   "notices",
 ];
@@ -101,7 +103,7 @@ export const wmsMenuGroups: WmsMenuGroup[] = [
   { key: "iqcManagement", translationKey: "wms.group.iqc", tabs: [
     "iqc", "iqcInspect", "iqcInspectionLevels", "iqcClosedLoop", "iqcDefectLoop",
     "iqcReport", "iqcStandards", "iqcTemplates", "iqcPassMaintenance", "defectArchive",
-    "iqcReinspection", "pdaIqc", "rjvnIqc", "qualityTrend",
+    "iqcReinspection", "pdaIqc", "rjvnIqc", "qualityTrend", "graftOps",
   ] },
   { key: "warehouse", translationKey: "wms.group.warehouse", tabs: [
     "inventory", "inventoryControl", "rjvnInventory", "cycleCount", "transferAdjust",
@@ -244,6 +246,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   mrb: "wms.subnav.mrb",
   supplierReturnOrder: "wms.subnav.supplierReturnOrder",
   iqcTemplates: "wms.subnav.iqcTemplates",
+  graftOps: "wms.subnav.graftOps",
   substitution: "wms.subnav.substitution",
   notices: "wms.subnav.notices",
 };

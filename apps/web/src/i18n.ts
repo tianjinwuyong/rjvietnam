@@ -2556,6 +2556,7 @@ const dictionary = {
   "wms.group.special": { "zh-CN": "辅料与特殊物料管理", "vi-VN": "Vật tư phụ và đặc biệt", "en-US": "Auxiliary & Special Materials" },
   "wms.group.traceability": { "zh-CN": "追溯管理", "vi-VN": "Quản lý truy xuất", "en-US": "Traceability Management" },
   "wms.group.basicData": { "zh-CN": "基础数据", "vi-VN": "Dữ liệu cơ bản", "en-US": "Basic Data" },
+  "wms.subnav.graftOps": { "zh-CN": "移植作业台", "vi-VN": "Bàn vận hành WMS", "en-US": "Grafted Console" },
   "wms.subnav.iqcTemplates": { "zh-CN": "IQC 检验模板库", "vi-VN": "Thư viện mẫu IQC", "en-US": "IQC Templates" },
   "wms.subnav.substitution": { "zh-CN": "物料替代关系", "vi-VN": "Quan hệ thay thế vật tư", "en-US": "Material Substitution" },
   "wms.group.issuing": { "zh-CN": "领料与发料", "vi-VN": "Lĩnh liệu & xuất liệu", "en-US": "Picking & Issuing" },

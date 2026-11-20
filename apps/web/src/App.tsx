@@ -82,6 +82,7 @@ import { PdaAppCatalogManager } from "./admin/PdaAppCatalogManager";
 import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
 import { WmsIqcTemplates } from "./wms/WmsIqcTemplates";
+import { WmsGraftedOps } from "./wms/WmsGraftedOps";
 import { WmsMaterialSubstitution } from "./wms/WmsMaterialSubstitution";
 import type { WmsTabKey } from "./wms";
 import { QmsApp } from "./qms";
@@ -1894,6 +1895,7 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
       case "transferAdjust": return <WmsTransferAdjust locale={locale} />;
       case "expiryControl": return <WmsExpiryControl locale={locale} />;
       case "iqcTemplates": return <WmsIqcTemplates locale={locale} />;
+      case "graftOps": return <WmsGraftedOps locale={locale} />;
       case "substitution": return <WmsMaterialSubstitution locale={locale} />;
       case "fifoMonitor": return <WmsFifoMonitor locale={locale} />;
       case "transactions": return <WmsTransactions locale={locale} />;
