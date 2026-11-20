@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { resolveUserByUsername } from '../services/auth.js';
 import { checkModuleAccess } from '../services/module-permission.js';
 import { query } from '../db/index.js';
+import { isRevokedToken } from '../../auth/revocation-registry.js';
 
 /**
  * 合并模式唯一令牌：校验 SMT 登录 JWT 并映射到 OA 用户。
@@ -17,10 +18,15 @@ async function resolveSmtJwtUser(token) {
   if (!secret || !token) return null;
   let payload;
   try {
-    payload = jwt.verify(token, secret);
+    // Pinned like the SMT verifier: the same secret, so the same rule — only
+    // HS256 is honoured, whatever the header claims.
+    payload = jwt.verify(token, secret, { algorithms: ['HS256'] });
   } catch {
     return null;
   }
+  // A token the operator signed out must not keep opening the OA routes in this
+  // same process; the revocation list is shared, not copied.
+  if (isRevokedToken(payload)) return null;
   const username = String(payload?.username || '').trim();
   if (!username) return null;
   try {
