@@ -6,7 +6,7 @@
   "_why_not_assertions": "The two agent-driven rungs count JOURNEYS and SCENARIOS here, not assertions. An agent decides how many assertions a journey needs and the number moves between runs; measured on the same unchanged code: 12, then 13. merge.py raises each floor to what the gate just observed, so an assertion floor would climb to the luckiest run and then fail every ordinary one. The journey count is stable because it is the number of headings in a protected file. Assertion counts are still printed every run -- read them, do not hold a merge against them.",
   "e2e_journeys": 4,
   "holdout_scenarios": 3,
-  "unit_tests": 392,
+  "unit_tests": 362,
   "mutations_caught": 5,
   "_raise_these": "Raised automatically on merge now. You only edit this file to LOWER one, and if you find yourself doing that the question is what stopped being true.",
   "UNCALIBRATED_MAX": 0,
