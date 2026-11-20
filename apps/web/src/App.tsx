@@ -81,6 +81,7 @@ import { PdaAccessConfiguration } from "./admin/PdaAccessConfiguration";
 import { PdaAppCatalogManager } from "./admin/PdaAppCatalogManager";
 import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
+import { AdminDataSources } from "./admin/AdminDataSources";
 import { WmsIqcTemplates } from "./wms/WmsIqcTemplates";
 import { WmsGraftedOps } from "./wms/WmsGraftedOps";
 import { WmsMaterialSubstitution } from "./wms/WmsMaterialSubstitution";
@@ -2760,7 +2761,7 @@ function Trace({ locale }: { locale: Locale }) {
 }
 
 function Admin({ locale }: { locale: Locale }) {
-  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "pdaAppAssignment" | "pdaCatalog" | "lines" | "services" | "databases">("overview");
+  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "pdaAppAssignment" | "pdaCatalog" | "lines" | "services" | "databases" | "dataSources">("overview");
   const dependencyItems = [
     { label: "admin.dep.auth", detail: "admin.dep.authDetail" },
     { label: "admin.dep.live", detail: "admin.dep.liveDetail" },
@@ -2777,6 +2778,7 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
           </div>
         </SurfacePanel>
         <AdminLineManagement locale={locale} />
@@ -2872,9 +2874,28 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" className="active">{t("admin.databases.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
           </div>
         </SurfacePanel>
         <StationDatabaseManagement locale={locale} />
+      </div>
+    );
+  }
+
+  if (adminTab === "dataSources") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title={locale === "zh-CN" ? "外部数据源" : "External data sources"} subtitle={locale === "zh-CN" ? "登记外部数据库并把表同步到本库暂存 schema" : "Register external databases and stage their tables locally"} />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" className="active">{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+          </div>
+        </SurfacePanel>
+        <AdminDataSources locale={locale} />
       </div>
     );
   }
@@ -2889,6 +2910,7 @@ function Admin({ locale }: { locale: Locale }) {
           <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
           <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
           <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+          <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
           <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
           <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
         </div>

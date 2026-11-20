@@ -55,7 +55,7 @@ import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
 import { envelope, listEnvelope, mutateEnvelope, errorEnvelope, successEnvelope } from "./src/shared/helpers.js";
 import { isRevokedToken, revokedTokens } from "./src/auth/revocation-registry.js";
 import { createAccountStateCache, createLoginThrottle } from "./src/auth/session-tokens.js";
-import { createStationLoginPolicy, stationKeyFailure as stationKeyFailureOf } from "./src/auth/station-login-policy.js";
+import { createStationLoginPolicy, stationKeyFailure as stationKeyFailureOf, stationKeyGrace, createUnprovisionedReporter } from "./src/auth/station-login-policy.js";
 import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
 import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
 import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
@@ -102,6 +102,7 @@ import { validateStationConfiguration } from "../../packages/station-config/vali
 import { registerMaintenanceRoutes } from "./src/routes/maintenance.js";
 import { registerPmcRoutes } from "./src/routes/pmc.js";
 import { registerQmsRoutes } from "./src/routes/qms.js";
+import { registerDatasourceRoutes } from "./src/routes/datasources.js";
 import { registerLifecycleRoutes } from "./src/routes/lifecycle.js";
 import { registerCountRoutes } from "./src/routes/wms-counting.js";
 import { registerStationOpsRoutes } from "./src/routes/station-ops.js";
@@ -919,6 +920,11 @@ const JWT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 // `x-station-key`; leaving it unset keeps the pre-credential station agents
 // working and says so loudly at boot.
 const STATION_LOGIN_KEY = String(process.env.STATION_LOGIN_KEY ?? "").trim();
+// When the key started being required. Empty or past = enforced now; a future
+// timestamp accepts a missing header and records the terminal instead, which is
+// the only way to switch this on over a floor of terminals that cannot be
+// re-provisioned from here. Same convention as MES_SIGNATURE_FLAG_UNTIL.
+const STATION_LOGIN_KEY_FLAG_UNTIL = String(process.env.STATION_LOGIN_KEY_FLAG_UNTIL ?? "").trim();
 // Shared with the OA middleware (src/auth/revocation-registry.js): one Set, so a
 // token signed out here is dead for the OA routes in this process too.
 // Two windows, not one. The username key is the account protection and stays
@@ -8992,8 +8998,11 @@ api.use("/qms/oqc-aql", createOqcAqlRouter({ authenticateJWT, requirePermission 
 // MES-ruijing 移植（W2 基座：sys/md/basic + CRUD 引擎；设备接口走 X-Api-Key）
 api.use("/mesrj", createMesrjRouter({ authenticateJWT }));
 // WMS 补齐：IQC 模板库 / 物料替代关系 / 有效期管控（原 WMS 有菜单、SMT 只有表）
-registerWmsParityRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope });
-registerWmsGraftRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope });
+// authenticateJWT 必须传：两个模块都注册在 app 级鉴权（~15684）之前，只带
+// requirePermission 会让裸 `/wms/*` 别名对合法 token 一律 401（实测 24/24）；
+// `/api/wms/*` 孪生路由因 api 路由器自带鉴权而不受影响。
+registerWmsParityRoutes(app, { query, requirePermission, authenticateJWT, errorEnvelope, listEnvelope });
+registerWmsGraftRoutes(app, { query, requirePermission, authenticateJWT, errorEnvelope, listEnvelope });
 // MRB (物料评审) — grafted from WMS-20261019; downstream of IQC fails
 // ⚠️ 必须挂在 OA 之前：OA 的 GET /api/mrb/:id 是单段 catch-all，
 // 会把 /api/mrb/list、/api/mrb/lot-groups、/api/mrb/pending-lots 当成 :id 拦下（400 参数不合法）。
@@ -13592,19 +13601,27 @@ const stationLoginPolicy = createStationLoginPolicy({
   allowRoles: process.env.STATION_LOGIN_ALLOW_ROLES,
   allowOperators: process.env.STATION_LOGIN_ALLOW_OPERATORS,
 });
+const stationKeyGraceWindow = stationKeyGrace(STATION_LOGIN_KEY_FLAG_UNTIL);
+const unprovisionedStations = createUnprovisionedReporter((key) => {
+  console.warn(`[auth] station login with no x-station-key during the grace window: ${key}`);
+  writeAuditLog({ action: "STATION_LOGIN_UNPROVISIONED", entityType: "auth", referenceNo: key }).catch(() => {});
+});
 app.post("/auth/station-login", async (req, res) => {
   try {
-    // One shared station credential, compared on digests so the response time
-    // does not walk the key byte by byte. A failure here is a device that was
-    // never provisioned or a bundle that predates the key, not a person's
-    // mistake, so it is not audited: a misconfigured terminal retries on a
-    // timer and would flood audit_logs. The IP throttle still caps it.
-    const stationKeyFailure = stationKeyFailureOf(req.headers["x-station-key"], STATION_LOGIN_KEY);
-    if (stationKeyFailure) {
-      const detail = stationKeyFailure === "STATION_KEY_MISSING"
+    // One shared station credential, compared on digests so the response time does
+    // not walk the key byte by byte. A key that is present and wrong is refused
+    // outright; one that is simply missing is forgiven until
+    // STATION_LOGIN_KEY_FLAG_UNTIL and recorded below, once per terminal — a
+    // scanner retries every 30s, so auditing every request would be ~2900 rows a
+    // day to answer one question: which machines still need provisioning.
+    const presentedStationKey = String(req.headers["x-station-key"] ?? "").trim();
+    const stationKey = stationKeyGraceWindow(stationKeyFailureOf(presentedStationKey, STATION_LOGIN_KEY));
+    const unprovisionedTerminal = Boolean(STATION_LOGIN_KEY) && !presentedStationKey && stationKey === null;
+    if (stationKey) {
+      const detail = stationKey === "STATION_KEY_MISSING"
         ? "x-station-key header is required for station login on this factory"
         : "x-station-key is not the key this factory was configured with";
-      return res.status(401).json(errorEnvelope(stationKeyFailure, detail));
+      return res.status(401).json(errorEnvelope(stationKey, detail));
     }
     const clientIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
     const throttleKey = `${STATION_LOGIN_THROTTLE_KEY}:${clientIp}`;
@@ -13617,6 +13634,7 @@ app.post("/auth/station-login", async (req, res) => {
     if (!operator || !stationCode) {
       return res.status(400).json(errorEnvelope("VALIDATION", "operator and stationCode required"));
     }
+    if (unprovisionedTerminal) unprovisionedStations.note(`${operator}@${stationCode}`);
     // Look up the operator as a user by username (employee SN = username)
     const result = await pgPool.query(
       `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
@@ -21042,9 +21060,14 @@ app.get("/wms/iqc/plan-for-lot/:lotId", requirePermission("wms.view"), async (re
     `, [plan.rows[0].id]);
     res.json(mutateEnvelope({ ...plan.rows[0], characteristics: characteristics.rows }));
   } catch (err) {
-    await client.query('ROLLBACK');
+    // 这个处理器用的是池化 query()，没有 BEGIN，也从来没取过 client。
+    // 原来的 catch 写 `await client.query('ROLLBACK')` + `finally { client.release() }`，
+    // 于是每条路径（含 404 与成功）都在 finally 里抛 ReferenceError: client is not defined，
+    // 紧跟着 express 错误处理再发一次响应 → ERR_HTTP_HEADERS_SENT。已实测复现，改成与
+    // 同文件只读处理器一致的写法。
+    console.error("GET /wms/iqc/plan-for-lot/:lotId:", err.message);
     res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  } finally { client.release(); }
+  }
 });
 
 app.get("/wms/iqc/plans", requirePermission("wms.view"), async (req, res) => {
@@ -39335,6 +39358,10 @@ app.get("/hr/checkin/history", async (req, res) => {
 // used to be, so every middleware above them still runs above them.
 registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvelope });
 
+// External data sources: the provider registry and the table-sync engine. Same reason it sits
+// here — these routes are declared after the app-level auth wrapper, so they are guarded.
+registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
+
 // ═══════════════════════════════════════════════════════════════════════════
 // AOI STATION API (MySQL)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -40628,6 +40655,11 @@ const server = app.listen(PORT, HOST, () => {
   revokedTokenRefresh.unref();
   if (!STATION_LOGIN_KEY) {
     console.warn("[auth] STATION_LOGIN_KEY is unset: /auth/station-login issues a full-permission JWT from operator+stationCode alone. Set it and send x-station-key to require a station credential.");
+  } else if (stationKeyGraceWindow("STATION_KEY_MISSING") === null) {
+    // The key is set but a missing header still gets through until the deadline;
+    // say so, because "enabled" and "enforced" are different facts to plan a
+    // provisioning round around.
+    console.log(`[auth] STATION_LOGIN_KEY set, enforced from ${STATION_LOGIN_KEY_FLAG_UNTIL}: terminals without station-config.js are still accepted for now and recorded as STATION_LOGIN_UNPROVISIONED (${STATION_LOGIN_KEY.length}-char key)`);
   } else {
     // A terminal without station-config.js now fails to sign in, and the only
     // trace of why is here: say what the floor has to provision.
