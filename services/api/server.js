@@ -14619,12 +14619,9 @@ app.post("/mes/feeder-loading", requireManualLinePdaDomain, async (req, res) => 
     await client.query("ROLLBACK").catch(() => {});
     console.error("POST /mes/feeder-loading:", err.message);
     res.status(500).json({ success: false, error: err.message });
-  } finally { client.releas
+  } finally { client.release(); }
+});
 // ── WMS Incoming 来料原始档案 ─────────────────────────────────────────────────
-
-function errorEnvelope(code, message) {
-  return JSON.stringify({ error: code, message: message || code });
-}
 
 app.post("/api/wms/incoming", requirePermission("wms.write"), async (req, res) => {
   const client = await getClient();
@@ -14965,8 +14962,6 @@ app.get("/api/wms/iqc/special-approvals", requirePermission("wms.read"), async (
   } finally { client.release(); }
 });
 
-e(); }
-});
 
 // ── Material Dispatch — multi-PDA coordination ───────────────────────────────────
 
