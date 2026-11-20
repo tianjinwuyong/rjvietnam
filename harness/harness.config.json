@@ -88,11 +88,11 @@
   "agent": {
     "_cmd_note": "Verified on this machine: codex fails (no `deepseek` provider configured), claude is not logged in, pi works headless -- it reads the prompt on stdin, calls its own tools, and writes files. Cheaper than the model writing the code, which is what this rung wants: the job is using the app and writing down what happened. Local ollama/qwen3.8, so no per-run API cost. Revisit if the journey verdicts read as shallow.",
     "cmd": "pi --mode json --print",
-    "timeout_s": 1800
+    "timeout_s": 2700
   },
   "driver": "http",
   "_e2e_timeout_note": "The watchdog for the whole agent-driven rung, not a performance budget. 300 s could not cover 4 journeys plus 3 holdout scenarios by an agent that has to read markdown, call the API, and write a result file.",
-  "e2e_timeout_s": 1800,
+  "e2e_timeout_s": 3000,
   "http": {
     "_start_note": "Runs the API only. Journeys that need the web console expect it on http://127.0.0.1:5178 -- start it with `npm run dev:web` before the gate (harness/END-TO-END.md says so in the journey preamble). The API bootstraps runtime DDL and seeds, so boot takes far longer than a toy server.",
     "start": "node services/api/server.js",
