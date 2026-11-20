@@ -110,6 +110,8 @@ import {
 import * as smtCore from "../mesrj/smt-core.js";
 // W14 OQC 出货抽检核心（源 api/oqc.py + core/oqc.py + core/oqc_check.py + core/oqc_aql.py + core/aql.py）
 import * as oqcCore from "../mesrj/oqc-core.js";
+// W16 尾差：legacy MES 里还没等价路径的 15 条接口（源 api/erp|aoi|wms|exec|bind|wmsmo|smt.py）
+import { registerMesrjLegacyGaps } from "../mesrj/legacy-gaps.js";
 
 /** 源 util.ok(data, msg) */
 function ok(res, data = null, msg = "") {
@@ -11328,6 +11330,18 @@ export function createMesrjRouter({ authenticateJWT }) {
   // W4：bom / order / plan 通用 CRUD（源 _crud.register(prefix="/bom"|"/order"|"/plan")）
   const bomCrud = Router();
   registerCrud(bomCrud, BOM_RES, "bom.view", "bom.edit");
+  // ── W16：legacy MES 尾差 ────────────────────────────────────────────────────
+  // ⚠️ 必须在 /bom、/order 通用 CRUD 之前注册：CRUD 的 GET /:name/:rid 会把
+  //    /bom/<id>/items、/order/po 当成「未知资源」拦下（404 未知资源（56））。
+  registerMesrjLegacyGaps(router, {
+    query, ok, fail,
+    perm: requireMesrjPerm,
+    anyPerm: requireAnyPerm,
+    doPassInner, snAlloc, snRuleOk,
+    agingDetail, traceMaterialByMaterial,
+    bindMod, smtCore, panelSns, moMaterials,
+  });
+
   router.use("/bom", bomCrud);
 
   const ordCrud = Router();

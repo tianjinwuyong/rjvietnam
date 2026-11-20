@@ -99,7 +99,7 @@ export function PackView({ locale }: { locale: Locale }) {
   }, [tplCode]);
 
   const loadMos = useCallback(async () => {
-    const [d, e] = await call(() => mesrjApi.get<{ rows: MoOpt[] }>("/ord/mo", { size: 300 }));
+    const [d, e] = await call(() => mesrjApi.get<{ rows: MoOpt[] }>("/order/mo/options"));
     if (e || !d) { setErr(e || "未返回数据"); return; }
     const live = (d.rows || []).filter(x =>
       ["生产中", "已下达", "已排产", "待排产"].includes(String(x.status || "")));

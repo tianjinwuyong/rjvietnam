@@ -3483,12 +3483,17 @@ export async function repairList(d = {}) {
 export async function moMaterials(d = {}) {
   const moNo = (d.mo_no || "").trim();
   if (!moNo) throw new Error("缺少 mo_no");
+  // ord_issue 没有 product_code（机型在 ord_mo 上）；ord_issue_item 也没有 qty 列，
+  // 实际字段是 need_qty / issue_qty / issued_qty，段位在明细行自己的 segment 上。
   return (await query(
-    `SELECT ii.material_code, ii.material_name, ii.spec, ii.unit, ii.qty, ii.line_seq,
-            COALESCE(b.segment,'') AS segment, COALESCE(b.item_type,'') AS item_type
+    `SELECT ii.material_code, ii.material_name, ii.spec, ii.unit,
+            COALESCE(NULLIF(ii.need_qty,0), ii.issue_qty, 0) AS qty,
+            ii.issued_qty, ii.mpq, ii.line_seq, ii.segment,
+            COALESCE(b.item_type,'') AS item_type, ii.issue_no
      FROM ord_issue_item ii
      JOIN ord_issue o ON o.issue_no=ii.issue_no
-     LEFT JOIN bom_item b ON b.material_code=ii.material_code AND b.product_code=o.product_code
+     LEFT JOIN ord_mo m ON m.mo_no=o.mo_no
+     LEFT JOIN bom_item b ON b.material_code=ii.material_code AND b.product_code=m.product_code
      WHERE o.mo_no=$1
      ORDER BY ii.line_seq`,
     [moNo])).rows;
@@ -3529,8 +3534,8 @@ export async function agingDetail(d = {}) {
             ROUND(EXTRACT(EPOCH FROM (now() - created_at))/3600, 2) AS hours
      FROM prd_sn
      ${clause} status IN ('在制','待修')
-     ORDER BY hours DESC`),
-    args).rows;
+     ORDER BY hours DESC`,
+    args)).rows;
 }
 
 /** 物料追溯（按 SN）：查询该 SN 所属工单的物料清单 */
