@@ -1,8 +1,13 @@
 // NOTE: backend routes are split:
 //   - auth: mounted on `api` router at /api (needs /api prefix)
 //   - wms/pmc/mes/boms/hr: mounted on `app` router at / (no /api prefix)
+// HTTPS deployments (Cloudflare Tunnel, Tailscale Funnel) serve the SPA and the
+// API from the same origin: nginx in the web container proxies /api/ to the
+// backend, so the SPA uses a same-origin relative base. Plain HTTP (LAN and
+// local dev) keeps the historical cross-host :8080.
 function defaultApiBase(): string {
   if (typeof window !== "undefined" && window.location.hostname) {
+    if (window.location.protocol === "https:") return "";
     return `${window.location.protocol}//${window.location.hostname}:8080`;
   }
   return "http://127.0.0.1:8080";

@@ -225,23 +225,28 @@ WHERE NOT EXISTS (
   SELECT 1 FROM public.rjvn_external_id_map m
   WHERE m.entity = 'picking' AND m.rjvn_id = p.id);
 
--- ── verify (counts must match source); any mismatch aborts via DO/RAISE ─
+-- ── verify (counts must match the terminal snapshot); any mismatch aborts ──
+-- The floors below are the LIVE WMS snapshot (2026-11-20), not the stale
+-- local mirror counts (2487 / 1394 / 501 / 336). The mirror reload replaced
+-- the cache, so those old numbers would have failed a legitimate import.
+-- `entity` rows in rjvn_external_id_map equal the number of terminal rows
+-- because every source row maps itself (sections 1-7 each insert a map row).
 DO $$
 DECLARE mismatch text := '';
 BEGIN
-  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='supplier') < 348
+  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='supplier') < 89
     THEN mismatch := mismatch || ' supplier'; END IF;
-  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='material') < 2487
+  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='material') < 406
     THEN mismatch := mismatch || ' material'; END IF;
-  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='location') < 4
+  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='location') < 5
     THEN mismatch := mismatch || ' location'; END IF;
-  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='iqc_lot') < 501
+  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='iqc_lot') < 210
     THEN mismatch := mismatch || ' iqc_lot'; END IF;
-  IF (SELECT count(*) FROM public.wms_receipt_orders) < 1394
+  IF (SELECT count(*) FROM public.wms_receipt_orders) < 773
     THEN mismatch := mismatch || ' receipt'; END IF;
-  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='iqc_report') < 336
+  IF (SELECT count(*) FROM public.rjvn_external_id_map WHERE entity='iqc_report') < 27
     THEN mismatch := mismatch || ' iqc_report'; END IF;
-  IF (SELECT count(*) FROM public.wms_picking_orders) < 4
+  IF (SELECT count(*) FROM public.wms_picking_orders) < 10
     THEN mismatch := mismatch || ' picking'; END IF;
   IF mismatch <> '' THEN
     RAISE EXCEPTION 'IMPORT COUNT MISMATCH:%', mismatch;

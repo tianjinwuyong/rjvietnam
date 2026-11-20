@@ -757,9 +757,12 @@ export const oaQcApi = {
 
 /** 附件下载/预览 URL：新窗口场景走 query token（见 oa/middleware/index.js）；不传时自动读当前登录 token */
 export function oaFileUrl(filePath: string, token?: string | null): string {
-  const base = typeof window !== "undefined"
+  // HTTPS deployments (Cloudflare Tunnel / Tailscale Funnel) serve the SPA and
+  // the API from the same origin, so file URLs are relative. Plain HTTP keeps
+  // the historical cross-host :8080.
+  const base = typeof window !== "undefined" && window.location.protocol !== "https:"
     ? `${window.location.protocol}//${window.location.hostname}:8080`
-    : "http://127.0.0.1:8080";
+    : "";
   const url = `${base}/api/files/${filePath}`;
   const tk = token === undefined ? authStorage.getToken() : token;
   return tk ? `${url}?token=${encodeURIComponent(tk)}` : url;
