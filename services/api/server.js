@@ -18844,8 +18844,8 @@ app.get("/wms/storage-locations", async (req, res) => {
               sl.aisle_code AS "aisleCode", sl.rack_code AS "rackCode", sl.level_code AS "levelCode", sl.bin_code AS "binCode",
               -- temperature/humidity limits live on the ZONE, not on the location:
               -- they are properties of the zone's storage envelope (wms_zones).
-              -- Reading them off `sl` referenced columns that no migration ever
-              -- created, so this endpoint failed with
+              -- Reading them off the location referenced columns that no
+              -- migration ever created, so this endpoint failed with
               -- "column sl.temperature_min does not exist" in every environment.
               z.temperature_min AS "temperatureMin", z.temperature_max AS "temperatureMax",
               z.humidity_min AS "humidityMin", z.humidity_max AS "humidityMax",
