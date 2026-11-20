@@ -23,7 +23,8 @@
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
     "migrate": "node scripts/migrate.mjs",
     "migrate:seed": "node scripts/migrate.mjs --seed",
-    "check:migrations": "node scripts/check-migrations.mjs"
+    "check:migrations": "node scripts/check-migrations.mjs",
+    "check:schema-drift": "node scripts/check-schema-drift.mjs --probe-schema"
   },
   "workspaces": [
     "apps/*",
