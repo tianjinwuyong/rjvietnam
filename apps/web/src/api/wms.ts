@@ -360,6 +360,124 @@ export interface RjvnIqcStatsResponse {
   byStrictness: Array<{ name: string; value: number }>;
 }
 
+// ── Missing WMS modules: over-picking / rework / supplier-debt / defective-move ──
+
+/** Over-picking order header. */
+export interface OverPickingOrder {
+  id: number;
+  orderNo: string;
+  workOrderNo: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  applicantName: string;
+  applicantRole: string;
+  approverName: string | null;
+  approverRole: string | null;
+  approvalRemark: string | null;
+  approvedAt: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Over-picking item. */
+export interface OverPickingItem {
+  id: number;
+  materialCode: string;
+  materialName: string;
+  qty: number;
+  unit: string;
+}
+
+/** Rework order. */
+export interface ReworkOrder {
+  id: number;
+  reworkNo: string;
+  mrbNo: string | null;
+  materialCode: string;
+  materialName: string;
+  supplierCode: string | null;
+  supplierName: string | null;
+  batchNo: string | null;
+  quantity: number;
+  unit: string;
+  status: "pending" | "started" | "finished" | "reinspected_ok" | "reinspected_ng";
+  finishTime: string | null;
+  finishBy: string | null;
+  finishRemark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Supplier debt record. */
+export interface SupplierDebt {
+  id: number;
+  debtNo: string;
+  supplierCode: string;
+  supplierName: string;
+  materialCode: string;
+  materialName: string;
+  originQty: number;
+  settledQty: number;
+  sourceType: string;
+  sourceId: number;
+  sourceNo: string;
+  status: "pending" | "settled" | "voided";
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Defective move task. */
+export interface DefectiveMoveTask {
+  id: number;
+  moveNo: string;
+  inventoryId: number;
+  fromStockStatus: string;
+  materialCode: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  reason: string;
+  remark: string | null;
+  toLocationId: number | null;
+  status: "pending_confirm" | "pending" | "completed" | "cancelled";
+  createdBy: string;
+  createdByName: string | null;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  confirmRemark: string | null;
+  executedBy: string | null;
+  executedAt: string | null;
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Defective-move destination location (GET /api/defective-move/locations). */
+export interface DefectiveMoveLocation {
+  id: number;
+  locationCode: string;
+  nameZh: string;
+  nameEn: string;
+  nameVi: string;
+  status: string;
+}
+
+/** Defective-move source stock line (GET /api/defective-move/source-stock). */
+export interface DefectiveMoveSourceStock {
+  id: number;
+  materialId: number;
+  materialCode: string;
+  name_zh: string;
+  name_en: string;
+  name_vi: string;
+  storageLocationId: number | null;
+  locationCode: string | null;
+  qty: number;
+}
+
 export const wmsApi = {
   // ── rjvn WMS mirror (read-only reference data) ──────────────────
   getRjvnSummary() {
@@ -1402,6 +1520,167 @@ export const wmsApi = {
 
   getOutboundOrder: (id: number) =>
     apiClient.get(`/api/wms/outbound-orders/${id}`) as Promise<OutboundOrder & {items:OutboundItem[]}>,
+
+  // ── Over-picking ─────────────────────────────────────────────────────
+  getOverPickingList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/over-picking/list", params) as Promise<{items:OverPickingOrder[];total:number;offset:number;limit:number}>,
+
+  getOverPickingDetail: (id: number) =>
+    apiClient.get(`/api/over-picking/detail/${id}`) as Promise<OverPickingOrder & {items:OverPickingItem[]}>,
+
+  createOverPickingOrder: (data: Record<string,unknown>) =>
+    apiClient.post("/api/over-picking", data),
+
+  approveOverPickingOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/over-picking/${id}/approve`, data),
+
+  cancelOverPickingOrder: (id: number) =>
+    apiClient.post(`/api/over-picking/${id}/cancel`, {}),
+
+  getOverPickingStats: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/over-picking/stats", params) as Promise<{stats:Record<string,number>;total:number}>,
+
+  // ── Rework ───────────────────────────────────────────────────────────
+  getReworkList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/rework/list", params) as Promise<{items:ReworkOrder[];total:number;offset:number;limit:number}>,
+
+  getReworkPendingCount: () =>
+    apiClient.get("/api/rework/pending-count") as Promise<Record<string,number>>,
+
+  getReworkDetail: (id: number) =>
+    apiClient.get(`/api/rework/detail/${id}`) as Promise<ReworkOrder>,
+
+  startReworkOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/rework/start`, data),
+
+  finishReworkOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/rework/finish`, data),
+
+  reinspectReworkOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/rework/reinspect`, data),
+
+  // ── Supplier Debt ────────────────────────────────────────────────────
+  getSupplierDebtList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/supplier-debt/list", params) as Promise<{items:SupplierDebt[];total:number;offset:number;limit:number}>,
+
+  getSupplierDebtDetail: (id: number) =>
+    apiClient.get(`/api/supplier-debt/detail/${id}`) as Promise<SupplierDebt>,
+
+  // ── Defective Move ───────────────────────────────────────────────────
+  getDefectiveMoveList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/defective-move/list", params) as Promise<{items:DefectiveMoveTask[];total:number;page:number;pageSize:number}>,
+
+  getDefectiveMovePendingCount: () =>
+    apiClient.get("/api/defective-move/pending-count") as Promise<{pending:number;pendingConfirm:number;total:number}>,
+
+  getDefectiveMoveLocations: () =>
+    apiClient.get("/api/defective-move/locations") as Promise<DefectiveMoveLocation[]>,
+
+  getDefectiveMoveSourceStock: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/defective-move/source-stock", params) as Promise<{items:DefectiveMoveSourceStock[];total:number;page:number;pageSize:number}>,
+
+  getDefectiveMoveDetail: (id: number) =>
+    apiClient.get(`/api/defective-move/detail/${id}`) as Promise<unknown>,
+
+  createDefectiveMove: (data: Record<string,unknown>) =>
+    apiClient.post("/api/defective-move/create", data),
+
+  confirmDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/confirm`, data),
+
+  cancelDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/cancel`, data),
+
+  scanDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/scan`, data),
+
+  completeDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/complete`, data),
+
+  // ── MRB (Material Review Board) ─────────────────────────────────────────
+  getMrbList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/list", params) as Promise<{list:Record<string,unknown>[];total:number;page:number;size:number}>,
+  getMrbDetail: (id: number | string) =>
+    apiClient.get(`/api/mrb/detail/${id}`) as Promise<Record<string, any>>,
+
+  getMrbPendingLots: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/pending-lots", params) as Promise<{items:Record<string,unknown>[];total:number}>,
+
+  getMrbMyTasks: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/my-tasks", params) as Promise<{items:Record<string,unknown>[];total:number}>,
+
+  getMrbReviewerCandidates: () =>
+    apiClient.get("/api/mrb/reviewer-candidates") as Promise<{items:Array<{id:number;username:string;displayName?:string}>}>,
+
+  createMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/initiate", data),
+
+  saveMrbPlan: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/plan", data),
+
+  assignMrbReviewers: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/assign-reviewers", data),
+
+  submitMrb: (mrbId: number | string) =>
+    apiClient.post("/api/mrb/submit", { mrbId }),
+
+  submitMrbReview: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/submit-review", data),
+
+  preApproveMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/pre-approve", data),
+
+  finalApproveMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/final-approve", data),
+
+  cancelMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/cancel", data),
+
+  rejectMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/reject", data),
+
+  // MRB 遗留：批次折叠 / 一箱一码 / 方案读取 / 提走确认 / 报废销毁
+  getMrbLotGroups: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/lot-groups", params) as Promise<{items:Record<string, unknown>[]; total:number}>,
+  getMrbLotLabels: (params: { mrbId?: number | string; lotNo?: string }) =>
+    apiClient.get("/api/mrb/lot-labels", params) as Promise<{ items: Record<string, unknown>[]; lotNo: string }>,
+  getMrbPlan: (mrbId: number | string) =>
+    apiClient.get(`/api/mrb/plan/${mrbId}`) as Promise<{
+      mrbId: number; mrbNo: string; status: string; quantity: string | number;
+      dispositions: Array<Record<string, unknown>>; reviewers: Array<Record<string, unknown>>;
+    }>,
+  confirmMrbOut: (dispositionId: number | string) =>
+    apiClient.post(`/api/mrb/disposition/${dispositionId}/confirm-out`),
+  destroyMrbScrap: (dispositionId: number | string, remark?: string) =>
+    apiClient.post(`/api/mrb/disposition/${dispositionId}/destroy`, { remark }),
+
+  // ── Supplier return ─────────────────────────────────────────────────────
+  getSupplierReturnList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/supplier-return/list", params) as Promise<{items:Record<string,unknown>[];total:number}>,
+  getSupplierReturnPendingCount: () =>
+    apiClient.get("/api/supplier-return/pending-count") as Promise<{pending:number}>,
+  getSupplierReturnDetail: (id: number | string) =>
+    apiClient.get(`/api/supplier-return/detail/${id}`) as Promise<Record<string, any>>,
+  createSupplierReturn: (data: Record<string,unknown>) =>
+    apiClient.post("/api/supplier-return/create", data),
+  outboundSupplierReturn: (data: Record<string,unknown>) =>
+    apiClient.post("/api/supplier-return/outbound", data),
+  cancelSupplierReturn: (data: Record<string,unknown>) =>
+    apiClient.post("/api/supplier-return/cancel", data),
+
+  // ── Notices ─────────────────────────────────────────────────────────────
+  getNotices: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/notices/list", params) as Promise<{items:Record<string,unknown>[]}>,
+  getNoticeUnreadCount: () =>
+    apiClient.get("/api/notices/unread-count") as Promise<{count:number}>,
+  markNoticeRead: (id: number | string) =>
+    apiClient.post(`/api/notices/${id}/read`, {}),
+  markAllNoticesRead: () =>
+    apiClient.post("/api/notices/read-all", {}),
+
+  // ── OA integration ──────────────────────────────────────────────────────
+  submitToOa: (bizType: string, bizNo: string) =>
+    apiClient.post(`/api/integration/oa/submit-${bizType}/${bizNo}`, {}),
 
 };
 
