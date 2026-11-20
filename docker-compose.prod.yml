@@ -1,0 +1,204 @@
+# SMT Factory System — production stack (rjms, 100.116.166.118)
+#
+# This file describes the state the host is actually running. Every service pins
+# container_name and every named volume/network is external, so `docker compose
+# up -d` reconciles existing containers instead of recreating them with new
+# auto-generated names (which is how api/web/postgres previously became
+# orphaned from the project).
+#
+# Typical ops:
+#   docker compose build api web && docker compose up -d api web
+#   docker compose up -d nodered          # after changing a healthcheck
+#   docker compose config                 # validate
+#
+# The API applies its own schema DDL at startup; the production DB has a
+# `_migrations` ledger (216 rows at cutover, now 330 rows / 0 pending).
+# `node scripts/migrate.mjs --plan` is the way to check it.
+#
+# Metabase uses its OWN database (`metabase`) — do not point it at
+# `smt_factory`: the factory already has a `permissions` table, which collides
+# with Metabase's first Liquibase changeset (`v00.00-000`) and crash-loops the container.
+# The cutover 2026-11-20 (complete) applied production data fixes:
+#   - 266_bom2_process_domain.sql backfill applied with
+#     `SET session_replication_role = replica` (BOM-immutability trigger would otherwise
+#     reject writes to non-draft BOMs);
+#   - employees.gender normalized (`'male'`→`'M'`, 2 NULLs→`'F'`) so the
+#     `/hr` mirror INSERT respects the `hr_employees_gender_check` constraint.
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: smt-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: smt_factory
+      POSTGRES_USER: smt_factory
+      POSTGRES_PASSWORD: smt_factory
+    volumes:
+      - smt_postgres_data:/var/lib/postgresql/data
+      - ./database/docker/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smt_factory -d smt_factory"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: smt-factory-system-api:sync20261120
+    container_name: smt-api
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      API_PORT: 8080
+      JWT_SECRET: smt-factory-secret-2026-vn
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: smt_factory
+      PGUSER: smt_factory
+      PGPASSWORD: smt_factory
+      TZ: Asia/Ho_Chi_Minh
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/api/auth/me').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))\"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 300s
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    image: smt-factory-system-web:sync20261120b
+    container_name: smt-web
+    restart: unless-stopped
+    ports:
+      - "5178:80"
+    depends_on:
+      - api
+    networks:
+      - default
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  metabase:
+    image: metabase/metabase:latest
+    container_name: smt-metabase
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: postgres
+      MB_DB_PORT: 5432
+      MB_DB_DBNAME: metabase
+      MB_DB_USER: smt_factory
+      MB_DB_PASS: smt_factory
+      MB_SITE_URL: http://localhost:3000
+      JAVA_TIMEZONE: Asia/Ho_Chi_Minh
+      LANG: en_US.UTF-8
+      LC_ALL: en_US.UTF-8
+    volumes:
+      - metabase_data:/metabase-data
+    depends_on:
+      - postgres
+    networks:
+      - default
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: smt-grafana
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:3001
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+    volumes:
+      - ./docs/analytics/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./docs/analytics/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    networks:
+      - default
+
+  nodered:
+    image: nodered/node-red:latest
+    container_name: smt-nodered
+    restart: unless-stopped
+    ports:
+      - "1880:1880"
+    environment:
+      TZ: Asia/Ho_Chi_Minh
+      NODE_OPTIONS: --max-old-space-size=512
+    volumes:
+      - nodered_data:/data
+      - ./docs/analytics/node-red:/dataflows:ro
+    networks:
+      - default
+    healthcheck:
+      # 127.0.0.1, not localhost: the image's own healthcheck resolved ::1 while
+      # Node-RED binds IPv4 only, which reported "unhealthy" on a working service.
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:1880/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: smt-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.enable-lifecycle
+    volumes:
+      - ./docs/analytics/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - default
+
+volumes:
+  smt_postgres_data:
+    external: true
+    name: smt_postgres_data
+  metabase_data:
+    external: true
+    name: smt-factory-system_metabase_data
+  grafana_data:
+    external: true
+    name: smt-factory-system_grafana_data
+  nodered_data:
+    external: true
+    name: smt-factory-system_nodered_data
+  prometheus_data:
+    external: true
+    name: smt-factory-system_prometheus_data
+
+networks:
+  default:
+    external: true
+    name: smt-factory-system_default

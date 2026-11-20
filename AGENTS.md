@@ -3,270 +3,80 @@
 **Workspace**: `C:\Users\tianj\Desktop\越南工厂瑞晶\smt-factory-system\`
 
 ## Stack
-
-React 18.3.1 + Vite 5.4.21 + TypeScript 5.9.3 + Express 5.2.1 + Vitest 4.1.9 + PostgreSQL (raw `pg` driver, no ORM)
-
-**Languages**: zh-CN (primary), en-US, vi-VN — all UI text **must** use i18n keys, never hardcoded strings.
-
-**Runtime**: Node.js, npm only (no yarn/pnpm), Windows
-
-## Directory Map
-
-```
-smt-factory-system/
-├── apps/
-│   ├── web/                  React SPA (port 5178 via Vite) — main UI
-│   ├── pdas/dashboard/       PDA dashboard (Kotlin/WebView consumer)
-│   ├── pdas/plant-manager/   PDA plant-manager app
-│   ├── display-board/        Andon/display board
-│   ├── station-agent/        Electron-based station agent
-│   ├── website/              Public site
-│   └── qrbindingforinternalboadandshell/  QR binding tool
-├── packages/                 NOT npm workspaces — import via relative paths
-│   ├── shared-types/         Domain types + contracts.ts DTOs
-│   ├── business-rules/       Work order coding + inventory validation
-│   ├── validators/           isBarcodeScan(), assertWorkOrderCode()
-│   ├── pda-components/       Shared PDA UI
-│   ├── ui-kit/               Shared web UI primitives
-│   ├── station-config/       Station config schema
-│   └── mes-ate-contract/     MES/ATE interface contract
-├── services/
-│   ├── api/                  Express API — port 8080 (server.js ≈45K lines)
-│   ├── worker/               Background job worker
-│   ├── realtime/             WebSocket/realtime service
-│   ├── watchdog/             Auto-restart on crash (3s delay)
-│   ├── aoi-api/              AOI adapter API
-│   ├── replication/          DB replication/failover helpers
-│   ├── supplier-portal-api/  Supplier portal backend
-│   └── memory/               mem0 long-term memory service (port 9876)
-├── database/
-│   ├── migrations/           279 SQL migrations, applied by scripts/migrate.mjs
-│   └── seeds/                Demo data seeds (002_bom_seed.sql, …)
-├── integrations/             80+ station/device adapter dirs (aoi, spi, fct, etc.)
-├── tests/                    72 Vitest files (unit + integration)
-├── app_rules/                Lane ownership rules per area
-├── harness/ + .factory/      Self-verifying factory scaffold (see FACTORY_RULES.md)
-├── graft/                    Repo context graph (see Graft section below)
-└── start_dev.js              Preferred dev launcher
-```
-
-## npm Workspaces
-
-`package.json` has `workspaces: ['apps/*', 'services/*', 'packages/*']`. **Apps and services are proper workspaces; packages are not** — import via relative path: `../../../packages/shared-types/src/factory`.
+- React 18.3.1 + Vite 5.4.21 + TypeScript + Express 5.2.1 + Vitest 4.1.9 + PostgreSQL (raw `pg`, no ORM).
+- **Runtime**: Node.js (ESM), npm workspaces: `apps/*`, `services/*`, `packages/*`.
+- **Localization**: `zh-CN`, `en-US`, `vi-VN` (i18n keys only).
 
 ## Developer Commands
+- **Launch everything**: `node start_dev.js` — API `:8080`, Vite web `:5178`, supplier portal `:8098` (needs `py -3.14` + uvicorn), factory3d `:5179`. Auto-restarts any child that exits. (`npm run dev` is an alternative launcher, `scripts/dev-all.mjs`.)
+- **Tests**: `npm run test` (vitest; e2e/hardware/3d specs are excluded here), `npm run test:grade` (behaviour-only subset — the only suite whose verdict may be used as a pass/fail *grading* signal), `npm run test:e2e` (Playwright), `npm run test:hardware`.
+- **Single test**: `npx vitest run path/to/file.test.ts` (config: `vitest.config.ts`).
+- **Typecheck**: `npm run typecheck` — **weak gate**: `tsconfig.base.json` only includes `apps/web/src` + `packages/*/src`; services and tests are not covered. `npm run typecheck:tests` is the stricter gate. `services/api/server.js` is plain JS — never typechecked.
+- **Migrations**: `node scripts/migrate.mjs` (supports `--plan`, `--seed`, `--fresh`).
+- **Migration gate**: `npm run check:migrations` — append-only + duplicate-prefix ratchet (44 colliding prefixes / 110 files on colliding numbers are baselined in `.factory/locks/migrations-baseline.json`; a new collision or an edited/deleted migration fails).
 
-| Command | What it does |
-|---|---|
-| `npm run dev` | `node ./scripts/dev-all.mjs` → watchdog → API + Vite |
-| `node start_dev.js` | Direct spawn API + Vite (no watchdog, simpler) |
-| `npm run dev:api` | `npm --workspace services/api run dev` → `node server.js` |
-| `npm run dev:web` | `npm --workspace apps/web run dev` → `vite` |
-| `npm run build` | Vite production build (`apps/web`) |
-| `npm run test` | `vitest run` (72 test files) |
-| `npm run test:e2e` | `playwright test` |
-| `npm run test:hardware` | Smart-shelf hardware suite (`vitest.hardware.config.ts`) |
-| `npm run typecheck` | `tsc -p tsconfig.base.json --noEmit` |
-| `npm run typecheck:all` | typecheck + `typecheck:tests` |
-| `npm run migrate` | `node scripts/migrate.mjs` — applies pending migrations |
-| `npm run migrate:seed` | `node scripts/migrate.mjs --seed` — migrations + seeds |
+## Monorepo Map
+- `services/api/server.js` — the real backend, ~49k lines, mounts everything (e.g. `/mesrj` router at ~line 9273; login handler near ~16135). Route modules also live in `services/api/routes/` and `services/api/src/routes/`.
+- `apps/web` — main frontend (`apps/web/src/mes` is the biggest module; `App.tsx` registers `mesrj` as a top-level module key).
+- Other workspaces: `apps/{station-agent,display-board,pdas,website,...}`, `services/{realtime,worker,watchdog,aoi-api,replication,supplier-portal-api,memory}`, `packages/{shared-types,validators,ui-kit,pda-components,...}`.
 
-`scripts/migrate.mjs` flags: `--plan` (list pending, apply nothing), `--fresh` (drop everything, dev only), `--seed`. Tracks applied files in `_migrations` table.
+## Database Rules (Critical)
+- **Schema**: `smt_factory` on `:5432`. Migrations (`database/migrations/NNN_name.sql`) are append-only.
+- **Runtime DDL**: `services/api/server.js` applies tables at startup. **Verify existing tables before adding migrations** (`\dt` in psql or query `pg_tables`).
+- **Migration numbering**: there is already a `311_` collision (two files). Convention between agents: opencode uses `31x+`, rjvn-dev uses `39x+`. Always list `database/migrations` before picking a number.
+- **No ORM**: raw `pg` driver. **No hard-deletes** (status fields). Inventory is derived from `inventory_transactions`.
+- **Multilingual master data**: `name_zh`, `name_en`, `name_vi`.
+- `rjvn_*` mirror tables exist as a parallel set (synced from graft tables by migration 309) — code references live in the unprefixed tables.
 
-## Running Services
+## App Rules
+- **Lane rules**: consult `app_rules/<lane>.md` before editing (`api.md`, `database.md`, `ui.md`, `auth.md`, `runtime-ports.md`, `data-contract.md`, ...).
+- **One active locale** per UI component — never mix languages.
+- **Multi-agent workflow**: claim files via `.factory/locks/CLAIM-<artifact>-<lane>.md`. Message peers through the `factory-mailbox` MCP (agent name `opencode`); never use Herdr for handoff.
+- **Never `git add -A`** — repo root contains hundreds of scratch scripts, logs, screenshots, and `server.js.*` backups. Stage explicit paths only.
+- **Handoff template**: `LANE / STATUS / CHANGED / COMMANDS / VERIFY / NOT DONE / RISKS / NEXT / EVIDENCE`, with `file:line` citations. Note: `server.js` line numbers drift constantly across its ~49k lines — cite a stable anchor (function/route name) alongside.
 
-**Preferred for development**: `node start_dev.js` — spawns API (port 8080) + Vite (port 5178) in same process tree with auto-restart.
+## Auth
+- Login: `POST /api/auth/login`. Passwords are **scrypt-hashed in the DB** (`verifyPasswordHash`, `services/api/server.js` ~16117) — no hardcoded plaintext in the live server (old copies like `server.js.testbak.js` still have it; don't trust them).
+- Default seeded credentials: `admin` / `Factory@123`. Login returns a JWT (24h) with role/permission keys.
+- OA portal delegates login to this endpoint (single sign-on).
+- **Mount order is load-bearing, and 24 routes sit on the wrong side of it.** The effective app-level gate is an inline wrapper at `services/api/server.js:16658` (`app.use((req,res,next) => … authenticateJWT(req,res,next))`); the bare `app.use(authenticateJWT)` ~17k lines below it never runs first. Every guarded `app.*` route declared *above* 16658 that has no covering prefix mount returns **401 for a valid token**. Verified live: `/wms/receiving/qr-bindings` (12652) and `/api/manager/line-assignments` (7022) are dead; `/wms/raw-material-inventory` (24285) works. `npm run check:auth-order` keeps the count from growing (baseline in `.factory/locks/auth-order-baseline.json`). Moving the middleware is an auth change — enumerate the public paths inside `authenticateJWT` first; that is stop-and-escalate territory.
 
-**For full stack** (includes scanner/display/watchdog): `npm run dev` → runs `dev-all.mjs` → watchdog → spawns api + web + scanner.
+## Known Issues / Gotchas
+- **Dev server**: keep React 18.3.1 + Vite 5.4.21 exactly — upgrading triggers "Invalid hook call".
+- **Memory server**: `services/memory/memory_server.py` on `:9876`. Do not access Qdrant (`:6333`) directly while it's running.
+- **PowerShell host**: no bash heredocs (write `.mjs`/`.sh` files instead of inline `node -e` with heredocs), and `<` input redirection is unsupported — pipe with `cmd /c "ssh ... bash -s < file"` when streaming scripts.
+- **Duplicate/backup copies** of `server.js`: `server.js.testbak.js` was deleted on 2026-11-20 (it was untracked, carried the hardcoded password, and made the CI credential grep fail). Never resurrect a copy — edit `services/api/server.js` only.
+- **Seeded demo credential is hardcoded in the UI, not the API.** `admin` / the factory default password is prefilled in `apps/web/src/App.tsx`, `auth/AuthSignIn.tsx`, `data.ts` and `i18n.ts` as a sign-in hint. The backend hashes passwords properly; the UI constant is a product decision (first-time UX), so CI checks the enforcement path (`services/`) only. Do not "fix" it by deleting the hint without the owner's call.
+- **Cold boot is ~95 s.** `services/api/server.js` runs dozens of `CREATE TABLE IF NOT EXISTS` at module load and only calls `app.listen` afterwards, so nothing answers `/health` until the DDL finishes. The gate's `boot_timeout_s` is 300 for that reason; a "faster" timeout produces a red `app-start` on a healthy server.
+- **Mutation scoring refuses to run on a red gate.** `harness/mutations/run.py` first runs the full gate on the unmodified tree and exits `MUTATIONS_NO_BASELINE` if it fails — otherwise every defect is "caught" by whatever was already broken and the score is noise. The five defects in `harness/mutations/defects.json` are therefore unscored until a journey agent (`agent.cmd`) and the web console on :5178 exist.
+- **Route census (for the deferred split):** 1,492 route registrations across 70 first-segment prefixes; the top ones are the un-prefixed `api` router (340), `wms` (176), `/api/hr` (173), `mes` (98), `/api/qms` (83), `/api/equipment` (61), `pmc` (54). The graft graph indexes no definitions for `server.js` (`graft build` needed), so measure coupling from the file itself.
 
-**Dev server ports**:
-- API: `http://localhost:8080`
-- Web: `http://localhost:5178`
-- Vite proxy: `/api` → `http://127.0.0.1:8080`
+## Factory Harness Gotchas (both verified, both looked like repo bugs)
+- **Never give the API an undrained `stdout` pipe.** `harness/appproc.py` now sends the child's output to a temp file. With `subprocess.PIPE` and no reader, `server.js` fills the 64 KB pipe buffer with its boot/DDL logging and blocks in `write()` before `app.listen` -- the gate reports `app-start` failure on a healthy server. Manual `node services/api/server.js` starts in ~2 s; the piped version timed out at 300 s.
+- **Bare command names do not resolve on Windows.** `subprocess` uses `CreateProcess`, which ignores `PATHEXT`, so `codex`/`pi` (installed as `.CMD`) raised FileNotFound and the harness reported "not on PATH" for an installed tool. Both `appproc.resolve()` and `agentcheck.run_rung()` now go through `shutil.which`.
+- **The journey agent must read stdin AND write a file.** `agentcheck` pipes the prompt in and then requires `harness/.results/<rung>.json` to exist; an agent that exits 0 having written nothing is a FAILURE, not a pass. Verified working here: `pi --mode json --print` (local ollama). `codex` fails on an unconfigured provider, `claude` is not logged in.
+- **Never `source services/api/.env` in bash.** It is CRLF; the exported values keep a trailing newline, and every child process then dies with `getaddrinfo ENOTFOUND 127.0.0.1`. Parse it line by line like `scripts/migrate.mjs` does.
 
-**API contracts**: `services/api/openapi.yaml` (route inventory) and `packages/shared-types/src/contracts.ts` (DTOs).
+## Remote Production Deployment (rjms)
+- Host `rjms` = `100.116.166.118` (Tailscale), user `wy`, password auth (`sshpass -p nolose ssh wy@100.116.166.118`; sshpass is installed via winget, plink also available).
+- Deployment: `/home/wy/smt-factory-system` (not a git repo — a file copy). Containers: `smt-web`→5178, `smt-api`→8080, `smt-postgres`→5432, `smt-metabase`→3000, `smt-grafana`→3001, `smt-nodered`→1880, `smt-prometheus`→9090; host also runs ollama on 11434. Docker needs `sudo` (same password).
+- **Cutover 2026-11-20 (complete)**: `smt-api` = `smt-factory-system-api:sync20261120`, `smt-web` = `smt-factory-system-web:sync20261120b` (b = nginx proxy fix). Rollback containers `smt-api-prev20260907` / `smt-web-prev20260907` (exited) and the old `sync20260907*` images are kept for rollback.
+- **All 7 services are compose-managed** under project `smt-factory-system` (`docker compose ps` lists them all). Deploying local changes = `docker compose build api web && docker compose up -d api web`. Volumes and the network are `external: true`, so compose reconciles instead of recreating with generated names.
+- **Remote DB is production** (1238 tables, 38 users, `_migrations` ledger has 330 rows / 0 pending after the 2026-11-20 cutover). Never assume schema parity with local (~1336 tables) — check before writing cross-env queries.
+- **Metabase uses its own database, `metabase`, not `smt_factory`.** The factory schema already has a `permissions` table, which collides with Metabase's first Liquibase changeset (`v00.00-000`); pointing Metabase at `smt_factory` crash-loops it. Do not "simplify" the compose env back.
+- **`employees.gender` must be `M`/`F` only.** `server.js` mirrors `employees` → `hr_employees` on every `/hr` request (`api.use("/hr", ...)` ~14183) with `ELSE 'U'` for unknown values, and `hr_employees_gender_check` only allows `M`/`F` — one `'male'` or NULL row takes the whole `/api/hr/*` router down with a 500.
+- **pg_hba.conf gotcha** (bit us once): containerized clients connect from compose network `172.18.0.0/16` — `pg_hba.conf` inside `smt-postgres` must contain `host all all 172.18.0.0/16 scram-sha-256`, then `SELECT pg_reload_conf()`. Symptom of it missing: API login returns "no pg_hba.conf entry" and `smt-metabase` crash-loops.
+- `smt-nodered` healthcheck must use `127.0.0.1:1880`, not `localhost:1880` — the image's own healthcheck resolves `localhost` to IPv6 `::1` while Node-RED binds IPv4, which reported "unhealthy" on a working service. Fixed in the compose file; `smt-nodered` is now healthy.
+- **nginx `proxy_pass` with variables** (`nginx.conf`): when `proxy_pass` contains variables *and* a URI, nginx replaces the entire request URI with that static URI. `proxy_pass http://$api_host:$api_port/api/;` therefore collapsed every `/api/foo` request into `/api/`. Fixed by dropping the URI: `proxy_pass http://$api_host:$api_port;`. (The SPA never depended on it — `client.ts` calls `http://<hostname>:8080` directly — so production worked anyway.)
+- Two migrations are **skipped on prod by ledger entry** (`skipped-prod-no-mirror`): `309_rjvn_mirror_sync.sql` and `311_rjvn_mirror_audit_aliases.sql` — the `rjvn_*` mirror tables only exist in the local dev DB, not on prod.
+- Production data fixes applied 2026-11-20 (covered by `/home/wy/backups/20261120/smt_factory_pre_rjvn_migrate_052241.sql.gz`): `266_bom2_process_domain.sql` backfill applied with `SET session_replication_role = replica` (the BOM-immutability trigger would otherwise reject writes to non-draft BOMs); `employees.gender` normalized (`'male'`→`'M'`, 2 NULLs→`'F'`).
+- Known remaining gap: `flow_webhook_outbox` (referenced by `services/api/src/oa/services/wms-webhook.js`) is created by no migration and no startup DDL — the OA "集成告警扫描" cron reports an error for it. Same for `equipment`, `sys_config`, `flow_instance`, `meeting`, `drive_folder`, `doc_system`, `sys_session`.
+- When running remote multi-command diagnostics, pipe a local script via `bash -s` — inline quoting gets mangled by PowerShell.
 
-## Login Credentials
+## Graft (Context Graph)
+- `graft map` (orientation), `graft ask` (understand), `graft grep` (exhaustive search). `graft build` after major changes. MCP tools (`graft_find_all`, `graft_file_api`) beat grep/read for large files like `server.js`.
 
-All accounts use password: `Factory@123` (`services/api/server.js:15978` — should move to `.env`)
-
-Sample accounts from seed data:
-- `VN_OP_001` / `Factory@123` — SMT operator (vi-VN)
-- `VN_WH_001` / `Factory@123` — Warehouse (vi-VN)
-- `PMC_CN_01` / `Factory@123` — PMC (zh-CN)
-- `QC_VN_01` / `Factory@123` — Quality (vi-VN)
-- `FIN_VN_001` / `Factory@123` — Finance (vi-VN)
-
-JWT secret and expiry in `.env` (`JWT_SECRET`, `JWT_EXPIRY_MS`).
-
-## Active Modules
-
-| Module | UI Path | API Prefix |
-|--------|---------|------------|
-| Dashboard | `apps/web/src/` , `manager-dashboard/` | `/dashboard` |
-| WMS | `apps/web/src/wms/` | `/wms` |
-| PMC | `apps/web/src/pmc/` | `/pmc` |
-| MES | `apps/web/src/mes/` | `/mes` |
-| HR | `apps/web/src/hr/` , `employee/` | `/hr` |
-| Finance | `apps/web/src/finance/` , `einvoice/` | `/finance` |
-| Procurement | `apps/web/src/procurement/` | `/procurement` |
-| QMS / Quality | `apps/web/src/qms/` , `quality/` | `/qms`, `/quality` |
-| Equipment / Maintenance | `apps/web/src/maintenance/` , `spareparts/` | `/equipment` |
-| OA / Workflow | `apps/web/src/oa/` , `workflow/` | `/oa` |
-| AOI | `apps/web/src/aoi/` | `/aoi` |
-| Reports | `apps/web/src/reports/` | `/reports` |
-| AI | `apps/web/src/ai/` , `agents/` | `/ai` — Ollama at `localhost:11434` |
-| Sales | `apps/web/src/sales/` | `/sales` |
-| Service | `apps/web/src/service/` , `services/` | `/service` |
-| Project / Admin | `apps/web/src/project-mgmt/` , `projects/` , `admin/` | `/projects` |
-
-## App Rules (`app_rules/`)
-
-This repo uses lane-based agent ownership. Read `app_rules/<lane>.md` before editing:
-
-| Lane | Owns |
-|------|------|
-| `architecture.md` | Cross-cutting structure, module boundaries |
-| `database.md` | `database/migrations`, seeds, schema |
-| `ui.md` | `apps/web`, `apps/scanner-terminal`, `apps/display-board` |
-| `auth.md` | Login, sessions, roles, permissions |
-| `api.md` | Backend endpoints and contracts |
-| `data-contract.md` | UI-to-DB mapping, DTO alignment |
-| `backend-validation.md` | Smoke checks, API/auth boundary tests |
-| `runtime-ports.md` | Startup ports and service launch rules |
-
-Key UI rules (`app_rules/ui.md`): one active locale per page (never stack zh+en+vi), status colors consistent across all screens, tooltips on every non-obvious control, warnings are actionable with plain-language reasons.
-
-## Conventions
-
-1. **No new root-level dirs** — all under `smt-factory-system/`
-2. **No ORM** — raw PostgreSQL via `pg` driver
-3. **No hard-deletes** — use status fields (voided, closed, scrapped)
-4. **Inventory balance derived** from `inventory_transactions` — never a single balance column
-5. **Schema conventions**: `bigserial` PKs, `timestamptz`, `varchar` codes, `created_by/created_at/updated_at`
-6. **Master data multilingual**: `name_zh`, `name_en`, `name_vi` columns
-7. **Packages via relative path**: `../../../packages/shared-types/src/factory`
-8. **Migrations are append-only** — numbered `NNN_name.sql` in `database/migrations/`, never edit or renumber an applied file. Check state with `node scripts/migrate.mjs --plan` before writing one.
-9. **`server.js` also creates tables at runtime** — some tables exist only via `CREATE TABLE IF NOT EXISTS` in `services/api/server.js`, and later migrations reference them. New migrations must not assume the migration set alone produces the schema.
-10. **Verify before claiming done** — `npm run typecheck` + `npm run test` (+ `npm run test:e2e` when a user-facing flow changes).
-
-## WMS Workflow
-
-```
-Receiving → Label → IQC → Storage → Pick → Issue to SMT Line → (Line Return / Scrap)
-```
-
-Key DB tables: `material_lots`, `inventory_transactions`, `storage_locations`.
-IQC flow: `pending → hold (if failed) → released` or `pending → rejected`.
-
-## Known Issues
-
-- **React "Invalid hook call" / blank page in dev** — caused by React 19 + npm workspaces esbuild interop bug. Vite pre-bundles CJS React with `needsInterop: true`, creating separate `ReactSharedInternals` instances between `react` and `react-dom/client`. Root cause: `ReactDOMSharedInternals.d` set by react-dom but never visible to react's `resolveDispatcher()`. **Fix**: stay on React 18.3.1 (`react@18.3.1`, `react-dom@18.3.1`) with Vite 5.4.21. Full details in `docs/skills.md` → "Dev Server Invalid Hook Call Bug".
-- **Watchdog process management on Windows** — background terminal sessions may exit even when child processes are healthy. Use `start_dev.js` directly.
-- **Hardcoded password** — `Factory@123` is hardcoded at `services/api/server.js:15978` (`password === "Factory@123"`). Should be read from `.env`.
-- **API_PORT in .env.example is 3000** — actual server defaults to 8080 (line: `const PORT = Number(process.env.API_PORT ?? process.env.PORT ?? 8080)`).
-- **Repo root is a junk drawer** — ~400 untracked scratch files (`*.log`, `pw-*.cjs`, `_*_tmp.mjs`, test PNGs) sit beside real sources. Leave them alone; never `git add -A`.
-
-## Environment
-
-**Live database: `smt_factory` on `127.0.0.1:5432`** — this is what `.env` and `services/api/.env` point at (`PGDATABASE=smt_factory`, `PGUSER=smt_factory`). 279/279 migrations applied, tracked in `public._migrations`; 992 base tables in `public`. `services/api/server.js:867,886` open extra pools with `options: "-c search_path=public"`, so the API runs on `public`, not a named schema.
-
-- `psql` is not on PATH: `C:\Program Files\PostgreSQL\17\bin\psql.exe`. Connect with `PGPASSWORD=postgres`.
-- **`factory` is not the live DB.** It holds `rjvn` (263 tables), `public` (256) and `mesapp` (29) with only **128** of 279 migrations applied (`public.schema_migrations`) — a rehearsal/legacy target. `rjvn_mgmt`, `rjvn_verify`, `oa_rehearsal`, `oa_staging`, `oa_source`, `wms` are likewise side databases.
-- Schema drift note: `scripts/migrate.mjs` defaults to `PGDATABASE=smt_factory` and tracks `_migrations`; any DB showing `schema_migrations` instead was migrated by something else and is out of band.
-- Agent message bus: Redis on `127.0.0.1:6379`. Hermes and OpenCode talk through the `factory-mailbox` MCP server (`send_message` / `check_inbox`). Do not use Herdr agent commands for hand-off. See `../prompts/opencode_system.md`.
-
-## Self-verifying factory (`harness/`, `factory/`, `.factory/`, `app_rules/`)
-
-This repo carries the scaffold from `FACTORY_RULES.md`: governance files (`MISSION.md`, `FACTORY.md`, `FACTORY_RULES.md`) are human-owned and a PR touching them is an automatic reject. `factory/gate.py`, `merge.py`, `guard.py`, `state.py` are the gates that are actually code; `harness/ci.py` and `.factory/holdout/` are the checks. `MISSION.md` / `FACTORY.md` are still unfilled templates — do not treat `<angle-bracket>` placeholders as real scope.
-
-Ollama: `http://localhost:11434/v1` (model: `gemma4:latest`)
-
-## Memory Server (mem0 AI 记忆)
-
-mem0 为 AI agent 提供长期记忆存储。需要 3 个服务依次启动：
-
-### 启动顺序
-
-1. **Qdrant** (向量数据库，port 6333)
-   ```
-   C:\Users\tianj\.mem0\qdrant\qdrant.exe
-   ```
-   数据目录：`C:\Users\tianj\.mem0\qdrant`
-   检查：`netstat -ano | findstr ":6333"`
-
-2. **Ollama** (LLM + embedding，port 11434)
-   - 确认 `qwen2.5:7b` 和 `nomic-embed-text` 已下载
-   - 检查：`curl http://localhost:11434/api/tags`
-
-3. **memory_server.py** (mem0 HTTP API，port 9876)
-   ```
-   C:\Users\tianj\AppData\Local\Programs\Python\Python314\python.exe
-     C:\path\to\smt-factory-system\services\memory\memory_server.py
-   ```
-   配置：`services/memory/memory_config.json`
-   - `llm.provider: ollama` / `model: qwen2.5:7b`
-   - `embedder.provider: ollama` / `model: nomic-embed-text`
-   - `vector_store.provider: qdrant` / `collection: smt_factory_memory`
-   检查：`curl http://127.0.0.1:9876/health`
-
-### 启动命令（PowerShell）
-
-```powershell
-# 1. Qdrant
-Start-Process -FilePath "C:\Users\tianj\.mem0\qdrant\qdrant.exe" -WindowStyle Hidden
-
-# 2. memory_server (Python 3.14)
-Start-Process -FilePath "C:\Users\tianj\AppData\Local\Programs\Python\Python314\python.exe" `
-  -ArgumentList "C:\Users\tianj\Desktop\越南工厂瑞晶\smt-factory-system\services\memory\memory_server.py" `
-  -WindowStyle Hidden
-```
-
-### API 端点
-
-| Method | Path | Body |
-|--------|------|------|
-| GET | `/health` | — |
-| POST | `/search_all` | `{"query": "...", "top_k": 20}` |
-| POST | `/store` | `{"messages": [...], "agent_id": "factory_ui", "metadata": {}}` |
-| POST | `/get_all` | `{"agent_id": "factory_ui", "top_k": 20}` |
-
-### 已知问题
-
-- **mem0ai 包名** — 正确包名是 `mem0ai`，不是 `mem0`
-- **Python 版本** — 需要 Python 3.14（3.8 太旧）
-- **默认 agent_id** — `memory_server.py` 使用 `factory_ui` 作为默认 agent_id
-- **Qdrant 数据锁** — 不要在 Qdrant 运行时同时用 qdrant_client 访问同一目录
-
-## Working Style
-
-- User prefers **terse Chinese**, no preamble
-- Senior dev — cite file:line for claims
-- Bugs: minimal fix, no opportunistic refactor
-- New features: match existing patterns strictly
-
-## Multi-agent rules
-
-Concurrent agents follow `docs/AGENT-WORKFLOW.md` (lane ownership, `.factory/locks/<lane>.lock` claims, Redis mailbox message types, W0–W3 wave gates, HANDOFF template). Non-negotiables:
-
-1. **Single writer per file** — claim before editing, release when done.
-2. **Never touch governance** — `MISSION.md`, `FACTORY.md`, `FACTORY_RULES.md`, `harness/`, `.factory/locks`, `.factory/holdout`.
-3. **Never restart the dev servers** (`:8080`, `:5178`) while others work.
-4. **Never `git add -A`** — the root holds 400+ scratch scripts and logs.
-5. **No green without evidence** — a lane is done only when its Gate command output is pasted in the handoff.
-
-## Graft — repo context graph
-
-This repo is indexed in `graft/`: small linked markdown nodes that explain each system and carry exact file:line spans, kept in sync with the code through git.
-
-For ANY task here — understanding how something works, finding where code lives, or scoping a change — get context from the graph before grepping or opening source files. Re-ask freely (it's cheap) and reuse literal identifiers you already have (symbol, error string, file name) as the query. New to this repo? Run `graft map` first — a token-budgeted orientation (dir clusters, hubs, hotspots), no LLM, no key.
-
-- Run `graft ask "<your question>" --source` → ranked nodes with the relevant code spans inlined (each hit's ≤8-line crux by default; `--full` for whole definitions when the crux isn't enough). Match the tool to the task shape: for understanding or editing, the top node IS the answer — cite its `covers:` file:line spans and edit straight from `--source`. For exhaustive tasks ("every occurrence / every caller of this pattern"), ranked results are top-N, not complete — run `graft grep "<literal>"` instead (exhaustive over indexed files, grouped by enclosing symbol), falling back to raw `grep -rn` only for unindexed files.
-- `graft skeleton <file>` → every definition's signature + span, ~10× cheaper than reading the file; use it to skim an API surface.
-- `graft callers <symbol>` gives precomputed, exact edges — who calls this. Add `--direction out` for what it calls, or `--depth N` to walk transitively for the full blast radius. For structural questions, skip ranking and use this directly.
-- Or browse: `graft/INDEX.md` lists every node; follow the links.
-- Monorepos and folders of multiple repos rank fairly across sub-projects — hits carry `[scope/]` labels naming which one they're from. Narrow with `graft ask "<task>" --in <scope>/` once you know where you're working.
-
-If a returned span is truncated ("+N more lines"), open the file at that exact range before finalizing. Only open source files when a node genuinely lacks a needed detail, and then at the exact file:line the node points to — never re-read whole files.
-
-After big code changes, refresh the graph with `graft build` (deterministic, no API key, $0).
+## Verification
+- Run `npm run typecheck:all` + `npm run test` before claiming a task complete (plain `typecheck` passes even when services code is broken).
+- Bugs = minimal fix. New features = strictly match existing patterns.
+- For API changes, verify live: login then hit the real endpoint with the JWT (route list is huge; 404 means the route genuinely doesn't exist — `/api/health` does not).
