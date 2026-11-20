@@ -21,6 +21,9 @@ export const SHARED_NAMESPACES = Object.freeze([
   "ve/shared/general", "ve/shared/controlled-docs", "ve/shared/exception-signatures",
 ]);
 
+// Callers pass either a namespace name or `true` for the default shared one
+// (`remember({ shared: true })`), so the parameter accepts both.
+/** @param {string | boolean} [which] */
 export function sharedAgentId(which = "general") {
   const name = String(which === true ? "general" : which || "general");
   return name.startsWith(SHARED_PREFIX) ? name : `${SHARED_PREFIX}${name}`;

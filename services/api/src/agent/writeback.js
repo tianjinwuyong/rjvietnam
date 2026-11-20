@@ -15,9 +15,22 @@
 import { canUseSkill } from "../virtual-employees/capabilities.js";
 import { getFactoryVirtualEmployee } from "../virtual-employees/registry.js";
 
+// One gate effect. A gate either advances a successor draft or is explicitly
+// `unsupported`; both carry a note saying why. Declaring the widest shape keeps
+// the table indexable — as a bare object literal the compiler unions ~56 shapes
+// and then refuses `effect.advance` on most of them.
+/**
+ * @typedef {{
+ *   advance?: { employeeId: string, taskType: string, title: (task: any, row: any) => string },
+ *   unsupported?: string,
+ *   note?: string,
+ * }} GateEffect
+ */
+
 // gate -> successor draft. `taskType` must be a declared skill of
 // `employeeId`; kind must not be `write` (that would demand a second human
 // approval for work that is only coordination).
+/** @type {Readonly<Record<string, GateEffect>>} */
 export const GATE_EFFECTS = Object.freeze({
   receive_variance: {
     advance: { employeeId: "WMS-IQC-HANDOFF-VIRTUAL-01", taskType: "IQC_SUBMIT",
@@ -159,6 +172,7 @@ export async function applyWriteback({ query, task, employee, reviewer, now = Da
     return { applied: false, code: plan.code, reason: plan.reason || plan.unsupported || null, gate };
   }
 
+  /** @type {{ domain?: string }} */
   const successor = getFactoryVirtualEmployee(plan.target.employeeId) || {};
   const inserted = await query(
     `INSERT INTO factory_virtual_employee_tasks

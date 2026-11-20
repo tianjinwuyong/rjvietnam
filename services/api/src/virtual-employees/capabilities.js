@@ -86,6 +86,9 @@ export function canUseSkill(roleId, skillId) {
 
 // Static self-audit. Returns a list of problems; empty means the contract is
 // internally consistent (the live-DB parity checks live in the check script).
+/**
+ * @param {{ registryEntries?: readonly any[] }} [options]
+ */
 export function auditCapabilities({ registryEntries = [] } = {}) {
   const problems = [];
   const warnings = [];

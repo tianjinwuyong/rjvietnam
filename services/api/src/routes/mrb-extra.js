@@ -130,7 +130,7 @@ export function createMrbExtrasRouter({ authenticateJWT }) {
     try {
       const page = Math.max(Number(req.query.page) || 1, 1);
       const pageSize = Math.min(Math.max(Number(req.query.pageSize) || 20, 1), 200);
-      const p = [DONE_STATUSES];
+      /** @type {any[]} */ const p = [DONE_STATUSES];
       const where = ["status = ANY($1::text[])", "lot_id IS NOT NULL"];
       if (req.query.mrbNo) {
         const kw = `%${text(req.query.mrbNo)}%`;

@@ -16,8 +16,28 @@ export const CADENCE_KIND = Object.freeze({
 
 export const TIMEZONE = "Asia/Ho_Chi_Minh"; // UTC+7
 
+// One cadence row. The fields a row must carry depend on its kind (BATCH needs
+// `cron`+`window`, WATCH needs the intervals, …), which is what
+// validateFrequencies() checks at runtime; declaring the widest shape here keeps
+// that check readable instead of splitting the table into five literal unions
+// the compiler then refuses to index uniformly.
+/**
+ * @typedef {{
+ *   kind: "EVENT" | "WATCH" | "BATCH" | "DEMAND",
+ *   event?: string,
+ *   cron?: string,
+ *   window?: string,
+ *   intervalSeconds?: number,
+ *   maxLatencySeconds?: number,
+ *   llmBudgetPerDay: number,
+ *   note: string,
+ *   secondary?: { kind: "EVENT" | "WATCH" | "BATCH" | "DEMAND", cron?: string, note?: string },
+ * }} Cadence
+ */
+
 // intervalSeconds thresholds mirror factory_virtual_employee_configs
 // (interval_seconds INTEGER DEFAULT 300 CHECK(interval_seconds>=60)).
+/** @type {Readonly<Record<string, Cadence>>} */
 export const FREQUENCIES = Object.freeze({
   // ---- 指挥 ----
   "OPS-SUPERVISOR-VIRTUAL-01": { kind: "EVENT", event: "TASK_ESCALATED|KPI_BREACH", intervalSeconds: 300, maxLatencySeconds: 30, llmBudgetPerDay: 20, note: "派工即时；KPI/队列每 5 分钟兜底扫描" },
