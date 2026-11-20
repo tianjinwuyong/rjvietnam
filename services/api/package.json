@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "node ./server.js",
     "start": "node server.js",
-    "scheduler": "node ./mesrj-scheduler.mjs"
+    "scheduler": "node ./mesrj-scheduler.mjs",
+    "laser-sn-server": "node ./laser-sn-server.mjs",
+    "print-agent": "node ./print-agent.mjs"
   },
   "description": "Main backend API for the integrated SMT system.",
   "main": "server.js",

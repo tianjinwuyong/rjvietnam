@@ -10243,6 +10243,30 @@ export function createMesrjRouter({ authenticateJWT }) {
        FROM prd_panel_split p
        ORDER BY p.created_at DESC
        LIMIT 50`);
+    // 旧 MES 当日 ATE 快照优先（源 api/board.py _shopfloor 65-76）：现场大屏的
+    // 良率/Dppm 以旧 MES 的 ATE 组为准，没推送时才用本系统机器数据兜底。
+    const today = nowStr().slice(0, 10);
+    const omRows = (await query(
+      `SELECT group_code, input_qty, pass_qty, true_fail, pass_yield, dppm
+         FROM prd_oldmes_yield WHERE biz_date=$1 AND time_from='00:00' AND time_to='23:59'`,
+      [today])).rows;
+    const om = new Map(omRows.map(r => [r.group_code, r]));
+    const fallbackOut = lines.rows.reduce((s, r) => s + Number(r.out_qty || 0), 0);
+    const fallbackNg = lines.rows.reduce((s, r) => s + Number(r.ng_qty || 0), 0);
+    const ate = om.get("ATE") || om.get("PACKING") || null;
+    let yOutput = fallbackOut, yPass = Math.max(0, fallbackOut - fallbackNg),
+      yNg = fallbackNg, yYield = 0, yDppm = 0;
+    if (ate) {
+      yOutput = Number(ate.input_qty || 0);
+      yPass = Number(ate.pass_qty || 0);
+      yNg = Number(ate.true_fail || 0);
+      yYield = Math.round(Number(ate.pass_yield || 0) * 10000) / 10000;
+      yDppm = Math.round(Number(ate.dppm || 0) * 10) / 10;
+    }
+    if (!yYield) {
+      yYield = yOutput ? Math.round((yPass / yOutput) * 10000) / 10000 : 0;
+      yDppm = yOutput ? Math.round((yNg / yOutput) * 1000000 * 10) / 10 : 0;
+    }
     return ok(res, {
       lines: lines.rows.map(r => ({
         line_code: r.line_code,
@@ -10251,11 +10275,14 @@ export function createMesrjRouter({ authenticateJWT }) {
         out_qty: Number(r.out_qty || 0),
         ng_qty: Number(r.ng_qty || 0)
       })),
-      panels: panels.rows
+      panels: panels.rows,
+      yield_today: { output: yOutput, pass: yPass, ng: yNg, yield: yYield, dppm: yDppm,
+        source: ate ? "oldmes" : "local" },
     });
   });
-
-  // ── oldmes 推送 ──
+  // ── oldmes 推送（源 api/board.py /oldmes/push）──
+  //   抓旧 MES 看板的外部脚本按「日期 + 时间窗 + GroupCode」推一整屏良率快照，
+  //   同一窗口重复推要覆盖（源 SELECT 后 UPDATE，不做累加）。表 314 迁移建。
   router.all("/oldmes/push", requireMesrjPerm(null), async (req, res) => {
     if (req.method === "OPTIONS") {
       res.setHeader("Access-Control-Allow-Origin", "*");
@@ -10264,12 +10291,49 @@ export function createMesrjRouter({ authenticateJWT }) {
       return res.status(204).end();
     }
     const d = req.body || {};
+    const stations = Array.isArray(d.Stations) ? d.Stations : [];
+    if (!stations.length) return fail(res, "没有 Stations 数据", 400);
+    const bizDate = String(d.DateFrom || "").trim();
+    const tFrom = String(d.TimeFrom || "").trim();
+    const tTo = String(d.TimeTo || "").trim();
+    const ts = nowStr();
+    let added = 0, updated = 0;
     try {
-      await query(`INSERT INTO prd_oldmes_yield (mo_no, product_code, line_code, station_code, qty, good_qty, ng_qty, created_at)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,now())`,
-        [d.mo_no, d.product_code, d.line_code, d.station_code, d.qty, d.good_qty, d.ng_qty]);
-    } catch { /* table may not exist yet; best-effort */ }
-    return ok(res, {}, "推送成功");
+      for (const s of stations) {
+        const gcode = String(s.GroupCode || "").trim();
+        if (!gcode) continue;
+        const num = (v, dv = 0) => {
+          const n = Number(v);
+          return Number.isFinite(n) ? n : dv;
+        };
+        const dppo = s.Dppo === null || s.Dppo === undefined || s.Dppo === "" ? null : num(s.Dppo);
+        const r = await query(
+          `INSERT INTO prd_oldmes_yield
+             (biz_date, time_from, time_to, group_code, group_name, product_step, flow_order,
+              route_order, is_retest, failure_source, input_qty, failure1, failure2, true_fail,
+              pass_qty, dppm, dppo, fpy, pass_yield, snapshot_at)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+           ON CONFLICT (biz_date, time_from, time_to, group_code) DO UPDATE SET
+             group_name=EXCLUDED.group_name, product_step=EXCLUDED.product_step,
+             flow_order=EXCLUDED.flow_order, route_order=EXCLUDED.route_order,
+             is_retest=EXCLUDED.is_retest, failure_source=EXCLUDED.failure_source,
+             input_qty=EXCLUDED.input_qty, failure1=EXCLUDED.failure1, failure2=EXCLUDED.failure2,
+             true_fail=EXCLUDED.true_fail, pass_qty=EXCLUDED.pass_qty, dppm=EXCLUDED.dppm,
+             dppo=EXCLUDED.dppo, fpy=EXCLUDED.fpy, pass_yield=EXCLUDED.pass_yield,
+             snapshot_at=EXCLUDED.snapshot_at
+           RETURNING (xmax = 0) AS inserted`,
+          [bizDate, tFrom, tTo, gcode, String(s.GroupName || ""), String(s.ProductStep || ""),
+           num(s.FlowOrder), Math.trunc(num(s.RouteOrder)), s.IsRetestStation ? 1 : 0,
+           String(s.FailureSource || ""), Math.trunc(num(s.InputQty)), Math.trunc(num(s.Failure1)),
+           Math.trunc(num(s.Failure2)), Math.trunc(num(s.TrueFail)), Math.trunc(num(s.PassQty)),
+           num(s.Dppm), dppo, num(s.Fpy), num(s.PassYield), ts]);
+        if (r.rows[0]?.inserted) added += 1; else updated += 1;
+      }
+    } catch (e) {
+      return fail(res, `入库失败: ${e.message}`, 500);
+    }
+    return ok(res, { new: added, updated, date: bizDate, time: `${tFrom}-${tTo}`,
+      stations: stations.length, at: ts }, `推送成功（新增 ${added}，更新 ${updated}）`);
   });
 
   // ── PO 追溯汇总 ──
