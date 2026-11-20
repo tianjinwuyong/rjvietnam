@@ -153,8 +153,8 @@ false —— 严禁在 release 启用。**
   (经 `unifiedpda/local.properties` 配置,严禁提交)。
 - Gradle wrapper 8.14.3、AGP 8.4.0、Kotlin 1.9.24、Compose BOM 2024.06.00、
   compileSdk/targetSdk 34、minSdk 26、Java/`jvmTarget` 17。
-- 可选离线缓存:`-g .gradle-home` 复用 `unifiedpda/.gradle-home/` —— 它**没有**被
-  gitignore,严禁提交。
+- 可选离线缓存:`-g .gradle-home` 复用 `unifiedpda/.gradle-home/` —— 已被
+  `unifiedpda/.gitignore` 忽略,严禁提交。
 - 无其他运行时:仓库内没有 Node/Python 工具链;构建、安装、冒烟验证一律走
   PowerShell + Gradle wrapper + adb。
 
@@ -184,7 +184,7 @@ false —— 严禁在 release 启用。**
 - 根目录约 40 个 `*.apk` 与各 `*.png` 是历史构建证据,不是源码。
 - `unifiedpda/app/release/ruijing-plant-manager-release.jks` 存在于本地 —— 保持不被
   跟踪,任何内容不得引用。
-- git 仓库在 `master` 分支、**零提交**;已配置远端 `origin`
-  (github.com/tianjinwuyong/rjvietnam);首次提交前一切均未跟踪。
+- git 仓库在 `master` 分支;首次提交 `c5a4665`(2026-11-21)已包含全部源码与文档;
+  远端 `origin`(github.com/tianjinwuyong/rjvietnam)**尚未推送**。
 - 除非任务明确关于 3D 仓库地图,保持 `godot-warehouse-map/` 与
   `unity-warehouse-map/` 原样不动。
