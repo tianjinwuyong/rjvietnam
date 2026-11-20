@@ -81,6 +81,8 @@ import { PdaAccessConfiguration } from "./admin/PdaAccessConfiguration";
 import { PdaAppCatalogManager } from "./admin/PdaAppCatalogManager";
 import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
+import { WmsIqcTemplates } from "./wms/WmsIqcTemplates";
+import { WmsMaterialSubstitution } from "./wms/WmsMaterialSubstitution";
 import type { WmsTabKey } from "./wms";
 import { QmsApp } from "./qms";
 import { WmsNonIqcClosedLoop } from "./wms/WmsNonIqcClosedLoop";
@@ -92,7 +94,7 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsRjvnClassic, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsRjvnClassic, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips, WmsOverPicking, WmsRework, WmsSupplierDebt, WmsDefectiveMove, WmsMrb, WmsSupplierReturnOrder, WmsNotices } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
 import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
@@ -157,8 +159,7 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
   { key: "wms", label: "nav.wms", icon: Boxes },
   { key: "bom", label: "nav.bom", icon: ClipboardList },
   { key: "mes", label: "nav.mes", icon: Factory },
-  { key: "mesrj", label: "nav.mesrj", icon: Factory },
-  { key: "smtReelConsumption", label: "nav.mes", icon: Activity },
+  { key: "smtReelConsumption", label: "nav.smtReelConsumption", icon: Activity },
   { key: "pdaUiDesigner", label: "nav.pdaUiDesigner", icon: LayoutDashboard },
   { key: "managementUiDesigner", label: "nav.managementUiDesigner", icon: Palette },
   { key: "andonBoard", label: "nav.andon", icon: Activity },
@@ -193,7 +194,7 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
 
 const moduleGroups: Array<{ label: TranslationKey; items: ModuleKey[] }> = [
   { label: "nav.group.operations", items: ["dashboard", "pmc", "wms", "bom", "managerDashboard", "workflow", "safetyManager", "pdaCommMonitor", "ambassadorDashboard", "effectivenessAmbassador", "efficiencyAmbassador", "swiftnessAmbassador", "collaborationAmbassador"] },
-  { label: "nav.group.execution", items: ["mes", "mesrj", "smtReelConsumption", "pdaUiDesigner", "managementUiDesigner", "andonBoard", "quality", "qms", "trace"] },
+  { label: "nav.group.execution", items: ["mes", "smtReelConsumption", "pdaUiDesigner", "managementUiDesigner", "andonBoard", "quality", "qms", "trace"] },
   { label: "nav.group.control", items: ["reports", "sales", "service", "finance", "procurement", "einvoice", "admin", "hr", "maintenance", "projects", "ai", "agents", "oa"] },
   { label: "nav.group.projects", items: ["projectMgmt"] },
   { label: "nav.group.employee", items: ["employee"] },
@@ -1892,6 +1893,8 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
       case "cycleCount": return <WmsCycleCount locale={locale} />;
       case "transferAdjust": return <WmsTransferAdjust locale={locale} />;
       case "expiryControl": return <WmsExpiryControl locale={locale} />;
+      case "iqcTemplates": return <WmsIqcTemplates locale={locale} />;
+      case "substitution": return <WmsMaterialSubstitution locale={locale} />;
       case "fifoMonitor": return <WmsFifoMonitor locale={locale} />;
       case "transactions": return <WmsTransactions locale={locale} />;
       case "materialConsumption": return <WmsMaterialConsumption locale={locale} />;
@@ -1950,6 +1953,13 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
       case "oqc": return <QmsOqcBatches locale={locale} />;
       case "ngManagement": return <QmsNgCases locale={locale} />;
       case "eightD": return <QmsEightD locale={locale} />;
+      case "overPicking": return <WmsOverPicking locale={locale} />;
+      case "rework": return <WmsRework locale={locale} />;
+      case "supplierDebt": return <WmsSupplierDebt locale={locale} />;
+      case "defectiveMove": return <WmsDefectiveMove locale={locale} />;
+      case "mrb": return <WmsMrb locale={locale} />;
+      case "supplierReturnOrder": return <WmsSupplierReturnOrder locale={locale} />;
+      case "notices": return <WmsNotices locale={locale} />;
       default:
         return (
           <SurfacePanel>
@@ -2078,6 +2088,17 @@ function Mes({ locale }: { locale: Locale }) {
         return <SmtMaterialBindingTable />;
       case "smtLoading3d":
         return <SmtLoading3dSimulator />;
+      case "mesrjHome":
+        // 瑞晶 MES（原 #mesrj 独立模块）按业务域分散到各 MES 分组，组内保留原菜单层级
+        return <MesrjModule locale={locale} groups={["home"]} />;
+      case "mesrjMaterial":
+        return <MesrjModule locale={locale} groups={["md", "bom", "plan", "order", "erp"]} />;
+      case "mesrjExec":
+        return <MesrjModule locale={locale} groups={["exec", "smt", "dev"]} />;
+      case "mesrjQuality":
+        return <MesrjModule locale={locale} groups={["qc", "report"]} />;
+      case "mesrjCfg":
+        return <MesrjModule locale={locale} groups={["route", "cfg", "sys"]} />;
       case "smtExemptions":
         return <SmtMaterialExemptions locale={locale} />;
       case "smtLoader":
@@ -3091,20 +3112,9 @@ export function App() {
     if (initHash === "group-leader-pda") {
       return { token: "", username: "PLANT_MANAGER", displayName: "Plant Manager", roleKey: "LINE_MANAGER", locale: "en-US", permissions: ["mes.view", "mes.execute", "smt.loading.approve", "pmc.work_order.release"] };
     }
-    // Map demo usernames to the backend login name (only "admin" exists in hr_employees)
-    const backendLogin = result.username === "ADMIN_VN_01" ? "admin" : result.username;
-    try {
-      const backendPassword = result.username === "MENG_YING" ? "my" : "Factory@123";
-      const loginResult = await authApi.login(backendLogin, backendPassword);
-      if (loginResult.token) {
-        // Merge API user data (roleKey + permissions) with demo session data
-        const apiUser = loginResult.user;
-        const mergedUser = { ...result, roleKey: apiUser.roleKey, permissions: apiUser.permissions ?? [] };
-        sessionStorage.setItem("demo_user", JSON.stringify(mergedUser));
-        setCurrentUser(mergedUser);
-        return; // skip setCurrentUser below — already set with merged data
-      }
-    } catch (_) { /* non-fatal */ }
+    // No credential fallback: AuthSignIn has already authenticated the operator
+    // and returned a JWT, so the account is used as-is. Re-authenticating with a
+    // guessed password here would put a literal credential back in the bundle.
     setCurrentUser(result);
   }
 
