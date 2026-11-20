@@ -31,7 +31,14 @@
     "check:migrations": "node scripts/check-migrations.mjs",
     "check:route-census": "node scripts/check-route-census.mjs",
     "check:route-shadowing": "node scripts/check-route-shadowing.mjs",
-    "check:register-deps": "node scripts/check-register-deps.mjs"
+    "check:register-deps": "node scripts/check-register-deps.mjs",
+    "report:ve": "node scripts/ve-report.mjs",
+    "runner:ve": "node scripts/ve-runner.mjs",
+    "learn:ve": "node scripts/ve-learn.mjs",
+    "knowledge:ve": "node scripts/ve-knowledge.mjs",
+    "competency:ve": "node scripts/ve-competency.mjs",
+    "check:ve-capabilities": "node scripts/check-ve-capabilities.mjs",
+    "doc:ve-capabilities": "node scripts/ve-capabilities-doc.mjs"
   },
   "workspaces": [
     "apps/*",

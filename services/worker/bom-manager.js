@@ -131,14 +131,8 @@ async function sendLINE(msg) {
 }
 
 async function loadState() {
-  try {
-    const results = await mem.search("most recent BOM manager state", 1);
-    if (results.results?.length > 0) {
-      const latest = results.results[0];
-      const st = latest.metadata?.state;
-      if (st) return st;
-    }
-  } catch (_) {}
+  // Snapshot state belongs in the file. The vector index holds field
+  // experience only (services/_shared/memory-experience.js).
   try {
     if (existsSync(STATE_FILE)) return JSON.parse(readFileSync(STATE_FILE, "utf8"));
   } catch (_) {}
@@ -146,12 +140,6 @@ async function loadState() {
 }
 
 async function saveState(state) {
-  try {
-    const label = `BOM cycle — ${state.lastCycle?.slice(0, 10) || "?"}`;
-    await mem.store(`${label} — ${Object.keys(state).filter(k => k !== "lastCycle" && k !== "lastRun").length} data fields`, { type: "bom_state", state, ts: state.lastRun || new Date().toISOString() });
-  } catch (e) {
-    log("WARN", `mem0 saveState failed: ${e.message}`);
-  }
   try { require("fs").writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch (_) {}
 }
 

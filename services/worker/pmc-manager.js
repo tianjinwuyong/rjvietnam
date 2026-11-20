@@ -88,16 +88,10 @@ async function sendLINE(msg) {
   if (!res.ok) log("WARN", `LINE fail: ${res.status}`);
 }
 
-// ── State ─────────────────────────────────────────────────────────────
+// ── State (JSON file; vector store holds experience only) ─────────────
 async function loadState() {
-  try {
-    const results = await mem.search("most recent PMC manager state", 1);
-    if (results.results?.length > 0) {
-      const latest = results.results[0];
-      const st = latest.metadata?.state;
-      if (st) return st;
-    }
-  } catch (_) {}
+  // Snapshot state belongs in the file. The vector index holds field
+  // experience only (services/_shared/memory-experience.js).
   try {
     if (existsSync(STATE_FILE)) return JSON.parse(readFileSync(STATE_FILE, "utf8"));
   } catch (_) {}
@@ -105,12 +99,6 @@ async function loadState() {
 }
 
 async function saveState(state) {
-  try {
-    const label = `PMC cycle — ${state.lastCycle?.slice(0, 10) || "?"}`;
-    await mem.store(`${label} — WO:${(state.woSummary?.length || 0)} KIT:${(state.kitSummary?.length || 0)} DELIVERY:${(state.deliverySummary?.length || 0)}`, { type: "pmc_state", state, ts: state.lastRun || new Date().toISOString() });
-  } catch (e) {
-    log("WARN", `mem0 saveState failed: ${e.message}`);
-  }
   try { require("fs").writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch (_) {}
 }
 

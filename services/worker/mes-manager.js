@@ -18,7 +18,7 @@ import { spawn } from "child_process";
 import { existsSync, readFileSync, appendFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { createRequire } from "module";
-import { createMemoryClient, memoryHealth } from "../../_shared/memory-client.js";
+import { createMemoryClient, memoryHealth } from "../_shared/memory-client.js";
 
 const require = createRequire(import.meta.url);
 
@@ -426,18 +426,10 @@ function savePendingApprovals(analysis) {
   }
 }
 
-// ── Delta detection (mem0-backed, with JSON file fallback) ─────────────
+// ── Delta detection (JSON file state; vector store holds experience only) ─
 async function loadState() {
-  // Try mem0 first — recall the most recent patrol state
-  try {
-    const results = await mem.search("most recent patrol cycle state", 1);
-    if (results.results?.length > 0) {
-      const latest = results.results[0];
-      const state = latest.metadata?.state;
-      if (state) return state;
-    }
-  } catch (_) {}
-  // Fallback to JSON file
+  // Snapshot state belongs in the file. The vector index holds field
+  // experience only (services/_shared/memory-experience.js).
   try {
     if (existsSync(STATE_FILE)) {
       return JSON.parse(readFileSync(STATE_FILE, "utf-8"));
@@ -447,20 +439,7 @@ async function loadState() {
 }
 
 async function saveState(state) {
-  // Store in mem0 for semantic recall
-  try {
-    const summary = state.summary || `Patrol cycle #${state.cycleCount || 0}`;
-    const alertSummary = state.anomalies?.length > 0
-      ? ` — ${state.anomalies.length} anomalies: ${state.anomalies.slice(0, 3).map(a => a.title).join(", ")}`
-      : " — no anomalies";
-    await mem.store(
-      `MES patrol cycle #${state.cycleCount || 0} complete. ${summary}${alertSummary}`,
-      { type: "patrol_state", state, cycleId: state.cycleId, ts: state.lastCycle }
-    );
-  } catch (e) {
-    log("WARN", `mem0 saveState failed: ${e.message}`);
-  }
-  // Also write JSON file as fallback
+  // The JSON file is the state store.
   try {
     writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
   } catch (_) {}
