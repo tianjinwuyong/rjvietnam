@@ -400,6 +400,10 @@ export function registerMesrjLegacyGaps(router, deps) {
     if (!cfg.url) return [false, "未配置 wms.mo_push_url（页面：订单管理 → 工单下发 WMS → 推送设置）"];
     const [payload, err] = await buildMoPayload(moNo);
     if (err) return [false, err];
+    // buildMoPayload returns [null, reason] on failure, so `err` already covers it
+    // at runtime; the tuple carries no correlation, so narrowing here is what lets
+    // the compiler read payload.data below.
+    if (!payload || typeof payload === "string") return [false, err || "工单数据为空"];
     const raw = JSON.stringify(payload);
     const h = createHash("sha1").update(raw).digest("hex").slice(0, 16);
     const prev = (await query(
