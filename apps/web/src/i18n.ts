@@ -5785,6 +5785,8 @@ const dictionary = {
   "wms.mrb.submitReview": { "zh-CN": "提交评审意见", "vi-VN": "Gửi ý kiến đánh giá", "en-US": "Submit Review" },
   "wms.mrb.preApprove": { "zh-CN": "完整性预审", "vi-VN": "Duyệt tính đầy đủ", "en-US": "Pre-approve" },
   "wms.mrb.finalApprove": { "zh-CN": "终审", "vi-VN": "Duyệt cuối", "en-US": "Final Approve" },
+  "wms.mrb.confirmOut": { "zh-CN": "确认提走", "vi-VN": "Xác nhận xuất kho", "en-US": "Confirm picked up" },
+  "wms.mrb.destroy": { "zh-CN": "报废销毁", "vi-VN": "Tiêu hủy", "en-US": "Destroy scrap" },
   "wms.mrb.reject": { "zh-CN": "驳回", "vi-VN": "Từ chối", "en-US": "Reject" },
   "wms.mrb.cancel": { "zh-CN": "作废", "vi-VN": "Hủy", "en-US": "Cancel" },
   "wms.mrb.reviewers": { "zh-CN": "评审员", "vi-VN": "Người đánh giá", "en-US": "Reviewers" },
@@ -5800,6 +5802,8 @@ const dictionary = {
   "wms.mrb.status.pending_approval": { "zh-CN": "待预审", "vi-VN": "Chờ duyệt sơ bộ", "en-US": "Pending Pre-approval" },
   "wms.mrb.status.pending_final": { "zh-CN": "待终审", "vi-VN": "Chờ duyệt cuối", "en-US": "Pending Final" },
   "wms.mrb.status.approved": { "zh-CN": "已批准", "vi-VN": "Đã duyệt", "en-US": "Approved" },
+  "wms.mrb.status.pending_execute": { "zh-CN": "待执行", "vi-VN": "Chờ thực hiện", "en-US": "Pending execution" },
+  "wms.mrb.status.closed": { "zh-CN": "已结案", "vi-VN": "Đã đóng", "en-US": "Closed" },
   "wms.mrb.status.rejected": { "zh-CN": "已驳回", "vi-VN": "Đã từ chối", "en-US": "Rejected" },
   "wms.mrb.status.cancelled": { "zh-CN": "已作废", "vi-VN": "Đã hủy", "en-US": "Cancelled" },
 

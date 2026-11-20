@@ -80,6 +80,7 @@ import { createMesrjRouter } from "./src/routes/mesrj.js";
 // 旧版 MES-ruijing 根路径 → /api/mesrj/*（307 保留方法/请求体）
 import { MESRJ_API_PREFIX, legacyMesrjTarget } from "./src/mesrj/legacy-paths.js";
 import { createMrbRouter } from "./src/routes/mrb.js";
+import { createMrbExtrasRouter } from "./src/routes/mrb-extra.js";
 import { registerWmsParityRoutes } from "./src/routes/wms-parity.js";
 import { registerWmsGraftRoutes } from "./src/routes/wms-graft.js";
 import { createSupplierDebtRouter, settleDebtOnReceipt } from "./src/routes/supplier-debt-hooks.js";
@@ -9000,6 +9001,12 @@ app.post("/api/mes/product-gate/evaluate", async (req, res) => {
 // /api/auth/logout) are NOT registered by the shim and fall through to the
 // SMT api router — single-login policy: users authenticate against the
 // SMT user store; the embedded OA UI receives the same SMT JWT.
+// MRB (物料评审) — 必须在 OA 之前挂载：OA 的 GET /api/mrb/:id 是单段 catch-all，
+// 会把 /api/mrb/list、/api/mrb/pending-lots、/api/mrb/lot-groups、/api/mrb/lot-labels
+// 当成 :id 拦下（400 参数不合法）。两个挂载都用 app 级，注册顺序决定谁先应答。
+// 路由内部各自 router.use(authenticateJWT)，与原先 api.use("/mrb", …) 等价。
+app.use("/api/mrb", createMrbRouter({ authenticateJWT }));
+app.use("/api/mrb", createMrbExtrasRouter({ authenticateJWT }));
 const { router: oaRouter, app: oaApp } = createOaRouter(oaConfig);
 await registerOaRoutes(oaApp);
 app.use(oaRouter);
@@ -9069,7 +9076,9 @@ api.use("/mesrj", createMesrjRouter({ authenticateJWT }));
 registerWmsParityRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope });
 registerWmsGraftRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope });
 // MRB (物料评审) — grafted from WMS-20261019; downstream of IQC fails
-api.use("/mrb", createMrbRouter({ authenticateJWT }));
+// ⚠️ 必须挂在 OA 之前：OA 的 GET /api/mrb/:id 是单段 catch-all，
+// 会把 /api/mrb/list、/api/mrb/lot-groups、/api/mrb/pending-lots 当成 :id 拦下（400 参数不合法）。
+// 这里用 app 级挂载（OA 也是 app 级），注册顺序决定谁先应答。
 // Supplier-debt write hooks (create / settle) — writes originate from MRB & IQC
 api.use("/supplier-debt", createSupplierDebtRouter({ authenticateJWT }));
 // Supplier-return order lifecycle (reference supplier-return module)
