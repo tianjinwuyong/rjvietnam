@@ -76,6 +76,15 @@
   "wrong credential". Empty, unparsable or past deadline = enforced. This mirrors
   `MES_SIGNATURE_ENFORCEMENT` / `MES_SIGNATURE_FLAG_UNTIL`, the pattern this repo
   already uses to require a credential that not every client sends yet.
+  The list to provision from is readable without psql:
+  `GET /admin/audit-logs?eventType=STATION_LOGIN_UNPROVISIONED` (needs `admin.view`;
+  `data.items[].referenceNo` is `<operator>@<station>`, `data.total` is how many are
+  still missing the file). That endpoint was itself dead until 2026-11-21 — it
+  selected `event_type`, `status`, `actor` and `details`, four columns `audit_logs`
+  has never had, so every authenticated call returned 500 `字段 al.event_type 不存在`
+  and the trail could only be read from the database. It now maps to the real
+  columns (`action`, `actor_id`→`users.username`, `entity_type`, `reference_no`) and
+  keeps `eventType` as the wire name; `total` shares the row predicate.
 - The per-token `permissions[]` are frozen at login: a role change takes effect at
   the next sign-in, not mid-session.
 - **Station login is for floor roles only.** `services/api/src/auth/station-login-policy.js`

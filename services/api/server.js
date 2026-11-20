@@ -30672,24 +30672,39 @@ app.patch("/admin/users/:id/role", requirePermission("admin.roles"), async (req,
   }
 });
 
-app.get("/admin/audit-logs", async (req, res) => {
+app.get("/admin/audit-logs", requirePermission("admin.view"), async (req, res) => {
   try {
-    const { actor, eventType, fromDate, toDate, limit = 50, offset = 0 } = req.query;
+    const { actor, eventType, entity, referenceNo, fromDate, toDate, limit = 50, offset = 0 } = req.query;
+    // audit_logs is (actor_id, action, entity_type, entity_id, reference_no,
+    // ip_address, user_agent, occurred_at). This handler selected event_type,
+    // status, actor and details — four columns that have never existed here — so
+    // every authenticated call answered 500 and the audit trail was unreadable
+    // through the API. `eventType` is kept as the wire name for both the filter
+    // and the row, so the admin console's contract is unchanged by the fix.
     const conditions = [];
     const params = [];
     let idx = 1;
-    if (actor) { conditions.push(`al.actor = $${idx++}`); params.push(actor); }
-    if (eventType) { conditions.push(`al.event_type = $${idx++}`); params.push(eventType); }
+    if (actor) { conditions.push(`COALESCE(u.username, al.actor_id::text) = $${idx++}`); params.push(actor); }
+    if (eventType) { conditions.push(`al.action = $${idx++}`); params.push(eventType); }
+    if (entity) { conditions.push(`al.entity_type = $${idx++}`); params.push(entity); }
+    if (referenceNo) { conditions.push(`al.reference_no ILIKE $${idx++}`); params.push(`%${referenceNo}%`); }
     if (fromDate) { conditions.push(`al.occurred_at >= $${idx++}`); params.push(fromDate); }
     if (toDate) { conditions.push(`al.occurred_at <= $${idx++}`); params.push(toDate); }
     const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
+    const from = `FROM audit_logs al LEFT JOIN users u ON u.id = al.actor_id ${where}`;
     const data = await query(
-      `SELECT al.id, al.event_type AS "eventType", al.status, al.actor,
-              al.occurred_at AS "occurredAt", al.details
-       FROM audit_logs al ${where} ORDER BY al.occurred_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
-      [...params, Number(limit), Number(offset)],
+      `SELECT al.id, al.action AS "eventType", al.actor_id AS "actorId",
+              COALESCE(u.username, al.actor_id::text) AS "actor",
+              al.entity_type AS "entityType", al.entity_id AS "entityId",
+              al.reference_no AS "referenceNo", al.ip_address AS "ipAddress",
+              al.occurred_at AS "occurredAt"
+       ${from} ORDER BY al.occurred_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
+      [...params, Math.min(Number(limit) || 50, 500), Number(offset) || 0],
     );
-    res.json(listEnvelope(data.rows));
+    // The shared predicate, so total means the filtered total (the station-credential
+    // grace window is read out of this list as a count of pending provisioning).
+    const total = await query(`SELECT count(*)::int AS total ${from}`, params);
+    res.json(listEnvelope(data.rows, total.rows[0].total));
   } catch (err) {
     console.error("GET /admin/audit-logs:", err.message);
     res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
