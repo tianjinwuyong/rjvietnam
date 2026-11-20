@@ -71,6 +71,12 @@ services:
       # no header at all). Provision every terminal's station-config.js BEFORE
       # setting this, or the scanners answer 401 STATION_KEY_MISSING.
       STATION_LOGIN_KEY: ${STATION_LOGIN_KEY:-}
+      # Grace deadline for the line above: while it is in the future a terminal
+      # without station-config.js is still accepted and recorded once per machine
+      # as STATION_LOGIN_UNPROVISIONED. This is what makes enabling the key on a
+      # live floor possible: enable with a deadline, provision from that list, then
+      # empty the value to enforce. Wrong keys are refused the whole time.
+      STATION_LOGIN_KEY_FLAG_UNTIL: ${STATION_LOGIN_KEY_FLAG_UNTIL:-}
       PGHOST: postgres
       PGPORT: 5432
       PGDATABASE: smt_factory

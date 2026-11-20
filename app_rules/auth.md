@@ -67,6 +67,15 @@
   and under the harness on purpose: `harness/END-TO-END.md` J1 step 3 signs in
   with no header, so switching it on locally breaks a protected journey. The prod
   compose file takes it from the deploy host's `.env` (`${STATION_LOGIN_KEY:-}`).
+- **Switching the key on is a two-step move, not a flip.**
+  `STATION_LOGIN_KEY_FLAG_UNTIL` (ISO timestamp) opens a grace window: while it is
+  open a terminal that sends no header is still accepted and recorded once per
+  machine as `STATION_LOGIN_UNPROVISIONED` (`reference_no` = `<operator>@<station>`),
+  and the boot line says `enforced from <deadline>`. A key that is present and
+  wrong is refused the whole time — grace covers "not provisioned yet", never
+  "wrong credential". Empty, unparsable or past deadline = enforced. This mirrors
+  `MES_SIGNATURE_ENFORCEMENT` / `MES_SIGNATURE_FLAG_UNTIL`, the pattern this repo
+  already uses to require a credential that not every client sends yet.
 - The per-token `permissions[]` are frozen at login: a role change takes effect at
   the next sign-in, not mid-session.
 - **Station login is for floor roles only.** `services/api/src/auth/station-login-policy.js`

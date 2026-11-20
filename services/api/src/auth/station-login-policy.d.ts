@@ -39,3 +39,25 @@ export declare function stationKeyFailure(
   presented: string | null | undefined,
   configured: string | null | undefined,
 ): StationKeyFailure;
+
+/** True while a missing station key is still forgiven. */
+export declare function stationKeyGraceIsOpen(
+  flagUntil: string | null | undefined,
+  now?: () => number,
+): boolean;
+
+/** Maps a stationKeyFailure result to the failure to act on. */
+export declare function stationKeyGrace(
+  flagUntil: string | null | undefined,
+  now?: () => number,
+): (failure: StationKeyFailure) => StationKeyFailure;
+
+export interface UnprovisionedReporter {
+  /** true when this was the first sighting of that terminal key */
+  note(key: string): boolean;
+  seen(): string[];
+}
+
+export declare function createUnprovisionedReporter(
+  report: (key: string) => void,
+): UnprovisionedReporter;

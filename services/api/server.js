@@ -55,7 +55,7 @@ import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
 import { envelope, listEnvelope, mutateEnvelope, errorEnvelope, successEnvelope } from "./src/shared/helpers.js";
 import { isRevokedToken, revokedTokens } from "./src/auth/revocation-registry.js";
 import { createAccountStateCache, createLoginThrottle } from "./src/auth/session-tokens.js";
-import { createStationLoginPolicy, stationKeyFailure as stationKeyFailureOf, stationKeyGrace, createUnprovisionedReporter } from "./src/auth/station-login-policy.js";
+import { createStationLoginPolicy, stationKeyFailure as stationKeyFailureOf, stationKeyGrace, stationKeyGraceIsOpen, createUnprovisionedReporter } from "./src/auth/station-login-policy.js";
 import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
 import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
 import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
@@ -40655,7 +40655,7 @@ const server = app.listen(PORT, HOST, () => {
   revokedTokenRefresh.unref();
   if (!STATION_LOGIN_KEY) {
     console.warn("[auth] STATION_LOGIN_KEY is unset: /auth/station-login issues a full-permission JWT from operator+stationCode alone. Set it and send x-station-key to require a station credential.");
-  } else if (stationKeyGraceWindow("STATION_KEY_MISSING") === null) {
+  } else if (stationKeyGraceIsOpen(STATION_LOGIN_KEY_FLAG_UNTIL)) {
     // The key is set but a missing header still gets through until the deadline;
     // say so, because "enabled" and "enforced" are different facts to plan a
     // provisioning round around.

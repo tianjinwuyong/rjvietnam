@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createStationLoginPolicy, stationKeyFailure } from "../services/api/src/auth/station-login-policy";
+import {
+  createStationLoginPolicy,
+  createUnprovisionedReporter,
+  stationKeyFailure,
+  stationKeyGrace,
+  stationKeyGraceIsOpen,
+} from "../services/api/src/auth/station-login-policy";
 
 // Permission sets copied from the seeded roles (probed live 2026-11-20), so the
 // test fails if the rule starts disagreeing with the data it was written against.
@@ -110,5 +116,55 @@ describe("station device credential", () => {
     // Node hands req.headers as an array when a client sends the header twice.
     const presented = ["AC-CABLE-01-key", "AC-CABLE-01-key"] as unknown as string;
     expect(stationKeyFailure(presented, "AC-CABLE-01-key")).toBe("STATION_KEY_INVALID");
+  });
+});
+
+describe("station credential grace window", () => {
+  const NOW = Date.parse("2026-11-21T00:00:00Z");
+  const nowAt = () => NOW;
+  const FUTURE = "2026-12-01T00:00:00Z";
+  const PAST = "2026-11-01T00:00:00Z";
+  const KEY = "AC-CABLE-01-key";
+
+  it("is open only for a real future timestamp", () => {
+    expect(stationKeyGraceIsOpen(FUTURE, nowAt)).toBe(true);
+    expect(stationKeyGraceIsOpen(PAST, nowAt)).toBe(false);
+    expect(stationKeyGraceIsOpen("", nowAt)).toBe(false);
+    expect(stationKeyGraceIsOpen(undefined, nowAt)).toBe(false);
+    expect(stationKeyGraceIsOpen("not a date", nowAt)).toBe(false);
+  });
+
+  it("forgives an unprovisioned terminal while open, and nothing else", () => {
+    const grace = stationKeyGrace(FUTURE, nowAt);
+    expect(grace("STATION_KEY_MISSING")).toBe(null);
+    expect(grace("STATION_KEY_INVALID")).toBe("STATION_KEY_INVALID");
+    expect(grace(null)).toBe(null);
+  });
+
+  it("changes nothing once the deadline has passed", () => {
+    const grace = stationKeyGrace(PAST, nowAt);
+    expect(grace("STATION_KEY_MISSING")).toBe("STATION_KEY_MISSING");
+    expect(stationKeyGrace("", nowAt)("STATION_KEY_MISSING")).toBe("STATION_KEY_MISSING");
+  });
+
+  it("still accepts the right key in either mode", () => {
+    for (const flagUntil of [FUTURE, PAST, ""]) {
+      const decide = stationKeyGrace(flagUntil, nowAt);
+      expect(decide(stationKeyFailure(KEY, KEY))).toBe(null);
+      expect(decide(stationKeyFailure("wrong-key", KEY))).toBe("STATION_KEY_INVALID");
+      expect(decide(stationKeyFailure(undefined, KEY))).toBe(flagUntil === FUTURE ? null : "STATION_KEY_MISSING");
+    }
+  });
+
+  it("reports each terminal once, because a scanner retries every 30s", () => {
+    const reported: string[] = [];
+    const reporter = createUnprovisionedReporter((key) => reported.push(key));
+
+    expect(reporter.note("VN_MATERIAL_RECEIVER@AC-CABLE-01")).toBe(true);
+    expect(reporter.note("VN_MATERIAL_RECEIVER@AC-CABLE-01")).toBe(false);
+    expect(reporter.note("TEMP_SMT_LOADER@NPM-03")).toBe(true);
+
+    expect(reported).toEqual(["VN_MATERIAL_RECEIVER@AC-CABLE-01", "TEMP_SMT_LOADER@NPM-03"]);
+    expect(reporter.seen()).toEqual(reported);
   });
 });

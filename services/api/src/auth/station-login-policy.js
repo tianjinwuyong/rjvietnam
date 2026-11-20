@@ -90,3 +90,60 @@ export function stationKeyFailure(presented, configured) {
   const digest = (value) => createHash("sha256").update(value).digest();
   return timingSafeEqual(digest(got), digest(expected)) ? null : "STATION_KEY_INVALID";
 }
+
+/**
+ * Turn a station key on without stopping the floor.
+ *
+ * Same shape as MES_SIGNATURE_ENFORCEMENT / MES_SIGNATURE_FLAG_UNTIL, which is how
+ * this repo already rolls out a credential every client does not send yet: refuse
+ * nothing until the deadline, record what would have been refused, then enforce.
+ *
+ * Only the MISSING key is forgiven. A key that is present and wrong is a terminal
+ * that was configured against a different factory (or a rotated key), and letting
+ * that through is not a grace period, it is the gate not working.
+ *
+ * @param {string|null|undefined} flagUntil raw STATION_LOGIN_KEY_FLAG_UNTIL, an
+ *   ISO timestamp; empty, unparsable or past means the window is closed
+ * @param {() => number} [now] for tests
+ */
+export function stationKeyGraceIsOpen(flagUntil, now = () => Date.now()) {
+  const until = Date.parse(String(flagUntil ?? "").trim());
+  return Number.isFinite(until) && until > now();
+}
+
+/**
+ * Forgives a missing station key while the window is open.
+ *
+ * @param {string|null|undefined} flagUntil raw STATION_LOGIN_KEY_FLAG_UNTIL
+ * @param {() => number} [now] for tests
+ * @returns {(failure: string|null) => string|null} the failure to act on
+ */
+export function stationKeyGrace(flagUntil, now = () => Date.now()) {
+  const open = stationKeyGraceIsOpen(flagUntil, now);
+  return (failure) => (open && failure === "STATION_KEY_MISSING" ? null : failure);
+}
+/**
+ * Report each unprovisioned terminal once per process.
+ *
+ * A scanner without station-config.js retries on a 30-second timer, so a naive
+ * audit per request writes ~2900 rows per machine per day to answer one question:
+ * which station codes still need provisioning. First sighting per key is the
+ * whole answer.
+ *
+ * @param {(key: string) => void} report
+ * @returns {{ note(key: string): boolean, seen(): string[] }} note() returns true
+ *   when this was the first sighting of that key
+ */
+export function createUnprovisionedReporter(report) {
+  const seenKeys = new Set();
+  return {
+    note(key) {
+      const name = String(key ?? "");
+      if (seenKeys.has(name)) return false;
+      seenKeys.add(name);
+      report(name);
+      return true;
+    },
+    seen: () => [...seenKeys],
+  };
+}
