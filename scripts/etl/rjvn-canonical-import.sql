@@ -155,7 +155,11 @@ SELECT rp.report_no, lot.canonical_id,
        CASE lower(coalesce(rp.final_result, ''))
          WHEN 'pass' THEN 'pass' WHEN 'fail' THEN 'fail'
          WHEN 'reject' THEN 'reject' ELSE 'hold' END,
-       14,  -- wy admin (system operator for imported records)
+       -- Imported records need a system operator. `operator_id` is a FK to
+       -- users(id), and user ids are NOT stable across environments (the dev
+       -- database has `wy` at 14, production has no id 14 at all), so resolve
+       -- the admin by username instead of hardcoding a local surrogate key.
+       (SELECT u.id FROM public.users u WHERE u.username = 'admin' ORDER BY u.id LIMIT 1),
        rp.inspection_time::date,
        concat_ws(' / ', nullif(rp.remark, ''), nullif(rp.review_remark, ''), nullif(rp.judge_reason, '')),
        rp.review_time, rp.final_result,
