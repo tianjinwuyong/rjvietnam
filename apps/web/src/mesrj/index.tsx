@@ -24,6 +24,7 @@ import {
   ShopfloorBoardView, PoExportView,
 } from "./views-w12";
 import { DwellView } from "./views-w13";
+import { BindView, DecodeView } from "./views-w14";
 
 interface SysInfo {
   sys_name: string;
@@ -157,6 +158,9 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "exec.tracematerial") return <TraceMaterialByMaterialView locale={locale} />;
     // W13 时效（停留超时）管控
     if (active === "exec.dwell") return <DwellView locale={locale} />;
+    // W14 绑码 / 解码（SN 绑定关系）
+    if (active === "exec.bind") return <BindView locale={locale} />;
+    if (active === "exec.decode") return <DecodeView locale={locale} />;
     // W7 设备接口：DeviceConfig / StationPass / MachineData / Packing / itf 日志
     if (active === "dev.deviceconfig") return <DeviceConfigView locale={locale} />;
     if (active === "dev.stationpass") return <StationPassView locale={locale} />;
