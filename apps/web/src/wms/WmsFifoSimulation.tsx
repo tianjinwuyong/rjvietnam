@@ -3,7 +3,6 @@ import { ArrowRight, AlertTriangle, CheckCircle, Clock, Package, Boxes, RefreshC
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi, type MaterialLot } from "../api/wms";
-import { materialLots as _demoLots } from "../data";
 
 interface FifoLot extends MaterialLot {
   receivedDate?: string;
@@ -80,19 +79,15 @@ export function WmsFifoSimulation({ locale }: { locale: Locale }) {
   const [simRunning, setSimRunning] = useState(false);
 
   useEffect(() => {
-    wmsApi.getMaterialLots({ limit: 200 }).then((res) => {
-      const lots = (res.items as unknown as MaterialLot[]).map((l) => {
-        const d = parseLotDate(l.lotNo);
-        return { ...l, receivedDate: formatDate(d), ageDays: ageDays(d) } as FifoLot;
-      });
-      setAllLots(lots);
-    }).catch(() => {
-      const lots = _demoLots.map((l) => {
-        const d = parseLotDate(l.lotNo);
-        return { ...l, receivedDate: formatDate(d), ageDays: ageDays(d) } as FifoLot;
-      });
-      setAllLots(lots);
-    });
+    wmsApi
+      .getMaterialLots({ limit: 200 })
+      .then((res) => {
+        setAllLots(res.items.map((l) => {
+          const d = parseLotDate(l.lotNo);
+          return { ...l, receivedDate: formatDate(d), ageDays: ageDays(d) } as FifoLot;
+        }));
+      })
+      .catch(() => setAllLots([]));
   }, []);
 
   const materialOptions = useMemo(() => {

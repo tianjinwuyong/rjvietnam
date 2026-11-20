@@ -28,6 +28,7 @@ import { AoiStation } from "./aoi/AoiStation";
 import { FctStation } from "./quality/stations/FctStation";
 import { AutoLineStation } from "./quality/stations/AutoLineStation";
 import { authApi, authStorage, wmsApi, pmcApi, bomApi, mesApi, qualityApi } from "./api";
+import { apiClient } from "./api/client";
 import {
   PanelLeft,
   PanelLeftClose,
@@ -68,12 +69,12 @@ import {
   Receipt,
   Palette,
 } from "lucide-react";
-import type { CustomerPo, FactoryLine, InspectionRecord, Locale, MaterialLot, StatusTone, TraceEvent, WorkOrder } from "../../../packages/shared-types/src/factory";
+import type { CustomerPo, FactoryLine, InspectionRecord, Locale, MaterialLot, QuoteConversionRow, RmaRequest, ServiceTicket, StatusTone, TraceEvent, WorkOrder } from "../../../packages/shared-types/src/factory";
 
 import type { TranslationKey } from "./i18n";
 import { AuthSignIn, type SignInResult } from "./auth/AuthSignIn";
 import { localeLabels, locales, t, text } from "./i18n";
-import { customerPos, demoDirectory, feederBindings, lines, materialLots, metrics, roleMatrix, traceEvents, workOrders, supplementaryMaterials, financeInvoices, payments, costSummaries, salesQuotes, salesOrders, quoteConversions, serviceTickets, rmaRequests, rmaRepairRecords } from "./data";
+import { roleMatrix } from "./data";
 import { AdminLineManagement } from "./admin/AdminLineManagement";
 import { UserAuthorizationManager } from "./admin/UserAuthorizationManager";
 import { PdaAccessConfiguration } from "./admin/PdaAccessConfiguration";
@@ -1518,6 +1519,9 @@ function SalesOrderDetail({ id, locale, canManage, onBack }: { id: number; local
 }
 
 function SalesConversionReport({ locale }: { locale: Locale }) {
+  // No route serves quote conversions yet, so the table renders empty instead of showing
+  // fabricated quotes in production.
+  const quoteConversions: QuoteConversionRow[] = [];
   return (
     <SurfacePanel>
       <SectionHeader title={t("sales.conversion", locale)} subtitle={t("page.sales", locale)} />
@@ -1580,7 +1584,10 @@ const serviceTabTranslationKeys: Record<ServiceTabKey, TranslationKey> = {
 function Service({ locale, permissions }: { locale: Locale; permissions: string[] }) {
   const [activeTab, setActiveTab] = useState<ServiceTabKey>("dashboard");
   const canManage = permissions.includes("service.manage");
-
+  // customer_service_tickets / rma_requests exist in the schema but no API route serves
+  // them yet, so the panel shows an empty state instead of demo tickets.
+  const serviceTickets: ServiceTicket[] = [];
+  const rmaRequests: RmaRequest[] = [];
   const openTickets = serviceTickets.filter((t) => t.status === "open" || t.status === "in_progress").length;
   const overdueTickets = serviceTickets.filter((t) => {
     if (t.status === "resolved" || t.status === "closed") return false;
@@ -1650,6 +1657,8 @@ function Service({ locale, permissions }: { locale: Locale; permissions: string[
 }
 
 function ServiceTicketList({ locale, canManage, onNew }: { locale: Locale; canManage: boolean; onNew: () => void }) {
+  // customer_service_tickets has no API route yet: empty state, never demo rows.
+  const serviceTickets: ServiceTicket[] = [];
   return (
     <SurfacePanel>
       <SectionHeader
@@ -1692,6 +1701,8 @@ function ServiceTicketList({ locale, canManage, onNew }: { locale: Locale; canMa
 }
 
 function ServiceRmaList({ locale, canManage, onNew }: { locale: Locale; canManage: boolean; onNew: () => void }) {
+  // rma_requests has no API route yet: empty state, never demo rows.
+  const rmaRequests: RmaRequest[] = [];
   return (
     <SurfacePanel>
       <SectionHeader
@@ -2067,8 +2078,6 @@ function Mes({ locale }: { locale: Locale }) {
         return <SmtMaterialBindingTable />;
       case "smtLoading3d":
         return <SmtLoading3dSimulator />;
-      case "tooljetSmtLoading":
-        return <iframe title="ToolJet SMT 实时上料控制台" src="/tooljet-smt-loading-demo.html" style={{ width: "100%", height: "calc(100vh - 120px)", minHeight: 760, border: 0, borderRadius: 12, display: "block", background: "#f6f9fa" }} />;
       case "smtExemptions":
         return <SmtMaterialExemptions locale={locale} />;
       case "smtLoader":
@@ -2644,6 +2653,23 @@ function Quality({ locale }: { locale: Locale }) {
 
 function Trace({ locale }: { locale: Locale }) {
   const [query, setQuery] = useState("PCB2606160100084172");
+  // The chain used to be a fabricated demo timeline. /traceability/events is the real
+  // source; until it answers, the timeline is empty rather than invented.
+  const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
+  useEffect(() => {
+    let alive = true;
+    apiClient
+      .get<{ items?: TraceEvent[] }>("/traceability/events", { params: { limit: 50 } })
+      .then((res) => {
+        if (alive) setTraceEvents(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (alive) setTraceEvents([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="screen-stack">

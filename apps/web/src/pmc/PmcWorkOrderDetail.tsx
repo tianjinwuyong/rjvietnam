@@ -80,28 +80,27 @@ export function PmcWorkOrderDetail({ locale }: { locale: Locale }) {
       .catch(() => setMaterials([]))
       .finally(() => setMatLoading(false));
 
-    // Calculate materialReady from BOM vs demo inventory
+    // Material readiness compares the BOM against released lots. It used to read a demo
+    // lot list; the same comparison now runs on the real inventory.
     const wo = workOrders.find((w) => w.code === selectedWoCode);
-    if (wo?.productCode) {
-      bomApi.getBomByProduct(wo.productCode).then((bom) => {
-        if (bom?.lines && bom.lines.length > 0) {
-          import("../data").then((mod) => {
-            const lots = mod.materialLots ?? [];
-            const releasedLots = lots.filter((l: any) => l.iqcStatus === "released");
-            let fulfilled = 0;
-            for (const line of bom.lines) {
-              const availableQty = releasedLots
-                .filter((l: any) => l.materialCode === line.materialCode)
-                .reduce((sum: number, l: any) => sum + (l.qty ?? 0), 0);
-              if (availableQty >= (line.qtyPer ?? 0)) fulfilled++;
-            }
-            setMaterialReady(bom.lines.length > 0 ? Math.round((fulfilled / bom.lines.length) * 100) : 0);
-          }).catch(() => setMaterialReady(null));
-        } else {
+    if (!wo?.productCode) return;
+    Promise.all([bomApi.getBomByProduct(wo.productCode), wmsApi.getMaterialLots({ iqcStatus: "released", limit: 500 })])
+      .then(([bom, lotRes]) => {
+        if (!bom?.lines || bom.lines.length === 0) {
           setMaterialReady(null);
+          return;
         }
-      }).catch(() => setMaterialReady(null));
-    }
+        const released = lotRes.items ?? [];
+        let fulfilled = 0;
+        for (const line of bom.lines) {
+          const availableQty = released
+            .filter((lot) => lot.materialCode === line.materialCode)
+            .reduce((sum, lot) => sum + (lot.qty ?? 0), 0);
+          if (availableQty >= (line.qtyPer ?? 0)) fulfilled += 1;
+        }
+        setMaterialReady(Math.round((fulfilled / bom.lines.length) * 100));
+      })
+      .catch(() => setMaterialReady(null));
   }, [selectedWoCode]);
 
   useEffect(() => {
