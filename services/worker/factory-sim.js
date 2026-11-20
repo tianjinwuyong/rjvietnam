@@ -518,7 +518,7 @@ Prerequisites:
   1. psql -f database/migrations/001_initial_factory_schema.sql
   2. psql -f database/migrations/002_inter_agent_messages.sql
   3. psql -f database/migrations/003_factory_sim_schema.sql
-  4. psql -f database/seeds/001_demo_factory_seed.sql
+  4. insert the plant's real master data (lines, stations, materials, users)
   5. node factory-sim.js seed
 
 Then run agents:

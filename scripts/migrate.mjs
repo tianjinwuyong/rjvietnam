@@ -6,7 +6,6 @@
  *   node scripts/migrate.mjs                # applies pending migrations
  *   node scripts/migrate.mjs --plan         # lists pending migrations, applies nothing
  *   node scripts/migrate.mjs --fresh        # drops all tables first (dev only!)
- *   node scripts/migrate.mjs --seed         # also run seed files after migrations
  *
  * Environment variables (same as services/api/src/db.js):
  *   PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
@@ -21,7 +20,6 @@ import pg from "pg";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
 const MIGRATIONS_DIR = join(ROOT, "database", "migrations");
-const SEEDS_DIR = join(ROOT, "database", "seeds");
 const TRACKING_TABLE = "_migrations";
 
 // Run as the same role the API uses. Without this the runner falls back to
@@ -108,55 +106,9 @@ async function applyMigration(filename, sql) {
   }
 }
 
-async function runSeeds() {
-  if (!existsSync(SEEDS_DIR)) {
-    console.log("No seeds directory found.");
-    return;
-  }
-
-  const files = readdirSync(SEEDS_DIR)
-    .filter((f) => f.endsWith(".sql"))
-    .sort();
-
-  if (files.length === 0) {
-    console.log("No seed files found.");
-    return;
-  }
-
-  // Seeds are not all idempotent (plain INSERTs, status flips), so run each
-  // seed file exactly once, tracked in its own ledger table.
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS _seeds (
-      filename varchar(255) PRIMARY KEY,
-      applied_at timestamptz NOT NULL DEFAULT now()
-    )
-  `);
-  const appliedSeeds = new Set(
-    (await pool.query(`SELECT filename FROM _seeds`)).rows.map((r) => r.filename),
-  );
-
-  console.log(`\nSeeding (${files.length} file(s)):`);
-  for (const file of files) {
-    if (appliedSeeds.has(file)) {
-      console.log(`  ✓ ${file} already seeded`);
-      continue;
-    }
-    const sql = readFileSync(join(SEEDS_DIR, file), "utf8").trim();
-    if (!sql) continue;
-    console.log(`  → ${file}`);
-    await pool.query(sql);
-    await pool.query(
-      `INSERT INTO _seeds (filename) VALUES ($1) ON CONFLICT (filename) DO NOTHING`,
-      [file],
-    );
-    console.log(`    ✓ seeded`);
-  }
-}
-
 async function main() {
   const args = process.argv.slice(2);
   const isFresh = args.includes("--fresh");
-  const doSeed = args.includes("--seed");
   const planOnly = args.includes("--plan");
 
   // ── Fresh start ─────────────────────────────────────────────────
@@ -227,11 +179,6 @@ async function main() {
     for (const { file, sql } of pending) {
       await applyMigration(file, sql);
     }
-  }
-
-  // ── Seed ───────────────────────────────────────────────────────
-  if (doSeed) {
-    await runSeeds();
   }
 
   await pool.end();

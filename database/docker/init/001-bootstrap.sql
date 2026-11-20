@@ -18,14 +18,3 @@
 \i /docker-entrypoint-initdb.d/database/migrations/012_service_rma_and_quality_link.sql
 \i /docker-entrypoint-initdb.d/database/migrations/013_hr_schema.sql
 
-\echo 'Applying database seeds'
-\i /docker-entrypoint-initdb.d/database/seeds/001_demo_factory_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/002_mes_stations_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/002_mvp_extended_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/002_smart_shelf_test_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/003_finance_accounting_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/003_mes_process_route_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/004_enterprise_support_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/004_mes_permissions_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/005_equipment_management_seed.sql
-\i /docker-entrypoint-initdb.d/database/seeds/013_hr_seed.sql
