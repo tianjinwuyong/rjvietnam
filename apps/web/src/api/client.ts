@@ -1,16 +1,13 @@
 // NOTE: backend routes are split:
 //   - auth: mounted on `api` router at /api (needs /api prefix)
 //   - wms/pmc/mes/boms/hr: mounted on `app` router at / (no /api prefix)
-// HTTPS deployments (Cloudflare Tunnel, Tailscale Funnel) serve the SPA and the
-// API from the same origin: nginx in the web container proxies /api/ to the
-// backend, so the SPA uses a same-origin relative base. Plain HTTP (LAN and
-// local dev) keeps the historical cross-host :8080.
+// Both hosts that serve the SPA also proxy /api/ to the backend: the web
+// container's nginx in every deployment, and the Vite dev server locally
+// (see apps/web/vite.config.ts `server.proxy`). So the SPA always talks to its
+// own origin -- no cross-host :8080 hop, no CORS preflight, and the nginx
+// access log shows the real API traffic instead of an empty log.
 function defaultApiBase(): string {
-  if (typeof window !== "undefined" && window.location.hostname) {
-    if (window.location.protocol === "https:") return "";
-    return `${window.location.protocol}//${window.location.hostname}:8080`;
-  }
-  return "http://127.0.0.1:8080";
+  return "";
 }
 
 // Local development uses the API on this machine. Factory deployments can
@@ -100,7 +97,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = contentType.includes("application/json")
       ? await res.json().catch(() => ({ error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } }))
       : { error: { code: "HTTP_NON_JSON", message: `接口 ${path} 返回了非 JSON 内容（HTTP ${res.status}）` } };
-    const err: ApiError = body.error ?? { code: "HTTP_ERROR", message: `HTTP ${res.status}` };
+    // The OA module answers { code: 1, msg: "..." } on failure -- there is no
+    // `error` key there, so the generic HTTP fallback used to hide the real
+    // reason behind a bare "HTTP 401". Surface the server's own message.
+    const serverMessage =
+      (body as { msg?: unknown; error?: { message?: unknown } }).msg ??
+      (body as { error?: { message?: unknown } }).error?.message;
+    const err: ApiError =
+      (body as { error?: ApiError }).error ??
+      (serverMessage
+        ? { code: `HTTP_${res.status}`, message: String(serverMessage) }
+        : { code: "HTTP_ERROR", message: `HTTP ${res.status}` });
     throw new ApiClientError(err.code, err.message, err.details);
   }
 

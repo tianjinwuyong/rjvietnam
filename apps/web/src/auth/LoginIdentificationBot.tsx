@@ -59,6 +59,10 @@ export function LoginIdentificationBot({ username, locale }: Props) {
         );
       })
       .catch(() => {
+        // /api/users is behind the OA authenticate hook, so it answers 401 until
+        // the operator has signed in. That is the expected state of this
+        // pre-login widget -- it must render the "unknown user" card, not raise
+        // a page-level error that would abort the whole sign-in screen.
         if (alive) setUser(null);
       });
     return () => {

@@ -757,12 +757,10 @@ export const oaQcApi = {
 
 /** 附件下载/预览 URL：新窗口场景走 query token（见 oa/middleware/index.js）；不传时自动读当前登录 token */
 export function oaFileUrl(filePath: string, token?: string | null): string {
-  // HTTPS deployments (Cloudflare Tunnel / Tailscale Funnel) serve the SPA and
-  // the API from the same origin, so file URLs are relative. Plain HTTP keeps
-  // the historical cross-host :8080.
-  const base = typeof window !== "undefined" && window.location.protocol !== "https:"
-    ? `${window.location.protocol}//${window.location.hostname}:8080`
-    : "";
+  // Both the nginx host (web container) and the Vite dev server proxy /api/
+  // to the backend, so the SPA always talks to its own origin -- see
+  // apps/web/src/api/client.ts defaultApiBase() for the same rule.
+  const base = "";
   const url = `${base}/api/files/${filePath}`;
   const tk = token === undefined ? authStorage.getToken() : token;
   return tk ? `${url}?token=${encodeURIComponent(tk)}` : url;
