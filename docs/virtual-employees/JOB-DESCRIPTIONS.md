@@ -814,7 +814,7 @@ ROLES=    23        script --check OK
 --dry-run 首次停在 connect ECONNREFUSED 127.0.0.1:5432（compose 用 PGHOST=postgres 提供）
 ```
 
-**尚未 `up -d`，两个原因**：(1) 迁移 `324_virtual_employee_reporting_system.sql` 不在生产台账、生产库里 `ve_%` 对象为 0 —— 不上它，`competency`/`report` 两个 job 会夜夜失败，而迁移属不可逆清单，需要主人签字；(2) 有 peer 正在做 api 切换/数据整合。这两点在邮箱里都已问过。
+**尚未 `up -d`，两个原因**：(1) 迁移 `324_virtual_employee_reporting_system.sql` 不在生产台账（实测 `select count(*) from _migrations where filename like '324%'` = 0），生产库 `ve_%` 对象为 0 —— 不上它，`competency`/`report` 两个 job 会夜夜失败，而迁移属不可逆清单，需要主人签字；(2) 生产库自 21:08 起被 purge + `pg_restore` 重写（`pg_restore` 持续 36 分钟以上、已进入 `ALTER TABLE ... ADD CONSTRAINT` 阶段），期间 `smt-api`/`smt-web` 仍 healthy 对外应答，实测 `materials=1017` 而 `inventory_transactions=0`、`material_lots=0`。**恢复完成之前，任何生产数字都没有意义**，包括我自己前面量的那些，所以这里只写「镜像已建、容器未启」。
 
 ## 24. L1 受控文件语料（已入库）
 
