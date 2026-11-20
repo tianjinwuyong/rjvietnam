@@ -22,6 +22,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+
+def _display(path, root):
+    """Path as seen from the repo root, or its bare name when it is outside.
+
+    `Path.is_relative_to` is 3.9+, and this box runs 3.8.10 -- doctor.py crashed on
+    line 186 before printing a single check, which is the one thing that must never
+    happen to the tool that decides whether the autonomy dial may be raised.
+    `relative_to` raises ValueError instead of returning False, so try/except says the
+    same thing on every version.
+    """
+    try:
+        return str(path.relative_to(root)).replace("\\", "/")
+    except ValueError:
+        return path.name
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config
@@ -183,7 +198,7 @@ def main(argv: list[str]) -> int:
 
     # --- the harness ---------------------------------------------------------
     e2e = config.E2E_FILE
-    e2eName = e2e.name if not e2e.is_relative_to(root) else str(e2e.relative_to(root)).replace("\\", "/")
+    e2eName = _display(e2e, root)
     if not has(e2e):
         r.add(FAIL, e2eName, "missing -- there is no end-to-end path", 2)
     elif contains_scaffold(e2e):
@@ -192,7 +207,7 @@ def main(argv: list[str]) -> int:
         r.add(OK, e2eName, "yours")
 
     holdout = config.HOLDOUT_FILE
-    holdName = holdout.name if not holdout.is_relative_to(root) else str(holdout.relative_to(root)).replace("\\", "/")
+    holdName = _display(holdout, root)
     if not has(holdout):
         r.add(
             FAIL, "holdout", f"no {holdName} -- NOTHING sits above the "
