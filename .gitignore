@@ -1,0 +1,40 @@
+# ===== Secrets (never commit) =====
+.env
+*.env
+*.pem
+*.key
+id_rsa
+credentials*
+google-services.json
+local.properties
+
+# ===== Android / Kotlin / Gradle =====
+.gradle/
+build/
+*.apk
+*.aab
+local.properties
+captures/
+.externalNativeBuild/
+
+# ===== Node / web =====
+node_modules/
+dist/
+out/
+.next/
+
+# ===== Unity / Godot =====
+Library/
+Temp/
+Build/
+*.csproj
+*.sln
+
+# ===== Binaries / logs / images =====
+*.log
+*.png
+*.jpg
+*.jpeg
+*.exe
+*.dll
+*.bin

@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="manager_login_title">统一管理应用</string>
+    <string name="manager_login_subtitle">MES / WMS 工厂现场管理</string>
+    <string name="manager_quick_login">线长快速登录</string>
+    <string name="manager_manual_manager">手动线线长</string>
+    <string name="manager_cockpit">手动线管理工作台</string>
+    <string name="manager_scope">手动线 L004 · MES 实时监督</string>
+    <string name="manager_line_status">产线状态</string>
+    <string name="manager_material_control">物料管控</string>
+    <string name="manager_team">团队</string>
+    <string name="manager_targets">目标</string>
+    <string name="manager_decisions">线长决定</string>
+    <string name="manager_production_window">生产窗口</string>
+    <string name="manager_active_work_order">当前工单</string>
+    <string name="manager_material_loading">物料上料</string>
+    <string name="manager_authority">线长权限</string>
+    <string name="manager_schedule_required">需要 MES 生产计划</string>
+    <string name="manager_work_order_pending">等待 MES 工单数据</string>
+    <string name="manager_material_types">PCB · 锡膏 · 分立插件元件</string>
+    <string name="manager_role_required">需要 MES 角色和有效期</string>
+    <string name="manager_pcb">PCB 板</string>
+    <string name="manager_paste">锡膏</string>
+    <string name="manager_plugin">分立插件元件</string>
+    <string name="manager_schedule_scan">MES 计划和扫描状态</string>
+    <string name="manager_batch_status">批次、有效期和温度状态</string>
+    <string name="manager_component_status">电阻 · 电容 · 电感状态</string>
+    <string name="manager_early_late">提前 / 延迟上料</string>
+    <string name="manager_decision_required">提醒线长；需要 MES 决定</string>
+    <string name="manager_team_online">团队在线</string>
+    <string name="manager_pda_connections">MES 上报的 PDA 连接</string>
+    <string name="manager_messages">操作员消息</string>
+    <string name="manager_endpoint_pending">MES 通信接口未连接</string>
+    <string name="manager_ack">确认状态</string>
+    <string name="manager_audit_required">需要记录送达和确认审计</string>
+    <string name="manager_today">今天</string>
+    <string name="manager_week">本周</string>
+    <string name="manager_month">本月</string>
+    <string name="manager_quarter_year">季度 / 年度</string>
+    <string name="manager_target_pending">等待 MES 目标数据</string>
+    <string name="manager_approval_locked">审批已锁定 — 等待 MES 授权</string>
+    <string name="manager_back">返回</string><string name="manager_record_id">MES 记录编号（操作必填）</string><string name="manager_comment">说明 / 原因</string><string name="manager_acknowledge">确认</string><string name="manager_escalate">升级处理</string><string name="manager_approve">批准</string><string name="manager_reject">驳回</string><string name="manager_ask">补充信息</string><string name="manager_send">通过 MES 发送</string><string name="manager_recovery">分配恢复任务</string><string name="manager_handover_confirm">通过 MES 确认交接</string><string name="manager_no_records">MES 没有记录</string><string name="manager_no_local_write">MES 不可用 · 禁止本地写入</string><string name="manager_connection_failed">MES 连接失败</string>
+    <string name="manager_alerts">异常</string><string name="manager_decisions_page">决定</string><string name="manager_team_page">团队</string><string name="manager_targets_page">目标</string><string name="manager_line_status_page">产线状态</string><string name="manager_handover_page">交接</string><string name="manager_profile_page">个人与诊断</string>
+    <string name="manager_desc_alerts">需要处理的严重、逾期、阻塞和离线工作。</string><string name="manager_desc_decisions">由 MES 授权的例外、停线/复线、换线和返工决定。</string><string name="manager_desc_team">HR 身份与 MES 产线、PDA 状态和消息关联。</string><string name="manager_desc_targets">产量、质量、准时率、停机和物料准备度。</string><string name="manager_desc_line_status">工单、工位、操作员、设备和物料状态。</string><string name="manager_desc_handover">未关闭异常、未完成工作和下一班重点。</string><string name="manager_desc_profile">身份、范围、有效期、审计和连接诊断。</string>
+    <string name="manager_exit">退出</string><string name="manager_mes_online">MES 在线</string><string name="manager_mes_warning">MES 连接警告</string><string name="manager_pda_violations">PDA 在线：%1$d · 未关闭异常：%2$d</string><string name="manager_last_update">最后更新：%1$s</string><string name="manager_now">现在 — 需要处理</string><string name="manager_open_alerts">查看全部异常</string><string name="manager_no_violation">没有未关闭的上料异常</string><string name="manager_no_violation_detail">MES 尚未报告当前视图的未关闭上料异常。</string><string name="manager_open_line">查看产线状态</string><string name="manager_open_team">查看团队和消息</string><string name="manager_open_targets">查看目标</string><string name="manager_open_decisions">查看决定</string><string name="manager_handover">交接</string><string name="manager_open_handover">查看班次交接</string><string name="manager_loading_supervision">上料监督</string>
+    <string name="manager_line_assignments">每日线别岗位调整</string>
+    <string name="manager_hiring_requests">岗位需求申请</string>
+    <string name="manager_desc_hiring_requests">线长提交岗位缺口；HR经理和厂长签字后才可发布招聘看板。</string>
+    <string name="manager_grievance_cases">HR调查案件</string>
+    <string name="manager_desc_grievance_cases">保密 HR 调查，需要线长提交说明。</string>
+    <string name="pm_title">&#x5382;&#x957F;&#x5BA1;&#x6279;</string><string name="pm_mes_online">MES &#x5728;&#x7EBF; - &#x5BA1;&#x6279;&#x7531;&#x670D;&#x52A1;&#x5668;&#x6388;&#x6743;</string><string name="pm_mes_offline">MES &#x79BB;&#x7EBF; - &#x5BA1;&#x6279;&#x5DF2;&#x9501;&#x5B9A;</string><string name="pm_open">&#x5F85;&#x5904;&#x7406;</string><string name="pm_all">&#x5168;&#x90E8;</string><string name="pm_rules_title">&#x5BA1;&#x6279;&#x89C4;&#x5219;</string><string name="pm_rules_detail">&#x6BCF;&#x6B21;&#x5BA1;&#x6279;&#x90FD;&#x5FC5;&#x987B;&#x6709;&#x5382;&#x957F;&#x8EAB;&#x4EFD;&#x3001;&#x539F;&#x56E0;&#x3001;&#x8303;&#x56F4;&#x3001;&#x6709;&#x6548;&#x671F;&#x548C; MES &#x5BA1;&#x8BA1;&#x8BB0;&#x5F55;&#x3002;&#x8D28;&#x91CF;&#x95E8;&#x7981;&#x4E0D;&#x80FD;&#x5728;&#x6B64;&#x7ED5;&#x8FC7;&#x3002;</string><string name="pm_reason">&#x6388;&#x6743;&#x539F;&#x56E0;&#xFF08;&#x5FC5;&#x586B;&#xFF09;</string><string name="pm_result">&#x5173;&#x95ED;&#x7ED3;&#x679C;&#xFF08;&#x5FC5;&#x586B;&#xFF09;</string><string name="pm_duration">&#x6388;&#x6743;&#x65F6;&#x957F;</string><string name="pm_no_requests">MES &#x6CA1;&#x6709;&#x5BA1;&#x6279;&#x8BF7;&#x6C42;</string><string name="pm_valid_until">&#x6709;&#x6548;&#x671F;&#x81F3;&#xFF1A;%1$s</string><string name="pm_quality_block">&#x9700;&#x8981;&#x8D28;&#x91CF;&#x5BA1;&#x6279;&#xFF1B;&#x5382;&#x957F;&#x6388;&#x6743;&#x5DF2;&#x963B;&#x6B62;&#x3002;</string><string name="pm_authorize">&#x901A;&#x8FC7; MES &#x6388;&#x6743;</string><string name="pm_close">&#x901A;&#x8FC7; MES &#x5173;&#x95ED;&#x6388;&#x6743;</string>
+    <string name="manager_assign">指派</string>
+    <string name="manager_assign_owner">接收人工号</string>
+    <string name="manager_approvals_page">跨部门申请审批</string>
+    <string name="manager_org_chart_page">HR 实时组织结构</string>
+    <string name="manager_communications_page">全厂通信中心</string>
+    <string name="manager_loading_status_page">实时上料状态</string>
+    <string name="manager_work_orders_page">PMC 工单</string>
+    <string name="manager_plant_manager_page">厂长 PDA</string>
+    <string name="manager_desc_repair">MES 管理的 NG 回修、待取件、维修状态、返回交接和 SLA 告警。</string>
+    <string name="manager_desc_approvals">PMC、生产、质量、仓库、工程和 HR 的 MES 申请审批。</string>
+    <string name="manager_desc_org_chart">HR 部门树、负责人、在职人数和部门状态。</string>
+    <string name="manager_desc_communications">线长、HR、WMS、采购、PMC、质量和工程频道。</string>
+    <string name="manager_desc_loading_status">MES 工单、各 PDA 分配物料、已完成/未完成、在线状态和错料报警。</string>
+    <string name="manager_desc_work_orders">PMC 计划锁定、解锁和受控完工，全部操作写入 MES 审计。</string>
+    <string name="manager_desc_plant_manager">全厂例外授权与中层管理者沟通。</string>
+    <string name="manager_wo_lock">锁定计划</string>
+    <string name="manager_wo_unlock">解锁计划</string>
+    <string name="manager_wo_complete">受控完工</string>
+</resources>

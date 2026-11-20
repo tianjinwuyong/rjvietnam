@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.MaterialLoader.AlarmPopup" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowDisablePreview">true</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:colorAccent">#B91C1C</item>
+    </style>
+</resources>

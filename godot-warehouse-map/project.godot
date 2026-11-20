@@ -1,0 +1,16 @@
+[application]
+config/name="Unified PDA 3D Warehouse Map"
+run/main_scene="res://WarehouseMap.tscn"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/handheld/orientation=1
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.06, 0.1, 0.16, 1)
+
+[input]
+refresh_map={"deadzone": 0.5, "events": [Object(InputEventKey,"physical_keycode":82)]}

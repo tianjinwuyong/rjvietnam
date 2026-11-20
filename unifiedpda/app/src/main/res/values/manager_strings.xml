@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="manager_login_title">Unified Management Application</string>
+    <string name="manager_login_subtitle">MES / WMS factory operations</string>
+    <string name="manager_quick_login">Quick Login</string>
+    <string name="manager_manual_manager">Manual Line Manager</string>
+    <string name="manager_cockpit">Manual Line Cockpit</string>
+    <string name="manager_scope">Manual Line L004 · live MES supervision</string>
+    <string name="manager_line_status">LINE STATUS</string>
+    <string name="manager_material_control">MATERIAL CONTROL</string>
+    <string name="manager_team">TEAM</string>
+    <string name="manager_targets">TARGETS</string>
+    <string name="manager_decisions">DECISIONS</string>
+    <string name="manager_production_window">Production window</string>
+    <string name="manager_active_work_order">Active work order</string>
+    <string name="manager_material_loading">Material loading</string>
+    <string name="manager_authority">Manager authority</string>
+    <string name="manager_schedule_required">MES schedule required</string>
+    <string name="manager_work_order_pending">Waiting for MES work-order feed</string>
+    <string name="manager_material_types">PCB · solder paste · plugin components</string>
+    <string name="manager_role_required">MES role and expiry required</string>
+    <string name="manager_pcb">PCB board</string>
+    <string name="manager_paste">Solder paste</string>
+    <string name="manager_plugin">Plugin components</string>
+    <string name="manager_schedule_scan">Schedule and scan status from MES</string>
+    <string name="manager_batch_status">Batch, expiry and temperature from MES</string>
+    <string name="manager_component_status">Resistor · capacitor · inductor from MES</string>
+    <string name="manager_early_late">Early / late loading</string>
+    <string name="manager_decision_required">Alert manager; MES decision required</string>
+    <string name="manager_team_online">Team online</string>
+    <string name="manager_pda_connections">PDA connections from MES</string>
+    <string name="manager_messages">Operator messages</string>
+    <string name="manager_endpoint_pending">MES communication endpoint not connected</string>
+    <string name="manager_ack">Acknowledgement</string>
+    <string name="manager_audit_required">Delivery and acknowledgement audit required</string>
+    <string name="manager_today">Today</string>
+    <string name="manager_week">This week</string>
+    <string name="manager_month">This month</string>
+    <string name="manager_quarter_year">Quarter / year</string>
+    <string name="manager_target_pending">Target data pending from MES</string>
+    <string name="manager_approval_locked">Approvals locked — waiting for MES authorization</string>
+    <string name="manager_back">Back</string><string name="manager_record_id">MES record ID (required for action)</string><string name="manager_comment">Comment / reason</string><string name="manager_acknowledge">Acknowledge</string><string name="manager_escalate">Escalate</string><string name="manager_approve">Approve</string><string name="manager_reject">Reject</string><string name="manager_ask">Ask for information</string><string name="manager_send">Send through MES</string><string name="manager_recovery">Assign recovery action</string><string name="manager_handover_confirm">Confirm handover through MES</string><string name="manager_no_records">No MES records available</string><string name="manager_no_local_write">MES unavailable · no local write is allowed</string><string name="manager_connection_failed">MES connection failed</string>
+    <string name="manager_alerts">Alerts</string><string name="manager_decisions_page">Decisions</string><string name="manager_team_page">Team</string><string name="manager_targets_page">Targets</string><string name="manager_line_status_page">Line status</string><string name="manager_handover_page">Handover</string><string name="manager_profile_page">Profile &amp; diagnostics</string>
+    <string name="manager_desc_alerts">Critical, overdue, blocked and offline work requiring attention.</string><string name="manager_desc_decisions">MES-authorized exception, stop/resume, changeover and rework requests.</string><string name="manager_desc_team">HR identity joined to MES line assignment, PDA health and messages.</string><string name="manager_desc_targets">Output, quality, on-time, downtime and material readiness.</string><string name="manager_desc_line_status">Work order, stations, operators, equipment and materials.</string><string name="manager_desc_handover">Open issues, unfinished work and next-shift priorities.</string><string name="manager_desc_profile">Identity, scope, expiry, audit and connection diagnostics.</string>
+    <string name="manager_exit">Exit</string><string name="manager_mes_online">MES ONLINE</string><string name="manager_mes_warning">MES CONNECTION WARNING</string><string name="manager_pda_violations">PDAs online: %1$d · Open violations: %2$d</string><string name="manager_last_update">Last update: %1$s</string><string name="manager_now">NOW — needs attention</string><string name="manager_open_alerts">Open all alerts</string><string name="manager_no_violation">No open loading violations</string><string name="manager_no_violation_detail">MES has not reported an open loading violation for this view.</string><string name="manager_open_line">Open line status</string><string name="manager_open_team">Open team and messages</string><string name="manager_open_targets">Open targets</string><string name="manager_open_decisions">Open decisions</string><string name="manager_handover">HANDOVER</string><string name="manager_open_handover">Open shift handover</string><string name="manager_loading_supervision">Loading supervision</string>
+    <string name="manager_line_assignments">Daily line positions</string>
+    <string name="manager_hiring_requests">Position hiring requests</string>
+    <string name="manager_desc_hiring_requests">Line manager submits missing positions; HR manager and plant manager must sign before the hiring board can publish.</string>
+    <string name="manager_grievance_cases">HR investigation cases</string>
+    <string name="manager_desc_grievance_cases">Confidential HR cases requiring a line manager explanation.</string>
+    <string name="pm_title">Plant Manager Approvals</string><string name="pm_mes_online">MES online - approvals are server-authorized</string><string name="pm_mes_offline">MES offline - approvals locked</string><string name="pm_open">Open</string><string name="pm_all">All</string><string name="pm_rules_title">Approval rules</string><string name="pm_rules_detail">Every approval requires an identified Plant Manager, reason, scope, expiry and MES audit record. Quality blocks cannot be bypassed here.</string><string name="pm_reason">Authorization reason (required)</string><string name="pm_result">Closure result (required)</string><string name="pm_duration">Authorization duration</string><string name="pm_no_requests">No MES approval requests</string><string name="pm_valid_until">Valid until: %1$s</string><string name="pm_quality_block">Quality approval required; Plant Manager authorization is blocked.</string><string name="pm_authorize">Authorize through MES</string><string name="pm_close">Close authorization through MES</string>
+    <string name="manager_assign">Assign</string>
+    <string name="manager_assign_owner">Owner employee code</string>
+    <string name="manager_approvals_page">Cross-department approvals</string>
+    <string name="manager_org_chart_page">Live HR organization</string>
+    <string name="manager_communications_page">Factory communication center</string>
+    <string name="manager_loading_status_page">Live material loading status</string>
+    <string name="manager_work_orders_page">PMC work orders</string>
+    <string name="manager_plant_manager_page">Plant Manager PDA</string>
+    <string name="manager_desc_repair">MES-owned NG repair, pickup, repair status, return handover and SLA alerts.</string>
+    <string name="manager_desc_approvals">PMC, production, quality, warehouse, engineering and HR requests decided by MES.</string>
+    <string name="manager_desc_org_chart">HR department tree, owners, active headcount and department status.</string>
+    <string name="manager_desc_communications">Line, HR, WMS, procurement, PMC, quality and engineering channels.</string>
+    <string name="manager_desc_loading_status">MES work orders, assigned materials, completed/pending, PDA online state and mismatch alarms.</string>
+    <string name="manager_desc_work_orders">PMC plan lock, unlock and controlled completion; every action is MES-audited.</string>
+    <string name="manager_desc_plant_manager">Plant-wide exception authorization and middle-manager communication.</string>
+    <string name="manager_wo_lock">Lock plan</string>
+    <string name="manager_wo_unlock">Unlock plan</string>
+    <string name="manager_wo_complete">Complete</string>
+</resources>

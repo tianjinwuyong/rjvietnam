@@ -1,0 +1,14 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!1 &1000
+GameObject:
+  m_Name: WarehouseMap
+  m_Component:
+  - component: {fileID: 4000}
+  - component: {fileID: 11400000}
+--- !u!4 &4000
+Transform:
+  m_GameObject: {fileID: 1000}
+--- !u!114 &11400000
+MonoBehaviour:
+  m_Script: {fileID: 11500000, guid: 9d6e5b9f1bb44c8e9cc8a7d4e6f0a121, type: 3}

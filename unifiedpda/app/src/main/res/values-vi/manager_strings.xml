@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="manager_login_title">Ứng dụng quản lý hợp nhất</string>
+    <string name="manager_login_subtitle">Vận hành nhà máy MES / WMS</string>
+    <string name="manager_quick_login">Đăng nhập nhanh cho trưởng chuyền</string>
+    <string name="manager_manual_manager">Trưởng chuyền thủ công</string>
+    <string name="manager_cockpit">Bảng điều hành chuyền thủ công</string>
+    <string name="manager_scope">Chuyền thủ công L004 · MES giám sát trực tiếp</string>
+    <string name="manager_line_status">TRẠNG THÁI CHUYỀN</string>
+    <string name="manager_material_control">KIỂM SOÁT VẬT LIỆU</string>
+    <string name="manager_team">ĐỘI NGŨ</string>
+    <string name="manager_targets">MỤC TIÊU</string>
+    <string name="manager_decisions">QUYẾT ĐỊNH</string>
+    <string name="manager_production_window">Khung thời gian sản xuất</string>
+    <string name="manager_active_work_order">Lệnh sản xuất hiện tại</string>
+    <string name="manager_material_loading">Cấp vật liệu</string>
+    <string name="manager_authority">Quyền trưởng chuyền</string>
+    <string name="manager_schedule_required">Cần kế hoạch MES</string>
+    <string name="manager_work_order_pending">Đang chờ dữ liệu lệnh sản xuất MES</string>
+    <string name="manager_material_types">PCB · kem hàn · linh kiện cắm rời</string>
+    <string name="manager_role_required">Cần vai trò và thời hạn quyền MES</string>
+    <string name="manager_pcb">Bo mạch PCB</string>
+    <string name="manager_paste">Kem hàn</string>
+    <string name="manager_plugin">Linh kiện cắm rời</string>
+    <string name="manager_schedule_scan">Kế hoạch và trạng thái quét từ MES</string>
+    <string name="manager_batch_status">Trạng thái lô, hạn dùng và nhiệt độ</string>
+    <string name="manager_component_status">Trạng thái điện trở · tụ điện · cuộn cảm</string>
+    <string name="manager_early_late">Cấp sớm / trễ</string>
+    <string name="manager_decision_required">Báo trưởng chuyền; cần quyết định MES</string>
+    <string name="manager_team_online">Đội ngũ trực tuyến</string>
+    <string name="manager_pda_connections">Kết nối PDA từ MES</string>
+    <string name="manager_messages">Tin nhắn nhân viên</string>
+    <string name="manager_endpoint_pending">Chưa kết nối giao diện liên lạc MES</string>
+    <string name="manager_ack">Xác nhận</string>
+    <string name="manager_audit_required">Cần ghi nhận gửi và xác nhận</string>
+    <string name="manager_today">Hôm nay</string>
+    <string name="manager_week">Tuần này</string>
+    <string name="manager_month">Tháng này</string>
+    <string name="manager_quarter_year">Quý / năm</string>
+    <string name="manager_target_pending">Đang chờ mục tiêu từ MES</string>
+    <string name="manager_approval_locked">Đã khóa phê duyệt — chờ MES cấp quyền</string>
+    <string name="manager_back">Quay lại</string><string name="manager_record_id">Mã bản ghi MES (bắt buộc)</string><string name="manager_comment">Ghi chú / lý do</string><string name="manager_acknowledge">Xác nhận</string><string name="manager_escalate">Chuyển cấp</string><string name="manager_approve">Phê duyệt</string><string name="manager_reject">Từ chối</string><string name="manager_ask">Yêu cầu thông tin</string><string name="manager_send">Gửi qua MES</string><string name="manager_recovery">Giao việc khôi phục</string><string name="manager_handover_confirm">Xác nhận bàn giao qua MES</string><string name="manager_no_records">Không có bản ghi MES</string><string name="manager_no_local_write">MES không khả dụng · cấm ghi cục bộ</string><string name="manager_connection_failed">Kết nối MES thất bại</string>
+    <string name="manager_alerts">Cảnh báo</string><string name="manager_decisions_page">Quyết định</string><string name="manager_team_page">Đội ngũ</string><string name="manager_targets_page">Mục tiêu</string><string name="manager_line_status_page">Trạng thái chuyền</string><string name="manager_handover_page">Bàn giao</string><string name="manager_profile_page">Hồ sơ &amp; chẩn đoán</string>
+    <string name="manager_desc_alerts">Công việc nghiêm trọng, trễ hạn, bị chặn và ngoại tuyến cần xử lý.</string><string name="manager_desc_decisions">Yêu cầu ngoại lệ, dừng/chạy lại, đổi chuyền và sửa chữa được MES cấp quyền.</string><string name="manager_desc_team">Danh tính HR liên kết với chuyền MES, trạng thái PDA và tin nhắn.</string><string name="manager_desc_targets">Sản lượng, chất lượng, đúng hạn, thời gian dừng và sẵn sàng vật liệu.</string><string name="manager_desc_line_status">Lệnh sản xuất, trạm, nhân viên, thiết bị và vật liệu.</string><string name="manager_desc_handover">Vấn đề mở, công việc chưa hoàn tất và ưu tiên ca sau.</string><string name="manager_desc_profile">Danh tính, phạm vi, hạn quyền, nhật ký và chẩn đoán kết nối.</string>
+    <string name="manager_exit">Thoát</string><string name="manager_mes_online">MES TRỰC TUYẾN</string><string name="manager_mes_warning">CẢNH BÁO KẾT NỐI MES</string><string name="manager_pda_violations">PDA trực tuyến: %1$d · Vi phạm mở: %2$d</string><string name="manager_last_update">Cập nhật lần cuối: %1$s</string><string name="manager_now">BÂY GIỜ — cần xử lý</string><string name="manager_open_alerts">Mở tất cả cảnh báo</string><string name="manager_no_violation">Không có vi phạm cấp vật liệu đang mở</string><string name="manager_no_violation_detail">MES chưa báo cáo vi phạm cấp vật liệu đang mở cho màn hình này.</string><string name="manager_open_line">Mở trạng thái chuyền</string><string name="manager_open_team">Mở đội ngũ và tin nhắn</string><string name="manager_open_targets">Mở mục tiêu</string><string name="manager_open_decisions">Mở quyết định</string><string name="manager_handover">BÀN GIAO</string><string name="manager_open_handover">Mở bàn giao ca</string><string name="manager_loading_supervision">Giám sát cấp vật liệu</string>
+    <string name="manager_line_assignments">Điều chỉnh vị trí hằng ngày</string>
+    <string name="manager_hiring_requests">Yêu cầu tuyển dụng vị trí</string>
+    <string name="manager_desc_hiring_requests">Trưởng chuyền gửi nhu cầu; quản lý HR và quản lý nhà máy phải ký trước khi đăng bảng tuyển dụng.</string>
+    <string name="manager_grievance_cases">Vụ việc HR điều tra</string>
+    <string name="manager_desc_grievance_cases">Vụ việc HR bảo mật cần trưởng chuyền giải trình.</string>
+    <string name="pm_title">Phe duyet cua Giam doc nha may</string><string name="pm_mes_online">MES truc tuyen - phe duyet do may chu cap quyen</string><string name="pm_mes_offline">MES ngoai tuyen - phe duyet bi khoa</string><string name="pm_open">Dang mo</string><string name="pm_all">Tat ca</string><string name="pm_rules_title">Quy tac phe duyet</string><string name="pm_rules_detail">Moi phe duyet phai co danh tinh, ly do, pham vi, thoi han va nhat ky MES. Khong the bo qua chan chat luong tai day.</string><string name="pm_reason">Ly do cap quyen (bat buoc)</string><string name="pm_result">Ket qua dong (bat buoc)</string><string name="pm_duration">Thoi han cap quyen</string><string name="pm_no_requests">Khong co yeu cau phe duyet tu MES</string><string name="pm_valid_until">Co hieu luc den: %1$s</string><string name="pm_quality_block">Can phe duyet chat luong; quyen cua giam doc bi chan.</string><string name="pm_authorize">Cap quyen qua MES</string><string name="pm_close">Dong quyen qua MES</string>
+    <string name="manager_assign">Phan cong</string>
+    <string name="manager_assign_owner">Ma nhan vien nhan viec</string>
+    <string name="manager_approvals_page">Phe duyet lien phong ban</string>
+    <string name="manager_org_chart_page">So do HR truc tuyen</string>
+    <string name="manager_communications_page">Trung tam lien lac nha may</string>
+    <string name="manager_loading_status_page">Trang thai nap lieu truc tuyen</string>
+    <string name="manager_work_orders_page">Lenh san xuat PMC</string>
+    <string name="manager_plant_manager_page">PDA Giam doc nha may</string>
+    <string name="manager_desc_repair">NG do MES quan ly, cho lay, trang thai sua, ban giao tra ve va canh bao SLA.</string>
+    <string name="manager_desc_approvals">Yeu cau PMC, san xuat, chat luong, kho, ky thuat va HR do MES phe duyet.</string>
+    <string name="manager_desc_org_chart">Cay phong ban HR, nguoi phu trach, so nhan su va trang thai phong ban.</string>
+    <string name="manager_desc_communications">Kenh truyen thong chuyen, HR, WMS, mua hang, PMC, chat luong va ky thuat.</string>
+    <string name="manager_desc_loading_status">Lenh MES, vat tu duoc phan bo, da xong/chua xong, trang thai PDA va canh bao sai lieu.</string>
+    <string name="manager_desc_work_orders">Khoa, mo khoa va hoan thanh co kiem soat lenh PMC; moi thao tac duoc MES ghi nhat ky.</string>
+    <string name="manager_desc_plant_manager">Uy quyen ngoai le toan nha may va lien lac quan ly cap trung.</string>
+    <string name="manager_wo_lock">Khoa ke hoach</string>
+    <string name="manager_wo_unlock">Mo khoa ke hoach</string>
+    <string name="manager_wo_complete">Hoan thanh</string>
+</resources>

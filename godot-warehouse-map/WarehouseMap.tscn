@@ -1,0 +1,7 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource path="res://WarehouseMap.gd" type="Script" id="1"]
+
+[node name="WarehouseMap" type="Node3D"]
+script = ExtResource("1")
+api_base_url = "http://192.168.1.100:8080"
