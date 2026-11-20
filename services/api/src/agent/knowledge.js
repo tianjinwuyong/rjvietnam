@@ -109,3 +109,59 @@ export function allKnowledgeEmployeeIds() {
 export function defaultKnowledgeService() {
   return createKnowledgeService();
 }
+
+// ── L1 语料：OA 受控文件（版本化、可失效）──────────────────────────────
+// oa.doc_system holds the controlled-document register (260 published rows).
+// Only the authority levels go into the index by default: l1 manual, l2
+// procedure, l3 management rule. l4 forms are blanks — 181 near-identical
+// titles would dilute recall without telling an employee anything.
+export const DOC_LEVELS_DEFAULT = Object.freeze([1, 2, 3]);
+
+export async function collectControlledDocs({ query, knowledge, levels = DOC_LEVELS_DEFAULT, limit = 300, dryRun = false,
+  // the event table is per-employee (NOT NULL); the controlled-document
+  // register belongs to the document-control role, which owns its currency.
+  ownerEmployeeId = "OA-DOCUMENT-CONTROL-VIRTUAL-01" }) {
+  const rows = (await query(
+    `SELECT id, code, title, title_vi, level, category, current_version, issue_date, next_review_date, security_level
+       FROM oa.doc_system
+      WHERE status = 'published'
+        AND level = ANY($1::int[])
+        AND COALESCE(security_level, 'public') = 'public'
+      ORDER BY level, code
+      LIMIT $2`, [levels, limit])).rows;
+
+  const items = [];
+  for (const row of rows) {
+    const version = String(row.current_version || "").trim();
+    // pg hands back timestamptz as a Date; String(date).slice() produced
+    // "Mon Au…" garbage, so format explicitly.
+    const reviewDate = row.next_review_date ? new Date(row.next_review_date).toISOString().slice(0, 10) : "未定";
+    const content = `受控文件 ${row.code}《${row.title}》（L${row.level}/${row.category}）当前版本 ${version || "未标注"}；引用时必须带版本号，下次复审 ${reviewDate}。`
+      + (row.title_vi ? ` 越文名：${row.title_vi}` : "");
+    const meta = {
+      type: "rule_reference", topic: "controlled-document",
+      sourceType: "oa-doc-system", sourceId: row.id,
+      docVersion: version || null,
+      expiresAt: row.next_review_date ? new Date(row.next_review_date).toISOString() : null,
+    };
+    if (!meta.docVersion) { items.push({ code: row.code, stored: false, reason: "NO_VERSION_ON_DOCUMENT" }); continue; }
+    if (dryRun || !knowledge) { items.push({ code: row.code, level: row.level, ...meta, stored: false }); continue; }
+    const result = await knowledge.remember({ ...meta, content, shared: "controlled-docs" });
+    items.push({ code: row.code, level: row.level, ...result });
+  }
+
+  const stored = items.filter(i => i.stored).length;
+  if (stored > 0) {
+    await query(
+      `INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor)
+       VALUES ($1,NULL,'KNOWLEDGE_COLLECTED',$2::jsonb,$3)`,
+      [ownerEmployeeId, JSON.stringify({ kind: "controlled-docs", levels, scanned: rows.length, stored,
+        refused: [...new Set(items.filter(i => !i.stored && i.reason).map(i => i.reason))] }),
+        `ve:${ownerEmployeeId}`],
+    );
+  }
+  return { source: "oa.doc_system", owner: ownerEmployeeId, levels, scanned: rows.length, stored,
+    refused: items.length - stored,
+    reasons: [...new Set(items.filter(i => i.reason).map(i => i.reason))],
+    namespace: "ve/shared/controlled-docs", dryRun, items };
+}

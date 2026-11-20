@@ -4,6 +4,8 @@
  * policy. One RAG service, one namespace per employee.
  *   node scripts/ve-knowledge.mjs --dry-run --all
  *   node scripts/ve-knowledge.mjs --employee=IQC-VIRTUAL-01 --remember
+ *   node scripts/ve-knowledge.mjs --docs --dry-run          # OA 受控文件（L1）
+ *   node scripts/ve-knowledge.mjs --docs --levels=1,2,3 --remember
  * Without --remember nothing is written to mem0: collection is reported only,
  * so a stopped memory server can never be mistaken for a successful store.
  */
@@ -11,7 +13,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { knowledgeCycle, collectFieldKnowledge, allKnowledgeEmployeeIds, defaultKnowledgeService } from "../services/api/src/agent/knowledge.js";
+import { knowledgeCycle, collectFieldKnowledge, collectControlledDocs, DOC_LEVELS_DEFAULT, allKnowledgeEmployeeIds, defaultKnowledgeService } from "../services/api/src/agent/knowledge.js";
 import { memoryHealth } from "../services/_shared/memory-client.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,9 +39,10 @@ const args = Object.fromEntries(process.argv.slice(2).map(a => {
 const dryRun = Boolean(args["dry-run"]);
 const remember = Boolean(args.remember) && !dryRun;
 
+const docs = Boolean(args.docs);
 const ids = args.all ? allKnowledgeEmployeeIds() : args.employee ? [args.employee] : [];
-if (!ids.length) {
-  console.error(`Choose --employee=<id> or --all. There are ${allKnowledgeEmployeeIds().length} employees in the registry.`);
+if (!docs && !ids.length) {
+  console.error(`Choose --employee=<id>, --all, or --docs. There are ${allKnowledgeEmployeeIds().length} employees in the registry.`);
   process.exit(2);
 }
 
@@ -64,9 +67,12 @@ const query = (text, params) => pool.query(text, params);
 const knowledge = remember ? defaultKnowledgeService() : null;
 
 try {
-  const result = ids.length === 1
-    ? await collectFieldKnowledge({ employeeId: ids[0], query, knowledge, dryRun })
-    : await knowledgeCycle({ employeeIds: ids, query, knowledge, dryRun });
+  const result = docs
+    ? await collectControlledDocs({ query, knowledge, dryRun,
+        levels: args.levels ? String(args.levels).split(",").map(Number) : DOC_LEVELS_DEFAULT })
+    : ids.length === 1
+      ? await collectFieldKnowledge({ employeeId: ids[0], query, knowledge, dryRun })
+      : await knowledgeCycle({ employeeIds: ids, query, knowledge, dryRun });
   console.log(JSON.stringify({ dryRun, remember, memoryServer: memory, ...result }, null, 2));
   if (remember && result.stored === 0 && result.collected > 0) process.exitCode = 1;
 } catch (err) {
