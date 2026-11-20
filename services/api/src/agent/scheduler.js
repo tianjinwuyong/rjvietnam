@@ -147,3 +147,20 @@ export async function recordTick({ query, key, detail = {}, employeeId = SCHEDUL
     [employeeId, SCHEDULER_TICK_EVENT, JSON.stringify({ key, ...detail })]);
   return { key, employeeId };
 }
+
+// ── One scheduler per database ───────────────────────────────────────────
+// Two developers starting the loop would double-create every draft.
+// pg_try_advisory_lock is SESSION-scoped: it must be taken and released on one
+// connection, so the caller passes a dedicated checked-out client instead of a
+// pool (a pool would lock on backend A and try to unlock on backend B). The
+// lock dies with the connection, so a crashed scheduler never blocks the next
+// one, and no table or column is needed.
+export const SCHEDULER_LOCK_KEY = 748312;
+
+export async function acquireSchedulerLock({ client, key = SCHEDULER_LOCK_KEY }) {
+  const row = (await client.query("SELECT pg_try_advisory_lock($1::int) AS acquired", [key])).rows[0];
+  if (!row || !row.acquired) return { acquired: false, key };
+  const release = async () =>
+    (await client.query("SELECT pg_advisory_unlock($1::int) AS released", [key])).rows[0]?.released === true;
+  return { acquired: true, key, release };
+}

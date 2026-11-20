@@ -205,10 +205,10 @@ npm run schedule:ve -- --once --limit=80                     # 按频率表跑�
 | --- | --- | --- |
 | 批准唯一入口 | `services/api/src/agent/approval.js`（HTTP 路由与 `npm run approve:ve` 共用） | 批准人必须具名人类、必须持该域权限键、门必须注册在该岗；条件 UPDATE 防重复批准 |
 | 批准后推进 | `services/api/src/agent/writeback.js` | 12 个门有后继草稿任务，41 个门显式写明由人类执行；后继不得是写技能；推进失败不回滚人类的批准 |
-| 定时执行 | `services/api/src/agent/scheduler.js` + `scripts/ve-scheduler.mjs` | EVENT/WATCH 按 intervalSeconds，BATCH 按越南本地 cron，DEMAND 永不自跑；last-run 存 `SCHEDULER_TICK` 事件，不加字段 |
+| 定时执行 | `services/api/src/agent/scheduler.js` + `scripts/ve-scheduler.mjs`（`start_dev.js` 第 5 个子进程） | EVENT/WATCH 按 intervalSeconds，BATCH 按越南本地 cron，DEMAND 永不自跑；last-run 存 `SCHEDULER_TICK` 事件，不加字段；会话级 advisory lock 保证一个库只有一个调度进程 |
 | L1 语料 | `knowledge.js --docs` → `ve/shared/controlled-docs` | 只收 published+public+L1/L2/L3（79 条），L4 表单排除；带 `docVersion` 与复审到期日 |
 
-实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号。**183 条存量 `receive_variance` 仍未批准**——业务决定，工具已就绪。详见 `JOB-DESCRIPTIONS.md` §20–§22。
+实测：批准→推进→幂等→拒自批 全链跑通（合成任务 203708→后继 203709，验证后 CANCELLED 并留 `PROOF_CLEANED` 事件）；调度器同分钟两轮 `fired: []`；受控文件语义召回带版本号；两个进程争用同一个库时只有一个持锁，第二个退 0 且启动器不重启。**待批队列 275 条（`receive_variance` 265）仍未批准**——业务决定，工具已就绪。详见 `JOB-DESCRIPTIONS.md` §20–§23。
 
-未做：调度器未挂进 `start_dev.js`/生产守护（需与其他 lane 协调启动方式）；`harness/**`、locks 未碰；旧向量集合仍未删（不可逆清单）。
+未做：生产侧（rjms compose）未加调度容器——属部署变更，需单独签字；`harness/**`、locks 未碰；旧向量集合仍未删（不可逆清单）。
 

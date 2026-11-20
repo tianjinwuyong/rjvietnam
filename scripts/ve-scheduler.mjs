@@ -9,19 +9,22 @@
  *   npm run schedule:ve -- --once                # one pass, real
  *   npm run schedule:ve                          # loop (supervise it like the other services)
  *   npm run schedule:ve -- --no-rag              # skip memory recall/store
- *
- * EVENT and WATCH employees are due when their intervalSeconds elapsed; BATCH
- * employees fire on their cron minute in Asia/Ho_Chi_Minh; DEMAND employees are
- * never scheduled. Nightly jobs: corrections -> training cases (22:30), field
- * knowledge (23:00); weekly: competency (Mon 06:00). Every action is idempotent
- * through task_key / case_key, so a restarted loop cannot double-create work.
+ * One process per database: it holds a session-scoped advisory lock, so a
+ * second scheduler logs SCHEDULER_ALREADY_RUNNING and exits 0 rather than
+ * double-creating drafts. SIGINT/SIGTERM release the lock and close the pool.
+ * EVENT/DEMAND/WATCH/BATCH employees fire on their cron minute in
+ * Asia/Ho_Chi_Minh; DEMAND employees are never scheduled. Nightly jobs:
+ * corrections -> training cases (22:30), field knowledge (23:00); weekly:
+ * competency (Mon 06:00). Every action is idempotent through task_key /
+ * case_key, so a restarted loop cannot double-create work. Flags are
+ * `--name=value` (the repo convention), e.g. `--tick=60`.
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import pg from "pg";
-import { dueNow, dueJobs, localParts, TICK_MS, loadLastRun, recordTick, SCHEDULER_OWNER } from "../services/api/src/agent/scheduler.js";
+import { dueNow, dueJobs, localParts, loadLastRun, recordTick, acquireSchedulerLock, SCHEDULER_OWNER } from "../services/api/src/agent/scheduler.js";
 import { runEmployeeCycle } from "../services/api/src/agent/runner.js";
 import { learnFromCorrections, allEmployeeIds } from "../services/api/src/agent/learning.js";
 import { knowledgeCycle, collectControlledDocs, allKnowledgeEmployeeIds, defaultKnowledgeService } from "../services/api/src/agent/knowledge.js";
@@ -44,6 +47,8 @@ if (existsSync(ENV_PATH)) {
   }
 }
 
+// The repo's CLI convention is `--name=value`; keep it, so the same flags
+// work identically in ve-runner / ve-knowledge / ve-approve / ve-competency.
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
   const [k, v = "1"] = a.replace(/^--/, "").split("=");
   return [k, v];
@@ -144,26 +149,55 @@ async function tick() {
   return actions.length;
 }
 
-try {
-  Object.assign(lastRun, await loadLastRun({ query, hours: Number(args["rehydrate-hours"] || 24) }));
-  log({ hydrated: Object.keys(lastRun).length, note: "last-run 状态从 SCHEDULER_TICK 事件恢复" });
-  if (args.once) {
-    await tick();
-  } else {
-    log({ started: true, tickMs, note: "Ctrl-C to stop; every action is idempotent" });
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      try {
-        await tick();
-      } catch (err) {
-        log({ tickError: String(err.message || err) });
-      }
-      await new Promise(resolve => setTimeout(resolve, tickMs));
-    }
+let lock = null;
+let lockClient = null;
+let stopping = false;
+
+function shutdown(signal) {
+  if (stopping) return;
+  stopping = true;
+  log({ stopped: signal, note: "释放调度锁并关闭连接池" });
+  Promise.resolve()
+    .then(() => (lock ? lock.release() : null))
+    .then(() => (lockClient ? lockClient.release() : null))
+    .then(() => pool.end())
+    .catch(() => {})
+    .finally(() => process.exit(0));
+}
+
+async function main() {
+  // Single instance per database: the lock lives on its own connection.
+  lockClient = await pool.connect();
+  lock = await acquireSchedulerLock({ client: lockClient });
+  if (!lock.acquired) {
+    log({ skipped: "SCHEDULER_ALREADY_RUNNING", lockKey: lock.key,
+      note: "另一个调度进程持有该库的调度锁，本进程退出，不重复建单" });
+    lockClient.release();
+    await pool.end();
+    return;                       // clean exit 0: the launcher must not restart-loop this
   }
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+
+  Object.assign(lastRun, await loadLastRun({ query, hours: Number(args["rehydrate-hours"] || 24) }));
+  log({ hydrated: Object.keys(lastRun).length, lockKey: lock.key, note: "last-run 状态从 SCHEDULER_TICK 事件恢复" });
+  while (!stopping) {
+    try {
+      await tick();
+    } catch (err) {
+      log({ tickError: String(err.message || err) });
+    }
+    if (args.once || stopping) break;
+    await new Promise(resolve => setTimeout(resolve, tickMs));
+  }
+  await lock.release();
+  lockClient.release();
+  await pool.end();
+}
+
+try {
+  await main();
 } catch (err) {
   console.error(`SCHEDULER_FAILED ${err.message}`);
   process.exitCode = 1;
-} finally {
-  if (args.once) await pool.end();
 }

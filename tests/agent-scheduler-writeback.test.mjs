@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { localParts, cronMatches, dueNow, dueJobs, JOBS, loadLastRun, recordTick, SCHEDULER_TICK_EVENT } from "../services/api/src/agent/scheduler.js";
+import { localParts, cronMatches, dueNow, dueJobs, JOBS, loadLastRun, recordTick, acquireSchedulerLock, SCHEDULER_TICK_EVENT } from "../services/api/src/agent/scheduler.js";
 import { planWriteback, applyWriteback, auditWritebackCoverage, GATE_EFFECTS } from "../services/api/src/agent/writeback.js";
 import { approveTask, humanActor } from "../services/api/src/agent/approval.js";
 import { FACTORY_VIRTUAL_EMPLOYEES } from "../services/api/src/virtual-employees/registry.js";
@@ -230,5 +230,38 @@ describe("one approval path for HTTP and CLI", () => {
     const result = await approveTask({ query, task: { ...gated, status: "OPEN" }, employee, actor: "admin", permissions: ["wms.execute"] });
     expect(result).toMatchObject({ ok: false, code: "TASK_NOT_WAITING" });
     expect(calls.length).toBe(0);
+  });
+});
+
+describe("one scheduler per database", () => {
+  const client = (answers) => {
+    const seen = [];
+    return {
+      seen,
+      query: async (sql, params) => {
+        seen.push({ sql, params });
+        return { rows: [{ acquired: answers, released: answers }] };
+      },
+    };
+  };
+
+  it("takes and releases the session lock on the connection it was handed", async () => {
+    const c = client(true);
+    const lock = await acquireSchedulerLock({ client: c, key: 1234 });
+    expect(lock.acquired).toBe(true);
+    expect(await lock.release()).toBe(true);
+    expect(c.seen.map(s => s.sql)).toEqual([
+      "SELECT pg_try_advisory_lock($1::int) AS acquired",
+      "SELECT pg_advisory_unlock($1::int) AS released",
+    ]);
+    expect(c.seen.every(s => s.params[0] === 1234)).toBe(true);
+  });
+
+  it("reports no lock, and therefore no release, when another process holds it", async () => {
+    const c = client(false);
+    const lock = await acquireSchedulerLock({ client: c });
+    expect(lock.acquired).toBe(false);
+    expect(lock.release).toBeUndefined();
+    expect(c.seen.length).toBe(1);
   });
 });

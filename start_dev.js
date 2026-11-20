@@ -51,7 +51,34 @@ function startFactory3d() {
   vite.on('exit', (code) => { console.log('Vite (factory3d) exited: ' + code + ', restarting...'); setTimeout(startFactory3d, 1000); });
 }
 
-startApi();
-startSupplierPortal();
-startVite();
-startFactory3d();
+function startScheduler() {
+  // The cadence loop is a first-class dev service: it creates drafts on its
+  // own schedule, so it is supervised exactly like the API instead of being
+  // left to somebody's terminal. VE_SCHEDULER=off keeps a quiet session.
+  if (String(process.env.VE_SCHEDULER || '').toLowerCase() === 'off') {
+    console.log('[ve-scheduler] disabled (VE_SCHEDULER=off)');
+    return;
+  }
+  const tick = Math.max(15, Number(process.env.VE_SCHEDULER_TICK || 60));
+  const scheduler = spawn('node', ['scripts/ve-scheduler.mjs', '--tick=' + tick], {
+    cwd: root, stdio: 'pipe', env: { ...process.env },
+  });
+  scheduler.stdout.on('data', (d) => process.stdout.write('[ve-scheduler] ' + d));
+  scheduler.stderr.on('data', (d) => process.stderr.write('[ve-scheduler:err] ' + d));
+  scheduler.on('exit', (code) => {
+    // Exit 0 is deliberate: another scheduler holds this database's advisory
+    // lock, so restarting would only spin. Any other code is a crash.
+    if (code === 0) { console.log('[ve-scheduler] exited cleanly (another scheduler owns the lock) — not restarting'); return; }
+    console.log('VE scheduler exited: ' + code + ', restarting...');
+    setTimeout(startScheduler, 2000);
+  });
+}
+
+// DEV_SERVICES lets a developer run just one piece (e.g. DEV_SERVICES=scheduler
+// during integration checks) without changing the file. Default: all five.
+const enabled = new Set((process.env.DEV_SERVICES || 'api,supplier-portal,web,factory3d,scheduler').split(','));
+if (enabled.has('api')) startApi();
+if (enabled.has('supplier-portal')) startSupplierPortal();
+if (enabled.has('web')) startVite();
+if (enabled.has('factory3d')) startFactory3d();
+if (enabled.has('scheduler')) setTimeout(startScheduler, 2000);

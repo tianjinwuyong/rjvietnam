@@ -649,7 +649,7 @@
 
 ### 18.5 缺口
 
-- OA 受控文件（L1）已入库（2026-11-21，见 §22）：79 条 published+public+L1/L2/L3 进 `ve/shared/controlled-docs`，带 `docVersion` 与复审到期日；L4 空白表单排除。剩下的是**文件正文**没有进语料（现在入的是登记项＋版本＋复审期，正文需 OA 导出接口）。
+- OA 受控文件（L1）已入库（2026-11-21，见 §23）：79 条 published+public+L1/L2/L3 进 `ve/shared/controlled-docs`，带 `docVersion` 与复审到期日；L4 空白表单排除。剩下的是**文件正文**没有进语料（现在入的是登记项＋版本＋复审期，正文需 OA 导出接口）。
 - "引用知识"≠"因知识改变判断"：四力权重仍按有/无 evidence，需要一条 A/B 或人工标注口径才能度量。
 - `/health` 的 `memories_total` 与新集合不同源（显示 0），不要用它的数字判断是否落库；以 `--remember` 的 `stored` 与 `KNOWLEDGE_COLLECTED` 事件为准。
 - 旧集合未删；删它属不可逆清单，需人工签字。
@@ -737,7 +737,7 @@ double approve refused true · re-advance idempotent { applied:true, duplicate:t
 ve actor refused VE_CANNOT_APPROVE · synthetic rows still open 0（已 CANCELLED + PROOF_CLEANED 事件）
 ```
 
-183 条存量 `receive_variance` 没有被批量批准——那是业务决定。工具在：`npm run approve:ve -- --list`（按门分组的待批队列）→ `--gate=receive_variance --reviewer=<真人用户名> --confirm=<同一个用户名>`；没有默认批准人，`ve:` 身份一律拒绝，权限从 `users`→`role_permissions`→`permissions` 实测取，与 UI 走同一条判定。
+最初的 183 条存量 `receive_variance` 没有被批量批准——那是业务决定；调度器上线后把它补到 265 条（`npm run approve:ve -- --list` 实测：scanned 275 = receive_variance 265 + return_machine_to_service 4 + hand_over_package 3 + approve_document 2 + final_iqc_decision 1）。工具在：`--list`（按门分组的待批队列）→ `--gate=receive_variance --reviewer=<真人用户名> --confirm=<同一个用户名>`；没有默认批准人，`ve:` 身份一律拒绝，权限从 `users`→`role_permissions`→`permissions` 实测取，与 UI 走同一条判定。
 
 ## 21. 定时执行终于有了执行者
 
@@ -764,7 +764,31 @@ pass2 fired: []        ← 从 tick 恢复的 lastRun 抑制了同分钟重跑
 
 第一轮真实产出了 121 条任务（其中 78 条是 OPS 的审批升级提醒，40 条收料待批草稿），这是调度器上线后的正常首轮积压，不是错误；全部带 `task_key`，重复运行只记 duplicate。
 
-## 22. L1 受控文件语料（已入库）
+## 22. 调度器挂进启动链（一个库只跑一个）
+
+代码：`services/api/src/agent/scheduler.js` 的 `acquireSchedulerLock` + `start_dev.js` 的 `startScheduler`。
+
+| 事项 | 现在的行为 |
+| --- | --- |
+| 启动 | `node start_dev.js` 起第 5 个子进程 `scripts/ve-scheduler.mjs --tick=60`，崩溃 2 秒后重启，日志前缀 `[ve-scheduler]` |
+| 单实例 | 进程对数据库持一个 **会话级 advisory lock**（key `748312`）。第二个进程打 `SCHEDULER_ALREADY_RUNNING` 并**以 0 退出**，启动器看到 0 就不重启，不会自旋 |
+| 锁的正确性 | `pg_try_advisory_lock` 是会话作用域，所以取/放都在同一条单独 checkout 的连接上；连接池会锁在 A、解在 B。进程被杀 ⇒ 连接断 ⇒ 锁自动消失，不会留下死锁 |
+| 关闭 | SIGINT/SIGTERM 释放锁、归还连接、`pool.end()`，然后退 0 |
+| 安静模式 | `VE_SCHEDULER=off node start_dev.js` 完全不起；`VE_SCHEDULER_TICK=15` 改轮询间隔（下限 15 秒）；`DEV_SERVICES=api,web` 只起指定子服务（默认五项全起） |
+
+参数风格统一为仓库约定的 `--name=value`：`--tick 60` 过去会被解析成 `--tick`（值缺省 `"1"`），再被下限抬成 15 秒，等于偷偷改掉了轮询频率。启动器已改成 `--tick=60`。
+
+实测：
+
+```
+launcher 子进程: {"hydrated":4,"lockKey":748312,…}
+第二个进程      : {"skipped":"SCHEDULER_ALREADY_RUNNING",…}  exit 0
+停掉 launcher 后 : {"hydrated":4,"lockKey":748312,…}  exit 0   ← 锁随连接消失
+```
+
+生产侧（rjms compose）没动：那属于部署变更，要单独签字。
+
+## 23. L1 受控文件语料（已入库）
 
 `npm run knowledge:ve -- --docs --dry-run` → `--docs --remember`：从 `oa.doc_system` 取 **已发布 + 公开 + L1/L2/L3**（79 条），跳过 181 条 L4 空白表单（近似重复的标题只会稀释召回）。每条内容为「受控文件 DT-SP-EN-002《设备设施控制程序》（L2/l2_procedure）当前版本 1.0；引用时必须带版本号，下次复审 2028-08-03」，元数据带 `docVersion`（=文件版本）与 `expiresAt`（=复审到期日），命名空间 `ve/shared/controlled-docs`。
 
