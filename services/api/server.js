@@ -44605,14 +44605,9 @@ app.get("/hr/checkin/history", async (req, res) => {
 registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvelope });
 
       LEFT JOIN equipment_assets ea ON ea.id = ia.equipment_id
-      ${where}
       ORDER BY ia.due_date ASC
-      LIMIT $1
       LEFT JOIN equipment_assets ea ON ea.id = ir.equipment_id
-      ${where}
       ORDER BY ir.inspected_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
     const cnt = await query(`SELECT count(*) AS total FROM inspection_records ir ${where}`, params.slice(0,-2));
     const params = [Number(limit)];
     if (status) { params.unshift(status); where = `WHERE ia.status = $1`; }
@@ -44624,9 +44619,6 @@ registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvel
       LEFT JOIN pm_task_library pt ON pt.id = pp.task_id
       LEFT JOIN equipment_assets ea ON ea.id = pma.equipment_id
       ORDER BY pma.due_date ASC
-    // inspection_assignments keys on machine_id/shift_date. The filter and the LIMIT
-    // also shared $1 whenever equipmentId was present, so indices are built from the
-    // filter list and the limit is always the last parameter.
     let where = "";
     if (equipmentId) { params.unshift(equipmentId); where = `WHERE pp.equipment_id = $1`; }
       SELECT mel.*, ea.asset_code, ea.name_zh AS equipment_name, pt.task_name
@@ -44637,18 +44629,10 @@ registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvel
       ORDER BY mel.executed_at DESC
       LIMIT $1
       LEFT JOIN machine_status_snapshots mss ON mss.equipment_id = ea.id
-    // inspection_records keys on machine_id and records completed_at, not
-    // equipment_id/inspected_at; equipment_assets joins by its machine_id.
       LEFT JOIN equipment_assets ea ON ea.id = mol.equipment_id
       ${where}
       AND mol.log_date >= NOW() - ($2 || ' days')::interval
-    // inspection_abnormals keys on machine_id, not equipment_id.
 // ═══════════════════════════════════════════════════════════════════════════
-    // pm_assignments/pm_plans/pm_task_library are gone: the live model keeps one row
-    // per asset+template+frequency in pm_schedule_assignments, with the task text on
-    // pm_templates.
-    // pm_execution_logs keys on asset_id/template_id and records completed_date, not
-    // plan_id/equipment_id/executed_at; pm_plans and pm_task_library no longer exist.
 // AOI STATION API (MySQL)
 // ═══════════════════════════════════════════════════════════════════════════
 
