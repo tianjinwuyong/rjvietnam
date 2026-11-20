@@ -189,7 +189,10 @@ Login and scope check
 - [ ] Management system implements the `Required` endpoints.
 - [ ] Existing loading violation endpoint is line-scoped for Manual Line before manager use.
 - [ ] MES and PDA integration tests cover early/late loading, expired authority, duplicate approval, offline, and stale conflict.
-- [ ] MuMu smoke test covers all three languages and quick-login debug build.
+- [x] MuMu smoke test covers all three languages and quick-login debug build.
+  (2026-11-21, `127.0.0.1:16448`, `app-unifiedManagement.apk`: zh/en/vi login render + switch OK;
+  quick-login fills credentials and POSTs `/auth/login`; visible network error when MES unreachable;
+  expired cached session lands on LOGIN and is cleared locally.)
 
 ## Ownership
 
