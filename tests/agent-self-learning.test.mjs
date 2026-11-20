@@ -162,6 +162,19 @@ describe("self-learning still uses the human training tables", () => {
       .toMatchObject({ ok: false, code: "VE_CANNOT_APPROVE_TRAINING" });
   });
 
+  it("writes nothing at all under dryRun, which is what the scheduler relies on", async () => {
+    const calls = [];
+    const query = async (sql, params) => {
+      calls.push({ sql, params });
+      if (sql.includes("factory_virtual_employee_events e")) return { rows: sourceRow, rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    };
+    const result = await learnFromCorrections({ employeeId: "WMS-RECEIVING-VIRTUAL-01", query, dryRun: true });
+    expect(result).toMatchObject({ scanned: 1, casesCreated: 1 });
+    expect(result.cases[0]).toMatchObject({ dryRun: true });
+    expect(calls.filter(c => /INSERT|UPDATE|DELETE/.test(c.sql))).toEqual([]);
+  });
+
   it("covers the whole registry", () => {
     expect(allEmployeeIds().length).toBeGreaterThanOrEqual(23);
     expect(allKnowledgeEmployeeIds()).toEqual(allEmployeeIds());

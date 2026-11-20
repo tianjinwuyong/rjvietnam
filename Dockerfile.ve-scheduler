@@ -1,0 +1,33 @@
+# ── Virtual-employee cadence scheduler ────────────────────────────────────────
+# A CLI over the same modules server.js uses: scripts/ve-scheduler.mjs drives
+# services/api/src/agent/{scheduler,runner,learning,knowledge,competency}.js,
+# which import the virtual-employee catalogs and services/_shared. It talks to
+# PostgreSQL and to the child scripts only -- no HTTP listener, no apps/ code at
+# runtime.
+#
+# The COPY set mirrors Dockerfile.api on purpose: `npm ci` at this root resolves
+# the declared workspaces (apps/*, services/*, packages/*), so leaving apps/ or
+# packages/ out fails the install, not the run. scripts/ is the one directory
+# Dockerfile.api does not ship, which is why this image exists separately:
+# building it never touches the api image a cutover is pinning.
+FROM node:20-slim
+
+WORKDIR /app
+
+COPY apps/ apps/
+COPY database/ database/
+COPY integrations/ integrations/
+COPY packages/ packages/
+COPY services/ services/
+COPY scripts/ scripts/
+
+COPY package.json package-lock.json ./
+
+RUN npm ci --omit=dev --ignore-scripts
+
+# --tick=60 is the repo's `--name=value` CLI convention. Tick seconds do not set
+# job frequency: EVENT/WATCH compare intervalSeconds and BATCH matches cron minutes.
+# --no-rag: production runs no memory server (services/memory is not deployed on
+# rjms; nothing listens on :9876), so recall/store would only log failures into
+# the event table. Drop the flag once the memory service ships.
+CMD ["node", "scripts/ve-scheduler.mjs", "--tick=60", "--no-rag"]

@@ -88,7 +88,9 @@ async function runCycle(employeeId) {
 async function runJob(job) {
   if (job === "learn") {
     const out = [];
-    for (const id of allEmployeeIds()) out.push(await learnFromCorrections({ employeeId: id, query }));
+    // learnFromCorrections honours dryRun; not passing it here made `--dry-run`
+    // write training cases, contradicting the script's own header.
+    for (const id of allEmployeeIds()) out.push(await learnFromCorrections({ employeeId: id, query, dryRun }));
     return { cases: out.reduce((s, r) => s + (r.casesCreated || 0), 0), scanned: out.reduce((s, r) => s + (r.scanned || 0), 0) };
   }
   if (job === "knowledge") {

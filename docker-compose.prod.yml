@@ -83,11 +83,46 @@ services:
     networks:
       - default
     healthcheck:
-      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/api/auth/me').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))\"]
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8080/api/auth/me').then(r=>process.exit(r.status===401?0:1)).catch(()=>process.exit(1))\"\"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 300s
+
+  # The cadence loop for the virtual-employee org. Its own image, because
+  # Dockerfile.api deliberately does not ship scripts/ -- building this one
+  # cannot disturb the api image a cutover is pinning.
+  #
+  # One scheduler per database is enforced inside the process: it holds a
+  # session-scoped advisory lock (key 748312) and a second copy exits 0, so
+  # `restart: unless-stopped` never becomes a restart loop against a healthy peer.
+  ve-scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile.ve-scheduler
+    image: smt-factory-system-ve-scheduler:sync20261121
+    container_name: smt-ve-scheduler
+    restart: unless-stopped
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: smt_factory
+      PGUSER: smt_factory
+      PGPASSWORD: smt_factory
+      TZ: Asia/Ho_Chi_Minh
+      # The scheduler reaches the org only through the database, never HTTP, so no
+      # JWT/secret is passed. It waits for the API because the API applies the
+      # runtime DDL that creates the factory_virtual_employee_* tables.
+    depends_on:
+      postgres:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    # SIGTERM releases the advisory lock, returns the client and ends the pool;
+    # a tick may be mid-way through a child script, so give it room.
+    stop_grace_period: 120s
+    networks:
+      - default
 
   web:
     build:
