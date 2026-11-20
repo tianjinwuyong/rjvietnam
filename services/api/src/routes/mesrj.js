@@ -9432,6 +9432,459 @@ export function createMesrjRouter({ authenticateJWT }) {
   });
 
   // ════════════════════════════════════════════════════════════════════════════
+  // W13b SMT 管控路由 · 上料防错 / 锡膏回温 / 钢网 / PCB / 首件 / 报工
+  //   （源 api/smt.py 余下路由，2026-11-20 文件误删后由源码重建并复加）
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // 源 GET /smt/baseline 别名（与 /smt/baseline/list 同处理函数）
+  router.get("/smt/baseline", requireMesrjPerm("prod.trace"), async (req, res) => {
+    const rows = await smtCore.baselineList({
+      kw: req.query.kw || "", model: req.query.model || "", locked: req.query.locked || "",
+      line: req.query.line || "", limit: Math.min(Math.max(Number(req.query.limit) || 300, 1), 1000),
+    });
+    return ok(res, rows);
+  });
+
+  // ── SMT：PDA 上料防错 / 记录（源 load_check）──
+  router.post("/smt/load_check", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    await smtCore.ensureSchema(); await smtCore.loadParams();
+    const machine = String(d.machine_no || "").trim();
+    const slot = String(d.slot_no || "").trim();
+    const feeder = String(d.feeder_no || "").trim();
+    let mat = String(d.material_code || "").trim();
+    const batch = String(d.batch_no || "").trim();
+    const model = String(d.model || "").trim();
+    const op = req.mesrjUser?.login_name || "";
+    if (!mat) return ok(res, { success: false, msg: "请扫料盘条码（或填料号）" });
+    const mo_no = String(d.mo_no || "").trim() || String(d.mo || "").trim();
+    const reel = smtCore.parseReel(d.reel_code || d.code || mat);
+    if (reel.rj) mat = reel.rj;
+    const reel_sn = reel.reel_sn || d.reel_sn || "";
+    const dc_code = reel.dc || d.dc_code || "";
+    const qty = reel.qty || d.qty || "";
+    const lot_no = reel.lot || d.lot_no || "";
+    const strict = Boolean(machine && slot);
+    let cfg = null, okMat = true, reason = "", warn = "";
+    if (strict) {
+      const fs = await smtCore.feederSlotMatch(machine, slot, model, mat, smtCore.feederSlotStrict());
+      cfg = fs.cfg;
+      if (fs.level === "block") reason = fs.why; else if (fs.level === "warn") warn = fs.why;
+      else if (fs.kind === "alt") warn = `（替代料 ${mat} → 该站位主料 ${fs.expect || ""}）`;
+      okMat = !reason;
+    }
+    let feederOk = true, feederNote = "";
+    const feederCheck = String(smtCore.smtParam("smt.feeder_check", "0")) === "1";
+    if (strict && cfg && okMat && (cfg.feeder_no || "") && feederCheck) {
+      if (feeder && feeder.toUpperCase() !== String(cfg.feeder_no).toUpperCase()) {
+        feederOk = false; reason = `✕ 飞达不符！${machine} ${slot} 应装飞达「${cfg.feeder_no}」，实扫「${feeder}」`;
+      }
+    } else if (strict && cfg && okMat && (cfg.feeder_no || "") && feeder && feeder.toUpperCase() !== String(cfg.feeder_no).toUpperCase()) {
+      feederNote = `（飞达与配置「${cfg.feeder_no}」不同，仅记录不拦截）`;
+    }
+    const success = okMat && feederOk;
+    const expect_code = cfg ? cfg.material_code : "", expect_spec = cfg ? cfg.spec : "";
+    const designators = cfg ? cfg.designators : "", real_model = (cfg ? cfg.model : "") || model;
+    try {
+      await query(
+        `INSERT INTO prd_material_load(model,machine_no,slot_no,feeder_no,material_code,vn_code,batch_no,expect_code,expect_spec,designators,check_result,fail_reason,operator,created_at,reel_sn,mo_no,lot_no,dc_code,qty,active)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,'1')`,
+        [real_model, machine, slot, feeder, mat, cfg ? (cfg.vn_code || "") : "", batch || lot_no, expect_code, expect_spec, designators,
+         success ? "OK" : "NG", reason, op, smtCore.fmtTs(), reel_sn, mo_no, lot_no, dc_code, qty]);
+    } catch (e) { return ok(res, { success: false, msg: `上料记录写入失败：${e?.message || e}` }); }
+    let brief = `${mat}`;
+    if (dc_code) brief += `　D/C ${dc_code}`;
+    if (qty) brief += `　${qty} PCS`;
+    if (mo_no) brief += `　→ 工单 ${mo_no}`;
+    if (success) {
+      let msg = "✓ 已上料：" + brief; if (warn) msg += warn; else if (feederNote) msg += feederNote;
+      return ok(res, { success: true, msg, mo_no, material_code: mat, dc_code, qty, reel_sn, expect_code, spec: expect_spec, designators, model: real_model }, msg);
+    }
+    return ok(res, { success: false, msg: reason, expect_code, spec: expect_spec, designators, model: real_model }, reason);
+  });
+
+  // ── SMT：退料（源 load_return）──
+  router.post("/smt/load_return", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    await smtCore.ensureSchema();
+    const reel = smtCore.parseReel(String(d.material_code || "").trim());
+    if (!reel.reel_sn) return ok(res, { success: false, msg: "缺少料盘序列号" });
+    const rec = (await query("SELECT * FROM prd_material_load WHERE reel_sn=$1 AND active='1' AND check_result='OK' ORDER BY id DESC LIMIT 1", [reel.reel_sn])).rows[0];
+    if (!rec) return ok(res, { success: false, msg: "该料盘不在机上" });
+    const now = smtCore.fmtTs();
+    await query("UPDATE prd_material_load SET active='0', change_out_time=$1 WHERE id=$2", [now, rec.id]);
+    return ok(res, { success: true, msg: `✓ 已退料：${rec.material_code}（${rec.machine_no} ${rec.slot_no}），可再次上料` });
+  });
+
+  // ── SMT：换料（源 load_change）──
+  router.post("/smt/load_change", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {};
+    await smtCore.ensureSchema(); await smtCore.loadParams();
+    const mo_no = String(d.mo_no || "").trim();
+    const new_code = String(d.new_code || "").trim();
+    const load_type = String(d.load_type || "").trim().toUpperCase();
+    const op = req.mesrjUser?.login_name || "";
+    if (!new_code) return ok(res, { success: false, msg: "请扫新料盘条码" });
+    const neu = smtCore.parseReel(new_code);
+    if (!neu.reel_sn) return ok(res, { success: false, msg: "新料盘条码里没解析出序列号" });
+    if (!neu.rj) return ok(res, { success: false, msg: "新料盘条码里没解析出料号" });
+    const onm = (await query("SELECT id, mo_no, machine_no, slot_no FROM prd_material_load WHERE reel_sn=$1 AND active='1' AND check_result='OK' ORDER BY id DESC LIMIT 1", [neu.reel_sn])).rows[0];
+    if (onm) { const loc = (`${onm.machine_no || ""} ${onm.slot_no || ""}`).trim() || "未记录站位"; return ok(res, { success: false, msg: `这盘料已经上在机上了（${loc} · 工单 ${onm.mo_no || ""}），不用再上一次。` }); }
+    let rec = null;
+    if (String(d.old_code || "").trim()) {
+      const old = smtCore.parseReel(String(d.old_code).trim());
+      if (old.reel_sn) {
+        rec = (await query("SELECT * FROM prd_material_load WHERE reel_sn=$1 AND active='1' AND check_result='OK' ORDER BY id DESC LIMIT 1", [old.reel_sn])).rows[0];
+        if (!rec) return ok(res, { success: false, msg: "旧料盘不在机（可能已经换过了）" });
+      }
+    }
+    const sameCode = Boolean(rec) && String(rec.material_code || "").toUpperCase() === String(neu.rj || "").toUpperCase();
+    let lt = ((rec ? rec.load_type : "") || load_type || "SMT").trim().toUpperCase();
+    if (!["SMT", "AI", "PLUG"].includes(lt)) lt = "SMT";
+    if (lt !== "SMT" && !sameCode) {
+      let isSmt2 = 0;
+      try { const r = (await query(`SELECT COUNT(*)::int AS n FROM md_feeder_slot_alt a JOIN md_feeder_slot s ON s.id=a.slot_id WHERE UPPER(a.material_code)=$1 OR UPPER(s.material_code)=$1`, [neu.rj.toUpperCase()])).rows[0]; isSmt2 = r ? Number(r.n) : 0; } catch { isSmt2 = 0; }
+      if (isSmt2) return ok(res, { success: false, msg: `✕ 换料被拒：${neu.rj} 是「SMT 站位绑码」里的贴片料，不能按 AI/手动插件换。` });
+    }
+    const vm = ((rec ? rec.machine_no : "") || d.machine_no || "").trim();
+    const vs = ((rec ? rec.slot_no : "") || d.slot_no || "").trim();
+    let vmodel = (rec ? rec.model : "").trim();
+    if (!vmodel) vmodel = await smtCore.moModelSoft((await query("SELECT * FROM ord_mo WHERE mo_no=$1", [((rec ? rec.mo_no : "") || mo_no)])).rows[0]);
+    if (lt === "SMT" && !sameCode) {
+      if (!(vm && vs)) return ok(res, { success: false, msg: "✕ 换料被拒：换的是不同料号，但查不到原料盘装在哪个设备/通道。请先扫旧料盘。" });
+      const fr = await smtCore.feederSlotMatch(vm, vs, vmodel, neu.rj, true);
+      if (fr.level === "block") return ok(res, { success: false, msg: fr.why + "（换料已拒绝，旧料盘仍在机）" });
+    }
+    const now = smtCore.fmtTs();
+    if (rec) await query("UPDATE prd_material_load SET active='0', change_out_time=$1 WHERE id=$2", [now, rec.id]);
+    const realMo = (rec && rec.mo_no) || mo_no || "";
+    let realType = load_type || ((rec ? rec.load_type : "") || "SMT");
+    if (!["SMT", "AI", "PLUG"].includes(realType)) realType = "SMT";
+    let machine = rec ? rec.machine_no : "", slot = rec ? rec.slot_no : "";
+    if (realType !== "SMT") { machine = ""; slot = ""; }
+    try {
+      await query(`INSERT INTO prd_material_load(model,machine_no,slot_no,material_code,qty,check_result,active,load_type,created_at,reel_sn,mo_no,lot_no,dc_code,operator,channel) VALUES($1,$2,$3,$4,$5,'OK','1',$6,$7,$8,$9,$10,$11,$12,'')`,
+        [(rec ? rec.model : "") || "", machine, slot, neu.rj, neu.qty || "", realType, now, neu.reel_sn, realMo, neu.lot || "", neu.dc || "", op]);
+    } catch (e) { return ok(res, { success: false, msg: `换料记录写入失败：${e?.message || e}` }); }
+    let brief = `${neu.rj}`; if (neu.dc) brief += `　D/C ${neu.dc}`; if (neu.qty) brief += `　${neu.qty} PCS`; if (realMo) brief += `　→ 工单 ${realMo}`;
+    let msg = "✓ 换料成功：" + brief; if (rec) msg += `（旧盘 ${rec.reel_sn || ""} 已下机）`;
+    await smtCore.audit(op, "上料", "换料", neu.rj, `${rec ? rec.reel_sn : "-"} → ${neu.reel_sn} @ ${realMo}`, req.ip);
+    return ok(res, { success: true, msg, material_code: neu.rj, dc_code: neu.dc || "", qty: neu.qty || "", reel_sn: neu.reel_sn, mo_no: realMo, old_reel: rec ? rec.reel_sn : "" }, msg);
+  });
+
+  // ── SMT：机型列表（源 models）──
+  router.get("/smt/models", requireMesrjPerm("prod.trace"), async (_req, res) => {
+    try { const rows = (await query("SELECT DISTINCT model FROM md_feeder_slot WHERE COALESCE(model,'')<>'' ORDER BY model")).rows; return ok(res, rows.map(r => r.model)); } catch { return ok(res, []); }
+  });
+
+  // ── SMT：设备点检 / 开工检查（源 equip/check、equip/status）──
+  router.post("/smt/equip/check", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const op = req.mesrjUser?.login_name || ""; const ts = smtCore.fmtTs();
+    await query("INSERT INTO prd_equip_check (check_date, shift, equip_type, equip_no, items, result, check_by, created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8)",
+      [ts.slice(0, 10), ts.slice(11, 13), String(d.equip_type || "").trim(), String(d.equip_no || "").trim(), String(d.items || "").trim(), String(d.result || "OK").trim(), op, ts]);
+    return ok(res, { success: true, msg: `✓ 点检已记录：${d.equip_type || ""} ${d.equip_no || ""}（${d.result || "OK"}）` });
+  });
+  router.get("/smt/equip/status", requireMesrjPerm("prod.trace"), async (req, res) => {
+    await smtCore.ensureSchema();
+    const etype = String(req.query.equip_type || "").trim();
+    if (!etype) return ok(res, { success: false, msg: "缺少设备类型" });
+    const ts = smtCore.fmtTs(); const shift = ts.slice(11, 13);
+    const r = (await query("SELECT * FROM prd_equip_check WHERE equip_type=$1 AND check_date=$2 AND shift=$3 ORDER BY id DESC LIMIT 1", [etype, ts.slice(0, 10), shift])).rows[0];
+    if (!r) return ok(res, { success: false, msg: `✕ ${etype} 本班次（${shift}点）未点检，禁止开工` });
+    if (String(r.result || "").toUpperCase() !== "OK") return ok(res, { success: false, msg: `✕ ${etype} 点检结果 ${r.result}，禁止开工` });
+    return ok(res, { success: true, msg: `✓ ${etype} 本班次点检 OK（${r.check_by || ""}）` });
+  });
+
+  // ── SMT：首件确认（源 fa/confirm、fa/status）──
+  router.post("/smt/fa/confirm", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const op = req.mesrjUser?.login_name || ""; const now = smtCore.fmtTs();
+    const mo_no = String(d.mo_no || "").trim(); const trig = String(d.trigger_type || "换机型").trim(); const result = String(d.result || "OK").trim();
+    await query("INSERT INTO prd_first_article(mo_no,model,trigger_type,result,check_by,check_time,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", [mo_no, d.model || "", trig, result, op, now, now]);
+    return ok(res, { success: true, msg: `✓ 首件已确认（${mo_no}，${trig}，${result}）` });
+  });
+  router.get("/smt/fa/status", requireMesrjPerm("prod.trace"), async (req, res) => {
+    await smtCore.ensureSchema();
+    const mo_no = String(req.query.mo_no || "").trim();
+    if (!mo_no) return ok(res, { success: false, msg: "缺少工单号" });
+    const r = (await query("SELECT * FROM prd_first_article WHERE mo_no=$1 ORDER BY id DESC LIMIT 1", [mo_no])).rows[0];
+    if (!r) return ok(res, { success: false, msg: "✕ 该工单未做首件，禁止报工" });
+    if (String(r.result || "").toUpperCase() !== "OK") return ok(res, { success: false, msg: `✕ 首件结果为 ${r.result}，禁止报工` });
+    return ok(res, { success: true, msg: `✓ 首件已确认 OK（${r.check_time || ""}）` });
+  });
+
+  // ── SMT：报工（源 report）──
+  router.post("/smt/report", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const mo_no = String(d.mo_no || "").trim(); const qty = Math.trunc(Number(d.qty || 0));
+    if (!mo_no || qty <= 0) return ok(res, { success: false, msg: "请选工单并填写数量" });
+    const mo = (await query("SELECT * FROM ord_mo WHERE mo_no=$1", [mo_no])).rows[0];
+    if (!mo) return ok(res, { success: false, msg: "工单不存在" });
+    if (String(smtCore.smtParam("smt.fa_check", "1")) !== "0") {
+      const fa = (await query("SELECT * FROM prd_first_article WHERE mo_no=$1 ORDER BY id DESC LIMIT 1", [mo_no])).rows[0];
+      if (!fa) return ok(res, { success: false, msg: "✕ 该工单未做首件，禁止报工" });
+      if (String(fa.result || "").toUpperCase() !== "OK") return ok(res, { success: false, msg: `✕ 首件结果为 ${fa.result}，禁止报工` });
+    }
+    await query("UPDATE ord_mo SET out_qty=COALESCE(out_qty,0)+$1, updated_at=now() WHERE mo_no=$2", [qty, mo_no]);
+    await smtCore.stencilConsume(mo_no, qty);
+    const prod = (await query("SELECT panel_count FROM md_product WHERE product_code=$1", [mo.product_code || ""])).rows[0];
+    const panels = prod ? Number(prod.panel_count || 12) : 12;
+    return ok(res, { success: true, msg: `✓ 报工成功：${mo_no} +${qty} 板（≈${qty * panels} pcs 小板）` });
+  });
+
+  // ── SMT：物料超耗确认/列表 + SN 导入/追溯（源 overuse/confirm、overuse/list、sn_import、sn_trace）──
+  router.post("/smt/overuse/confirm", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const op = req.mesrjUser?.login_name || "";
+    const row = d.id ? (await query("SELECT * FROM prd_material_overuse WHERE id=$1", [d.id])).rows[0] : null;
+    if (!row) return ok(res, { success: false, msg: "未找到记录" });
+    await query("UPDATE prd_material_overuse SET status='已放行', confirm_by=$1, confirm_time=$2 WHERE id=$3", [op, smtCore.fmtTs(), row.id]);
+    return ok(res, { success: true, msg: `✓ 超耗已放行（${op}）` });
+  });
+  router.get("/smt/overuse/list", requireMesrjPerm("prod.trace"), async (_req, res) => {
+    await smtCore.ensureSchema();
+    const rows = (await query("SELECT * FROM prd_material_overuse ORDER BY id DESC LIMIT 200")).rows;
+    return ok(res, { rows, total: rows.length });
+  });
+  router.post("/smt/sn_import", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const rows = d.rows || []; if (!rows.length) return ok(res, { success: false, msg: "没有数据（rows 为空）" });
+    const now = smtCore.fmtTs(); let nNew = 0, nUpd = 0;
+    for (const r of rows) {
+      const sn = String(r.sn || "").trim(); if (!sn) continue;
+      const vals = [sn, r.mo_no || "", r.model || "", r.machine_no || "", r.channel || "", r.feeder_no || "", r.material_sn || "", r.stencil_sn || "", r.paste_sn || "", r.pcb_reel_sn || "", r.operator || "", r.prod_time || "", r.source || "import"];
+      const old = (await query("SELECT id FROM prd_sn_bind WHERE sn=$1", [sn])).rows[0];
+      if (old) { await query(`UPDATE prd_sn_bind SET mo_no=$1,model=$2,machine_no=$3,channel=$4,feeder_no=$5,material_sn=$6,stencil_sn=$7,paste_sn=$8,pcb_reel_sn=$9,operator=$10,prod_time=$11,source=$12 WHERE id=$13`, [...vals.slice(1), old.id]); nUpd++; }
+      else { await query(`INSERT INTO prd_sn_bind(sn,mo_no,model,machine_no,channel,feeder_no,material_sn,stencil_sn,paste_sn,pcb_reel_sn,operator,prod_time,source,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`, [...vals, now]); nNew++; }
+    }
+    return ok(res, { success: true, msg: `✓ 导入完成：新增 ${nNew}，更新 ${nUpd}` });
+  });
+  router.get("/smt/sn_trace", requireMesrjPerm("prod.trace"), async (req, res) => {
+    await smtCore.ensureSchema();
+    const sn = String(req.query.sn || "").trim(); if (!sn) return ok(res, { success: false, msg: "请输入 SN" });
+    const b = (await query("SELECT * FROM prd_sn_bind WHERE sn=$1", [sn])).rows[0];
+    if (!b) return ok(res, { success: false, msg: "SN 未绑定（可从 AOI 下载数据导入反向绑定）" });
+    return ok(res, { success: true, bind: b });
+  });
+
+  // ── SMT：钢网管控（源 stencil/*：check/online/offline/clean/scrap/list/create）──
+  router.post("/smt/stencil/check", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.sn || "").trim(); const model = String(d.model || "").trim();
+    const st = (await query("SELECT * FROM prd_stencil WHERE sn=$1", [sn])).rows[0];
+    if (!st) return ok(res, { success: false, msg: `✕ 钢网不存在：${sn}` });
+    if (["已报废", "待报废"].includes(st.status)) { const [txt, state] = smtCore.stencilState(st); return ok(res, { success: false, msg: "✕ " + txt, data: { state } }); }
+    if (model) { const ms = String(st.models || "").split(",").map(s => s.trim()).filter(Boolean); if (ms.length && !ms.includes(model)) return ok(res, { success: false, msg: `✕ 钢网不适用机型 ${model}（适用：${st.models}）` }); }
+    const [txt, state] = smtCore.stencilState(st); const warn = state === "warn_clean" || state === "warn_deep";
+    return ok(res, { success: true, msg: (warn ? "⚠ " : "✓ ") + txt, data: { sn, stencil_no: st.stencil_no, state, used: st.used_print_times, max: st.max_print_times, status: st.status, warn } });
+  });
+  router.post("/smt/stencil/online", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.sn || "").trim(); const machine = String(d.machine_no || "").trim(); const mo_no = String(d.mo_no || "").trim();
+    const op = req.mesrjUser?.login_name || "";
+    if (!sn || !machine || !mo_no) return ok(res, { success: false, msg: "钢网SN、印刷机设备码、工单缺一不可" });
+    const st = (await query("SELECT * FROM prd_stencil WHERE sn=$1", [sn])).rows[0];
+    if (!st) return ok(res, { success: false, msg: "✕ 钢网不存在" });
+    if (["已报废", "待报废"].includes(st.status)) { const [txt] = smtCore.stencilState(st); return ok(res, { success: false, msg: "✕ " + txt }); }
+    const mo = (await query("SELECT mo_no, product_code FROM ord_mo WHERE mo_no=$1", [mo_no])).rows[0];
+    if (!mo) return ok(res, { success: false, msg: `✕ 工单 ${mo_no} 不存在` });
+    const p = (await query("SELECT product_model FROM md_product WHERE product_code=$1", [mo.product_code || ""])).rows[0];
+    const mm = String(p?.product_model || "").trim();
+    const precise = String(st.model || "").trim(); const series = String(st.models || "").trim();
+    let note = "";
+    if (precise || series) {
+      if (mm) {
+        if (precise) { if (!smtCore.modelMatch(precise, mm)) return ok(res, { success: false, msg: `✕ 钢网机型不符：这张钢网是「${precise}」用的，工单 ${mo_no} 是「${mm}」` }); }
+        else if (!smtCore.modelMatch(series, mm)) return ok(res, { success: false, msg: `✕ 钢网机型不符：这张钢网是「${series}」用的，工单 ${mo_no} 是「${mm}」` });
+        else note = `（钢网只维护了系列「${series}」，未核对具体面）`;
+      } else note = `（工单 ${mo_no} 未维护机型，本次未核对机型）`;
+    } else note = "（该钢网未维护适用机型，本次未核对机型）";
+    const now = smtCore.fmtTs();
+    let dup = (await query("SELECT * FROM prd_stencil_bind WHERE stencil_sn=$1 AND status='使用中'", [sn])).rows[0];
+    if (dup && !String(dup.machine_no || "").trim() && !String(dup.mo_no || "").trim()) { await query("UPDATE prd_stencil_bind SET status='已下线', offline_time=$1 WHERE id=$2", [now, dup.id]); dup = null; }
+    if (dup) return ok(res, { success: false, msg: `✕ 该钢网已绑定在 ${dup.machine_no}（工单 ${dup.mo_no}），不能同时上多台机` });
+    const dup2 = (await query("SELECT * FROM prd_stencil_bind WHERE machine_no=$1 AND mo_no=$2 AND status='使用中'", [machine, mo_no])).rows[0];
+    if (dup2) return ok(res, { success: false, msg: `✕ 该印刷机该工单已绑定钢网 ${dup2.stencil_sn}，不能绑第二套` });
+    await query("INSERT INTO prd_stencil_bind(stencil_sn,machine_no,mo_no,line_no,online_time,operator,status,created_at) VALUES($1,$2,$3,$4,$5,$6,'使用中',$7)", [sn, machine, mo_no, "", now, op, now]);
+    await query("UPDATE prd_stencil SET status='使用中', updated_at=$1 WHERE sn=$2", [now, sn]);
+    const [txt, state] = smtCore.stencilState(st);
+    return ok(res, { success: true, msg: `✓ 钢网上线成功：${sn} → ${machine}（工单 ${mo_no}）${state.startsWith("warn") ? "｜" + txt : ""}${note}` });
+  });
+  router.post("/smt/stencil/offline", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.sn || "").trim(); const machine = String(d.machine_no || "").trim(); const now = smtCore.fmtTs();
+    const b = (await query("SELECT * FROM prd_stencil_bind WHERE stencil_sn=$1 AND status='使用中'", [sn])).rows[0];
+    if (!b) return ok(res, { success: false, msg: "该钢网当前没有在线绑定" });
+    if (machine && b.machine_no !== machine) return ok(res, { success: false, msg: `该钢网绑定在 ${b.machine_no}，与扫的设备 ${machine} 不符` });
+    await query("UPDATE prd_stencil_bind SET status='已下线', offline_time=$1 WHERE id=$2", [now, b.id]);
+    await query("UPDATE prd_stencil SET status='正常', updated_at=$1 WHERE sn=$2", [now, sn]);
+    return ok(res, { success: true, msg: `✓ 钢网已下线：${sn}（本轮印刷 ${b.used_in_round} 次）` });
+  });
+  router.post("/smt/stencil/clean", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.sn || "").trim(); const ctype = String(d.clean_type || "简易").trim(); const method = String(d.clean_method || "").trim();
+    const op = req.mesrjUser?.login_name || "";
+    const st = (await query("SELECT * FROM prd_stencil WHERE sn=$1", [sn])).rows[0];
+    if (!st) return ok(res, { success: false, msg: "钢网不存在" });
+    const b = (await query("SELECT * FROM prd_stencil_bind WHERE stencil_sn=$1 AND status='使用中'", [sn])).rows[0];
+    const now = smtCore.fmtTs();
+    await query("INSERT INTO prd_stencil_clean(stencil_sn,bind_id,clean_type,clean_method,clean_time,operator,created_at) VALUES($1,$2,$3,$4,$5,$6,$7)", [sn, b ? b.id : 0, ctype, method, now, op, now]);
+    if (b) await query("UPDATE prd_stencil_bind SET clean_in_round=0 WHERE id=$1", [b.id]);
+    await query("UPDATE prd_stencil SET clean_count=clean_count+1, updated_at=$1 WHERE sn=$2", [now, sn]);
+    return ok(res, { success: true, msg: `✓ ${ctype}清洗已登记（${method || "-"}，操作员 ${op}），本次上线清洗计数已清零（总寿命 ${st.used_print_times} 次不变）` });
+  });
+  router.post("/smt/stencil/scrap", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.sn || "").trim(); const reason = String(d.reason || "").trim(); const op = req.mesrjUser?.login_name || "";
+    const st = (await query("SELECT * FROM prd_stencil WHERE sn=$1", [sn])).rows[0];
+    if (!st) return ok(res, { success: false, msg: "钢网不存在" });
+    const now = smtCore.fmtTs();
+    await query("UPDATE prd_stencil SET status='已报废', scrap_reason=$1, scrap_by=$2, scrap_at=$3, updated_at=$4 WHERE sn=$5", [reason || "未填写", op, now, now, sn]);
+    await query("UPDATE prd_stencil_bind SET status='已报废' WHERE stencil_sn=$1 AND status='使用中'", [sn]);
+    return ok(res, { success: true, msg: `✓ 钢网 ${sn} 已报废（${reason || "未填写"}），永久锁死` });
+  });
+  router.get("/smt/stencil/list", requireMesrjPerm("prod.trace"), async (_req, res) => {
+    await smtCore.ensureSchema();
+    const rows = (await query("SELECT * FROM prd_stencil ORDER BY id DESC LIMIT 200")).rows;
+    const out = rows.map(r => { const [txt, state] = smtCore.stencilState(r); return { ...r, state_text: txt, state }; });
+    return ok(res, { rows: out, total: out.length });
+  });
+  router.post("/smt/stencil/create", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.sn || "").trim();
+    if (!sn) return ok(res, { success: false, msg: "钢网唯一SN必填" });
+    if ((await query("SELECT id FROM prd_stencil WHERE sn=$1", [sn])).rows[0]) return ok(res, { success: false, msg: `钢网 ${sn} 已存在` });
+    const now = smtCore.fmtTs();
+    await query(`INSERT INTO prd_stencil(sn,stencil_no,version,thickness,models,model,gerber_version,max_print_times,clean_warn_times,deep_clean_times,status,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'正常',$11,$12)`,
+      [sn, d.stencil_no || "", d.version || "", d.thickness || "", d.models || "", d.model || "", d.gerber_version || "", Math.trunc(Number(d.max_print_times || 100000)), Math.trunc(Number(d.clean_warn_times || 20000)), Math.trunc(Number(d.deep_clean_times || 60000)), now, now]);
+    return ok(res, { success: true, msg: `✓ 钢网 ${sn} 已建档` });
+  });
+
+  // ── SMT：PCB 整盘拆封/烘烤/时效（源 pcb/*）──
+  router.post("/smt/pcb/unseal", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const sn = String(d.reel_sn || "").trim(); const op = req.mesrjUser?.login_name || "";
+    if (!sn) return ok(res, { success: false, msg: "请扫 PCB 盘唯一 SN" });
+    const row = (await query("SELECT * FROM prd_pcb_reel WHERE reel_sn=$1", [sn])).rows[0];
+    const now = smtCore.fmtTs(); const hours = Number(smtCore.smtParam("smt.pcb_unseal_hours", "168") || 168);
+    if (row) {
+      if (row.status === "已报废") return ok(res, { success: false, msg: "✕ 该 PCB 盘已报废" });
+      if (row.status === "待拆封") { await query("UPDATE prd_pcb_reel SET status='已拆封', unseal_time=$1, valid_hours=$2, updated_at=$3 WHERE id=$4", [now, hours, now, row.id]); return ok(res, { success: true, msg: `✓ 已拆封：${sn}（时效 ${hours} 小时，超时需烘烤）` }); }
+      return ok(res, { success: false, msg: `该 PCB 盘已拆封（当前：${smtCore.pcbState(row)[0]}），不能重复拆封` });
+    }
+    await query(`INSERT INTO prd_pcb_reel(reel_sn,rj_code,lot_no,dc_code,qty,unseal_time,valid_hours,status,operator,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,'已拆封',$8,$9,$10)`,
+      [sn, d.rj_code || "", d.lot_no || "", d.dc_code || "", Math.trunc(Number(d.qty || 0)), now, hours, op, now, now]);
+    return ok(res, { success: true, msg: `✓ 已拆封：${sn}（时效 ${hours} 小时，超时需烘烤）` });
+  });
+  router.post("/smt/pcb/bake", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const sn = String(d.reel_sn || "").trim(); const op = req.mesrjUser?.login_name || "";
+    const row = (await query("SELECT * FROM prd_pcb_reel WHERE reel_sn=$1", [sn])).rows[0];
+    if (!row) return ok(res, { success: false, msg: "PCB 盘不存在，请先拆封登记" });
+    const now = smtCore.now(); const hours = Number(smtCore.smtParam("smt.pcb_bake_hours", "72") || 72); const valid = smtCore.addHours(now, hours);
+    await query(`UPDATE prd_pcb_reel SET status='已烘烤', bake_count=bake_count+1, last_bake_time=$1, last_valid_until=$2, operator=$3, updated_at=$4 WHERE id=$5`,
+      [smtCore.fmtTs(now), smtCore.fmtTs(valid), op, smtCore.fmtTs(now), row.id]);
+    return ok(res, { success: true, msg: `✓ 烘烤完成：${sn}（温度 ${d.temp || "-"}，时长 ${d.duration || "-"}，操作员 ${op}）→ 时效重置 ${hours} 小时（${smtCore.fmtTs(valid).slice(5, 16)} 前上线）` });
+  });
+  router.post("/smt/pcb/check", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const sn = String(d.reel_sn || "").trim();
+    const row = (await query("SELECT * FROM prd_pcb_reel WHERE reel_sn=$1", [sn])).rows[0];
+    if (!row) return ok(res, { success: false, msg: "✕ PCB 盘未登记（请先仓库拆封扫码）" });
+    const [txt, state] = smtCore.pcbState(row); const okState = state === "ok" || state === "idle";
+    if (state === "expired") return ok(res, { success: false, msg: txt, data: { state } });
+    return ok(res, { success: okState, msg: (okState ? "✓ " : "✕ ") + txt, data: { state } });
+  });
+  router.get("/smt/pcb/list", requireMesrjPerm("prod.trace"), async (_req, res) => {
+    await smtCore.ensureSchema();
+    const rows = (await query("SELECT * FROM prd_pcb_reel ORDER BY id DESC LIMIT 200")).rows;
+    const out = rows.map(r => { const [txt, state] = smtCore.pcbState(r); return { ...r, state_text: txt, state }; });
+    return ok(res, { rows: out, total: out.length });
+  });
+
+  // ── SMT：锡膏/红胶 回温管控（源 paste/*）──
+  router.post("/smt/paste/out", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const code = String(d.material_code || "").trim(); const batch = String(d.batch_no || "").trim(); const qty = d.qty || 1;
+    const op = req.mesrjUser?.login_name || "";
+    if (!code || !batch) return ok(res, { success: false, msg: "请先扫物料条码和批号" });
+    const [mat, ptype] = await smtCore.pasteMaterial(code);
+    const old = (await query("SELECT * FROM prd_paste_recover WHERE material_code=$1 AND batch_no=$2 AND status IN ('回温中','已回温','使用中')", [code, batch])).rows[0];
+    if (old) { const [txt] = smtCore.pasteStateText(old); return ok(res, { success: false, msg: `该批号已登记（${txt}），不要重复出库` }); }
+    const [mn] = smtCore.pasteLimits(ptype); const now = smtCore.now(); const ready = smtCore.addHours(now, mn);
+    await query(`INSERT INTO prd_paste_recover(material_code,vn_code,material_name,paste_type,batch_no,qty,out_time,plan_ready_time,recover_count,status,operator,created_at,updated_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,1,'回温中',$9,$10,$11)`,
+      [code, mat.vn_code || "", String(mat.material_name || "").slice(0, 60), ptype, batch, Number(qty || 1), smtCore.fmtTs(now), smtCore.fmtTs(ready), op, smtCore.fmtTs(now), smtCore.fmtTs(now)]);
+    return ok(res, { success: true, msg: `✓ 已登记回温：${code}（${ptype} ${batch}），回温 ${Math.round(mn)} 小时，预计 ${smtCore.fmtTs(ready).slice(11, 16)} 可用` });
+  });
+  router.post("/smt/paste/check", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const row = await smtCore.pasteRow(d);
+    if (!row) return ok(res, { success: false, msg: "✕ 未登记！请先扫码出库回温" });
+    const [txt, state] = smtCore.pasteCheckDyn(row); const data = { status: row.status, state, paste_type: row.paste_type, batch_no: row.batch_no };
+    if (state === "expired" || state === "ing") return ok(res, { success: false, msg: "✕ " + txt, data });
+    if (state === "ready") { const now = smtCore.fmtTs(); if (row.status === "回温中") await query("UPDATE prd_paste_recover SET status='已回温' WHERE id=$1", [row.id]); if (!row.ready_time) await query("UPDATE prd_paste_recover SET ready_time=$1, updated_at=$2 WHERE id=$3", [now, now, row.id]); return ok(res, { success: true, msg: "✓ " + txt, data: { ...data, id: row.id } }); }
+    const isOk = state === "using" || state === "released"; return ok(res, { success: isOk, msg: (isOk ? "✓ " : "✕ ") + txt, data: { ...data, id: row.id } });
+  });
+  router.post("/smt/paste/open", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const row = await smtCore.pasteRow(d); if (!row) return ok(res, { success: false, msg: "未找到记录" });
+    const [txt, state] = smtCore.pasteCheckDyn(row); if (state !== "ready") return ok(res, { success: false, msg: `当前状态：${txt}，不能开封` });
+    const hours = smtCore.pasteLimits(row.paste_type)[2]; const now = smtCore.now(); const exp = smtCore.addHours(now, hours);
+    await query("UPDATE prd_paste_recover SET open_time=$1, expire_time=$2, status='使用中', updated_at=$3 WHERE id=$4", [smtCore.fmtTs(now), smtCore.fmtTs(exp), smtCore.fmtTs(now), row.id]);
+    return ok(res, { success: true, msg: `✓ 已开封，请于 ${smtCore.fmtTs(exp).slice(5, 16)} 前用完（${Math.round(hours)} 小时有效）` });
+  });
+  router.post("/smt/paste/return", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const row = await smtCore.pasteRow(d); if (!row) return ok(res, { success: false, msg: "未找到记录" });
+    if (String(row.paste_type || "").trim() === "红胶") return ok(res, { success: false, msg: "✕ 红胶不支持回收复用，请直接报废处理" });
+    if (row.status !== "已回温") { const [txt] = smtCore.pasteCheckDyn(row); return ok(res, { success: false, msg: `只有「未开封、已回温」的物料才能放回冷藏（当前：${txt}）` }); }
+    const maxTimes = Number(smtCore.smtParam("smt.max_recover", "2") || 2);
+    if (Number(row.recover_count || 1) >= maxTimes) { const now = smtCore.fmtTs(); await query("UPDATE prd_paste_recover SET status='已报废', remark='回温超次报废', updated_at=$1 WHERE id=$2", [now, row.id]); return ok(res, { success: false, msg: `✕ 已回温 ${row.recover_count} 次（上限 ${maxTimes} 次），报废处理` }); }
+    const now = smtCore.fmtTs();
+    await query("UPDATE prd_paste_recover SET return_time=$1, recover_count=recover_count+1, status='已退回', updated_at=$2 WHERE id=$3", [now, now, row.id]);
+    return ok(res, { success: true, msg: `✓ 已放回冷藏（第 ${Number(row.recover_count || 1) + 1} 次回温）` });
+  });
+  router.post("/smt/paste/done", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const row = await smtCore.pasteRow(d); if (!row) return ok(res, { success: false, msg: "未找到记录" });
+    if (!["使用中", "已回温"].includes(row.status)) return ok(res, { success: false, msg: "当前状态不允许此操作" });
+    await query("UPDATE prd_paste_recover SET status='已用完', updated_at=$1 WHERE id=$2", [smtCore.fmtTs(), row.id]);
+    return ok(res, { success: true, msg: "✓ 已标记用完" });
+  });
+  router.get("/smt/paste/list", requireMesrjPerm("prod.trace"), async (req, res) => {
+    await smtCore.ensureSchema(); await smtCore.loadParams();
+    const fStatus = String(req.query.f_status || "").trim();
+    const rows = fStatus ? (await query("SELECT * FROM prd_paste_recover WHERE status=$1 ORDER BY id DESC LIMIT 200", [fStatus])).rows : (await query("SELECT * FROM prd_paste_recover ORDER BY id DESC LIMIT 200")).rows;
+    const out = rows.map(r => { const [txt, state] = smtCore.pasteCheckDyn(r); return { ...r, state_text: txt, state }; });
+    return ok(res, { rows: out, total: out.length });
+  });
+  router.post("/smt/paste/stir", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema(); await smtCore.loadParams();
+    const row = d.id ? (await query("SELECT * FROM prd_paste_recover WHERE id=$1", [d.id])).rows[0] : null;
+    if (!row) return ok(res, { success: false, msg: "未找到记录（请先扫码）" });
+    const s1 = String(d.stir_start || "").trim(); const s2 = String(d.stir_end || "").trim();
+    if (!s1 || !s2) return ok(res, { success: false, msg: "请录入搅拌起止时间" });
+    const t1 = new Date(s1.slice(0, 16).replace(" ", "T")); const t2 = new Date(s2.slice(0, 16).replace(" ", "T"));
+    if (isNaN(t1.getTime()) || isNaN(t2.getTime())) return ok(res, { success: false, msg: "时间格式应为 YYYY-MM-DD HH:MM" });
+    const minutes = Math.floor((t2.getTime() - t1.getTime()) / 60000);
+    const mn = Number(smtCore.smtParam("smt.stir_minutes", "3") || 3);
+    if (minutes < mn) return ok(res, { success: false, msg: `✕ 搅拌时长不足（${minutes} 分钟 < ${mn} 分钟），继续搅拌` });
+    const now = smtCore.fmtTs();
+    await query("UPDATE prd_paste_recover SET stir_start=$1, stir_end=$2, status='已搅拌', updated_at=$3 WHERE id=$4", [s1, s2, now, row.id]);
+    return ok(res, { success: true, msg: `✓ 搅拌达标（${minutes} 分钟），状态已更新为【已搅拌】，可开封使用` });
+  });
+  router.post("/smt/paste/release", requireMesrjPerm("md.edit"), async (req, res) => {
+    const d = req.body || {}; await smtCore.ensureSchema();
+    const op = req.mesrjUser?.login_name || ""; const reason = String(d.reason || "").trim();
+    const row = d.id ? (await query("SELECT * FROM prd_paste_recover WHERE id=$1", [d.id])).rows[0] : null;
+    if (!row) return ok(res, { success: false, msg: "未找到记录" });
+    const now = smtCore.fmtTs();
+    await query("UPDATE prd_paste_recover SET release_time=$1, release_by=$2, release_reason=$3, updated_at=$4 WHERE id=$5", [now, op, reason || "回温超时放行", now, row.id]);
+    return ok(res, { success: true, msg: `✓ 已放行（${op}，${reason || "回温超时放行"}），可继续使用` });
+  });
+
+  // ════════════════════════════════════════════════════════════════════════════
   // W14 OQC 出货抽检路由（源 api/oqc.py 27 路由，side-by-side 移植）
   // ════════════════════════════════════════════════════════════════════════════
 
@@ -9485,8 +9938,8 @@ export function createMesrjRouter({ authenticateJWT }) {
 
   // ── OQC：入库前置条件 ──
   router.get("/oqc/can_stock_in", requireMesrjPerm("prod.trace"), async (req, res) => {
-    const [ok, why] = await oqcCore.canStockIn(req.query.pallet_no || "");
-    return ok(res, { can_stock_in: ok, reason: why });
+    const [can, why] = await oqcCore.canStockIn(req.query.pallet_no || "");
+    return ok(res, { can_stock_in: can, reason: why });
   });
 
   // ── OQC：成品入库 ──
@@ -9511,8 +9964,8 @@ export function createMesrjRouter({ authenticateJWT }) {
 
   // ── OQC：PO 出货前置条件 ──
   router.get("/oqc/can_ship", requireMesrjPerm("prod.trace"), async (req, res) => {
-    const [ok, why] = await oqcCore.canShip(req.query.po_no || "");
-    return ok(res, { can_ship: ok, reason: why });
+    const [can, why] = await oqcCore.canShip(req.query.po_no || "");
+    return ok(res, { can_ship: can, reason: why });
   });
 
   // ── OQC：PO 汇总 ──
