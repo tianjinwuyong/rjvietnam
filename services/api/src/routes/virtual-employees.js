@@ -8,8 +8,10 @@
 //
 // Pure registrations -- the two module-level statements that follow this block in
 // server.js (`receivingVirtualEmployeeInterval` and its setInterval) stay there.
+import { mintServiceToken, serviceActorFor, validateGateForApproval, canHumanApprove, humanDomainPermission } from "../virtual-employees/service-identity.js";
 import { capabilitiesFor, auditCapabilities, ALL_ROLE_IDS, MCP_SERVERS } from "../virtual-employees/capabilities.js";
 import { FACTORY_VIRTUAL_EMPLOYEES } from "../virtual-employees/registry.js";
+
 export function registerVirtualEmployeeRoutes(app, deps) {
   const {
     query, requirePermission, envelope, errorEnvelope, mutateEnvelope, listEnvelope,
@@ -150,6 +152,9 @@ app.post('/api/factory/virtual-employees/:id/tasks', async (req, res) => {
     await factoryVirtualEmployeesReady;
     const employee = getFactoryVirtualEmployee(req.params.id), p = req.body || {};
     if (!employee) return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND', 'virtual employee not found'));
+    const actorCheck = serviceActorFor(req, employee.id);
+    if (!actorCheck.ok) return res.status(403).json(errorEnvelope(actorCheck.code, 'virtual employee credential rejected'));
+    const actor = actorCheck.actor;
     const taskType = String(p.taskType || '').trim().toUpperCase(), title = String(p.title || '').trim();
     if (!taskType || !title) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_REQUIRED', 'taskType and title are required'));
     if (!employee.capabilities.includes(taskType)) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_CAPABILITY_DENIED', `${employee.id} cannot execute ${taskType}`));
@@ -157,8 +162,8 @@ app.post('/api/factory/virtual-employees/:id/tasks', async (req, res) => {
     if (humanGate && !employee.humanGates.includes(humanGate)) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_GATE_INVALID', 'humanGate is not registered for this employee'));
     const requiresHuman = Boolean(humanGate || p.requiresHuman);
     const row = (await query(`INSERT INTO factory_virtual_employee_tasks(employee_id,task_type,title,domain,status,priority,input,requires_human,human_gate,requested_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`, [employee.id, taskType, title, employee.domain, requiresHuman ? 'WAITING_APPROVAL' : 'OPEN', String(p.priority || 'NORMAL').toUpperCase(), JSON.stringify(p.input || {}), requiresHuman, humanGate || null, req.user?.username || 'system'])).rows[0];
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'TASK_CREATED',$3::jsonb,$4)`, [employee.id,row.id,JSON.stringify({ taskType, requiresHuman, humanGate: humanGate || null }),req.user?.username || 'system']);
+      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`, [employee.id, taskType, title, employee.domain, requiresHuman ? 'WAITING_APPROVAL' : 'OPEN', String(p.priority || 'NORMAL').toUpperCase(), JSON.stringify(p.input || {}), requiresHuman, humanGate || null, actor])).rows[0];
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'TASK_CREATED',$3::jsonb,$4)`, [employee.id,row.id,JSON.stringify({ taskType, requiresHuman, humanGate: humanGate || null, serviceIdentity: actorCheck.service }),actor]);
     res.status(201).json(mutateEnvelope(row));
   } catch (e) { res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_CREATE_FAILED', e.message)); }
 });
@@ -185,12 +190,33 @@ app.get('/api/factory/virtual-employees/capabilities/summary', (_req, res) => {
     res.json(envelope({ ...audit, declaredRoles: ALL_ROLE_IDS.length, mcpServers: Object.keys(MCP_SERVERS).length }));
   } catch (e) { res.status(500).json(errorEnvelope('VE_CAPABILITY_AUDIT_FAILED', e.message)); }
 });
+app.post('/api/factory/virtual-employees/:id/service-token', (req, res) => {
+  try {
+    const employee = getFactoryVirtualEmployee(req.params.id);
+    if (!employee) return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND', 'virtual employee not found'));
+    const human = humanDomainPermission(req, employee);
+    if (!human.ok) return res.status(human.code === 'UNAUTHORIZED' ? 401 : 403).json(errorEnvelope(human.code, human.required ? `Missing required permission: ${human.required}` : 'a virtual employee cannot act as a human principal'));
+    const ttlSeconds = Number(req.body?.ttlSeconds || 3600);
+    const token = mintServiceToken(employee.id, 'task:create', ttlSeconds);
+    res.json(envelope({ employeeId: employee.id, token, tokenType: 'VE_SERVICE', scope: ['task:create'], expiresIn: ttlSeconds, issuedBy: req.user?.username || 'system' }));
+  } catch (e) { res.status(400).json(errorEnvelope('VE_TOKEN_ISSUE_FAILED', e.message)); }
+});
 app.post('/api/factory/virtual-employees/tasks/:taskId/approve', async (req, res) => {
   try {
     await factoryVirtualEmployeesReady;
-    const row = (await query(`UPDATE factory_virtual_employee_tasks SET status='OPEN',approved_by=$1,updated_at=NOW() WHERE id=$2 AND status='WAITING_APPROVAL' RETURNING *`, [req.user?.username || 'manager', req.params.taskId])).rows[0];
-    if (!row) return res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_APPROVAL_INVALID', 'task is not waiting for approval'));
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'HUMAN_APPROVED',$3::jsonb,$4)`, [row.employee_id,row.id,JSON.stringify({ humanGate: row.human_gate }),req.user?.username || 'manager']);
+    const found = (await query(`SELECT * FROM factory_virtual_employee_tasks WHERE id=$1`, [req.params.taskId])).rows[0];
+    if (!found) return res.status(404).json(errorEnvelope('TASK_NOT_FOUND', 'task not found'));
+    const employee = getFactoryVirtualEmployee(found.employee_id);
+    const human = canHumanApprove(req, employee);
+    if (!human.ok) {
+      const status = human.code === 'UNAUTHORIZED' ? 401 : 403;
+      return res.status(status).json(errorEnvelope(human.code, human.required ? `Missing required permission: ${human.required}` : 'a virtual employee cannot approve its own gate'));
+    }
+    const gate = validateGateForApproval(employee, found);
+    if (!gate.ok) return res.status(409).json(errorEnvelope(gate.code, `approval rejected: ${gate.code}`));
+    const row = (await query(`UPDATE factory_virtual_employee_tasks SET status='OPEN',approved_by=$1,updated_at=NOW() WHERE id=$2 AND status='WAITING_APPROVAL' RETURNING *`, [human.actor, found.id])).rows[0];
+    if (!row) return res.status(409).json(errorEnvelope('TASK_NOT_WAITING', 'task is no longer waiting for approval'));
+    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'HUMAN_APPROVED',$3::jsonb,$4)`, [row.employee_id,row.id,JSON.stringify({ humanGate: gate.gate, taskType: row.task_type, approvedBy: human.actor }),human.actor]);
     if (row.employee_id === 'WMS-RECEIVING-VIRTUAL-01') {
       neuralBroadcast({ from: row.employee_id, to: 'wms_receiving_archify', type: 'WMS_RECEIVING_EMPLOYEE_STATUS', priority: 'info', payload: { taskId: row.id, taskType: row.task_type, title: row.title, status: 'OPEN', input: row.input, approvedBy: row.approved_by } });
     }
