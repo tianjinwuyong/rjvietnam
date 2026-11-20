@@ -160,7 +160,7 @@ app.get("/api/wms/iqc/sampling-plans", requirePermission("wms.read"), async (req
     let sql = "SELECT * FROM iqc_sampling_plans";
     let params = [];
     if (aql_level) { sql += " WHERE aql_level=?"; params.push(aql_level); }
-    sql += " ORDER BY batch_size_min";
+    sql += " ORDER BY aql_level, sample_size";
     const [rows] = await client.query(sql, params);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: "SERVER_ERROR", message: err.message }); }
