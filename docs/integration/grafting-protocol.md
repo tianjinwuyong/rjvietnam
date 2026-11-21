@@ -33,7 +33,7 @@
 | WMS 核心（库存/批次/IQC/收发存） | **嫁接，不迁** | 与 MES 共事务；holdout S3 验证的原子链 |
 | MES 核心（工位/物料消耗/在制/工单） | **嫁接，不迁** | 写路径与 WMS 交织 |
 | `mesrj/itf/*`（itf-routes、wmsmo-routes、wms-issue、wms-mo、param-store） | **上层集成（待外移）** | 已是核心内的适配器；无跨域原子事务；静态红来源 |
-| OA（公告/考勤/文档/审批/日历/薪资） | **上层集成（分批外移）** | 域不共享事务；outbox 表已建（343），SSO 留中心 JWT |
+| OA（公告/考勤/文档/审批/日历/薪资） | **上层集成（分批外移）** | 域不共享事务；outbox 可用（权威表在 `oa.flow_webhook_outbox`，OA 池 search_path 解析；public 副本由 343/346 对齐）；SSO 留中心 JWT |
 | AGV | **上层集成** | 状态遥测，秒级容迟 |
 | 外部 ERP | **上层集成** | 主数据源，SMT 只读 |
 | supplier-portal | 已是独立服务（:8098） | 维持现状 |
@@ -57,7 +57,7 @@
 
 嫁接不是终身监禁。当 §2 判据随演进变化（比如某域不再需要跨域原子事务），按以下顺序退出到上层集成：
 
-1. **前置条件**：outbox 可用（343 已建）+ 该域对账跑通且零差异连续 2 周
+1. **前置条件**：outbox 可用（权威表 `oa.flow_webhook_outbox`；接入前先 `select table_schema from information_schema.tables where table_name='flow_webhook_outbox'` 确认，勿假设 public）+ 该域对账跑通且零差异连续 2 周
 2. 写该域的契约文件（`contracts/<subsystem>.md`，五必备小节）
 3. 按集成协议搭增量拉取 + 指令下发，双跑期 ≥2 周（镜像与主数据每日对账）
 4. 切读：消费方改读镜像 → 观察一周 → 停写主库表 → 代码出仓
