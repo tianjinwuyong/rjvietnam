@@ -24,15 +24,15 @@ export const EXTRA_PROBES = Object.freeze({
   },
   "WMS-ISSUE-VIRTUAL-01": {
     taskType: "KIT_PICK",
-    sql: `SELECT id AS row_key, picking_id, material_code, pick_qty, actual_qty, issue_qty FROM wms_picking_order_items WHERE issue_qty < pick_qty ORDER BY id ASC LIMIT $1`,
+    sql: `SELECT id AS row_key, picking_id, material_code, pick_qty, actual_qty, received_qty FROM wms_picking_order_items WHERE actual_qty < pick_qty ORDER BY id ASC LIMIT $1`,
     gate: null,
     title: r => `发料欠数待补：${r.material_code || r.row_key}`,
   },
   "MSD-CONTROL-VIRTUAL-01": {
     taskType: "BAKING_ALERT",
-    sql: `SELECT id AS row_key, reel_sn, lot_no, last_valid_until, bake_count FROM prd_pcb_reel WHERE status <> 'consumed' AND last_valid_until < now() ORDER BY id ASC LIMIT $1`,
+    sql: `SELECT id AS row_key, code, msd_level, msl_level, shelf_life_days, storage_condition FROM materials WHERE msd_level IS NOT NULL ORDER BY id ASC LIMIT $1`,
     gate: null,
-    title: r => `料盘超期待烘焙：${r.reel_sn || r.row_key}`,
+    title: r => `湿敏物料待管控：${r.code || r.row_key}`,
   },
   "PMC-VIRTUAL-01": {
     taskType: "DELIVERY_RISK",

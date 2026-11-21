@@ -73,4 +73,12 @@ describe("virtual-employee runner", () => {
       if (probe.gate) expect(employee.humanGates, `${id}/${probe.gate}`).toContain(probe.gate);
     }
   });
+  it("reports a broken probe as PROBE_ERROR instead of aborting the tick", async () => {
+    const result = await runEmployeeCycle({
+      employeeId: "SAFETY-VIRTUAL-01",
+      query: async () => { throw new Error("relation drill_table does not exist"); },
+    });
+    expect(result.skipped).toBe("PROBE_ERROR");
+    expect(result.error).toContain("does not exist");
+  });
 });

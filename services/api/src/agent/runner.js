@@ -98,7 +98,13 @@ export async function runEmployeeCycle({ employeeId, query, limit = 5, dryRun = 
     return { employeeId, skipped: "GATE_NOT_REGISTERED", gate: probe.gate };
   }
 
-  const rows = (await query(probe.sql, [limit])).rows;
+  let rows;
+  try {
+    rows = (await query(probe.sql, [limit])).rows;
+  } catch (err) {
+    // Schema drift in one domain must not abort the whole scheduler tick.
+    return { employeeId, skipped: "PROBE_ERROR", error: String(err.message || err) };
+  }
   // RAG in the loop: recall the employee's own namespace plus the shared
   // corpus, and attach what was actually cited to each task. A retrieval
   // failure is recorded, never silently turned into "no evidence needed".
