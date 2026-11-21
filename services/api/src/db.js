@@ -82,3 +82,57 @@ export async function setParam(key, val, name = "", group = "") {
 }
 
 export default { query, getClient, getParam, setParam };
+
+/**
+ * Startup wrong-database guard. The dev box also holds the imported rjvn
+ * REFERENCE database (`factory`, schema rjvn) which lacks the live MES/WMS
+ * tables; pointing PGDATABASE at it must fail loudly at boot, not silently
+ * at the first query. Probe with a one-shot client so no pool slot is held.
+ * DB_GUARD_SKIP=1 bypasses for harness/empty-DB boots.
+ */
+export async function ensureLiveDatabase() {
+  if (String(process.env.DB_GUARD_SKIP ?? "") === "1") {
+    console.warn("[DB-GUARD] skipped (DB_GUARD_SKIP=1)");
+    return;
+  }
+  const host = process.env.PGHOST;
+  if (!host || host === "undefined" || host === "null" || host.trim() === "") return; // unconfigured: existing warn path handles it
+  const database = process.env.PGDATABASE ?? "smt_factory";
+  const { Client } = pg;
+  const client = new Client({
+    host,
+    port: Number(process.env.PGPORT ?? 5432),
+    user: process.env.PGUSER ?? "postgres",
+    password: process.env.PGPASSWORD,
+    database,
+    connectionTimeoutMillis: 8000,
+  });
+  const required = [
+    ["public", "employees"],
+    ["public", "inventory_transactions"],
+    ["oa", "flow_webhook_outbox"],
+  ];
+  let dbLabel = `${host}:${process.env.PGPORT ?? 5432}/${database}`;
+  try {
+    await client.connect();
+    const { rows: idRows } = await client.query("SELECT current_database() AS db");
+    dbLabel += ` (current_database=${idRows[0].db})`;
+    const { rows } = await client.query(
+      `SELECT table_schema, table_name FROM information_schema.tables
+       WHERE (table_schema, table_name) IN (($1,$2),($3,$4),($5,$6))`,
+      required.flat(),
+    );
+    const found = new Set(rows.map((r) => `${r.table_schema}.${r.table_name}`));
+    const missing = required.map(([s, t]) => `${s}.${t}`).filter((k) => !found.has(k));
+    if (missing.length) {
+      console.error(`[DB-GUARD] FATAL: ${dbLabel} is missing live tables: ${missing.join(", ")}. This looks like the rjvn reference DB, not the live smt_factory DB. Fix services/api/.env (PGDATABASE) or set DB_GUARD_SKIP=1 to bypass.`);
+      process.exit(1);
+    }
+    console.log(`[DB-GUARD] ok: ${dbLabel} has all required live tables`);
+  } catch (err) {
+    console.error(`[DB-GUARD] FATAL: cannot verify database ${dbLabel}: ${err.message}`);
+    process.exit(1);
+  } finally {
+    try { await client.end(); } catch {}
+  }
+}

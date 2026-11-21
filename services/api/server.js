@@ -13,7 +13,7 @@ import cors from "cors";
 import jwt from "jsonwebtoken";
 import pg from "pg";
 import XLSX from "xlsx";
-import { query as postgresQuery, getClient } from "./src/db.js";
+import { query as postgresQuery, getClient, ensureLiveDatabase } from "./src/db.js";
 
 // Resolve configuration relative to this API file, not the process launch
 // directory. This keeps login and all database-backed routes on the intended
@@ -1038,6 +1038,10 @@ const authPool = new pg.Pool({
   idleTimeoutMillis: 60000,
   connectionTimeoutMillis: 15000,
 });
+
+// Wrong-database guard: refuse to boot against the rjvn reference DB (`factory`)
+// or any store missing the live MES/WMS tables. Runs before startup DDL/listen.
+await ensureLiveDatabase();
 
 const app = express();
 // Short-lived cache for read-only dashboard aggregates. MES consoles poll these
