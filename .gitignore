@@ -31,6 +31,16 @@ coverage/
 **/playwright-screenshots/
 **/e2e/report/
 **/reports/
+# ...but SOURCE directories named reports/ are code, not output. The blanket
+# rule above silently kept apps/web/src/reports (imported by committed App.tsx
+# and api/index.ts) and services/api/src/modules/reports out of git, so every
+# fresh clone failed typecheck. Generated ve-report output stays ignored.
+!apps/web/src/reports/
+!apps/web/src/reports/**
+!services/api/src/reports/
+!services/api/src/reports/**
+!services/api/src/modules/reports/
+!services/api/src/modules/reports/**
 *.pid
 
 # Logs, databases, dumps, and local state
