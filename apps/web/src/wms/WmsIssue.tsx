@@ -4,7 +4,6 @@ import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import type { PickOrder, PickOrderItem } from "../../../../packages/shared-types/src/factory";
 import { wmsApi, type InventoryTransaction, type CollectOrder, type CollectOrderLine } from "../api/wms";
-import { inventoryTransactions as _demoTxs, materialLots as _demoLots } from "../data";
 import { WmsReturnFlow, type ReturnRecord } from "./WmsReturnFlow";
 import { WmsScrapFlow, type ScrapRecord } from "./WmsScrapFlow";
 import { WmsMaterialFetchFlow } from "./WmsMaterialFetchFlow";
@@ -13,9 +12,17 @@ interface IssueLineItem extends PickOrderItem {
   issued: boolean;
   scannedReel?: string;
   issuedAt?: string;
-}function txSeq(prefix: string): string {
-  return `${prefix}-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(Math.floor(Math.random() * 999) + 1).padStart(3, "0")}`;
 }
+
+let txCounter = 0;
+
+/** Monotonic per-session transaction label: two records can never collide. */
+function txSeq(prefix: string): string {
+  txCounter += 1;
+  const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return `${prefix}-${date}-${String(txCounter).padStart(3, "0")}`;
+}
+
 
 export function WmsIssue({ locale }: { locale: Locale }) {
   const [step, setStep] = useState<"select" | "confirm">("select");
@@ -326,17 +333,6 @@ export function WmsIssue({ locale }: { locale: Locale }) {
             </div>
           )}
 
-          {/* Quick demo WO loader */}
-          <div style={{ marginTop: 16, padding: "12px", border: "1px dashed rgba(238,248,250,0.2)", borderRadius: 8 }}>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 8 }}>{t("wms.demoWorkOrders", locale) ?? "Demo work orders"}:</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {["26061010008", "26061020003"].map((wo) => (
-                <button key={wo} type="button" className="action-button" style={{ background: "var(--nav)", fontSize: 12 }} onClick={() => { setWorkOrderInput(wo); loadWorkOrder(wo); }}>
-                  {wo}
-                </button>
-              ))}
-            </div>
-          </div>
         </section>
       )}
 

@@ -82,6 +82,7 @@ import { PdaAppCatalogManager } from "./admin/PdaAppCatalogManager";
 import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
 import { AdminDataSources } from "./admin/AdminDataSources";
+import { AdminIntegrationHub } from "./admin/AdminIntegrationHub";
 import { WmsIqcTemplates } from "./wms/WmsIqcTemplates";
 import { WmsGraftedOps } from "./wms/WmsGraftedOps";
 import { WmsMaterialSubstitution } from "./wms/WmsMaterialSubstitution";
@@ -96,7 +97,7 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsRjvnClassic, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips, WmsOverPicking, WmsRework, WmsSupplierDebt, WmsDefectiveMove, WmsMrb, WmsSupplierReturnOrder, WmsNotices } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsRjvnClassic, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips, WmsOverPicking, WmsRework, WmsSupplierDebt, WmsDefectiveMove, WmsMrb, WmsSupplierReturnOrder, WmsNotices, WmsMesSync } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
 import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
@@ -1963,6 +1964,7 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
       case "mrb": return <WmsMrb locale={locale} />;
       case "supplierReturnOrder": return <WmsSupplierReturnOrder locale={locale} />;
       case "notices": return <WmsNotices locale={locale} />;
+      case "mesSync": return <WmsMesSync locale={locale} />;
       default:
         return (
           <SurfacePanel>
@@ -2761,7 +2763,7 @@ function Trace({ locale }: { locale: Locale }) {
 }
 
 function Admin({ locale }: { locale: Locale }) {
-  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "pdaAppAssignment" | "pdaCatalog" | "lines" | "services" | "databases" | "dataSources">("overview");
+  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "pdaAppAssignment" | "pdaCatalog" | "lines" | "services" | "databases" | "dataSources" | "integrationHub">("overview");
   const dependencyItems = [
     { label: "admin.dep.auth", detail: "admin.dep.authDetail" },
     { label: "admin.dep.live", detail: "admin.dep.liveDetail" },
@@ -2779,6 +2781,7 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
         <AdminLineManagement locale={locale} />
@@ -2875,6 +2878,7 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" className="active">{t("admin.databases.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
         <StationDatabaseManagement locale={locale} />
@@ -2893,9 +2897,29 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
             <button type="button" className="active">{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
         <AdminDataSources locale={locale} />
+      </div>
+    );
+  }
+
+  if (adminTab === "integrationHub") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title={locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"} subtitle={locale === "zh-CN" ? "被吸收应用统一登记与健康总览（嫁接标准 §13）" : locale === "vi-VN" ? "Đăng ký ứng dụng hấp thụ và tổng quan sức khỏe" : "Registry and health of absorbed apps (grafting standard §13)"} />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" className="active">{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
+          </div>
+        </SurfacePanel>
+        <AdminIntegrationHub locale={locale} />
       </div>
     );
   }
@@ -2911,6 +2935,7 @@ function Admin({ locale }: { locale: Locale }) {
           <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
           <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
           <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
           <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
         </div>

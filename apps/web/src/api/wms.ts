@@ -613,6 +613,22 @@ export const wmsApi = {
     return apiClient.post<Record<string, unknown>>("/rjvn-inventory/unlock", body);
   },
 
+  // ── 手工冻结（canonical 批次，migration 332/333）────────────────
+  // 上面两个 rjvn* 冻结的是 rjvn_inventory —— 冻结历史镜像，拣料路径不读它。
+  // 这三个打的是权威表 material_lots，冻结会真的挡住 FIFO 发料。
+  lockWmsLot(body: { lotId?: number | string; lotNo?: string; lockReason: string }) {
+    return apiClient.post<Record<string, unknown>>("/wms/inventory/lock", body);
+  },
+  unlockWmsLot(body: { lotId?: number | string; lotNo?: string; reason?: string }) {
+    return apiClient.post<Record<string, unknown>>("/wms/inventory/unlock", body);
+  },
+  getWmsLockedLots(params?: { q?: string }) {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.set("q", params.q);
+    const suffix = qs.toString() ? `?${qs}` : "";
+    return apiClient.get<ListEnvelope<Record<string, unknown>>>(`/wms/inventory/locks${suffix}`);
+  },
+
   // ── rjvn Picking core ──────────────────────────────────────────
   getRjvnPickingList(params?: { q?: string; status?: string; limit?: number; offset?: number }) {
     return apiClient.get<{
@@ -1682,7 +1698,178 @@ export const wmsApi = {
   submitToOa: (bizType: string, bizNo: string) =>
     apiClient.post(`/api/integration/oa/submit-${bizType}/${bizNo}`, {}),
 
+  // ── MES sync (工单下发 / 领料 / 发料回写) ────────────────────────────────
+  getMesSyncStatus: () =>
+    apiClient.get("/wms/mes-sync/status") as Promise<MesSyncStatus>,
+  getMesSyncConfig: () =>
+    apiClient.get("/wms/mes-sync/config") as Promise<MesSyncConfig>,
+  saveMesSyncConfig: (data: Partial<MesSyncConfig> & { apiKey?: string }) =>
+    apiClient.put("/wms/mes-sync/config", data) as Promise<MesSyncConfig>,
+  testMesSync: () =>
+    apiClient.post("/wms/mes-sync/test", {}) as Promise<MesSyncPing>,
+  syncMesWorkOrders: (opts?: { full?: boolean; withMaterials?: boolean }) =>
+    apiClient.post("/wms/mes-sync/sync", opts ?? {}) as Promise<MesSyncRunResult>,
+  syncMesPending: (opts?: { autoPicking?: boolean; limit?: number }) =>
+    apiClient.post("/wms/mes-sync/sync-pending", opts ?? {}) as Promise<MesSyncRunResult>,
+  getMesSyncPending: (params?: Record<string, unknown>) =>
+    apiClient.get("/wms/mes-sync/pending", params) as Promise<{ items: MesSyncPendingRow[]; total: number }>,
+  getMesSyncMaterials: (moNo: string) =>
+    apiClient.get(`/wms/mes-sync/materials/${encodeURIComponent(moNo)}`) as Promise<{
+      moNo: string; items: MesSyncMaterialRow[];
+    }>,
+  syncMesMaterials: (moNo: string) =>
+    apiClient.post(`/wms/mes-sync/materials/${encodeURIComponent(moNo)}/sync`, {}) as Promise<{
+      moNo: string; materialCount: number; missingMaterialCount: number; source: string;
+    }>,
+  generateMesPicking: (moNo: string, opts?: { qtyMode?: "suggest" | "open"; refresh?: boolean }) =>
+    apiClient.post(`/wms/mes-sync/picking/${encodeURIComponent(moNo)}/generate`, opts ?? {}) as Promise<{
+      moNo: string; mode: string; created: number; refreshed: number; skipped: number;
+      unmatched: number; pickingNos: string[]; warnings: string[]; autoApprove: boolean;
+    }>,
+  getMesSyncLogs: (params?: { task?: string; limit?: number }) =>
+    apiClient.get("/wms/mes-sync/logs", params) as Promise<{ items: MesSyncLogRow[] }>,
+  getMesWritebackList: (params?: { status?: string; keyword?: string; limit?: number }) =>
+    apiClient.get("/wms/mes-sync/writeback/list", params) as Promise<{
+      items: MesWritebackRow[]; counts: Record<string, number>;
+    }>,
+  runMesWriteback: (limit?: number) =>
+    apiClient.post("/wms/mes-sync/writeback/run", { limit }) as Promise<MesSyncRunResult>,
+  retryMesWriteback: (id: number | string) =>
+    apiClient.post(`/wms/mes-sync/writeback/${id}/retry`, {}) as Promise<Record<string, unknown>>,
+
 };
+
+export interface MesSyncStatus {
+  configured: boolean;
+  apiKeySource: string;
+  baseUrl: string;
+  autoSync: boolean;
+  intervalMinutes: number;
+  autoPicking: boolean;
+  pickingQtyMode: "suggest" | "open";
+  lastRunAt: string | null;
+  lastOkAt: string | null;
+  lastStatus: string | null;
+  lastMessage: string | null;
+  lastRequestId: string | null;
+  cursor: string | null;
+  counts: {
+    mesWorkOrders: number;
+    mesWorkOrdersPending: number;
+    openMaterials: number;
+    openMos: number;
+    mesPickingOrders: number;
+    mesPickingToIssue: number;
+    writebackPending: number;
+    writebackFailed: number;
+  };
+}
+export interface MesSyncConfig {
+  baseUrl: string;
+  hasApiKey: boolean;
+  apiKeySource: string;
+  apiKeyMasked: string;
+  autoSync: boolean;
+  intervalMinutes: number;
+  autoPicking: boolean;
+  pickingAutoApprove: boolean;
+  pickingQtyMode: "suggest" | "open";
+  operatorId: string;
+  operatorName: string;
+  writebackEnabled: boolean;
+}
+export interface MesSyncPing {
+  ok: boolean;
+  baseUrl: string;
+  service: string;
+  serverTime: string;
+  utcOffset: string;
+  latencyMs: number;
+  requestId: string | null;
+}
+export interface MesSyncRunResult {
+  skipped?: boolean;
+  reason?: string;
+  pulled?: number;
+  created?: number;
+  updated?: number;
+  skippedRows?: number;
+  failed?: number;
+  sent?: number;
+  notApplicable?: number;
+  messages?: string[];
+  cursorFrom?: string | null;
+  cursorTo?: string | null;
+}
+export interface MesSyncPendingRow {
+  id: number;
+  workOrderNo: string;
+  productCode: string;
+  productName: string;
+  productModel: string;
+  planQty: number;
+  woType: string;
+  lineCode: string;
+  poNo: string;
+  custCode: string;
+  planStart: string | null;
+  planEnd: string | null;
+  mesStatus: string;
+  status: string;
+  mesIssueNo: string;
+  mesIssueStatus: string;
+  bomId: number | null;
+  mesSyncedAt: string | null;
+  materialCount: number;
+  openQty: number;
+  unmatchedCount: number;
+  pickingCount: number;
+  pickingPending: number;
+  hasBom: boolean;
+}
+export interface MesSyncMaterialRow {
+  materialCode: string;
+  materialName: string;
+  spec: string;
+  unit: string;
+  workSection: string;
+  openQty: number;
+  availableQty: number;
+  shortageQty: number;
+  mpq: number;
+  suggestQty: number;
+  materialId: number | null;
+}
+export interface MesSyncLogRow {
+  id: number;
+  task: string;
+  status: string;
+  pulled: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  failed: number;
+  message: string | null;
+  requestId: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+export interface MesWritebackRow {
+  id: number;
+  pickingNo: string;
+  mesIssueNo: string | null;
+  moNo: string | null;
+  workSection: string;
+  totalQty: number;
+  eventType: string;
+  status: string;
+  attempts: number;
+  nextRetryAt: string | null;
+  lastError: string | null;
+  sentAt: string | null;
+  requestId: string | null;
+  createdAt: string;
+}
 
 // ── Shared lifecycle types (mirrors server.js SQL column aliases) ─────────────
 

@@ -37,7 +37,8 @@ export type WmsTabKey =
   | "iqcTemplates"
   | "graftOps"
   | "substitution"
-  | "notices";
+  | "notices"
+  | "mesSync";
 
 export const wmsTabKeys: WmsTabKey[] = [
   "dashboard",
@@ -75,6 +76,7 @@ export const wmsTabKeys: WmsTabKey[] = [
   "graftOps",
   "substitution",
   "notices",
+  "mesSync",
 ];
 
 export type WmsMenuGroupKey =
@@ -115,6 +117,7 @@ export const wmsMenuGroups: WmsMenuGroup[] = [
     "outboundOrders", "returnSlips", "replenishments", "overPicking",
     "pdaConsumption", "rjvnPicking", "rjvnDocFlow", "productionInbound", "productionOutbound",
     "materialConsumption", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop",
+    "mesSync",
   ] },
   { key: "returnsRework", translationKey: "wms.group.returns", tabs: [
     "supplierReturn", "supplierReturnOrder", "salesReturn", "lineReturn", "rework", "reworkComplete",
@@ -249,6 +252,7 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   graftOps: "wms.subnav.graftOps",
   substitution: "wms.subnav.substitution",
   notices: "wms.subnav.notices",
+  mesSync: "wms.subnav.mesSync",
 };
 
 export { WmsIncoming } from "./WmsIncoming";
@@ -352,3 +356,4 @@ export { WmsDefectiveMove } from "./WmsDefectiveMove";
 export { WmsMrb } from "./WmsMrb";
 export { WmsSupplierReturnOrder } from "./WmsSupplierReturnOrder";
 export { WmsNotices } from "./WmsNotices";
+export { WmsMesSync } from "./WmsMesSync";

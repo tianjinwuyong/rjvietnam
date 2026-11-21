@@ -61,14 +61,6 @@ function ageDays(receivedDate: Date): number {
   return Math.floor((now.getTime() - receivedDate.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-const DEMO_MATERIALS = [
-  "PCB-AURORA-CTRL",
-  "R-0603-10K-1",
-  "IC-MCU-RJ32",
-  "CAP-0805-100N",
-  "CONN-USB-C-30P",
-];
-
 export function WmsFifoSimulation({ locale }: { locale: Locale }) {
   const [allLots, setAllLots] = useState<FifoLot[]>([]);
   const [loading, setLoading] = useState(false);
@@ -90,12 +82,10 @@ export function WmsFifoSimulation({ locale }: { locale: Locale }) {
       .catch(() => setAllLots([]));
   }, []);
 
-  const materialOptions = useMemo(() => {
-    const codes = new Set(allLots.map((l) => l.materialCode));
-    const demo = DEMO_MATERIALS.filter((m) => codes.has(m));
-    const others = [...codes].filter((m) => !DEMO_MATERIALS.includes(m)).sort();
-    return [...demo, ...others];
-  }, [allLots]);
+  const materialOptions = useMemo(
+    () => [...new Set(allLots.map((l) => l.materialCode))].sort(),
+    [allLots],
+  );
 
   const filteredLots = useMemo(() => {
     const code = selectedMaterial || customMaterial.trim().toUpperCase();

@@ -23,6 +23,9 @@ interface MaterialLot {
   iqcStatus: string;
   reservedQty?: number;
   locationCode?: string | null;
+  /** 手工冻结（service: POST /wms/inventory/lock）—— 与 IQC 状态无关 */
+  locked?: boolean;
+  lockReason?: string | null;
   name_zh?: string;
   name_en?: string;
   name_vi?: string;
@@ -222,11 +225,12 @@ export function WmsBatchManagement({ locale }: { locale: Locale }) {
                   <th>Reserved</th>
                   <th><MapPin size={13} style={{ display: "inline", marginRight: 4 }} />{t("wms.locationManagement.code", locale)}</th>
                   <th>IQC</th>
+                  <th>{t("wms.batch.lockState", locale)}</th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
-                  <tr><td colSpan={9} className="empty-state">{t("common.empty", locale)}</td></tr>
+                  <tr><td colSpan={10} className="empty-state">{t("common.empty", locale)}</td></tr>
                 ) : filtered.map((lot, idx) => (
                   <tr key={lot.id} onClick={() => openLot(lot)} style={{ cursor: "pointer" }}>
                     <td>{idx + 1}</td>
@@ -240,6 +244,15 @@ export function WmsBatchManagement({ locale }: { locale: Locale }) {
                     </td>
                     <td><code>{lot.locationCode ?? "—"}</code></td>
                     <td><span className={"badge " + iqcBadge(lot.iqcStatus ?? "")}>{lot.iqcStatus?.toUpperCase()}</span></td>
+                    <td
+                      title={lot.locked ? (lot.lockReason ?? t("wms.batch.locked", locale)) : t("wms.batch.notLocked", locale)}
+                    >
+                      {lot.locked ? (
+                        <span className="badge badge-danger">{t("wms.batch.locked", locale)}</span>
+                      ) : (
+                        <span style={{ color: "var(--muted)" }}>—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
