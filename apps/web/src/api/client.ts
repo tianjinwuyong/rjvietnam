@@ -3,17 +3,28 @@ import { getAgentProvenance } from "./agentProvenance";
 // NOTE: backend routes are split:
 //   - auth: mounted on `api` router at /api (needs /api prefix)
 //   - wms/pmc/mes/boms/hr: mounted on `app` router at / (no /api prefix)
+// Both hosts that serve the SPA also proxy /api/ to the backend: the web
+// container's nginx in every deployment, and the Vite dev server locally
+// (see apps/web/vite.config.ts `server.proxy`). So the SPA always talks to its
+// own origin -- no cross-host :8080 hop, no CORS preflight, and the nginx
+// access log shows the real API traffic instead of an empty log.
 function defaultApiBase(): string {
-  if (typeof window !== "undefined" && window.location.hostname) {
-    return `${window.location.protocol}//${window.location.hostname}:8080`;
-  }
-  return "http://127.0.0.1:8080";
+  return "";
 }
 
 // Local development uses the API on this machine. Factory deployments can
 // override it with VITE_API_BASE=http://192.168.6.155:8080.
+//
+// The override is DEV-ONLY on purpose. A production build that bakes an
+// absolute API host into the bundle pins every browser to that one address:
+// the rjms bundle shipped with `VITE_API_BASE=http://192.168.6.155:8080`, so
+// sign-in posted to an address no outside browser could reach and the SPA sat
+// on the login screen with no error. Production is always served by nginx,
+// which proxies /api/ itself, so same-origin is the correct base there.
 const runtimeEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const API_BASE = String(runtimeEnv?.VITE_API_BASE || defaultApiBase()).replace(/\/$/, "");
+const API_BASE = String(
+  (runtimeEnv?.DEV && runtimeEnv?.VITE_API_BASE) || defaultApiBase(),
+).replace(/\/$/, "");
 const API_AUTH_BASE = `${API_BASE}/api`;
 
 export interface ApiError {
@@ -66,21 +77,27 @@ export class ApiClientError extends Error {
 }
 
 function getToken(): string | null {
-  return sessionStorage.getItem("auth_token");
+  // Keep one login usable across the WMS/QMS modules. Older screens still
+  // write the JWT to localStorage, while the main sign-in flow uses sessionStorage.
+  return sessionStorage.getItem("auth_token") || localStorage.getItem("token");
 }
 
 function setToken(token: string) {
   sessionStorage.setItem("auth_token", token);
+  localStorage.setItem("token", token);
 }
 
 function clearToken() {
   sessionStorage.removeItem("auth_token");
+  localStorage.removeItem("token");
 }
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    // FormData（文件上传）不能手动设 Content-Type，浏览器需要自动生成 multipart boundary
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(init.headers as Record<string, string> ?? {}),
   };
   if (token) {
@@ -105,7 +122,17 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     const body = contentType.includes("application/json")
       ? await res.json().catch(() => ({ error: { code: "HTTP_ERROR", message: `HTTP ${res.status}` } }))
       : { error: { code: "HTTP_NON_JSON", message: `接口 ${path} 返回了非 JSON 内容（HTTP ${res.status}）` } };
-    const err: ApiError = body.error ?? { code: "HTTP_ERROR", message: `HTTP ${res.status}` };
+    // The OA module answers { code: 1, msg: "..." } on failure -- there is no
+    // `error` key there, so the generic HTTP fallback used to hide the real
+    // reason behind a bare "HTTP 401". Surface the server's own message.
+    const serverMessage =
+      (body as { msg?: unknown; error?: { message?: unknown } }).msg ??
+      (body as { error?: { message?: unknown } }).error?.message;
+    const err: ApiError =
+      (body as { error?: ApiError }).error ??
+      (serverMessage
+        ? { code: `HTTP_${res.status}`, message: String(serverMessage) }
+        : { code: "HTTP_ERROR", message: `HTTP ${res.status}` });
     throw new ApiClientError(err.code, err.message, err.details);
   }
 
@@ -113,8 +140,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!contentType.includes("application/json")) {
     throw new ApiClientError("HTTP_NON_JSON", `接口 ${path} 返回了网页 HTML，而不是 JSON。请检查 API 路径或服务是否已注册。`);
   }
-  const json: Envelope<T> = await res.json();
-  return json.data as T;
+  const json = await res.json() as Envelope<T> & T;
+  // Some legacy WMS endpoints return { items, total } directly while newer
+  // endpoints use the standard { data: { items, total } } envelope. Accept
+  // both shapes so one endpoint cannot blank or crash a whole page.
+  return ("data" in json && json.data !== undefined ? json.data : json) as T;
 }
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -152,6 +182,11 @@ export const apiClient = {
     });
   },
 
+  /** multipart 文件上传（FormData），浏览器自动生成 boundary */
+  postForm<T>(path: string, form: FormData): Promise<T> {
+    return request<T>(path, { method: "POST", body: form });
+  },
+
   patch<T>(path: string, body?: unknown): Promise<T> {
     return request<T>(path, {
       method: "PATCH",
@@ -176,6 +211,16 @@ export const authStorage = {
   setToken,
   clearToken,
 };
+
+/**
+ * Headers for the few MES screens that still call `fetch()` directly instead of
+ * `apiClient`. The routes they hit are permission-checked at the API boundary,
+ * so an unauthenticated fetch is a 401 — the token has to travel with it.
+ */
+export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+}
 
 export { API_BASE };
 

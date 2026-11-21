@@ -1,0 +1,62 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "瑞晶工厂 OA 多轮签核与驳回处理流程",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "apps/web/public/architecture/oa-processes.html"
+  },
+  "lanes": [
+    { "id": "requester", "label": "申请人" },
+    { "id": "approval", "label": "顺序签核" },
+    { "id": "decision", "label": "驳回分流", "variant": "exception" },
+    { "id": "business", "label": "业务执行与审计" }
+  ],
+  "phases": [
+    { "id": "prepare", "label": "提交", "fromCol": 0, "toCol": 1 },
+    { "id": "review", "label": "从左到右签核", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "resolve", "label": "决定与闭环", "fromCol": 4, "toCol": 5 }
+  ],
+  "mainPath": ["draft", "submit", "currentSigner", "nextSigner", "approved", "execute", "archive"],
+  "semanticChecks": {
+    "allowedRoots": ["draft"],
+    "allowedTerminals": ["archive"],
+    "requiredPaths": [
+      { "from": "draft", "to": "archive" },
+      { "from": "currentSigner", "to": "finalReject" },
+      { "from": "revision", "to": "currentSigner" }
+    ]
+  },
+  "nodes": [
+    { "id": "draft", "lane": "requester", "col": 0, "type": "frontend", "label": "创建或改进申请", "sublabel": "资料证据", "width": 120 },
+    { "id": "submit", "lane": "requester", "col": 1, "type": "backend", "label": "提交审批轮次", "sublabel": "保存签核链快照与轮次", "width": 152 },
+    { "id": "currentSigner", "lane": "approval", "col": 2, "type": "security", "label": "当前待签人", "sublabel": "高亮显示并实时倒计时", "tag": "可批准或驳回", "width": 158 },
+    { "id": "nextSigner", "lane": "approval", "col": 3, "type": "security", "label": "下一签核人", "sublabel": "前序通过后激活 SLA", "width": 150 },
+    { "id": "approved", "lane": "business", "col": 4, "type": "backend", "label": "全部批准", "sublabel": "解除受控业务拦截", "width": 140 },
+    { "id": "execute", "lane": "business", "col": 5, "type": "frontend", "label": "执行受控业务", "sublabel": "PDA / WMS / MES / ERP", "width": 150 },
+    { "id": "archive", "lane": "business", "col": 5, "type": "database", "label": "永久审计记录", "sublabel": "轮次、签名、意见与时间", "width": 154, "yOffset": 70 },
+    { "id": "rejectChoice", "lane": "decision", "col": 3, "type": "security", "label": "驳回结果选择", "sublabel": "终止或退回改进", "width": 150 },
+    { "id": "finalReject", "lane": "decision", "col": 4, "type": "security", "label": "完全驳回", "sublabel": "必须记录反对理由，永久保留", "width": 150 },
+    { "id": "revision", "lane": "decision", "col": 2, "type": "messagebus", "label": "退回改进", "sublabel": "修改后重新提交下一轮", "tag": "轮次 +1", "width": 150 }
+  ],
+  "edges": [
+    { "id": "draft-submit", "from": "draft", "to": "submit", "label": "SUBMIT", "role": "main", "variant": "default" },
+    { "id": "submit-current", "from": "submit", "to": "currentSigner", "label": "激活首节点与 SLA", "role": "main", "variant": "emphasis" },
+    { "id": "current-next", "from": "currentSigner", "to": "nextSigner", "label": "APPROVE", "role": "main", "variant": "default" },
+    { "id": "next-approved", "from": "nextSigner", "to": "approved", "label": "全部节点通过", "role": "main", "variant": "emphasis" },
+    { "id": "approved-execute", "from": "approved", "to": "execute", "label": "授权执行", "role": "main", "variant": "emphasis" },
+    { "id": "execute-archive", "from": "execute", "to": "archive", "label": "记录业务流水", "role": "main", "variant": "default" },
+    { "id": "current-reject", "from": "currentSigner", "to": "rejectChoice", "label": "REJECT", "role": "error", "variant": "security" },
+    { "id": "next-reject", "from": "nextSigner", "to": "rejectChoice", "label": "REJECT", "role": "error", "variant": "security" },
+    { "id": "choice-final", "from": "rejectChoice", "to": "finalReject", "label": "完全驳回 + 反对理由", "role": "error", "variant": "security" },
+    { "id": "choice-revision", "from": "rejectChoice", "to": "revision", "label": "退回改进", "role": "branch", "variant": "dashed" },
+    { "id": "revision-resubmit", "from": "revision", "to": "currentSigner", "label": "重新提交下一轮", "role": "return", "variant": "emphasis" },
+    { "id": "final-archive", "from": "finalReject", "to": "archive", "label": "保留全部驳回证据", "role": "return", "variant": "dashed", "route": "return-left" }
+  ],
+  "cards": [
+    { "dot": "amber", "title": "当前节点", "items": ["当前待签人高亮显示", "显示批准或驳回的剩余时间，超时转红"] },
+    { "dot": "rose", "title": "两种驳回", "items": ["完全驳回：必须填写反对理由，记录永久保留", "退回改进：修改后进入下一审批轮次"] },
+    { "dot": "cyan", "title": "审计规则", "items": ["每轮保留签核链快照", "驳回原因、签名与时间永久保存"] }
+  ]
+}

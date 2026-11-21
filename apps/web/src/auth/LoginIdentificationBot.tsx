@@ -1,6 +1,6 @@
-import { useMemo } from "react";
+import { useEffect, useState } from "react";
 import { Bot } from "lucide-react";
-import { demoDirectory } from "../data";
+import { apiClient } from "../api/client";
 import type { Locale, MultilingualText } from "../../../../packages/shared-types/src/factory";
 
 interface Props {
@@ -21,12 +21,53 @@ function localeKey(locale: Locale): "name_zh" | "name_en" | "name_vi" {
   return "name_vi";
 }
 
+// Shape the bot renders. The demo directory that used to live in ../data is gone; the
+// identity now comes from /api/users, and an unknown or unreachable lookup renders the
+// "unknown user" state instead of a fabricated person.
+interface DirectoryEntry {
+  username: string;
+  displayName: string;
+  roleKey: string;
+  roleName?: MultilingualText;
+}
+
 export function LoginIdentificationBot({ username, locale }: Props) {
-  const user = useMemo(() => {
-    if (!username.trim()) return null;
-    return demoDirectory.find(
-      (u) => u.username.toLowerCase() === username.trim().toLowerCase(),
-    ) ?? null;
+  const [user, setUser] = useState<DirectoryEntry | null>(null);
+  useEffect(() => {
+    const wanted = username.trim();
+    if (!wanted) {
+      setUser(null);
+      return;
+    }
+    let alive = true;
+    apiClient
+      .get<{ username: string; real_name?: string | null; roles?: string[]; is_admin?: boolean }[]>(
+        "/api/users",
+        { params: { q: wanted, limit: 50 } },
+      )
+      .then((rows) => {
+        if (!alive) return;
+        const match = (rows ?? []).find((u) => u.username?.toLowerCase() === wanted.toLowerCase());
+        setUser(
+          match
+            ? {
+                username: match.username,
+                displayName: match.real_name || match.username,
+                roleKey: (match.roles ?? [])[0] ?? (match.is_admin ? "admin" : "production"),
+              }
+            : null,
+        );
+      })
+      .catch(() => {
+        // /api/users is behind the OA authenticate hook, so it answers 401 until
+        // the operator has signed in. That is the expected state of this
+        // pre-login widget -- it must render the "unknown user" card, not raise
+        // a page-level error that would abort the whole sign-in screen.
+        if (alive) setUser(null);
+      });
+    return () => {
+      alive = false;
+    };
   }, [username]);
 
   if (!username.trim()) {
@@ -137,7 +178,7 @@ export function LoginIdentificationBot({ username, locale }: Props) {
         gap: 6, fontSize: 11, color: "var(--text-3)",
       }}>
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#22c55e", display: "inline-block" }} />
-        {locale === "zh-CN" ? "在职" : locale === "vi-VN" ? "Đang làm việc" : "Active"} · {user.locale}
+        {locale === "zh-CN" ? "在职" : locale === "vi-VN" ? "Đang làm việc" : "Active"}
       </div>
     </div>
   );

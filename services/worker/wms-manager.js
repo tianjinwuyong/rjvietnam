@@ -168,16 +168,11 @@ async function sendLINE(message) {
   else log("INFO", "LINE notification sent");
 }
 
-// ── State management (mem0-backed, with JSON file fallback) ─────────
+// ── State management (JSON file; vector store holds experience only) ─────
 async function loadState() {
-  try {
-    const results = await mem.search("most recent WMS manager state", 1);
-    if (results.results?.length > 0) {
-      const latest = results.results[0];
-      const st = latest.metadata?.state;
-      if (st) return st;
-    }
-  } catch (_) {}
+  // Snapshot state belongs in the file. The vector index is for field
+  // experience (services/_shared/memory-experience.js), never a "latest state"
+  // lookup — semantic search made the write path pollute its own recall.
   try {
     if (existsSync(STATE_FILE)) return JSON.parse(readFileSync(STATE_FILE, "utf8"));
   } catch (_) {}
@@ -185,12 +180,6 @@ async function loadState() {
 }
 
 async function saveState(state) {
-  try {
-    const label = `WMS cycle — ${state.lastCycle?.slice(0, 10) || "?"}`;
-    await mem.store(`${label} — ${(state.iqcNg || []).length} IQC NG, ${(state.workOrders || []).length} WOs`, { type: "wms_state", state, ts: state.lastCycle || new Date().toISOString() });
-  } catch (e) {
-    log("WARN", `mem0 saveState failed: ${e.message}`);
-  }
   try { require("fs").writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch (_) {}
 }
 

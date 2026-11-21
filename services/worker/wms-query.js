@@ -14,8 +14,7 @@ const pool = new Pool({
   port: Number(process.env.PGPORT ?? 5432),
   user: process.env.PGUSER ?? "postgres",
   password: process.env.PGPASSWORD ?? "postgres",
-  database: process.env.PGDATABASE ?? "factory",
-  options: "-c search_path=rjvn,public",
+  database: process.env.PGDATABASE ?? "smt_factory",
   max: 3,
 });
 
@@ -247,7 +246,7 @@ async function getHealth() {
       material_code: r.material_code,
       material_name_zh: r.name_zh,
       open_hours: r.msd_open_at
-        ? Math.round(((Date.now() - new Date(r.msd_open_at).getTime()) / 3600000) * 10) / 10
+        ? Math.round(((Date.now() - new Date(r.msd_open_at).getTime()) / 3_600_000) * 10) / 10
         : null,
       limit_hours: r.msd_limit_hours,
     })),

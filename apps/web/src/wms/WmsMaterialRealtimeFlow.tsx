@@ -39,7 +39,7 @@ export function WmsMaterialRealtimeFlow({ locale, materialCode, lotNo, boxQr, iq
         <rect x="230" y="118" width="155" height="52" rx="10" fill="#fef3c7" stroke="#d97706" strokeWidth="2"/><text x="307" y="149">{text("收货仓库待办", "Receiving queue", "Hang cho nhan")}</text>
         <rect x="435" y="118" width="155" height="52" rx="10" fill="#dbeafe" stroke="#2563eb" strokeWidth="3"/><text x="512" y="149">QR {text("绑定仓库", "warehouse binding", "gan kho")}</text>
         <rect x="640" y="118" width="140" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" strokeWidth="2"/><text x="710" y="149">IQC</text>
-        <rect x="850" y="56" width="150" height="52" rx="10" fill="#dcfce7" stroke="#16a34a" strokeWidth="2"/><text x="925" y="87">{text("成品仓库", "Finished stock", "Kho thanh pham")}</text>
+        <rect x="850" y="56" width="150" height="52" rx="10" fill="#dcfce7" stroke="#16a34a" strokeWidth="2"/><text x="925" y="87">{text("良品仓库", "Good stock", "Kho hang dat")}</text>
         <rect x="850" y="190" width="150" height="52" rx="10" fill="#fee2e2" stroke="#dc2626" strokeWidth="2"/><text x="925" y="221">{text("不良品仓库", "Defect stock", "Kho loi")}</text>
         <rect x="1040" y="190" width="120" height="52" rx="10" fill="#fef2f2" stroke="#b91c1c" strokeWidth="2"/><text x="1100" y="221">MRB</text>
         <rect x="1040" y="260" width="120" height="38" rx="8" fill="#fff7ed" stroke="#ea580c"/><text x="1100" y="284">{text("返工/报废/退货", "Rework / scrap / return", "Sua / huy / tra")}</text>

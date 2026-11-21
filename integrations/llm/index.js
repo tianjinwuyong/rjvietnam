@@ -1,8 +1,223 @@
 import { query } from "../../services/api/src/db.js";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://localhost:11434";
 const DEFAULT_MODEL = process.env.OLLAMA_MODEL ?? "gemma4:latest";
 const TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS ?? 60_000);
+const execFileAsync = promisify(execFile);
+const LOCAL_TESSDATA_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "tessdata");
+
+function receivingFieldsFromOcrText(rawText, warnings = []) {
+  const text = String(rawText || "").replace(/\u0000/g, " ");
+  const pick = (patterns) => {
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match?.[1]) return match[1].trim();
+    }
+    return null;
+  };
+  const quantityText = pick([/(?:QTY|QUANTITY|数量|本箱数量)\s*[:：#]?\s*([0-9,]+)/i, /\b([0-9,]+)\s*PCS\b/i]);
+  const materialCode = pick([
+    /(?:MATERIAL\s*(?:CODE|NO)?|PART\s*NO|P\/N|料号|物料(?:代码|编码))\s*[:：#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})/i,
+    /\b(\d{1,3}(?:\.\d{2}){2,}[A-Z]?)\b/i,
+    /\b([A-Z0-9]{1,8}(?:[-.][A-Z0-9]{1,8}){3,})\b/i,
+  ]);
+  const specification = pick([
+    /(?<!-)\b([A-Z0-9]{1,8}-[A-Z0-9]{2,8})\b(?!-)/i,
+    /(?:SPECIFICATION|MODEL)\s*[:：]?\s*([A-Z0-9][A-Z0-9._/-]{2,})/i,
+  ]);
+  const lot = pick([/(?:LOT(?:\s*NO)?|BATCH|批次(?:号)?|批号)\s*[:：#]?\s*([A-Z0-9][A-Z0-9._/-]{2,})/i]);
+  const supplier = pick([/(?:SUPPLIER|VENDOR|供应商(?:名称)?)\s*[:：#]?\s*([^\r\n|;]+)/i]);
+  const manufactureDate = pick([/(?:MFG|MFD|DATE\s*CODE|生产日期)\s*[:：#]?\s*(20\d{2}[-/.]?\d{2}[-/.]?\d{2})/i]);
+  const expiryDate = pick([/(?:EXP|EXPIRY|有效期(?:至)?)\s*[:：#]?\s*(20\d{2}[-/.]?\d{2}[-/.]?\d{2})/i]);
+  const msdLevel = pick([/(?:MSD|MSL)\s*(?:LEVEL)?\s*[:：#-]?\s*([1-6][A-Z]?)/i]);
+  return {
+    materialCode, vietnamMaterialCode: materialCode, ruijingMaterialCode: null,
+    materialName: null, specification, supplier, purchaseOrder: null, lot,
+    manufactureDate, expiryDate,
+    quantity: quantityText ? Number(quantityText.replace(/,/g, "")) : null,
+    expectedQuantity: quantityText ? Number(quantityText.replace(/,/g, "")) : null,
+    quantityPerBox: quantityText ? Number(quantityText.replace(/,/g, "")) : null,
+    boxCount: null, boxNumber: null, boxSn: null, unit: /\bPCS\b/i.test(text) ? "PCS" : null,
+    palletQr: null, locationCode: null, msdLevel, floorLifeHours: null, invoice: null,
+    ulCode: pick([/\b(E\d{4,})\b/i]), qualityMark: null,
+    confidence: text.trim() ? 0.65 : 0,
+    warnings,
+    ocrText: text,
+  };
+}
+
+function receivingFieldsFromQr(raw) {
+  const value = String(raw || "").trim();
+  const parts = value.split("*").map(item => item.trim());
+  if (parts.length >= 6 && Number.isFinite(Number(parts[4]))) {
+    const quantity = Number(parts[4]);
+    return {
+      ...receivingFieldsFromOcrText("", ["Exact fields decoded from label QR"]),
+      ruijingMaterialCode: parts[0], lot: parts[1], manufactureDate: parts[2],
+      supplier: parts[3], quantity, expectedQuantity: quantity,
+      quantityPerBox: quantity, boxNumber: parts[5], boxSn: parts[5],
+      supplierBarcode: parts[5], confidence: 1, qrValue: value,
+    };
+  }
+  return null;
+}
+
+async function quickQrFields(imageBase64) {
+  const file = path.join(os.tmpdir(), `wms-qr-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+  try {
+    await fs.writeFile(file, Buffer.from(imageBase64, "base64"));
+    const rapidOcr = path.join(path.dirname(fileURLToPath(import.meta.url)), "rapidocr_receiving_label.py");
+    const out = String((await execFileAsync("python", [rapidOcr, file], {
+      windowsHide: true,
+      timeout: 45_000,
+      encoding: "utf8",
+      maxBuffer: 4 * 1024 * 1024,
+    })).stdout || "");
+    const lines = out.split(/\r?\n/);
+    const exactQr = lines
+      .filter((line) => line.startsWith("QR_VALUE:"))
+      .map((line) => receivingFieldsFromQr(line.slice("QR_VALUE:".length)))
+      .find(Boolean);
+    const rapidText = lines.filter((line) => !line.startsWith("QR_VALUE:")).join("\n").trim();
+    return { exactQr: exactQr ?? null, rapidText };
+  } catch {
+    return { exactQr: null, rapidText: "" };
+  } finally {
+    await fs.rm(file, { force: true }).catch(() => {});
+  }
+}
+
+function parseLooseJson(raw) {
+  try {
+    const text = String(raw || "").replace(/```json|```/gi, "").trim();
+    const start = text.indexOf("{");
+    const end = text.lastIndexOf("}");
+    if (start < 0 || end <= start) return null;
+    return JSON.parse(text.slice(start, end + 1));
+  } catch {
+    return null;
+  }
+}
+
+function visionResultEmpty(raw) {
+  const value = parseLooseJson(raw);
+  if (!value) return true;
+  const keys = ["materialCode", "vietnamMaterialCode", "ruijingMaterialCode", "lot", "quantity", "quantityPerBox", "expectedQuantity", "boxSn"];
+  return keys.every((key) => {
+    const field = value[key];
+    return field === null || field === undefined || String(field).trim() === "";
+  });
+}
+
+function mergeVisionWithLocal(visionRaw, localRaw) {
+  const vision = parseLooseJson(visionRaw) ?? {};
+  const local = parseLooseJson(localRaw) ?? {};
+  const merged = { ...local, ...vision };
+  // Vision nulls must not erase local OCR reads; keep whichever side has a value.
+  for (const key of Object.keys(merged)) {
+    const visionValue = vision[key];
+    const localValue = local[key];
+    const isEmpty = (field) => field === null || field === undefined || String(field).trim() === "";
+    if (isEmpty(visionValue) && !isEmpty(localValue)) merged[key] = localValue;
+  }
+  const warnings = [
+    ...(Array.isArray(vision.warnings) ? vision.warnings : []),
+    ...(Array.isArray(local.warnings) ? local.warnings : []),
+    "vision read no fields; local QR/OCR result merged in",
+  ];
+  merged.warnings = [...new Set(warnings.map(String))];
+  if (typeof merged.confidence !== "number") merged.confidence = 0.5;
+  return JSON.stringify(merged);
+}
+
+async function localReceivingOcr(imageBase64, originalError) {
+  const file = path.join(os.tmpdir(), `wms-label-${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
+  const enhancedFile = file.replace(/\.jpg$/, "-enhanced.png");
+  try {
+    await fs.writeFile(file, Buffer.from(imageBase64, "base64"));
+    const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+    const bundledPython = path.resolve(moduleDir, "../../services/api/.venv-ocr/Scripts/python.exe");
+    const paddlePython = process.env.WMS_OCR_PYTHON || bundledPython;
+    const paddleScript = path.join(moduleDir, "paddleocr_receiving_label.py");
+    try {
+      // The PP-OCR pipeline exceeds the available factory PC memory and can
+      // stall every PDA request. Keep it opt-in (WMS_OCR_USE_PADDLE=1); the
+      // resized RapidOCR plus Chinese/English Tesseract path below is the
+      // stable production path.
+      if (process.env.WMS_OCR_USE_PADDLE !== "1") throw new Error("PaddleOCR opt-in only (set WMS_OCR_USE_PADDLE=1 to enable)");
+      const paddleOutput = await execFileAsync(paddlePython, [paddleScript, file], {
+        windowsHide: true,
+        timeout: 120_000,
+        encoding: "utf8",
+        maxBuffer: 8 * 1024 * 1024,
+        env: { ...process.env, PADDLE_PDX_MODEL_SOURCE: "BOS", PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK: "True" },
+      });
+      const lastJsonLine = String(paddleOutput.stdout || "").trim().split(/\r?\n/).reverse().find(line => line.trim().startsWith("{"));
+      const paddleResult = JSON.parse(lastJsonLine || "{}");
+      const exactQr = (Array.isArray(paddleResult.qrValues) ? paddleResult.qrValues : [])
+        .map(receivingFieldsFromQr).find(Boolean);
+      if (exactQr) return { model: "opencv-qr+paddleocr-pp-ocrv5", raw: JSON.stringify(exactQr) };
+      const lines = Array.isArray(paddleResult.lines) ? paddleResult.lines : [];
+      const paddleText = lines.map(line => String(line.text || "")).filter(Boolean).join("\n");
+      if (paddleText) {
+        // For labels without a readable QR, combine Paddle detection with
+        // Tesseract's Simplified-Chinese + English recognition. Tesseract is
+        // authoritative for Chinese field names and thin printed characters.
+        const preprocessor = path.join(moduleDir, "preprocess_receiving_label.py");
+        await execFileAsync("python", [preprocessor, file, enhancedFile], { windowsHide: true, timeout: 30_000 });
+        const executable = process.env.TESSERACT_PATH ?? "C:\\Program Files\\Tesseract-OCR\\tesseract.exe";
+        const recognize = async (psm) => (await execFileAsync(executable, [
+          enhancedFile, "stdout", "--tessdata-dir", LOCAL_TESSDATA_DIR,
+          "-l", "chi_sim+eng", "--psm", String(psm),
+        ], { windowsHide: true, timeout: 30_000 })).stdout;
+        const [blockText, sparseText] = await Promise.all([recognize(6), recognize(11)]);
+        const combinedText = `${paddleText}\n${String(blockText || "")}\n${String(sparseText || "")}`;
+        const averageScore = lines.reduce((sum, line) => sum + Number(line.score || 0), 0) / lines.length;
+        const parsed = receivingFieldsFromOcrText(combinedText, ["WMS Tesseract chi_sim+eng with PP-OCRv5 detection"]);
+        parsed.confidence = Math.max(0, Math.min(1, averageScore));
+        return { model: "tesseract-chi_sim+eng+paddleocr-pp-ocrv5", raw: JSON.stringify(parsed) };
+      }
+    } catch (paddleError) {
+      console.warn("[WMS OCR] PaddleOCR unavailable, using fallback:", paddleError.message);
+    }
+    const rapidOcr = path.join(path.dirname(fileURLToPath(import.meta.url)), "rapidocr_receiving_label.py");
+    let rapidText = "";
+    try {
+      rapidText = String((await execFileAsync("python", [rapidOcr, file], {
+        windowsHide: true,
+        timeout: 45_000,
+        encoding: "utf8",
+        maxBuffer: 4 * 1024 * 1024,
+      })).stdout || "");
+      const rapidQr = rapidText.split(/\r?\n/)
+        .filter(line => line.startsWith("QR_VALUE:"))
+        .map(line => receivingFieldsFromQr(line.slice("QR_VALUE:".length)))
+        .find(Boolean);
+      if (rapidQr) return { model: "opencv-qr", raw: JSON.stringify(rapidQr) };
+    } catch (rapidError) {
+      console.warn("[WMS OCR] RapidOCR unavailable, using Tesseract:", rapidError.message);
+    }
+    const preprocessor = path.join(path.dirname(fileURLToPath(import.meta.url)), "preprocess_receiving_label.py");
+    await execFileAsync("python", [preprocessor, file, enhancedFile], { windowsHide: true, timeout: 30_000 });
+    const executable = process.env.TESSERACT_PATH ?? "C:\\Program Files\\Tesseract-OCR\\tesseract.exe";
+    const recognize = async (psm) => (await execFileAsync(executable, [
+      enhancedFile, "stdout", "--tessdata-dir", LOCAL_TESSDATA_DIR,
+      "-l", "chi_sim+eng", "--psm", String(psm),
+    ], { windowsHide: true, timeout: 30_000 })).stdout;
+    const [blockText, sparseText] = await Promise.all([recognize(6), recognize(11)]);
+    const text = `${rapidText}\n${String(blockText || "")}\n${String(sparseText || "")}`.trim();
+    const model = rapidText.trim() ? "rapidocr-local+chi_sim+eng" : "tesseract-local-chi_sim+eng";
+    return { model, raw: JSON.stringify(receivingFieldsFromOcrText(text, [`Primary OCR unavailable: ${originalError.message}`, "Local WMS OCR used; fields auto-applied"])) };
+  } finally {
+    await Promise.all([file, enhancedFile].map((item) => fs.rm(item, { force: true }).catch(() => {})));
+  }
+}
 
 async function ollamaChat(model, messages, opts = {}) {
   const controller = new AbortController();
@@ -26,28 +241,63 @@ async function ollamaChat(model, messages, opts = {}) {
 }
 
 /**
- * Parse a receiving label with a local Ollama vision model.  The caller must
- * still confirm the returned fields before posting a WMS receipt.
+ * Parse a receiving label with a local Ollama vision model. Results are
+ * returned for automatic WMS form application.
  */
 export async function askReceivingLabelVision(imageDataUrl, opts = {}) {
   const model = opts.model ?? process.env.OLLAMA_VISION_MODEL ?? "minicpm-v4.5:8b";
   const image = String(imageDataUrl || "").replace(/^data:image\/[^;]+;base64,/, "");
   if (!image) throw new Error("label image is required");
-  const context = opts.context ? `\nAdditional scanner/OCR context (may be wrong; compare it to the image):\n${String(opts.context).slice(0, 6000)}` : "";
+  const localOcrText = String(opts.localOcrText || "").trim();
+  const mlkitContext = localOcrText
+    ? `\nOn-device MLKit OCR text (high trust for printed characters; verify against the image):\n${localOcrText.slice(0, 4000)}`
+    : "";
+  const scannerContext = opts.context ? `\nAdditional scanner/OCR context (may be wrong; compare it to the image):\n${String(opts.context).slice(0, 6000)}` : "";
+  // QR-first short-circuit: a decoded label QR is deterministic and beats
+  // any vision guess. RapidOCR text is reused as extra vision context.
+  let rapidContext = "";
+  try {
+    const qr = await quickQrFields(image);
+    if (qr.exactQr) {
+      return { model: "opencv-qr", raw: JSON.stringify(qr.exactQr), imageBase64: image };
+    }
+    if (qr.rapidText) {
+      rapidContext = `\nRapidOCR pre-scan text (may be partial; verify against the image):\n${qr.rapidText.slice(0, 4000)}`;
+    }
+  } catch { /* fall through to vision */ }
+  const context = `${mlkitContext}${scannerContext}${rapidContext}`;
   const prompt = `You are a warehouse receiving label parser. Read the attached label carefully.
 Return ONLY valid JSON, no markdown, using exactly these keys:
 materialCode, vietnamMaterialCode, ruijingMaterialCode, materialName, specification, supplier, purchaseOrder, lot, manufactureDate, expiryDate, quantity, expectedQuantity, quantityPerBox, boxCount, boxNumber, boxSn, unit, palletQr, locationCode, msdLevel, floorLifeHours, invoice, ulCode, qualityMark, confidence, warnings.
 Labels may be Chinese, Vietnamese, or English and may be supplier labels, customer labels, packing labels, barcode labels, or QR labels. Map equivalent labels such as 物料代码/料号/PART NO to materialCode, 越南代码 to vietnamMaterialCode, 瑞晶代码 to ruijingMaterialCode, 批次/LOT NO to lot, 本批数量/总数量 to quantity or expectedQuantity, 本箱数量 to quantityPerBox, 箱数 to boxCount, 箱号/箱SN to boxSn, 供应商/VENDOR to supplier, 生产日期/PACKING DATE to manufactureDate, 有效期 to expiryDate, and MS/MSD to msdLevel. Read text near barcodes and QR codes; do not confuse a barcode value with the material code.
-Use null when a value is not readable. Dates must be YYYY-MM-DD when confidently recognized. quantity must be a number or null. confidence is 0..1. warnings is an array of short strings. Never invent values; mark uncertain readings in warnings.`;
+Use null when a value is not readable. Dates must be YYYY-MM-DD when confidently recognized. quantity must be a number or null. confidence is 0..1. warnings is an array of short strings. Never invent values; mark uncertain readings in warnings.
+The photo may be rotated 90 or 180 degrees or taken at an angle with glare or moire; mentally rotate the label upright before reading. If a QR code is visible, decode it first and use its payload for materialCode, lot and quantity.`;
   const finalPrompt = prompt + context;
-  const response = await ollamaChat(model, [{
-    role: "user",
-    content: [
-      { type: "text", text: finalPrompt },
-      { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } },
-    ],
-  }], { temperature: 0, max_tokens: 1200 });
-  return { model, raw: response.content || "", imageBase64: image };
+  try {
+    const response = await ollamaChat(model, [{
+      role: "user",
+      content: [
+        { type: "text", text: finalPrompt },
+        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${image}` } },
+      ],
+    }], { temperature: 0, max_tokens: 1200 });
+    const raw = response.content || "";
+    if (visionResultEmpty(raw)) {
+      // Vision returned valid JSON but read nothing (rotated/blurry shot).
+      // Fall through to the local QR + RapidOCR/Tesseract pipeline instead
+      // of reporting an empty parse.
+      const local = await localReceivingOcr(image, new Error("vision returned no fields"));
+      const merged = mergeVisionWithLocal(raw, local.raw);
+      return { model: `${model}+${local.model}`, raw: merged, imageBase64: image };
+    }
+    return { model, raw, imageBase64: image };
+  } catch (error) {
+    if (localOcrText) {
+      const parsed = receivingFieldsFromOcrText(localOcrText, [`Vision unavailable (${error.message}); MLKit on-device text used`]);
+      return { model: "google-mlkit-on-device", raw: JSON.stringify(parsed), imageBase64: image };
+    }
+    return { ...(await localReceivingOcr(image, error)), imageBase64: image };
+  }
 }
 
 export async function askChat(prompt, opts = {}) {

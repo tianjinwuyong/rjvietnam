@@ -34,7 +34,7 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
     Promise.all([
       pmcApi.getWorkOrders({ limit: 200 }),
       pmcApi.getCustomerPos(),
-      apiClient.get<ListEnvelope<any>>("/pmc/supplier-supply-signals").catch(()=>({items:[]} as ListEnvelope<any>)),
+      apiClient.get<ListEnvelope<Record<string, unknown>>>("/pmc/supplier-supply-signals").catch(() => ({ items: [] as Record<string, unknown>[], total: 0 })),
     ]).then(([woRes, poRes,signalRes]) => {
       const wos = woRes.items;
       const pos = poRes.items;

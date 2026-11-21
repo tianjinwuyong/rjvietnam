@@ -12,7 +12,7 @@ const NODES: FlowNode[] = [
   { key: "receiving", label: "收货待办", en: "Receiving", position: [-9, 1, 0], color: "#f59e0b", tab: "materialReceiving" },
   { key: "qr", label: "QR绑定仓库", en: "QR binding", position: [-5.5, 1, 0], color: "#2563eb", tab: "qrBinding" },
   { key: "iqc", label: "IQC检验", en: "IQC inspection", position: [-2, 1, 0], color: "#7c3aed", tab: "iqcInspect" },
-  { key: "finished", label: "成品仓库", en: "Finished stock", position: [2, 1.4, 2.8], color: "#16a34a", tab: "inventory" },
+  { key: "finished", label: "良品仓库", en: "Good stock", position: [2, 1.4, 2.8], color: "#16a34a", tab: "inventory" },
   { key: "defect", label: "不良品仓库", en: "Defect stock", position: [2, 1.4, -2.8], color: "#dc2626", tab: "defectArchive" },
   { key: "mrb", label: "MRB评审", en: "MRB review", position: [5.5, 1.4, -2.8], color: "#b91c1c", tab: "mrbApproval" },
   { key: "issue", label: "工单领料/使用", en: "Issue and use", position: [5.5, 1.4, 2.8], color: "#0891b2", tab: "pdaConsumption" },
@@ -86,7 +86,7 @@ export function Wms3dFlow({ locale }: { locale: Locale }) {
         {trace && <span>{isEn ? `${trace.materialCode || "Material"} · ${trace.lotNo || "-"} · ${trace.locationCode || "-"}` : `${trace.materialCode || "物料"} · ${trace.lotNo || "-"} · ${trace.locationCode || "-"}`}</span>}
       </div>
       <div style={{ height: 620, borderRadius: 14, overflow: "hidden", background: "linear-gradient(180deg,#0f172a,#1e293b)" }}>
-        <Canvas camera={{ position: [0, 12, 17], fov: 42 }} shadows>
+        <Canvas camera={{ position: [0, 12, 17], fov: 42 }} shadows fallback={<div style={{ height: "100%", minHeight: 420, display: "grid", placeItems: "center", padding: 24, color: "#e2e8f0", textAlign: "center" }}><div><strong>3D WebGL unavailable</strong><p style={{ margin: "8px 0", color: "#94a3b8" }}>Use the trace fields above or open a node below.</p><div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>{NODES.map(node => <button key={node.key} className="action-button" type="button" onClick={() => { window.location.href = `/?view=wms&wmsTab=${node.tab}`; }}>{locale === "en-US" ? node.en : node.label}</button>)}</div></div></div>}>
           <ambientLight intensity={0.8} /><directionalLight position={[4, 10, 8]} intensity={2} castShadow />
           <gridHelper args={[26, 26, "#475569", "#1e293b"]} position={[0, 0, 0]} />
           {NODES.map(node => <FlowNode3d key={node.key} node={node} locale={locale} />)}

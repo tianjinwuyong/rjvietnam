@@ -34,6 +34,12 @@ const STATUS_CONFIG: Record<string, { cls: string; icon: string }> = {
   offline: { cls: "badge error", icon: "○" },
 };
 
+const MANAGER_STATUS_KEYS: Record<string, string> = {
+  online: "mgr.online",
+  busy: "mgr.busy",
+  offline: "mgr.offline",
+};
+
 const AMBASSADOR_TABS: Array<{ key: AmbassadorTab; labelKey: string; emoji: string }> = [
   { key: "dailyPerformance", labelKey: "nav.managerDashboard",             emoji: "Daily" },
   { key: "training",       labelKey: "hr.subnav.training",               emoji: "Training" },
@@ -109,6 +115,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
 
   const statusIcon = (s: string) => STATUS_CONFIG[s]?.icon ?? "○";
   const statusBadge = (s: string) => STATUS_CONFIG[s]?.cls ?? "badge error";
+  const statusLabel = (s: string) => MANAGER_STATUS_KEYS[s] ? t(MANAGER_STATUS_KEYS[s], locale) : s;
   const priorityColor = (p: string) => p === "high" ? "#e53935" : p === "medium" ? "#fb8c00" : "#43a047";
   const hpBadge = (s: string) => s === "ok" ? "✅" : s === "warn" ? "⚠️" : "❌";
 
@@ -184,7 +191,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
 
       {/* ── Ambassador quick-nav strip ── */}
       <div className="surface-panel" style={{ padding: "10px 16px", marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8 }}>📊 {locale === "zh-CN" ? "AI 监督智能体" : "AI Ambassador Agents"}</div>
+        <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 8 }}>📊 {t("mgr.ambassadors", locale)}</div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           {AMBASSADOR_TABS.slice(1).map(tab => (
             <button
@@ -214,9 +221,9 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
       {/* ── Factory Simulation Live Status ── */}
       <div className="surface-panel" style={{ padding: 16, marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <h3 style={{ margin: 0 }}>🏭 {locale === "zh-CN" ? "工厂模拟运行状态" : "Factory Simulation"}</h3>
+          <h3 style={{ margin: 0 }}>🏭 {t("mgr.sim.title", locale)}</h3>
           <span style={{ fontSize: 11, color: "#999" }}>
-            {locale === "zh-CN" ? "每10秒刷新" : "refreshes every 10s"}
+            {t("mgr.sim.refresh", locale)}
           </span>
         </div>
         {simStatus ? (
@@ -225,7 +232,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
             {simStatus.runs.length > 0 ? (
               <div style={{ marginBottom: 12 }}>
                 <div style={{ fontSize: 12, fontWeight: 600, color: "#555", marginBottom: 6 }}>
-                  {locale === "zh-CN" ? "产线运行" : "Line Runs"}
+                  {t("mgr.sim.lineRuns", locale)}
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
                   {simStatus.runs.map(r => (
@@ -237,7 +244,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
                         <span style={{ color: "#9e9e9e" }}>○ {r.idle}</span>
                       </div>
                       <div style={{ fontSize: 11, color: "#777", marginTop: 2 }}>
-                        {locale === "zh-CN" ? "产出" : "Output"}: <strong>{r.total_output}</strong>
+                        {t("common.output", locale)}: <strong>{r.total_output}</strong>
                         {r.last_started && ` · ${new Date(r.last_started).toLocaleTimeString()}`}
                       </div>
                     </div>
@@ -246,7 +253,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
               </div>
             ) : (
               <div style={{ padding: 12, color: "#999", fontSize: 13, textAlign: "center" }}>
-                {locale === "zh-CN" ? "暂无模拟数据 — 请先运行 factory-sim.js seed && rolling" : "No sim data — run factory-sim.js seed && rolling first"}
+                {t("mgr.sim.noData", locale)}
               </div>
             )}
 
@@ -254,31 +261,31 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 8 }}>
               <div style={{ padding: "10px 12px", borderRadius: 6, background: "#fff3e0", border: "1px solid #ffcc80", textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "#e65100" }}>{simStatus.stagnation.total}</div>
-                <div style={{ fontSize: 11, color: "#555" }}>{locale === "zh-CN" ? "停滞 (24h)" : "Stagnation (24h)"}</div>
+                <div style={{ fontSize: 11, color: "#555" }}>{t("mgr.sim.stagnation", locale)}</div>
                 <div style={{ fontSize: 11, color: simStatus.stagnation.open > 0 ? "#d32f2f" : "#388e3c" }}>
-                  {locale === "zh-CN" ? "开放" : "Open"}: {simStatus.stagnation.open}
-                  {simStatus.stagnation.critical > 0 && ` · ${locale === "zh-CN" ? "严重" : "Critical"}: ${simStatus.stagnation.critical}`}
+                  {t("common.open", locale)}: {simStatus.stagnation.open}
+                  {simStatus.stagnation.critical > 0 && ` · ${t("status.critical", locale)}: ${simStatus.stagnation.critical}`}
                 </div>
               </div>
               <div style={{ padding: "10px 12px", borderRadius: 6, background: "#ffebee", border: "1px solid #ef9a9a", textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "#c62828" }}>{simStatus.scrap.total}</div>
-                <div style={{ fontSize: 11, color: "#555" }}>{locale === "zh-CN" ? "报废 (24h)" : "Scrap (24h)"}</div>
+                <div style={{ fontSize: 11, color: "#555" }}>{t("mgr.sim.scrap", locale)}</div>
                 <div style={{ fontSize: 11, color: "#777" }}>
-                  {locale === "zh-CN" ? "待批" : "Pending"}: {simStatus.scrap.pending}
+                  {t("status.pending", locale)}: {simStatus.scrap.pending}
                 </div>
               </div>
               <div style={{ padding: "10px 12px", borderRadius: 6, background: "#e3f2fd", border: "1px solid #90caf9", textAlign: "center" }}>
                 <div style={{ fontSize: 22, fontWeight: 700, color: "#1565c0" }}>{simStatus.downtime.total}</div>
-                <div style={{ fontSize: 11, color: "#555" }}>{locale === "zh-CN" ? "停机 (24h)" : "Downtime (24h)"}</div>
+                <div style={{ fontSize: 11, color: "#555" }}>{t("mgr.sim.downtime", locale)}</div>
                 <div style={{ fontSize: 11, color: simStatus.downtime.open_dt > 0 ? "#d32f2f" : "#388e3c" }}>
-                  {locale === "zh-CN" ? "开放" : "Open"}: {simStatus.downtime.open_dt} · {simStatus.downtime.downtime_min_24h}m {locale === "zh-CN" ? "总计" : "total"}
+                  {t("common.open", locale)}: {simStatus.downtime.open_dt} · {simStatus.downtime.downtime_min_24h}m {t("common.total", locale)}
                 </div>
               </div>
             </div>
           </>
         ) : (
           <div style={{ padding: 12, color: "#999", fontSize: 13, textAlign: "center" }}>
-            {locale === "zh-CN" ? "加载中..." : "Loading..."}
+            {t("loading", locale)}
           </div>
         )}
       </div>
@@ -300,16 +307,14 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
                   </span>
                 </div>
                 <span className={statusBadge(m.statusCls)}>
-                  {statusIcon(m.statusCls)} {locale === "zh-CN"
-                    ? ({ online: "空闲", busy: "运行中", offline: "离线" }[m.statusCls] ?? m.statusCls)
-                    : ({ online: "Idle", busy: "Running", offline: "Offline" }[m.statusCls] ?? m.statusCls)}
+                  {statusIcon(m.statusCls)} {statusLabel(m.statusCls)}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#555" }}>
                 <span style={{ fontWeight: 600 }}>{t("task.title", locale)}:</span> {m.currentTask}
               </div>
               <div style={{ fontSize: 12, color: "#555", display: "flex", gap: 16 }}>
-                <span>🧩 {m.skills} skills</span>
+                <span>🧩 {m.skills} {t("mgr.skills", locale)}</span>
                 <span>📋 {t("mgr.lastActivity", locale)}: {m.lastActivity}</span>
               </div>
               <div style={{ display: "flex", gap: 6, marginTop: 4 }}>

@@ -28,6 +28,7 @@ import { AoiStation } from "./aoi/AoiStation";
 import { FctStation } from "./quality/stations/FctStation";
 import { AutoLineStation } from "./quality/stations/AutoLineStation";
 import { authApi, authStorage, wmsApi, pmcApi, bomApi, mesApi, qualityApi } from "./api";
+import { apiClient } from "./api/client";
 import {
   PanelLeft,
   PanelLeftClose,
@@ -68,16 +69,22 @@ import {
   Receipt,
   Palette,
 } from "lucide-react";
-import type { CustomerPo, FactoryLine, InspectionRecord, Locale, MaterialLot, StatusTone, TraceEvent, WorkOrder } from "../../../packages/shared-types/src/factory";
+import type { CustomerPo, FactoryLine, InspectionRecord, Locale, MaterialLot, QuoteConversionRow, RmaRequest, ServiceTicket, StatusTone, TraceEvent, WorkOrder } from "../../../packages/shared-types/src/factory";
 
 import type { TranslationKey } from "./i18n";
 import { AuthSignIn, type SignInResult } from "./auth/AuthSignIn";
 import { localeLabels, locales, t, text } from "./i18n";
-import { customerPos, demoDirectory, feederBindings, lines, materialLots, metrics, roleMatrix, traceEvents, workOrders, supplementaryMaterials, financeInvoices, payments, costSummaries, salesQuotes, salesOrders, quoteConversions, serviceTickets, rmaRequests, rmaRepairRecords } from "./data";
+import { roleMatrix } from "./data";
 import { AdminLineManagement } from "./admin/AdminLineManagement";
 import { UserAuthorizationManager } from "./admin/UserAuthorizationManager";
 import { PdaAccessConfiguration } from "./admin/PdaAccessConfiguration";
+import { PdaAppCatalogManager } from "./admin/PdaAppCatalogManager";
+import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
+import { AdminDataSources } from "./admin/AdminDataSources";
+import { WmsIqcTemplates } from "./wms/WmsIqcTemplates";
+import { WmsGraftedOps } from "./wms/WmsGraftedOps";
+import { WmsMaterialSubstitution } from "./wms/WmsMaterialSubstitution";
 import type { WmsTabKey } from "./wms";
 import { QmsApp } from "./qms";
 import { WmsNonIqcClosedLoop } from "./wms/WmsNonIqcClosedLoop";
@@ -89,12 +96,11 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsTransactions, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound } from "./wms";
+import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsRjvnClassic, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips, WmsOverPicking, WmsRework, WmsSupplierDebt, WmsDefectiveMove, WmsMrb, WmsSupplierReturnOrder, WmsNotices } from "./wms";
 import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
-import { WmsSupplierLabel } from "./wms/WmsSupplierLabel";
+import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
 import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
 import { WmsIqcInspectionLevels } from "./wms/WmsIqcInspectionLevels";
-import { IqcVirtualEmployeeDock } from "./wms/IqcVirtualEmployeeDock";
 import { QmsDashboard, QmsOqcBatches, QmsNgCases, QmsEightD } from "./qms";
 import type { PmcTabKey } from "./pmc";
 import { pmcTabKeys, pmcTabTranslationKeys, PmcDashboard, PmcWorkOrderList, PmcWorkOrderDetail, PmcCreateWorkOrder,
@@ -120,15 +126,17 @@ import { ReportsDashboard } from "./reports";
 import type { MesTabKey } from "./mes";
 import { mesThemes } from "./mes";
 import { getMesContribution } from "./mes";
-import { mesGroups, mesTabKeys, mesTabTranslationKeys, ProcessFlow, StationWorkflow, ProcessDocumentation, ProcessManagement, FoolProofRules, FeederPreparationMapping, FirstArticleInspectionPage, MaterialVerificationPage, RetestRules, StagnationTracking, ScrapRegistration, TraceabilitySearch, StationOperator, TimeControl, MaterialLoadingDashboard, MaterialLoadingWorkflow, MaterialDispatchBoard, StationTypeList, StationMaster, RepairWorkflow, ProductionLineDashboard, AutoLineDashboard, ReworkDashboard, NgRevivalManagement, NgRealtimeTracking, NgRouteConfigurator, NgManagementPage, NgClosedLoopBoard, PassShortageManagement, PackagingBoxManagement, QrWorkOrderManagement, PdaLoadDashboard, MesManagerConsole, MesOverview, JourneySearch, BomReconciliation, PdaDeviceManagement, PdaUnifiedScanning, PdaOnlineMonitor, MaterialRollQrGenerator, SmtLoading3dSimulator, SmtMaterialBindingTable } from "./mes";
+import { mesGroups, mesTabKeys, mesTabTranslationKeys, ProcessFlow, StationWorkflow, ProcessDocumentation, ProcessManagement, FoolProofRules, FeederPreparationMapping, FirstArticleInspectionPage, MaterialVerificationPage, RetestRules, StagnationTracking, ScrapRegistration, TraceabilitySearch, StationOperator, StationPassConsole, TimeControl, MaterialLoadingDashboard, MaterialLoadingWorkflow, MaterialDispatchBoard, StationTypeList, StationMaster, RepairWorkflow, ProductionLineDashboard, AutoLineDashboard, ReworkDashboard, NgRevivalManagement, NgRealtimeTracking, NgRouteConfigurator, NgManagementPage, NgClosedLoopBoard, PassShortageManagement, PackagingBoxManagement, QrWorkOrderManagement, PdaLoadDashboard, MesManagerConsole, MesOverview, JourneySearch, BomReconciliation, PdaDeviceManagement, PdaUnifiedScanning, PdaOnlineMonitor, MaterialRollQrGenerator, SmtLoading3dSimulator, SmtMaterialBindingTable } from "./mes";
 import { AiChat } from "./ai/AiChat";
 import { SmtMaterialExemptions } from "./mes/SmtMaterialExemptions";
 import { SmtMaterialLoadingPage } from "./mes/SmtMaterialLoadingPage";
+import { OqcAqlConsole } from "./qms/OqcAqlConsole";
 import { AiPatrolChat } from "./ai/AiPatrolChat";
 import { qualityPatrol, maintenancePatrol, mesPatrol, hrPatrol } from "./ai/patrol";
 import { Projects } from "./projects/Projects";
 import { ProjectMgmt } from "./project-mgmt";
 import { AgentsModule } from "./agents/AgentsModule";
+import { GlobalVirtualEmployeeGuide } from "./agents/GlobalVirtualEmployeeGuide";
 import { EmployeePanel } from "./employee/EmployeePanel";
 import { ManagerDashboard } from "./manager-dashboard/ManagerDashboard";
 import { WorkflowDashboard } from "./workflow/WorkflowDashboard";
@@ -142,9 +150,10 @@ import { EfficiencyAmbassador } from "./manager-dashboard/EfficiencyAmbassador";
 import { SwiftnessAmbassador } from "./manager-dashboard/SwiftnessAmbassador";
 import { CollaborationAmbassador } from "./manager-dashboard/CollaborationAmbassador";
 import { OaModule } from "./oa";
+import { MesrjModule } from "./mesrj";
 import { User } from "lucide-react";
 
-type ModuleKey = "smtLine3d" | "mobile" | "smtReelConsumption" | "groupLeaderPda" | "pdaUiDesigner" | "managementUiDesigner" | "dashboard" | "pmc" | "wms" | "mes" | "quality" | "trace" | "reports" | "admin" | "hr" | "maintenance" | "ai" | "finance" | "sales" | "service" | "bom" | "andonBoard" | "projects" | "projectMgmt" | "agents" | "employee" | "managerDashboard" | "safetyManager" | "pdaCommMonitor" | "ambassadorDashboard" | "effectivenessAmbassador" | "efficiencyAmbassador" | "swiftnessAmbassador" | "collaborationAmbassador" | "procurement" | "einvoice" | "workflow" | "oa" | "manualLine3d" | "pdaAgent3d" | "aoiAgent3d" | "ictAgent3d" | "fctAgent3d" | "assemblyAteAgent3d" | "supersonicAgent3d" | "agingCabAgent3d" | "highVoltAteAgent3d" | "packingAteAgent3d" | "outerBoxBindingAgent3d" | "depanelAgent3d" | "qrbindingAgent2d" | "qrbindingAgent3d" | "mesManagerConsole" | "team" | "mobileleave" | "dashboard" | "qms";
+type ModuleKey = "smtLine3d" | "mobile" | "smtReelConsumption" | "groupLeaderPda" | "pdaUiDesigner" | "managementUiDesigner" | "dashboard" | "pmc" | "wms" | "mes" | "mesrj" | "quality" | "trace" | "reports" | "admin" | "hr" | "maintenance" | "ai" | "finance" | "sales" | "service" | "bom" | "andonBoard" | "projects" | "projectMgmt" | "agents" | "employee" | "managerDashboard" | "safetyManager" | "pdaCommMonitor" | "ambassadorDashboard" | "effectivenessAmbassador" | "efficiencyAmbassador" | "swiftnessAmbassador" | "collaborationAmbassador" | "procurement" | "einvoice" | "workflow" | "oa" | "manualLine3d" | "pdaAgent3d" | "aoiAgent3d" | "ictAgent3d" | "fctAgent3d" | "assemblyAteAgent3d" | "supersonicAgent3d" | "agingCabAgent3d" | "highVoltAteAgent3d" | "packingAteAgent3d" | "outerBoxBindingAgent3d" | "depanelAgent3d" | "qrbindingAgent2d" | "qrbindingAgent3d" | "mesManagerConsole" | "team" | "mobileleave" | "dashboard" | "qms";
 
 const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge }> = [
   { key: "dashboard", label: "nav.dashboard", icon: Gauge },
@@ -152,7 +161,7 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
   { key: "wms", label: "nav.wms", icon: Boxes },
   { key: "bom", label: "nav.bom", icon: ClipboardList },
   { key: "mes", label: "nav.mes", icon: Factory },
-  { key: "smtReelConsumption", label: "nav.mes", icon: Activity },
+  { key: "smtReelConsumption", label: "nav.smtReelConsumption", icon: Activity },
   { key: "pdaUiDesigner", label: "nav.pdaUiDesigner", icon: LayoutDashboard },
   { key: "managementUiDesigner", label: "nav.managementUiDesigner", icon: Palette },
   { key: "andonBoard", label: "nav.andon", icon: Activity },
@@ -411,18 +420,81 @@ function TableShell({ children }: { children: ReactNode }) {
  * - "hr" / "maintenance" are UI-only modules (no backend permission)
  * - "erp" is defined in MODULE_ACCESS_PERMISSION but has no UI tab
  */
+/**
+ * Modules that make up the full workspace — used by roles that own the whole
+ * system (admin, plant_manager) so the sidebar never depends on a per-role list.
+ */
+const FULL_MODULES: ModuleKey[] = [
+  "dashboard", "pmc", "wms", "bom", "mes", "smtReelConsumption", "quality", "qms", "trace",
+  "reports", "admin", "hr", "mobile", "maintenance", "finance", "sales", "service",
+  "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee",
+  "managerDashboard", "workflow", "oa", "andonBoard", "manualLine3d", "mesrj",
+];
+
 const roleModuleAccess: Record<string, ModuleKey[]> = {
-  pmc: ["dashboard", "pmc", "bom", "trace", "mobile"],
+  admin: FULL_MODULES,
+  plant_manager: FULL_MODULES,
+  management: ["dashboard", "reports", "trace", "finance", "sales", "service", "procurement", "einvoice", "hr", "ai", "managerDashboard", "workflow", "oa", "manualLine3d"],
+  pmc: ["dashboard", "pmc", "bom", "trace", "mobile", "reports"],
   warehouse: ["dashboard", "wms", "trace", "mobile", "manualLine3d"],
+  material_receiver: ["dashboard", "wms", "quality", "trace", "mobile"],
   iqc: ["dashboard", "wms", "quality", "qms", "mobile", "manualLine3d"],
+  oqc: ["dashboard", "quality", "qms", "trace", "mes", "mobile", "manualLine3d"],
   scanner: ["dashboard", "mes", "mobile"],
   employee: ["dashboard", "employee", "mobile"],
   smt_operator: ["dashboard", "mes", "wms", "mobile", "team", "mobileleave", "manualLine3d"],
   quality: ["dashboard", "quality", "qms", "trace", "mobile", "manualLine3d"],
+  rework: ["dashboard", "mes", "quality", "qms", "manualLine3d"],
   engineering: ["dashboard", "mes", "quality", "qms", "trace", "maintenance", "mobile"],
-  admin: ["dashboard", "pmc", "wms", "bom", "mes", "quality", "qms", "trace", "reports", "admin", "hr", "mobile", "maintenance", "finance", "sales", "service", "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee", "managerDashboard", "workflow", "oa", "manualLine3d"],
-  management: ["dashboard", "reports", "trace", "finance", "sales", "service", "procurement", "einvoice", "hr", "ai", "managerDashboard", "workflow", "oa", "manualLine3d"],
+  line_manager_smt: ["dashboard", "mes", "quality", "qms", "trace", "reports", "maintenance", "mobile", "manualLine3d"],
+  line_manager_manual: ["dashboard", "mes", "quality", "qms", "trace", "reports", "maintenance", "mobile", "manualLine3d"],
+  line_manager_auto: ["dashboard", "mes", "quality", "qms", "trace", "reports", "maintenance", "mobile", "manualLine3d"],
+  production_transport: ["dashboard", "wms", "mes", "mobile"],
+  finance: ["dashboard", "finance", "einvoice", "procurement", "reports", "trace"],
+  purchasing: ["dashboard", "procurement", "wms", "reports", "trace"],
+  customer_service: ["dashboard", "sales", "service", "reports"],
+  hr_manager: ["dashboard", "hr", "employee", "reports", "workflow", "oa"],
+  reports_admin: ["dashboard", "reports", "trace", "managerDashboard"],
+  reports_viewer: ["dashboard", "reports"],
 };
+
+/**
+ * Fallback for roles that exist in the DB but have no explicit entry above:
+ * derive the sidebar from the permissions the login actually granted, so a new
+ * role never renders an empty navigation bar.
+ */
+const permissionModuleMap: Array<[string, ModuleKey[]]> = [
+  ["admin.", ["admin"]],
+  ["wms.", ["wms"]],
+  ["mes.", ["mes"]],
+  ["pmc.", ["pmc"]],
+  ["quality.", ["quality"]],
+  ["qms.", ["qms"]],
+  ["traceability.", ["trace"]],
+  ["finance.", ["finance"]],
+  ["procurement.", ["procurement"]],
+  ["sales.", ["sales"]],
+  ["service.", ["service"]],
+  ["maintenance.", ["maintenance"]],
+  ["einvoice.", ["einvoice"]],
+  ["hr.", ["hr"]],
+  ["reports.", ["reports"]],
+  ["ai.", ["ai"]],
+  ["management.", ["managerDashboard", "workflow"]],
+  ["master_data.", ["bom"]],
+];
+
+function resolveModuleAccess(user: SignInResult): ModuleKey[] {
+  const byRole = roleModuleAccess[user.roleKey];
+  if (byRole && byRole.length > 0) return byRole;
+  const derived = new Set<ModuleKey>(["dashboard"]);
+  for (const permission of user.permissions ?? []) {
+    for (const [prefix, mods] of permissionModuleMap) {
+      if (permission.startsWith(prefix)) mods.forEach((m) => derived.add(m));
+    }
+  }
+  return [...derived];
+}
 
 // ── Heartbeat / System Health ─────────────────────────────────────
 
@@ -1450,6 +1522,9 @@ function SalesOrderDetail({ id, locale, canManage, onBack }: { id: number; local
 }
 
 function SalesConversionReport({ locale }: { locale: Locale }) {
+  // No route serves quote conversions yet, so the table renders empty instead of showing
+  // fabricated quotes in production.
+  const quoteConversions: QuoteConversionRow[] = [];
   return (
     <SurfacePanel>
       <SectionHeader title={t("sales.conversion", locale)} subtitle={t("page.sales", locale)} />
@@ -1512,7 +1587,10 @@ const serviceTabTranslationKeys: Record<ServiceTabKey, TranslationKey> = {
 function Service({ locale, permissions }: { locale: Locale; permissions: string[] }) {
   const [activeTab, setActiveTab] = useState<ServiceTabKey>("dashboard");
   const canManage = permissions.includes("service.manage");
-
+  // customer_service_tickets / rma_requests exist in the schema but no API route serves
+  // them yet, so the panel shows an empty state instead of demo tickets.
+  const serviceTickets: ServiceTicket[] = [];
+  const rmaRequests: RmaRequest[] = [];
   const openTickets = serviceTickets.filter((t) => t.status === "open" || t.status === "in_progress").length;
   const overdueTickets = serviceTickets.filter((t) => {
     if (t.status === "resolved" || t.status === "closed") return false;
@@ -1582,6 +1660,8 @@ function Service({ locale, permissions }: { locale: Locale; permissions: string[
 }
 
 function ServiceTicketList({ locale, canManage, onNew }: { locale: Locale; canManage: boolean; onNew: () => void }) {
+  // customer_service_tickets has no API route yet: empty state, never demo rows.
+  const serviceTickets: ServiceTicket[] = [];
   return (
     <SurfacePanel>
       <SectionHeader
@@ -1624,6 +1704,8 @@ function ServiceTicketList({ locale, canManage, onNew }: { locale: Locale; canMa
 }
 
 function ServiceRmaList({ locale, canManage, onNew }: { locale: Locale; canManage: boolean; onNew: () => void }) {
+  // rma_requests has no API route yet: empty state, never demo rows.
+  const rmaRequests: RmaRequest[] = [];
   return (
     <SurfacePanel>
       <SectionHeader
@@ -1741,7 +1823,7 @@ function Maintenance({ locale }: { locale: Locale }) {
   );
 }
 
-function Wms({ locale, permissions }: { locale: Locale; permissions: string[] }) {
+function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: string[]; roleKey: string }) {
   const [activeTab, setActiveTab] = useState<WmsTabKey>(() => {
     const requested = new URLSearchParams(window.location.search).get("wmsTab") as WmsTabKey | null;
     return requested && Object.prototype.hasOwnProperty.call(wmsTabTranslationKeys, requested)
@@ -1771,6 +1853,14 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
   const renderActiveView = () => {
     switch (activeTab) {
       case "dashboard": return <WmsDashboard locale={locale} />;
+      case "rjvnData": return <WmsRjvnData locale={locale} />;
+      case "rjvnIqc": return <WmsRjvnIqc locale={locale} />;
+      case "rjvnReceipt": return <WmsRjvnReceipt locale={locale} />;
+      case "rjvnInventory": return <WmsRjvnInventory locale={locale} />;
+      case "rjvnPicking": return <WmsRjvnPicking locale={locale} />;
+      case "rjvnDocFlow": return <WmsRjvnDocFlow locale={locale} />;
+      case "rjvnCanonical": return <WmsCanonicalData locale={locale} />;
+      case "rjvnClassic": return <WmsRjvnClassic locale={locale} roleKey={roleKey} />;
       case "receiving": return <WmsReceiving locale={locale} />;
       case "returnReceive": return <WmsReturnReceiving locale={locale} />;
       case "supplierReturn": return <WmsSupplierReturn locale={locale} />;
@@ -1794,17 +1884,24 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "iqcReport": return <WmsIqcReport locale={locale} />;
       case "iqcStandards": return <WmsIqcStandards locale={locale} />;
       case "supplierKpi": return <WmsSupplierKpi locale={locale} />;
-      case "supplierManagement": return <WmsSupplierManagement locale={locale} />;
+      case "supplierManagement": return <WmsSupplierManagement locale={locale} roleKey={roleKey} />;
       case "qualityTrend": return <WmsQualityTrend locale={locale} />;
       case "putaway": return <WmsPutAway locale={locale} />;
       case "inventory": return <WmsInventory locale={locale} />;
       case "picking": return <WmsPicking locale={locale} />;
       case "issue": return <WmsIssue locale={locale} />;
+      case "woHandover": return <WmsWoHandover locale={locale} />;
+      case "slips": return <WmsSlips locale={locale} />;
       case "cycleCount": return <WmsCycleCount locale={locale} />;
       case "transferAdjust": return <WmsTransferAdjust locale={locale} />;
       case "expiryControl": return <WmsExpiryControl locale={locale} />;
+      case "iqcTemplates": return <WmsIqcTemplates locale={locale} />;
+      case "graftOps": return <WmsGraftedOps locale={locale} />;
+      case "substitution": return <WmsMaterialSubstitution locale={locale} />;
       case "fifoMonitor": return <WmsFifoMonitor locale={locale} />;
       case "transactions": return <WmsTransactions locale={locale} />;
+      case "materialConsumption": return <WmsMaterialConsumption locale={locale} />;
+      case "materialDistribution": return <WmsMaterialDistribution locale={locale} />;
       case "traceability": return <WmsTraceability locale={locale} />;
       case "materialTrace": return <WmsMaterialTraceRoute locale={locale} />;
       case "wms3dFlow": return <Suspense fallback={<div className="surface-panel"><div className="placeholder-view">Loading 3D WMS flow...</div></div>}><LazyWms3dFlow locale={locale} /></Suspense>;
@@ -1842,12 +1939,11 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "pdaHistory": return <WmsPdaHistory locale={locale} />;
       case "inboundOrders": return <WmsInboundOrders />;
       case "outboundOrders": return <WmsOutboundOrders />;
-      case "requisitions": return <WmsRequisitions />;
+      case "requisitions": return <WmsRequisitions locale={locale} />;
       case "returnSlips": return <WmsReturnSlips />;
       case "replenishments": return <WmsReplenishments locale={locale} />;
       case "syncHealth": return <WmsSyncHealth locale={locale} />;
       case "incoming": return <WmsIncoming locale={locale} />;
-      case "supplierLabel": return <WmsSupplierLabel locale={locale} />;
       case "materialReceiving": return <WmsMaterialReceiving locale={locale} />;
       case "materialLoading": return <WmsMaterialLoading locale={locale} />;
       case "smtClosedLoop": return <WmsSmtClosedLoop locale={locale} />;
@@ -1860,6 +1956,13 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       case "oqc": return <QmsOqcBatches locale={locale} />;
       case "ngManagement": return <QmsNgCases locale={locale} />;
       case "eightD": return <QmsEightD locale={locale} />;
+      case "overPicking": return <WmsOverPicking locale={locale} />;
+      case "rework": return <WmsRework locale={locale} />;
+      case "supplierDebt": return <WmsSupplierDebt locale={locale} />;
+      case "defectiveMove": return <WmsDefectiveMove locale={locale} />;
+      case "mrb": return <WmsMrb locale={locale} />;
+      case "supplierReturnOrder": return <WmsSupplierReturnOrder locale={locale} />;
+      case "notices": return <WmsNotices locale={locale} />;
       default:
         return (
           <SurfacePanel>
@@ -1926,7 +2029,6 @@ function Wms({ locale, permissions }: { locale: Locale; permissions: string[] })
       )}
 
       {!isMenuPage && renderActiveView()}
-      {activeTab !== "iqc" && <IqcVirtualEmployeeDock locale={locale} />}
     </div>
   );
 }
@@ -1989,8 +2091,17 @@ function Mes({ locale }: { locale: Locale }) {
         return <SmtMaterialBindingTable />;
       case "smtLoading3d":
         return <SmtLoading3dSimulator />;
-      case "tooljetSmtLoading":
-        return <iframe title="ToolJet SMT 实时上料控制台" src="/tooljet-smt-loading-demo.html" style={{ width: "100%", height: "calc(100vh - 120px)", minHeight: 760, border: 0, borderRadius: 12, display: "block", background: "#f6f9fa" }} />;
+      case "mesrjHome":
+        // 瑞晶 MES（原 #mesrj 独立模块）按业务域分散到各 MES 分组，组内保留原菜单层级
+        return <MesrjModule locale={locale} groups={["home"]} />;
+      case "mesrjMaterial":
+        return <MesrjModule locale={locale} groups={["md", "bom", "plan", "order", "erp"]} />;
+      case "mesrjExec":
+        return <MesrjModule locale={locale} groups={["exec", "smt", "dev"]} />;
+      case "mesrjQuality":
+        return <MesrjModule locale={locale} groups={["qc", "report"]} />;
+      case "mesrjCfg":
+        return <MesrjModule locale={locale} groups={["route", "cfg", "sys"]} />;
       case "smtExemptions":
         return <SmtMaterialExemptions locale={locale} />;
       case "smtLoader":
@@ -2007,6 +2118,10 @@ function Mes({ locale }: { locale: Locale }) {
         return <JourneySearch locale={locale} />;
       case "stationOperator":
         return <StationOperator locale={locale} />;
+      case "stationPass":
+        return <StationPassConsole locale={locale} />;
+      case "oqcAql":
+        return <OqcAqlConsole locale={locale} />;
       case "repair":
         return <RepairWorkflow locale={locale} />;
       case "retestRules":
@@ -2562,6 +2677,23 @@ function Quality({ locale }: { locale: Locale }) {
 
 function Trace({ locale }: { locale: Locale }) {
   const [query, setQuery] = useState("PCB2606160100084172");
+  // The chain used to be a fabricated demo timeline. /traceability/events is the real
+  // source; until it answers, the timeline is empty rather than invented.
+  const [traceEvents, setTraceEvents] = useState<TraceEvent[]>([]);
+  useEffect(() => {
+    let alive = true;
+    apiClient
+      .get<{ items?: TraceEvent[] }>("/traceability/events", { params: { limit: 50 } })
+      .then((res) => {
+        if (alive) setTraceEvents(Array.isArray(res?.items) ? res.items : []);
+      })
+      .catch(() => {
+        if (alive) setTraceEvents([]);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   return (
     <div className="screen-stack">
@@ -2629,7 +2761,7 @@ function Trace({ locale }: { locale: Locale }) {
 }
 
 function Admin({ locale }: { locale: Locale }) {
-  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "lines" | "services" | "databases">("overview");
+  const [adminTab, setAdminTab] = useState<"overview" | "authorization" | "pdaAppAssignment" | "pdaCatalog" | "lines" | "services" | "databases" | "dataSources">("overview");
   const dependencyItems = [
     { label: "admin.dep.auth", detail: "admin.dep.authDetail" },
     { label: "admin.dep.live", detail: "admin.dep.liveDetail" },
@@ -2646,6 +2778,7 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
           </div>
         </SurfacePanel>
         <AdminLineManagement locale={locale} />
@@ -2661,6 +2794,8 @@ function Admin({ locale }: { locale: Locale }) {
           <div className="toolbar">
             <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
             <button type="button" className="active">用户授权</button>
+            <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+            <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
             <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
@@ -2668,6 +2803,46 @@ function Admin({ locale }: { locale: Locale }) {
         </SurfacePanel>
         <UserAuthorizationManager />
         <PdaAccessConfiguration />
+      </div>
+    );
+  }
+
+  if (adminTab === "pdaAppAssignment") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title="PDA用户权限" subtitle="为用户分配PDA应用菜单 — 蒙营和莫立斌可操作" />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+            <button type="button" className="active">PDA用户权限</button>
+            <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+          </div>
+        </SurfacePanel>
+        <UserPdaAppAssignment />
+      </div>
+    );
+  }
+
+  if (adminTab === "pdaCatalog") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title="PDA应用目录" subtitle="管理PDA应用角色定义 — 添加、编辑、启用/停用" />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+            <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+            <button type="button" className="active">PDA应用目录</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+          </div>
+        </SurfacePanel>
+        <PdaAppCatalogManager />
       </div>
     );
   }
@@ -2699,9 +2874,28 @@ function Admin({ locale }: { locale: Locale }) {
             <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
             <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" className="active">{t("admin.databases.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
           </div>
         </SurfacePanel>
         <StationDatabaseManagement locale={locale} />
+      </div>
+    );
+  }
+
+  if (adminTab === "dataSources") {
+    return (
+      <div className="screen-stack">
+        <SurfacePanel>
+          <SectionHeader title={locale === "zh-CN" ? "外部数据源" : "External data sources"} subtitle={locale === "zh-CN" ? "登记外部数据库并把表同步到本库暂存 schema" : "Register external databases and stage their tables locally"} />
+          <div className="toolbar">
+            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" className="active">{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+          </div>
+        </SurfacePanel>
+        <AdminDataSources locale={locale} />
       </div>
     );
   }
@@ -2713,7 +2907,10 @@ function Admin({ locale }: { locale: Locale }) {
         <div className="toolbar">
           <button type="button" className="active" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
           <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+          <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+          <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
           <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+          <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
           <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
           <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
         </div>
@@ -2939,20 +3136,9 @@ export function App() {
     if (initHash === "group-leader-pda") {
       return { token: "", username: "PLANT_MANAGER", displayName: "Plant Manager", roleKey: "LINE_MANAGER", locale: "en-US", permissions: ["mes.view", "mes.execute", "smt.loading.approve", "pmc.work_order.release"] };
     }
-    // Map demo usernames to the backend login name (only "admin" exists in hr_employees)
-    const backendLogin = result.username === "ADMIN_VN_01" ? "admin" : result.username;
-    try {
-      const backendPassword = result.username === "MENG_YING" ? "my" : "Factory@123";
-      const loginResult = await authApi.login(backendLogin, backendPassword);
-      if (loginResult.token) {
-        // Merge API user data (roleKey + permissions) with demo session data
-        const apiUser = loginResult.user;
-        const mergedUser = { ...result, roleKey: apiUser.roleKey, permissions: apiUser.permissions ?? [] };
-        sessionStorage.setItem("demo_user", JSON.stringify(mergedUser));
-        setCurrentUser(mergedUser);
-        return; // skip setCurrentUser below — already set with merged data
-      }
-    } catch (_) { /* non-fatal */ }
+    // No credential fallback: AuthSignIn has already authenticated the operator
+    // and returned a JWT, so the account is used as-is. Re-authenticating with a
+    // guessed password here would put a literal credential back in the bundle.
     setCurrentUser(result);
   }
 
@@ -2966,7 +3152,7 @@ export function App() {
     pmc: <Pmc locale={locale} permissions={currentUser.permissions} />,
     mobile: <MobileCheckin locale={locale} />,
     qms: <QmsApp locale={locale} />,
-    wms: <Wms locale={locale} permissions={currentUser.permissions} />,
+    wms: <Wms locale={locale} permissions={currentUser.permissions} roleKey={currentUser.roleKey} />,
     bom: <Bom locale={locale} />,
     mes: <Mes locale={locale} />,
     quality: <Quality locale={locale} />,
@@ -2988,7 +3174,8 @@ export function App() {
     employee: <EmployeePanel locale={locale} employeeId={Number(currentUser.username.replace(/\D/g, "")) || 1} onSignOut={async () => { sessionStorage.removeItem("demo_user"); sessionStorage.removeItem("auth_token"); await authApi.logout(); setCurrentUser(null); }} />,
     managerDashboard: <ManagerDashboard locale={locale} />,
     workflow: <WorkflowDashboard locale={locale} />,
-    oa: <OaModule locale={locale} />,
+    oa: <OaModule locale={locale} currentUsername={currentUser.username} roleKey={currentUser.roleKey} />,
+    mesrj: <MesrjModule locale={locale} />,
     manualLine3d: <LazyManualLineDashboard />,
     pdaAgent3d: <LazyPdaStationMonitor locale={locale} />,
     aoiAgent3d: <LazyAoiStationMonitor locale={locale} />,
@@ -3102,6 +3289,7 @@ export function App() {
       }
     }}>
       {content}
+      <GlobalVirtualEmployeeGuide moduleKey={active} locale={locale} />
     </Shell>
   );
 }

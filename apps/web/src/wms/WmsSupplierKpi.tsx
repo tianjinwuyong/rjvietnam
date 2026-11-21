@@ -14,16 +14,6 @@ interface SupplierKpi {
   monthlyTrend: number[];
 }
 
-const mockSuppliers: SupplierKpi[] = [
-  { code: "SUP-001", name: "深圳华新电子", defectRate: 1.2, onTimeDelivery: 97, rejectCount: 3, totalLots: 42, avgLeadTimeDays: 7, monthlyTrend: [98, 96, 97, 95, 97, 98] },
-  { code: "SUP-002", name: "东莞利尔电子", defectRate: 2.8, onTimeDelivery: 88, rejectCount: 5, totalLots: 28, avgLeadTimeDays: 10, monthlyTrend: [85, 87, 90, 86, 88, 88] },
-  { code: "SUP-003", name: "香港泰科源", defectRate: 0.5, onTimeDelivery: 99, rejectCount: 1, totalLots: 35, avgLeadTimeDays: 14, monthlyTrend: [99, 99, 98, 99, 100, 99] },
-  { code: "SUP-DG-CONN", name: "东莞连接器厂", defectRate: 4.5, onTimeDelivery: 82, rejectCount: 8, totalLots: 18, avgLeadTimeDays: 5, monthlyTrend: [80, 78, 83, 85, 82, 82] },
-  { code: "SUP-HN-PCB", name: "河南PCB科技", defectRate: 3.2, onTimeDelivery: 91, rejectCount: 4, totalLots: 22, avgLeadTimeDays: 12, monthlyTrend: [90, 92, 91, 89, 91, 91] },
-  { code: "SUP-TPE-RES", name: "台北电阻厂", defectRate: 0.8, onTimeDelivery: 96, rejectCount: 2, totalLots: 31, avgLeadTimeDays: 8, monthlyTrend: [95, 96, 97, 95, 96, 96] },
-  { code: "SUP-SH-IC", name: "上海IC代理", defectRate: 0.3, onTimeDelivery: 98, rejectCount: 1, totalLots: 15, avgLeadTimeDays: 21, monthlyTrend: [98, 99, 98, 97, 98, 98] },
-  { code: "SUP-SZ-LED", name: "深圳LED厂", defectRate: 5.1, onTimeDelivery: 75, rejectCount: 6, totalLots: 12, avgLeadTimeDays: 9, monthlyTrend: [72, 74, 78, 75, 75, 75] },
-];
 
 function qualityScore(s: SupplierKpi): number {
   const defectScore = Math.max(0, 100 - s.defectRate * 10);
@@ -33,17 +23,18 @@ function qualityScore(s: SupplierKpi): number {
 }
 
 export function WmsSupplierKpi({ locale }: { locale: Locale }) {
+  const suppliers: SupplierKpi[] = [];
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
 
   const filtered = useMemo(() =>
-    mockSuppliers.filter((s) => !searchQ || s.name.includes(searchQ) || s.code.includes(searchQ)),
+    suppliers.filter((s) => !searchQ || s.name.includes(searchQ) || s.code.includes(searchQ)),
     [searchQ]
   );
 
-  const avgDefect = mockSuppliers.reduce((s, x) => s + x.defectRate, 0) / mockSuppliers.length;
-  const avgDelivery = mockSuppliers.reduce((s, x) => s + x.onTimeDelivery, 0) / mockSuppliers.length;
-  const avgLead = mockSuppliers.reduce((s, x) => s + x.avgLeadTimeDays, 0) / mockSuppliers.length;
+  const avgDefect = suppliers.length ? suppliers.reduce((s, x) => s + x.defectRate, 0) / suppliers.length : 0;
+  const avgDelivery = suppliers.length ? suppliers.reduce((s, x) => s + x.onTimeDelivery, 0) / suppliers.length : 0;
+  const avgLead = suppliers.length ? suppliers.reduce((s, x) => s + x.avgLeadTimeDays, 0) / suppliers.length : 0;
 
   return (
     <div className="screen-stack">
@@ -61,7 +52,7 @@ export function WmsSupplierKpi({ locale }: { locale: Locale }) {
       <section className="surface-panel">
         <div style={{ display: "flex", gap: 16 }}>
           {[
-            { label: t("wms.totalSuppliers", locale), value: mockSuppliers.length, icon: <Truck size={18} />, color: "var(--info)" },
+            { label: t("wms.totalSuppliers", locale), value: suppliers.length, icon: <Truck size={18} />, color: "var(--info)" },
             { label: t("wms.avgDefectRate", locale), value: `${avgDefect.toFixed(1)}%`, icon: <TrendingDown size={18} />, color: avgDefect < 2 ? "var(--ok)" : avgDefect < 4 ? "var(--warn)" : "var(--danger)" },
             { label: t("wms.avgDeliveryRate", locale), value: `${avgDelivery.toFixed(1)}%`, icon: <TrendingUp size={18} />, color: avgDelivery >= 90 ? "var(--ok)" : "var(--warn)" },
             { label: t("wms.avgLeadTime", locale), value: `${avgLead.toFixed(1)}d`, icon: <Star size={18} />, color: "var(--muted)" },

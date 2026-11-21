@@ -1,0 +1,67 @@
+- generic [ref=e2]:
+  - generic [ref=e73]:
+    - complementary [ref=e74]:
+      - button "隐藏侧边栏" [ref=e76] [cursor=pointer]
+      - generic [ref=e83]:
+        - strong [ref=e84]: 越南瑞晶 SMT 工厂系统
+        - text: 统一的ERP/PMC/WMS/MES/质量/追溯/报表平台
+      - generic [ref=e85]:
+        - generic [ref=e86]:
+          - generic [ref=e87]: 越南工厂
+          - strong [ref=e88]: VN-01
+        - generic [ref=e89]:
+          - generic [ref=e90]: 当前班次
+          - strong [ref=e91]: Day / A
+        - generic [ref=e92]:
+          - generic [ref=e93]: 数据同步
+          - strong [ref=e94]: 06:14
+      - generic [ref=e95]:
+        - generic [ref=e96]:
+          - generic [ref=e97]: 计划与仓储
+          - generic [ref=e98]
+        - generic [ref=e135]:
+          - generic [ref=e136]: 产线与质量
+          - generic [ref=e137]
+        - generic [ref=e159]:
+          - generic [ref=e160]: 分析与管理
+          - generic [ref=e161]
+        - generic [ref=e229]:
+          - generic [ref=e230]: 项目
+          - button "项目管理" [ref=e232] [cursor=pointer]
+        - generic [ref=e239]:
+          - generic [ref=e240]: 员工
+          - button "员工" [ref=e242] [cursor=pointer]
+      - generic [ref=e248]:
+        - generic [ref=e249]: ADMIN
+        - strong [ref=e250]: 莫立斌
+    - main [ref=e251]:
+      - generic [ref=e252]:
+        - generic [ref=e253]:
+          - button "隐藏侧边栏" [ref=e254] [cursor=pointer]
+          - generic [ref=e258]
+        - generic [ref=e261]:
+          - generic "打开模块" [ref=e262]: 总览
+          - generic "实时数据" [ref=e267]
+          - generic "API OK" [ref=e268]
+          - combobox [ref=e276]
+          - button "退出" [ref=e277] [cursor=pointer]
+      - generic [ref=e278]:
+        - generic [ref=e279]:
+          - article [ref=e280]
+          - article [ref=e284]
+          - article [ref=e288]
+          - article [ref=e292]
+          - article [ref=e296]
+        - generic [ref=e300]:
+          - generic [ref=e301]
+          - generic [ref=e316]
+        - generic [ref=e379]:
+          - generic [ref=e380]
+          - generic [ref=e394]
+        - generic [ref=e416]:
+          - generic [ref=e418]
+          - generic [ref=e421]
+      - complementary [ref=e498]:
+        - button "OPS-SUPERVISOR-VIRTUAL-01 人工输入已满足" [ref=e499] [cursor=pointer]:
+          - generic [ref=e503]
+  - region "Notifications alt+T"

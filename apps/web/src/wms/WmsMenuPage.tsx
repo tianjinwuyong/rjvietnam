@@ -18,6 +18,10 @@ const GROUP_ICONS: Record<WmsMenuGroup["key"], string> = {
   traceability: "🧭",
   msd: "💧",
   quality: "🔬",
+  issuingManagement: "📤",
+  returnsRework: "↩️",
+  basicData: "🗂️",
+  devices: "🤖",
 };
 
 interface MenuButtonProps {

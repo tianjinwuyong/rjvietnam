@@ -143,6 +143,7 @@ export function PmcMaterialIssue({ locale }: { locale: Locale }) {
               <thead>
                 <tr>
                   <th>{t("table.material", locale)}</th>
+                  <th>{locale === "vi-VN" ? "Mã Ruijing" : locale === "zh-CN" ? "瑞晶编码" : "Ruijing code"}</th>
                   <th>{t("pmc.requiredQty", locale)}</th>
                   <th>{t("pmc.pickedQty", locale)}</th>
                   <th>{t("pmc.shortfall", locale)}</th>
@@ -159,6 +160,7 @@ export function PmcMaterialIssue({ locale }: { locale: Locale }) {
                       onClick={() => { setMaterialCode(m.materialCode); }}
                     >
                       <td><strong>{m.materialCode}</strong></td>
+                      <td>{m.ruijingCode || "—"}</td>
                       <td>{m.requiredQty.toLocaleString()}</td>
                       <td style={{ color: "var(--ok)" }}>{m.pickedQty.toLocaleString()}</td>
                       <td style={{ color: shortfall > 0 ? "var(--danger)" : "var(--ok)" }}>

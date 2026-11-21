@@ -15,13 +15,13 @@ const text={
 } as const;
 
 export function WmsSmtClosedLoop({locale}:{locale:Locale}){
-  const w=text[locale], [data,setData]=useState<Dashboard|null>(null),[error,setError]=useState("");
-  const load=useCallback(async()=>{try{setData(await apiClient.get<Dashboard>("/api/wms/smt-loop/dashboard"));setError("");}catch(e){setError(e instanceof Error?e.message:String(e));}},[]);
+  const w=text[locale], [data,setData]=useState<{item:Dashboard}|null>(null),[error,setError]=useState("");
+  const load=useCallback(async()=>{try{const r=await apiClient.get<{item:Dashboard}>("/api/wms/smt-loop/dashboard");setData(r);setError("");}catch(e){setError(e instanceof Error?e.message:String(e));}},[]);
   useEffect(()=>{void load();const timer=setInterval(()=>void load(),15000);return()=>clearInterval(timer);},[load]);
   const metrics=[
-    [w.materials,data?.summary.classified_materials??0,"#2563eb"],[w.sessions,data?.summary.active_loading_sessions??0,"#7c3aed"],
-    [w.bindings,data?.summary.active_bindings??0,"#059669"],[w.placed,data?.summary.placed_qty??0,"#0891b2"],
-    [w.unmatched,data?.summary.unmatched_consumption??0,"#d97706"],[w.exceptions,data?.summary.open_exceptions??0,"#dc2626"]
+    [w.materials,data?.item?.summary?.classified_materials??0,"#2563eb"],[w.sessions,data?.item?.summary?.active_loading_sessions??0,"#7c3aed"],
+    [w.bindings,data?.item?.summary?.active_bindings??0,"#059669"],[w.placed,data?.item?.summary?.placed_qty??0,"#0891b2"],
+    [w.unmatched,data?.item?.summary?.unmatched_consumption??0,"#d97706"],[w.exceptions,data?.item?.summary?.open_exceptions??0,"#dc2626"]
   ];
   return <div className="screen-stack">
     <section className="surface-panel">
@@ -30,10 +30,10 @@ export function WmsSmtClosedLoop({locale}:{locale:Locale}){
       <div className="metric-grid">{metrics.map(([label,value,color])=><div className="metric-card" key={String(label)} style={{borderTop:`4px solid ${color}`}}><span>{label}</span><strong>{value}</strong></div>)}</div>
     </section>
     <section className="surface-panel"><h3>{w.alerts}</h3><div className="table-shell"><table><thead><tr><th>No.</th><th>Severity</th><th>Type</th><th>WO</th><th>Material/SN</th><th>Status</th><th>Time</th></tr></thead><tbody>
-      {data?.exceptions.length?data.exceptions.map(x=><tr key={x.id}><td>{x.exception_no}</td><td style={{color:x.severity==="CRITICAL"?"#dc2626":"#d97706",fontWeight:800}}>{x.severity}</td><td>{x.exception_type}</td><td>{x.work_order_code||"-"}</td><td>{x.material_code||x.material_sn||"-"}</td><td>{x.status}</td><td>{new Date(x.detected_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
+      {data?.item?.exceptions?.length?data.item.exceptions.map(x=><tr key={x.id}><td>{x.exception_no}</td><td style={{color:x.severity==="CRITICAL"?"#dc2626":"#d97706",fontWeight:800}}>{x.severity}</td><td>{x.exception_type}</td><td>{x.work_order_code||"-"}</td><td>{x.material_code||x.material_sn||"-"}</td><td>{x.status}</td><td>{new Date(x.detected_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
     </tbody></table></div></section>
     <section className="surface-panel"><h3>{w.flow}</h3><div className="table-shell"><table><thead><tr><th>Event</th><th>WO</th><th>Machine/Slot</th><th>Material SN</th><th>Qty</th><th>Time</th></tr></thead><tbody>
-      {data?.events.length?data.events.map(x=><tr key={x.id}><td>{x.event_type}</td><td>{x.work_order_code||"-"}</td><td>{x.machine_code||"-"} / {x.slot_no||"-"}</td><td>{x.material_sn||x.material_code||"-"}</td><td>{x.qty}</td><td>{new Date(x.occurred_at).toLocaleString()}</td></tr>):<tr><td colSpan={6}>{w.empty}</td></tr>}
+      {data?.item?.events?.length?data.item.events.map(x=><tr key={x.id}><td>{x.event_type}</td><td>{x.work_order_code||"-"}</td><td>{x.machine_code||"-"} / {x.slot_no||"-"}</td><td>{x.material_sn||x.material_code||"-"}</td><td>{x.qty}</td><td>{new Date(x.occurred_at).toLocaleString()}</td></tr>):<tr><td colSpan={6}>{w.empty}</td></tr>}
     </tbody></table></div></section>
   </div>;
 }

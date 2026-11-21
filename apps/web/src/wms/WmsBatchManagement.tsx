@@ -59,7 +59,7 @@ export function WmsBatchManagement({ locale }: { locale: Locale }) {
 
   const iqcBadge = (s: string) => {
     const map: Record<string, string> = {
-      released: "ok", pending: "warning", hold: "danger", rejected: "danger",
+      released: "ok", pending: "warning", hold: "warning", rejected: "danger",
     };
     return "badge-" + (map[s] ?? "muted");
   };

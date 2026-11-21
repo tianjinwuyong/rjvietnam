@@ -71,3 +71,10 @@ _Avoid_: Internal NG, service note
 - **Procurement Closure**: the final PO transition allowed only after supplier acknowledgement, complete receipt, IQC release, three-way match, and payment settlement.
 - WMS owns physical receipt and stock; QMS/IQC owns quality disposition; Finance owns invoice posting and payment; Procurement owns PR, sourcing, award, PO, and closure decisions.
 - Every procurement transition is immutable in `procurement_action_history`; operational rows hold current state, history rows hold who did what and when.
+
+## Unified PDA integration convention
+
+- Unified PDA means the Kotlin Android project at `C:\Users\tianj\Desktop\越南工厂瑞晶\统一PDA管理\unifiedpda`.
+- Use PowerShell and ADB for build/install/device tests; do not substitute the browser PDA page.
+- WMS creates dynamic IQC tasks from PO/receiving data, supplier/material history, and ACTIVE Excel rules.
+- Unified PDA consumes task-level inspection items, sample size, inspection level, evidence requirements, performs scans/visual photos/defect capture, and syncs results back to WMS.

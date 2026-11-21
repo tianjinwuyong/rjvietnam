@@ -1,0 +1,668 @@
+[
+  {
+    "code": "AC-CABLE-01",
+    "name_zh": "AC线组装",
+    "name_en": "AC Cable Assembly",
+    "name_vi": "Lắp cáp AC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "CABLE"
+  },
+  {
+    "code": "AC-LABEL-01",
+    "name_zh": "AC线贴标",
+    "name_en": "AC Cable Labeling",
+    "name_vi": "Dán nhãn cáp AC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "LABEL"
+  },
+  {
+    "code": "AC-SOLDER-01",
+    "name_zh": "AC线焊接",
+    "name_en": "AC Cable Soldering",
+    "name_vi": "Hàn cáp AC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "SOLDER"
+  },
+  {
+    "code": "AI-VERT-01",
+    "name_zh": "自动插件(立式)",
+    "name_en": "Auto-Insertion Vertical",
+    "name_vi": "Cắm linh kiện tự động (đứng)",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "AI"
+  },
+  {
+    "code": "AI1-01",
+    "name_zh": "AI插件机 1号",
+    "name_en": "AI Insertion 1",
+    "name_vi": "Máy cắm AI 1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ai_insert_1"
+  },
+  {
+    "code": "AOI-01",
+    "name_zh": "SMT-AOI 检测",
+    "name_en": "SMT AOI Inspection",
+    "name_vi": "AOI SMT",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_aoi"
+  },
+  {
+    "code": "APP-DEF-01",
+    "name_zh": "外观不良上传",
+    "name_en": "Appearance Defect Upload",
+    "name_vi": "Tải lên khuyết tật",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "appearance_defect"
+  },
+  {
+    "code": "ASSY-GLUE-01",
+    "name_zh": "组装点胶",
+    "name_en": "Assembly Dispensing",
+    "name_vi": "Lắp ráp phân phối keo",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ASSY"
+  },
+  {
+    "code": "ATE1-01",
+    "name_zh": "ATE1 半成品测试",
+    "name_en": "ATE1 Test",
+    "name_vi": "Kiểm tra ATE1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ate_1"
+  },
+  {
+    "code": "ATE2-01",
+    "name_zh": "ATE2 成品测试",
+    "name_en": "ATE2 Test",
+    "name_vi": "Kiểm tra ATE2",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ate_2"
+  },
+  {
+    "code": "AUTO-PACK-01",
+    "name_zh": "自动打包",
+    "name_en": "Auto Packing",
+    "name_vi": "Đóng gói tự động",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PACK"
+  },
+  {
+    "code": "BI-LOAD-01",
+    "name_zh": "老化上机",
+    "name_en": "Burn-in Loading",
+    "name_vi": "Lắp老化",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "burnin_load"
+  },
+  {
+    "code": "BI-TEST-01",
+    "name_zh": "老化测试",
+    "name_en": "Burn-in Test",
+    "name_vi": "Kiểm tra老化",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "burnin_test"
+  },
+  {
+    "code": "BOX-SEAL-01",
+    "name_zh": "自动封箱",
+    "name_en": "Auto Box Sealing",
+    "name_vi": "Dán thùng tự động",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PACK"
+  },
+  {
+    "code": "BURN-IN-01",
+    "name_zh": "老化房",
+    "name_en": "Burn-in Chamber",
+    "name_vi": "Phòng già hóa",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "BI"
+  },
+  {
+    "code": "CURE-01",
+    "name_zh": "胶水固化",
+    "name_en": "Glue Curing Cabinet",
+    "name_vi": "Tủ đóng rắn keo",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "CURE"
+  },
+  {
+    "code": "DC-CABLE-01",
+    "name_zh": "DC线组装",
+    "name_en": "DC Cable Assembly",
+    "name_vi": "Lắp cáp DC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "CABLE"
+  },
+  {
+    "code": "DC-SOLDER-01",
+    "name_zh": "DC线焊接",
+    "name_en": "DC Cable Soldering",
+    "name_vi": "Hàn cáp DC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "SOLDER"
+  },
+  {
+    "code": "DEPANEL-01",
+    "name_zh": "分板",
+    "name_en": "Board Depaneling",
+    "name_vi": "Tách panel",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "depanel"
+  },
+  {
+    "code": "DISPENSE-01",
+    "name_zh": "自动点胶1",
+    "name_en": "Auto Dispensing 1",
+    "name_vi": "Phân phối keo tự động 1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "DISPENSE"
+  },
+  {
+    "code": "DISPENSE-02",
+    "name_zh": "自动点胶2",
+    "name_en": "Auto Dispensing 2",
+    "name_vi": "Phân phối keo tự động 2",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "DISPENSE"
+  },
+  {
+    "code": "ENCL-LABEL-01",
+    "name_zh": "机壳贴标",
+    "name_en": "Enclosure Labeling",
+    "name_vi": "Dán nhãn vỏ",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "LABEL"
+  },
+  {
+    "code": "FCT-01",
+    "name_zh": "FCT 测试",
+    "name_en": "FCT Test",
+    "name_vi": "Kiểm tra FCT",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "fct"
+  },
+  {
+    "code": "FINAL-VI-01",
+    "name_zh": "最终目检",
+    "name_en": "Final VI",
+    "name_vi": "Kiểm tra bằng mắt cuối",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "VI"
+  },
+  {
+    "code": "GLUE-PRINT-01",
+    "name_zh": "红胶印刷",
+    "name_en": "Red Glue Printing",
+    "name_vi": "In keo đỏ",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "GLUE_PRINT"
+  },
+  {
+    "code": "HEIGHT-01",
+    "name_zh": "PCBA高度测量",
+    "name_en": "PCBA Height Measuring",
+    "name_vi": "Đo chiều cao PCBA",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "HEIGHT"
+  },
+  {
+    "code": "HI-POT-01",
+    "name_zh": "耐压测试",
+    "name_en": "Hi-pot Test",
+    "name_vi": "Kiểm tra Hi-pot",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "HI_POT"
+  },
+  {
+    "code": "HIPOT-01",
+    "name_zh": "高压测试",
+    "name_en": "Hi-pot Test",
+    "name_vi": "Kiểm tra cao áp",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "hipot"
+  },
+  {
+    "code": "HS-SCREW-01",
+    "name_zh": "自动锁散热片",
+    "name_en": "Auto Heat Sink Screw",
+    "name_vi": "Vít tản nhiệt tự động",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "SCREW"
+  },
+  {
+    "code": "ICT-01",
+    "name_zh": "ICT 测试",
+    "name_en": "ICT Test",
+    "name_vi": "Kiểm tra ICT",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ict"
+  },
+  {
+    "code": "INSERT-C1A-01",
+    "name_zh": "插件C1A/T1",
+    "name_en": "Insertion C1A/T1",
+    "name_vi": "Cắm C1A/T1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "INSERT"
+  },
+  {
+    "code": "INSERT-HS1-01",
+    "name_zh": "插件HS1",
+    "name_en": "Insertion HS1",
+    "name_vi": "Cắm HS1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "INSERT"
+  },
+  {
+    "code": "INSERT-HS2-01",
+    "name_zh": "插件HS2",
+    "name_en": "Insertion HS2",
+    "name_vi": "Cắm HS2",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "INSERT"
+  },
+  {
+    "code": "IQC-01",
+    "name_zh": "IQC检验站",
+    "name_en": "IQC Station",
+    "name_vi": "Trạm IQC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "IQC"
+  },
+  {
+    "code": "LASER-01",
+    "name_zh": "PCB镭码 1号",
+    "name_en": "PCB Laser Marking 1",
+    "name_vi": "Khắc laser PCB 1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "pcb_laser"
+  },
+  {
+    "code": "LASER-ENG-01",
+    "name_zh": "自动激光雕刻",
+    "name_en": "Auto Laser Engraving",
+    "name_vi": "Khắc laser tự động",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "LASER_ENG"
+  },
+  {
+    "code": "LOAD-TEST-01",
+    "name_zh": "负载测试",
+    "name_en": "Loading Test",
+    "name_vi": "Kiểm tra tải",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "LOAD_TEST"
+  },
+  {
+    "code": "MAT-PREP-01",
+    "name_zh": "备料站",
+    "name_en": "Material Preparation",
+    "name_vi": "Trạm chuẩn bị vật tư",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "MAT_PREP"
+  },
+  {
+    "code": "MOS-FORM-01",
+    "name_zh": "MOS成型",
+    "name_en": "MOS Forming",
+    "name_vi": "Tạo hình MOS",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "MOS_FORM"
+  },
+  {
+    "code": "NXT-01",
+    "name_zh": "贴片机 1号",
+    "name_en": "SMT Mounter 1",
+    "name_vi": "Máy đặt 1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_mounter_1"
+  },
+  {
+    "code": "NXT-02",
+    "name_zh": "贴片机 2号",
+    "name_en": "SMT Mounter 2",
+    "name_vi": "Máy đặt 2",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_mounter_2"
+  },
+  {
+    "code": "NXT-03",
+    "name_zh": "贴片机 3号",
+    "name_en": "SMT Mounter 3",
+    "name_vi": "Máy đặt 3",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_mounter_2"
+  },
+  {
+    "code": "ODD-FORM-01",
+    "name_zh": "异形插件",
+    "name_en": "Odd-Form Insertion",
+    "name_vi": "Cắm linh kiện đặc thù",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ODD_FORM"
+  },
+  {
+    "code": "OQC-01",
+    "name_zh": "OQC检验",
+    "name_en": "OQC Inspection",
+    "name_vi": "Kiểm tra OQC",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "OQC"
+  },
+  {
+    "code": "PACK-01",
+    "name_zh": "包装工位",
+    "name_en": "Packing Station",
+    "name_vi": "Trạm đóng gói",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "packing"
+  },
+  {
+    "code": "PACK-SCAN-01",
+    "name_zh": "包装扫描",
+    "name_en": "Packing Scanning",
+    "name_vi": "Quét bao bì",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PACK"
+  },
+  {
+    "code": "PALLET-01",
+    "name_zh": "栈板标签",
+    "name_en": "Pallet Labeling",
+    "name_vi": "Nhãn pallet",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "pallet_label"
+  },
+  {
+    "code": "PCBA-LOAD",
+    "name_zh": "PCBA上料",
+    "name_en": "PCBA Loading",
+    "name_vi": "Lắp PCBA",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "pcba_loading"
+  },
+  {
+    "code": "PCBA-LOAD-01",
+    "name_zh": "PCBA投入",
+    "name_en": "PCBA Loading",
+    "name_vi": "Nạp PCBA",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PCBA_LOAD"
+  },
+  {
+    "code": "PDA-01",
+    "name_zh": "PDA 上料扫描",
+    "name_en": "PDA Scan Loading",
+    "name_vi": "Quét PDA",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "pda_scan"
+  },
+  {
+    "code": "PE-BAG-01",
+    "name_zh": "PE袋装",
+    "name_en": "PE Bagging",
+    "name_vi": "Đóng túi PE",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PACK"
+  },
+  {
+    "code": "PLACEMENT-01",
+    "name_zh": "贴片机",
+    "name_en": "Placement Machine",
+    "name_vi": "Máy gắn chip",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PLACEMENT"
+  },
+  {
+    "code": "PRINT-01",
+    "name_zh": "锡膏印刷 1号",
+    "name_en": "Solder Paste Printer 1",
+    "name_vi": "Máy in kem 1",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_mounter_1"
+  },
+  {
+    "code": "PSU-DL-01",
+    "name_zh": "电源下载",
+    "name_en": "PSU Downloading",
+    "name_vi": "Tải xuống PSU",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "PSU_DL"
+  },
+  {
+    "code": "RECEIVING-01",
+    "name_zh": "收料站",
+    "name_en": "Receiving Station",
+    "name_vi": "Trạm nhận hàng",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "RECEIVING"
+  },
+  {
+    "code": "REFLOW-01",
+    "name_zh": "回流焊",
+    "name_en": "Reflow Oven",
+    "name_vi": "Lò hồ quang",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_aoi"
+  },
+  {
+    "code": "REPAIR-01",
+    "name_zh": "维修站",
+    "name_en": "Repair Station",
+    "name_vi": "Trạm sửa chữa",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "REPAIR"
+  },
+  {
+    "code": "SCRAP-01",
+    "name_zh": "报废站",
+    "name_en": "Scrap Station",
+    "name_vi": "Trạm loại bỏ",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "SCRAP"
+  },
+  {
+    "code": "SMT-AOI-01",
+    "name_zh": "SMT-AOI检测",
+    "name_en": "SMT AOI",
+    "name_vi": "AOI SMT",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "AOI"
+  },
+  {
+    "code": "SMT-VI-01",
+    "name_zh": "SMT目检",
+    "name_en": "SMT Visual Inspection",
+    "name_vi": "Kiểm tra bằng mắt SMT",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "VI"
+  },
+  {
+    "code": "SN-BIND-01",
+    "name_zh": "绑码 PCBA_Link",
+    "name_en": "PCBA SN Binding",
+    "name_vi": "Gán mã PCBA",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "sn_bind_pcba"
+  },
+  {
+    "code": "SN-CODE-01",
+    "name_zh": "绑码 CODE-LINK",
+    "name_en": "Code SN Binding",
+    "name_vi": "Gán mã CODE",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "sn_bind_code"
+  },
+  {
+    "code": "SPI-01",
+    "name_zh": "SPI 锡膏检测",
+    "name_en": "SPI Inspection",
+    "name_vi": "Kiểm tra SPI",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "smt_mounter_1"
+  },
+  {
+    "code": "STETHOSCOPE-01",
+    "name_zh": "听音器检测",
+    "name_en": "Stethoscope Test",
+    "name_vi": "Kiểm tra ống nghe",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "STETHOSCOPE"
+  },
+  {
+    "code": "STORAGE-01",
+    "name_zh": "仓储站",
+    "name_en": "Storage",
+    "name_vi": "Trạm lưu kho",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "STORAGE"
+  },
+  {
+    "code": "TEMP-STORAGE-01",
+    "name_zh": "成品暂存",
+    "name_en": "FG Temporary Storage",
+    "name_vi": "Lưu tạm thành phẩm",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "STORAGE"
+  },
+  {
+    "code": "TOP-ENCL-01",
+    "name_zh": "上盖组装",
+    "name_en": "Top Enclosure Assy",
+    "name_vi": "Lắp vỏ trên",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ASSY"
+  },
+  {
+    "code": "TOUCHUP-01",
+    "name_zh": "补焊站",
+    "name_en": "Touch Up",
+    "name_vi": "Trạm hàn bổ sung",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "TOUCHUP"
+  },
+  {
+    "code": "ULTRA-01",
+    "name_zh": "超声焊接",
+    "name_en": "Ultrasonic Welding",
+    "name_vi": "Hàn siêu âm",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ultrasonic"
+  },
+  {
+    "code": "ULTRASONIC-01",
+    "name_zh": "超声波焊接",
+    "name_en": "Ultrasonic Welding",
+    "name_vi": "Hàn siêu âm",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "ultrasonic"
+  },
+  {
+    "code": "VI-CCD-01",
+    "name_zh": "目检/CCD",
+    "name_en": "VI/CCD",
+    "name_vi": "Kiểm tra bằng mắt/CCD",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "VI"
+  },
+  {
+    "code": "WAVE-01",
+    "name_zh": "波峰焊",
+    "name_en": "Wave Soldering",
+    "name_vi": "Hàn sóng",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "WAVE"
+  },
+  {
+    "code": "WAVE-VI-01",
+    "name_zh": "波峰焊目检",
+    "name_en": "Wave VI",
+    "name_vi": "Kiểm tra bằng mắt hàn sóng",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "VI"
+  },
+  {
+    "code": "WS-AOI-01",
+    "name_zh": "WS-AOI 检测",
+    "name_en": "Wave Solder AOI",
+    "name_vi": "AOI sóng hàn",
+    "line_code": "L001",
+    "line_name_zh": "SMT 产线",
+    "station_type": "wsaoi"
+  }
+]

@@ -6,7 +6,7 @@ import { apiClient } from "../api/client";
 type Locale = "zh-CN" | "en-US" | "vi-VN";
 
 const COPY = {
-  "zh-CN": { title: "仓库与线边存储 3D", subtitle: "WMS 实时库存、厂区存储区域与仓库货架统一视图", floor: "厂区与线边存储", warehouse: "成品仓库", fullscreen: "全屏浏览", exitFullscreen: "退出全屏", smart: "智能查询", showSmart: "显示智能查询", hideSmart: "隐藏智能查询", ask: "查询", placeholder: "询问库存、批次、供应商、IQC、工单或库位…", querying: "正在读取实时 WMS…" },
+  "zh-CN": { title: "仓库与线边存储 3D", subtitle: "WMS 实时库存、厂区存储区域与仓库货架统一视图", floor: "厂区与线边存储", warehouse: "良品仓库", fullscreen: "全屏浏览", exitFullscreen: "退出全屏", smart: "智能查询", showSmart: "显示智能查询", hideSmart: "隐藏智能查询", ask: "查询", placeholder: "询问库存、批次、供应商、IQC、工单或库位…", querying: "正在读取实时 WMS…" },
   "en-US": { title: "Warehouse & Floor Storage 3D", subtitle: "Unified WMS view of live inventory, floor storage areas, and warehouse racks", floor: "Floor & Line-side Storage", warehouse: "Finished Goods Warehouse", fullscreen: "Fullscreen", exitFullscreen: "Exit Fullscreen", smart: "Smart Query", showSmart: "Show Smart Query", hideSmart: "Hide Smart Query", ask: "Ask", placeholder: "Ask about stock, lots, suppliers, IQC, work orders, or locations…", querying: "Reading live WMS…" },
   "vi-VN": { title: "Kho và khu lưu trữ sàn 3D", subtitle: "Chế độ xem WMS thống nhất cho tồn kho, khu lưu trữ sàn và kệ kho theo thời gian thực", floor: "Lưu trữ sàn và cạnh chuyền", warehouse: "Kho thành phẩm", fullscreen: "Toàn màn hình", exitFullscreen: "Thoát toàn màn hình", smart: "Truy vấn thông minh", showSmart: "Hiện truy vấn thông minh", hideSmart: "Ẩn truy vấn thông minh", ask: "Tìm", placeholder: "Hỏi về tồn kho, lô, nhà cung cấp, IQC, lệnh hoặc vị trí…", querying: "Đang đọc WMS trực tiếp…" },
 } as const;

@@ -324,16 +324,10 @@ function savePendingApprovals(analysis) {
   }
 }
 
-// ── State management (mem0-backed, with JSON file fallback) ───────────
+// ── State management (JSON file; vector store holds experience only) ──────
 async function loadState() {
-  try {
-    const results = await mem.search("most recent finance manager state", 1);
-    if (results.results?.length > 0) {
-      const latest = results.results[0];
-      const st = latest.metadata?.state;
-      if (st) return st;
-    }
-  } catch (_) {}
+  // Snapshot state belongs in the file. The vector index holds field
+  // experience only (services/_shared/memory-experience.js).
   try {
     if (existsSync(STATE_FILE)) return JSON.parse(readFileSync(STATE_FILE, "utf-8"));
   } catch (_) {}
@@ -341,11 +335,6 @@ async function loadState() {
 }
 
 async function saveState(state) {
-  try {
-    await mem.store(`Finance cycle #${state.cycleCount || 0} — ${state.lastCycle?.slice(0, 10) || "?"} — ${(state.alerts || []).length} alerts`, { type: "finance_state", state, ts: state.lastCycle || new Date().toISOString() });
-  } catch (e) {
-    log("WARN", `mem0 saveState failed: ${e.message}`);
-  }
   try { writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch (_) {}
 }
 

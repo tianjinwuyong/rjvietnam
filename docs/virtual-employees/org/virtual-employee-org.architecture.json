@@ -1,0 +1,289 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "虚拟员工组织结构 · 三层指令链",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "virtual-employee-org.html",
+    "viewBox": [
+      1220,
+      580
+    ],
+    "views": [
+      {
+        "id": "chain",
+        "label": "指令链",
+        "focus": [
+          "human",
+          "ops",
+          "dept_supply",
+          "dept_mfg",
+          "dept_quality"
+        ],
+        "note": "人类只保留审批权，运营总监派发唯一主责，部门主管拆解到岗位。"
+      },
+      {
+        "id": "control",
+        "label": "控制与行政",
+        "focus": [
+          "ops",
+          "dept_comm",
+          "dept_people",
+          "dept_platform"
+        ],
+        "note": "商务财务、行政人事与 IT 平台是三条横向管控线。"
+      },
+      {
+        "id": "all",
+        "label": "七个业务域",
+        "focus": [
+          "dept_supply",
+          "dept_mfg",
+          "dept_quality",
+          "dept_equip",
+          "dept_comm",
+          "dept_people",
+          "dept_platform"
+        ],
+        "note": "每个域对应真实的 Express 路由前缀与前端模块。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "human",
+      "type": "external",
+      "label": "人类决策层",
+      "sublabel": "厂长 · 部门经理 · 班组长",
+      "pos": [
+        464,
+        40
+      ],
+      "size": [
+        220,
+        68
+      ],
+      "tag": "审批权不可委派"
+    },
+    {
+      "id": "ops",
+      "type": "backend",
+      "label": "运营指挥中心",
+      "sublabel": "OPS-SUPERVISOR-VIRTUAL-01 · Hermes",
+      "pos": [
+        60,
+        170
+      ],
+      "size": [
+        1028,
+        68
+      ],
+      "tag": "唯一派工权"
+    },
+    {
+      "id": "dept_supply",
+      "type": "backend",
+      "label": "供应链部",
+      "sublabel": "PMC-VIRTUAL-01 主管",
+      "pos": [
+        60,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "6 岗"
+    },
+    {
+      "id": "dept_mfg",
+      "type": "backend",
+      "label": "制造部",
+      "sublabel": "MES-VIRTUAL-01 主管",
+      "pos": [
+        208,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "4 岗"
+    },
+    {
+      "id": "dept_quality",
+      "type": "backend",
+      "label": "品质部",
+      "sublabel": "QUALITY-VIRTUAL-01 主管",
+      "pos": [
+        356,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "4 岗"
+    },
+    {
+      "id": "dept_equip",
+      "type": "backend",
+      "label": "设备部",
+      "sublabel": "MAINTENANCE-VIRTUAL-01",
+      "pos": [
+        504,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "1 岗"
+    },
+    {
+      "id": "dept_comm",
+      "type": "backend",
+      "label": "商务财务部",
+      "sublabel": "FINANCE-VIRTUAL-01 主管",
+      "pos": [
+        652,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "5 岗"
+    },
+    {
+      "id": "dept_people",
+      "type": "backend",
+      "label": "行政人事部",
+      "sublabel": "HR-VIRTUAL-01 主管",
+      "pos": [
+        800,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "3 岗"
+    },
+    {
+      "id": "dept_platform",
+      "type": "backend",
+      "label": "IT 平台部",
+      "sublabel": "APP-OPS-VIRTUAL-01 主管",
+      "pos": [
+        948,
+        400
+      ],
+      "size": [
+        140,
+        92
+      ],
+      "tag": "10 岗"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "业务域与岗位 · 34 个虚拟岗位",
+      "wraps": [
+        "dept_supply",
+        "dept_mfg",
+        "dept_quality",
+        "dept_equip",
+        "dept_comm",
+        "dept_people",
+        "dept_platform"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "human-to-ops",
+      "from": "human",
+      "to": "ops",
+      "label": "任命 + 只授审批权",
+      "variant": "emphasis",
+      "labelAt": [
+        574,
+        140
+      ]
+    },
+    {
+      "id": "ops-to-supply",
+      "from": "ops",
+      "to": "dept_supply",
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ops-to-mfg",
+      "from": "ops",
+      "to": "dept_mfg",
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ops-to-quality",
+      "from": "ops",
+      "to": "dept_quality",
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ops-to-equip",
+      "from": "ops",
+      "to": "dept_equip",
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ops-to-comm",
+      "from": "ops",
+      "to": "dept_comm",
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ops-to-people",
+      "from": "ops",
+      "to": "dept_people",
+      "route": "orthogonal-v"
+    },
+    {
+      "id": "ops-to-platform",
+      "from": "ops",
+      "to": "dept_platform",
+      "route": "orthogonal-v"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "三层指令链",
+      "items": [
+        "人类只保留审批权：11 类高风险动作任何虚拟员工都不得独立执行",
+        "运营总监只派工，不写业务数据；一个事件只有一个主责岗位",
+        "部门主管把任务拆到岗位，跨域交接以 task_key 幂等记录"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "编制依据：真实路由前缀",
+      "items": [
+        "供应链 wms 176 + pmc 54 · 制造 mes 98 + SMT 循环",
+        "品质 /api/qms 83 + trace · 商务 finance / einvoice / sales / service",
+        "行政 /api/hr 173 + OA 文控 · 平台 8 个运维域"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "本次新增 11 岗（现注册表中 0 代码）",
+      "items": [
+        "HR-VIRTUAL-01 · BOM-VIRTUAL-01 · SMT-LOOP-VIRTUAL-01 · ANDON-VIRTUAL-01",
+        "OQC-VIRTUAL-01 · TRACE-VIRTUAL-01 · SALES-VIRTUAL-01 · SERVICE-VIRTUAL-01",
+        "E-INVOICE-VIRTUAL-01 · PROJECT-VIRTUAL-01 · SAFETY-VIRTUAL-01"
+      ]
+    }
+  ]
+}

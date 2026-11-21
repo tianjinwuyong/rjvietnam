@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "node ./server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "scheduler": "node ./mesrj-scheduler.mjs",
+    "laser-sn-server": "node ./laser-sn-server.mjs",
+    "print-agent": "node ./print-agent.mjs"
   },
   "description": "Main backend API for the integrated SMT system.",
   "main": "server.js",
@@ -13,11 +16,18 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@langchain/langgraph": "^1.4.13",
+    "bcryptjs": "^3.0.3",
+    "busboy": "^1.6.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "mssql": "^12.5.5",
+    "ngraph.graph": "^20.1.2",
+    "ngraph.path": "^1.6.1",
+    "nodemailer": "^10.6.0",
+    "pathfinding": "^0.4.18",
     "pg": "^8.21.0"
   }
 }

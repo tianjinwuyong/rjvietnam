@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -18,8 +19,10 @@ import {
   Printer,
   Send,
   ShieldCheck,
+  Star,
   Truck,
   Users,
+  Wrench,
   X,
 } from "lucide-react";
 import type { Locale } from "../../../packages/shared-types/src/factory";
@@ -45,6 +48,7 @@ type User = {
   display_name: string;
   role?: string;
   email?: string;
+  must_change_password?: boolean;
 };
 type Page =
   | "dashboard"
@@ -56,7 +60,10 @@ type Page =
   | "quality"
   | "messages"
   | "profile"
-  | "users";
+  | "users"
+  | "returns"
+  | "reviews"
+  | "improvements";
 type ShipmentLine = {
   id: string;
   materialCode: string;
@@ -141,11 +148,53 @@ const portalAgentText = {
   normal: { "zh-CN": "当前资料正常。请持续更新 PO 确认、ASN 和运输状态。", "en-US": "Current data is complete. Keep PO acknowledgement, ASN, and transport status updated.", "vi-VN": "Dữ liệu hiện tại đầy đủ. Hãy tiếp tục cập nhật xác nhận PO, ASN và trạng thái vận chuyển." },
   warning: { "zh-CN": "有发运资料不完整，请补充 ETA、托盘尺寸重量和全部 QR。", "en-US": "Shipment data is incomplete. Add ETA, pallet dimensions, weight, and all QR codes.", "vi-VN": "Dữ liệu giao hàng chưa đầy đủ. Hãy bổ sung ETA, kích thước, trọng lượng pallet và toàn bộ mã QR." },
   action: { "zh-CN": "前往发货预报", "en-US": "Open shipment notice", "vi-VN": "Mở thông báo giao hàng" },
+  acknowledge: { "zh-CN": "确认收到", "en-US": "Acknowledge", "vi-VN": "Xác nhận đã nhận" },
+  noMessage: { "zh-CN": "采购员工暂无新消息", "en-US": "No new purchasing-agent message", "vi-VN": "Không có tin nhắn mới từ nhân viên mua hàng" },
 } as const;
 const pat = (key: keyof typeof portalAgentText) => portalAgentText[key][locale];
 
+const supplierLoginText = {
+  supplierCode: { "zh-CN": "供应商账号（供应商代码）", "en-US": "Supplier account (supplier code)", "vi-VN": "Tài khoản nhà cung cấp (mã nhà cung cấp)" },
+  supplierCodeHint: {
+    "zh-CN": "请输入瑞晶登记的供应商代码",
+    "en-US": "Enter the supplier code registered with Ruijing",
+    "vi-VN": "Nhập mã nhà cung cấp đã đăng ký với Ruijing",
+  },
+  supplierName: { "zh-CN": "供应商全称", "en-US": "Full supplier name", "vi-VN": "Tên đầy đủ của nhà cung cấp" },
+  supplierNameHint: {
+    "zh-CN": "请输入已登记的供应商公司全称",
+    "en-US": "Enter the registered full supplier company name",
+    "vi-VN": "Nhập tên đầy đủ của công ty cung cấp đã đăng ký",
+  },
+  preferredName: { "zh-CN": "自定义登录用户名", "en-US": "Choose a login username", "vi-VN": "Chọn tên đăng nhập" },
+  preferredNameHint: { "zh-CN": "可填写您喜欢的用户名（至少 3 位）", "en-US": "Choose any username you like (at least 3 characters)", "vi-VN": "Chọn tên đăng nhập tùy thích (ít nhất 3 ký tự)" },
+  fullName: { "zh-CN": "登录人全名", "en-US": "Full name", "vi-VN": "Họ và tên" },
+  fullNameHint: {
+    "zh-CN": "请输入供应商账号登记的本人全名",
+    "en-US": "Enter the full name registered for this supplier account",
+    "vi-VN": "Nhập họ tên đã đăng ký cho tài khoản nhà cung cấp này",
+  },
+  invalidCredentials: {
+    "zh-CN": "供应商代码、供应商公司全称或密码不正确，或供应商已被 WMS 暂停",
+    "en-US": "The supplier code, full company name or password is incorrect, or the supplier is suspended by WMS",
+    "vi-VN": "Mã nhà cung cấp, tên đầy đủ công ty hoặc mật khẩu không đúng, hoặc nhà cung cấp đã bị WMS tạm dừng",
+  },
+  login: { "zh-CN": "进入标签门户", "en-US": "Enter label portal", "vi-VN": "Vào cổng nhãn" },
+  password: { "zh-CN": "密码", "en-US": "Password", "vi-VN": "Mật khẩu" },
+  passwordHint: { "zh-CN": "首次登录请输入初始密码", "en-US": "Use the initial password for your first login", "vi-VN": "Dùng mật khẩu ban đầu cho lần đăng nhập đầu tiên" },
+  username: { "zh-CN": "登录用户名", "en-US": "Login username", "vi-VN": "Tên đăng nhập" },
+  firstEntry: { "zh-CN": "供应商首次登录", "en-US": "First supplier login", "vi-VN": "Đăng nhập lần đầu" },
+  accountEntry: { "zh-CN": "已有账号登录", "en-US": "Existing account login", "vi-VN": "Đăng nhập tài khoản hiện có" },
+} as const;
+const slt = (key: keyof typeof supplierLoginText) => supplierLoginText[key][locale];
+
 function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onAction: () => void }) {
   const incomplete = shipments.filter(item => item.status !== "DRAFT" && (!item.eta || !item.pallets?.length || !item.qr_codes?.length));
+  const [messages,setMessages]=useState<Array<{id:number;po_no?:string;subject:string;message:string;priority:string;status:string}>>([]);
+  const loadMessages=()=>fetch("/supplier-api/agent-messages",{credentials:"include"}).then(r=>r.ok?r.json():[]).then(setMessages).catch(()=>undefined);
+  useEffect(()=>{void loadMessages();const timer=window.setInterval(loadMessages,15000);return()=>window.clearInterval(timer);},[]);
+  const latest=messages.find(item=>item.status==="NEW");
+  const acknowledge=async()=>{if(!latest)return;await fetch(`/supplier-api/agent-messages/${latest.id}/acknowledge`,{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({response_note:"Portal acknowledged"})});void loadMessages();};
   return <section className="portal-card" style={{ marginBottom: 16, overflow: "hidden", borderColor: incomplete.length ? "#fb923c" : "#34d399" }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, color: "white", background: "linear-gradient(110deg,#065f46,#0f766e)" }}>
       <img src="/avatars/purchasing-employee-2026.png" alt={pat("title")} style={{ width: 52, height: 52, borderRadius: "50%", objectFit: "cover", border: "2px solid #a7f3d0" }}/>
@@ -155,26 +204,34 @@ function PortalPoAgent({ shipments, onAction }: { shipments: Shipment[]; onActio
     <div role={incomplete.length ? "alert" : undefined} style={{ padding: 14, background: incomplete.length ? "#fff7ed" : "#ecfdf5", color: incomplete.length ? "#9a3412" : "#065f46", fontWeight: 700 }}>
       {incomplete.length ? `${pat("warning")} (${incomplete.length})` : pat("normal")}
     </div>
+    <div style={{ padding: 14, borderTop: "1px solid #d1fae5", display: "flex", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1 }}><strong>{latest ? `${latest.po_no || "PO"} · ${latest.subject}` : pat("noMessage")}</strong>{latest && <div style={{ marginTop: 4, color: "var(--text-2)", fontSize: 13 }}>{latest.message}</div>}</div>
+      {latest && <button className="portal-secondary" onClick={()=>void acknowledge()}>{pat("acknowledge")}</button>}
+    </div>
   </section>;
 }
 
 function Login({ onLogin }: { onLogin: (u: User) => void }) {
   const [credentials, setCredentials] = useState({
-      username: "",
+      supplier_code: "",
+      supplier_name: "",
       password: "",
     }),
+    [account,setAccount]=useState({username:"",supplier_name:"",full_name:"",password:""}),
+    [mode,setMode]=useState<"first"|"account">("first"),
     [error, setError] = useState("");
   const login = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const r = await fetch("/supplier-api/login", {
+    const r = await fetch(mode==="first"?"/supplier-api/supplier-entry-login":"/supplier-api/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
-      body: JSON.stringify(credentials),
+      body: JSON.stringify(mode==="first"?credentials:account),
     });
     if (!r.ok) {
-      setError("账号或密码不正确");
+      if(r.status===409){setMode("account");setError("");return;}
+      setError(slt("invalidCredentials"));
       return;
     }
     onLogin(await r.json());
@@ -212,30 +269,46 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
         </p>
         <form className="supplier-login-form" onSubmit={login}>
           {error && <div className="supplier-login-error">{error}</div>}
-          <label>
-            供应商账号
+          {mode==="first"?<><label>
+            {slt("supplierCode")}
             <input
               autoComplete="username"
-              value={credentials.username}
+              value={credentials.supplier_code}
               onChange={(e) =>
-                setCredentials((c) => ({ ...c, username: e.target.value }))
+                setCredentials((c) => ({ ...c, supplier_code: e.target.value.toUpperCase() }))
               }
+              placeholder={slt("supplierCodeHint")}
+              title={slt("supplierCodeHint")}
+              maxLength={120}
               required
             />
-          </label>
-          <label>
-            密码
+          </label><label>
+            {slt("supplierName")}
+            <input
+              autoComplete="organization"
+              value={credentials.supplier_name}
+              onChange={(e) =>
+                setCredentials((c) => ({ ...c, supplier_name: e.target.value }))
+              }
+              placeholder={slt("supplierNameHint")}
+              title={slt("supplierNameHint")}
+              maxLength={240}
+              required
+            />
+          </label><label>
+            {slt("password")}
             <input
               type="password"
               autoComplete="current-password"
               value={credentials.password}
-              onChange={(e) =>
-                setCredentials((c) => ({ ...c, password: e.target.value }))
-              }
+              onChange={(e) => setCredentials((c) => ({ ...c, password: e.target.value }))}
+              placeholder={slt("passwordHint")}
+              title={slt("passwordHint")}
               required
             />
-          </label>
-          <button>安全登录</button>
+          </label></>:<><label>{slt("username")}<input autoComplete="username" value={account.username} onChange={e=>setAccount(x=>({...x,username:e.target.value}))} title={slt("username")} required/></label><label>{slt("supplierName")}<input autoComplete="organization" value={account.supplier_name} onChange={e=>setAccount(x=>({...x,supplier_name:e.target.value}))} placeholder={slt("supplierNameHint")} title={slt("supplierNameHint")} required/></label><label>{slt("fullName")}<input autoComplete="name" value={account.full_name} onChange={e=>setAccount(x=>({...x,full_name:e.target.value}))} placeholder={slt("fullNameHint")} title={slt("fullNameHint")} required/></label><label>{slt("password")}<input type="password" autoComplete="current-password" value={account.password} onChange={e=>setAccount(x=>({...x,password:e.target.value}))} title={slt("password")} required/></label></>}
+          <button title={slt("login")}>{slt("login")}</button>
+          <button type="button" className="preview-login" onClick={()=>{setMode(mode==="first"?"account":"first");setError("");}}>{mode==="first"?slt("accountEntry"):slt("firstEntry")}</button>
           <button type="button" className="test-login" onClick={() => void testLogin()}>
             测试供应商快速登录（完整权限）
           </button>
@@ -269,6 +342,38 @@ function Login({ onLogin }: { onLogin: (u: User) => void }) {
   );
 }
 
+const firstPasswordText = {
+  title: { "zh-CN": "设置您的登录密码", "en-US": "Set your login password", "vi-VN": "Đặt mật khẩu đăng nhập" },
+  note: { "zh-CN": "首次登录必须更改初始密码后才能进入门户。", "en-US": "Replace the initial password before entering the portal.", "vi-VN": "Đổi mật khẩu ban đầu trước khi vào cổng." },
+  current: { "zh-CN": "初始密码", "en-US": "Initial password", "vi-VN": "Mật khẩu ban đầu" },
+  next: { "zh-CN": "新密码（至少 10 位）", "en-US": "New password (at least 10 characters)", "vi-VN": "Mật khẩu mới (ít nhất 10 ký tự)" },
+  confirm: { "zh-CN": "确认新密码", "en-US": "Confirm new password", "vi-VN": "Xác nhận mật khẩu mới" },
+  mismatch: { "zh-CN": "两次输入的新密码不一致", "en-US": "The new passwords do not match", "vi-VN": "Hai mật khẩu mới không khớp" },
+  failed: { "zh-CN": "密码修改失败，请检查初始密码和新密码长度", "en-US": "Password change failed. Check both passwords.", "vi-VN": "Đổi mật khẩu thất bại. Hãy kiểm tra cả hai mật khẩu." },
+  save: { "zh-CN": "保存并进入门户", "en-US": "Save and enter portal", "vi-VN": "Lưu và vào cổng" },
+} as const;
+
+function FirstPasswordChange({ onComplete }: { onComplete: () => void }) {
+  const t = (key: keyof typeof firstPasswordText) => firstPasswordText[key][locale];
+  const [form,setForm]=useState({current_password:"",new_password:"",confirm_password:""});
+  const [error,setError]=useState("");
+  const submit=async(e:React.FormEvent)=>{e.preventDefault();setError("");if(form.new_password!==form.confirm_password){setError(t("mismatch"));return;}const r=await fetch("/supplier-api/change-password",{method:"POST",credentials:"include",headers:{"Content-Type":"application/json"},body:JSON.stringify({current_password:form.current_password,new_password:form.new_password})});if(!r.ok){setError(t("failed"));return;}onComplete();};
+  return <div className="supplier-login"><section className="supplier-login-panel"><div className="supplier-brand"><span className="supplier-brand-mark"><ShieldCheck size={21}/></span>瑞晶供应商门户</div><h1>{t("title")}</h1><p>{t("note")}</p><form className="supplier-login-form" onSubmit={submit}>{error&&<div className="supplier-login-error">{error}</div>}<label>{t("current")}<input type="password" autoComplete="current-password" value={form.current_password} onChange={e=>setForm(x=>({...x,current_password:e.target.value}))} title={t("current")} required/></label><label>{t("next")}<input type="password" autoComplete="new-password" minLength={10} value={form.new_password} onChange={e=>setForm(x=>({...x,new_password:e.target.value}))} title={t("next")} required/></label><label>{t("confirm")}<input type="password" autoComplete="new-password" minLength={10} value={form.confirm_password} onChange={e=>setForm(x=>({...x,confirm_password:e.target.value}))} title={t("confirm")} required/></label><button title={t("save")}>{t("save")}</button></form></section></div>;
+}
+
+type KanbanCard = {
+  key: string;
+  title: string;
+  meta: string;
+  detail?: string;
+  status: string;
+  progress?: number;
+  progressText?: string;
+  due?: { text: string; tone: string };
+  page: Page;
+};
+type KanbanColumn = { id: string; title: string; tone: string; items: KanbanCard[] };
+
 function Dashboard({
   shipments,
   setPage,
@@ -282,12 +387,12 @@ function Dashboard({
   useEffect(() => { void Promise.all([fetch("/supplier-api/orders", { credentials: "include" }).then(r => r.ok ? r.json() : []), fetch("/supplier-api/label-manifests", { credentials: "include" }).then(r => r.ok ? r.json() : [])]).then(([o,m]) => { setOrders(o); setManifests(m); }); }, []);
   const poTotals = (o:any) => { const total=(o.payload?.lines||[]).reduce((n:number,l:any)=>n+Number(l.qty_ordered||0),0),finished=Number(o.supplier_completed_quantity||0);return {total,finished,percent:total>0?Math.min(100,Math.round(finished/total*100)):0}; };
   const deliveryCountdown=(date:string)=>{if(!date)return {text:"交期未设置",tone:"muted"};const target=new Date(`${date}T23:59:59`),days=Math.ceil((target.getTime()-Date.now())/86400000);return days<0?{text:`已逾期 ${Math.abs(days)} 天`,tone:"danger"}:days===0?{text:"今天到期",tone:"danger"}:days<=3?{text:`剩余 ${days} 天`,tone:"warning"}:{text:`剩余 ${days} 天`,tone:"ok"};};
-  const columns = [
+  const columns: KanbanColumn[] = [
     { id:"new", title:"新 PO", tone:"blue", items:orders.filter(o=>["OPEN","SENT","PENDING"].includes(String(o.status).toUpperCase())).map(o=>({key:`po-${o.po_no}`,title:o.po_no,meta:`${o.payload?.lines?.length||0} 个物料行 · 交期 ${o.requested_delivery_date||"待定"}`,status:o.status,progress:poTotals(o).percent,progressText:`${poTotals(o).finished}/${poTotals(o).total} · ${poTotals(o).percent}% 已完成`,due:deliveryCountdown(o.requested_delivery_date),page:"orders" as Page})) },
     { id:"prepare", title:"备料 / 标签", tone:"purple", items:orders.filter(o=>["ACCEPTED","ACKNOWLEDGED"].includes(String(o.status).toUpperCase())&&!manifests.some(m=>m.po_no===o.po_no)).map(o=>({key:`prep-${o.po_no}`,title:o.po_no,meta:"待生成箱码与托板绑定",status:"TO_PREPARE",due:deliveryCountdown(o.requested_delivery_date),page:"labels" as Page})) },
     { id:"pre", title:"预收货未确认", tone:"amber", items:manifests.filter(m=>String(m.status).startsWith("PRE_RECEIVING")).map(m=>{const o=orders.find(x=>x.po_no===m.po_no),totals=poTotals(o||{});return {key:`manifest-${m.id}`,title:m.po_no||m.material_code,meta:`${m.material_code} · ${m.total_quantity} ${m.unit}`,detail:`托板 ${m.payload?.pallets?.length||0} · 外箱 ${m.outer_box_count} · 子箱 ${m.sub_box_count}`,status:m.status,progress:totals.percent,progressText:`${totals.finished}/${totals.total} · ${totals.percent}% 已完成`,due:deliveryCountdown(o?.requested_delivery_date),page:"labels" as Page}}) },
     { id:"ship", title:"已发运", tone:"cyan", items:shipments.filter(s=>["SUBMITTED","IN_TRANSIT","SHIPPED"].includes(String(s.status).toUpperCase())&&!s.receiving).map(s=>({key:`ship-${s.id}`,title:s.asn,meta:`${s.po} · ETA ${s.eta}`,status:s.status,page:"shipments" as Page})) },
-    { id:"iqc", title:"WMS 收货 / IQC", tone:"orange", items:shipments.filter(s=>!!s.receiving&&!["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status||s.receiving?.status).toUpperCase())).map(s=>({key:`iqc-${s.id}`,title:s.asn,meta:`已扫 ${s.receiving?.scanned_boxes||0}/${s.receiving?.expected_boxes||0} 箱`,detail:`接受 ${s.receiving?.accepted_quantity||0} · 暂扣 ${s.receiving?.hold_quantity||0} · 拒收 ${s.receiving?.rejected_quantity||0}`,status:s.receiving?.iqc_status||s.receiving?.status,page:"shipments" as Page})) },
+    { id:"iqc", title:"WMS 收货 / IQC", tone:"orange", items:shipments.filter(s=>!!s.receiving&&!["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status).toUpperCase())).map(s=>({key:`iqc-${s.id}`,title:s.asn,meta:`已扫 ${s.receiving?.scanned_boxes||0}/${s.receiving?.expected_boxes||0} 箱`,detail:`接受 ${s.receiving?.accepted_quantity||0} · 暂扣 ${s.receiving?.hold_quantity||0} · 拒收 ${s.receiving?.rejected_quantity||0}`,status:s.receiving?.iqc_status||"",page:"shipments" as Page})) },
     { id:"done", title:"完成", tone:"green", items:[...orders.filter(o=>["RECEIVED","CLOSED"].includes(String(o.status).toUpperCase())).map(o=>({key:`done-po-${o.po_no}`,title:o.po_no,meta:"PO 已完成",status:o.status,progress:poTotals(o).percent,progressText:`${poTotals(o).finished}/${poTotals(o).total} · ${poTotals(o).percent}% 已完成`,page:"orders" as Page})),...shipments.filter(s=>["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status||s.status).toUpperCase())).map(s=>({key:`done-${s.id}`,title:s.asn,meta:`${s.po} · 已完成收货`,status:s.receiving?.iqc_status||s.status,page:"shipments" as Page}))] },
   ];
   return (
@@ -701,7 +806,7 @@ function Shipments({
   );
 }
 
-function OrdersPage({ onShipment }: { onShipment: () => void }) {
+function OrdersPage({ onShipment, onLabels }: { onShipment: () => void; onLabels: (order: any) => void }) {
   const [orders, setOrders] = useState<any[]>([]),
     [dates, setDates] = useState<Record<string, string>>({}),
     [notes, setNotes] = useState<Record<string, string>>({}),
@@ -900,6 +1005,7 @@ function OrdersPage({ onShipment }: { onShipment: () => void }) {
                           查看/处理
                         </button>
                         <button onClick={onShipment}>创建ASN</button>
+                        <button onClick={() => onLabels(o)} disabled={["CLOSED","CANCELLED","VOIDED","RECEIVED","REJECTED"].includes(String(o.status||"").toUpperCase())} title="选择此 PO 并制作绑定的 QR 标签"><Printer size={14}/>制作QR标签</button>
                       </div>
                     </td>
                   </tr>
@@ -1171,7 +1277,7 @@ function DeliveryPlan({
 }
 
 const staticPages: Record<
-  Exclude<Page, "dashboard" | "shipments" | "labels">,
+  Exclude<Page, "dashboard" | "shipments" | "labels" | "orders">,
   {
     title: string;
     eyebrow: string;
@@ -1239,11 +1345,29 @@ const staticPages: Record<
       ["quality-contact", "质量联系人", "INVITED"],
     ],
   },
+  returns: {
+    title: "退返物料",
+    eyebrow: "RETURN MATERIALS",
+    description: "查看退货/拒收记录，提交退返申请。",
+    cards: [],
+  },
+  reviews: {
+    title: "评审结果",
+    eyebrow: "EVALUATION RESULTS",
+    description: "查看瑞晶对贵司的定期评审分数与等级。",
+    cards: [],
+  },
+  improvements: {
+    title: "改进内容",
+    eyebrow: "IMPROVEMENT ACTIONS",
+    description: "查看 CAPA 整改通知，提交遏制措施、根因分析和纠正计划。",
+    cards: [],
+  },
 };
 function StaticPage({
   page,
 }: {
-  page: Exclude<Page, "dashboard" | "shipments" | "labels">;
+  page: Exclude<Page, "dashboard" | "shipments" | "labels" | "returns" | "reviews" | "improvements" | "orders">;
 }) {
   const p = staticPages[page];
   return (
@@ -1585,6 +1709,167 @@ function AccountPage({
   );
 }
 
+// ── 退返物料页面 ────────────────────────────────────────────────────────────
+function ReturnsPage({ user }: { user: User }) {
+  const [returns, setReturns] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/supplier-api/returns", { credentials: "include" })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => { setReturns(d.items ?? d ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  return (
+    <div className="portal-page">
+      <div className="portal-heading">
+        <div>
+          <p className="eyebrow">RETURN MATERIALS</p>
+          <h1>退返物料</h1>
+          <p>查看退货/拒收记录，提交退返申请。</p>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>加载中…</div>
+      ) : returns.length === 0 ? (
+        <div className="portal-empty"><Truck /><b>暂无退返记录</b></div>
+      ) : (
+        <section className="portal-card">
+          <div className="table-shell">
+            <table>
+              <thead><tr><th>批次号</th><th>物料</th><th>数量</th><th>供应商</th><th>状态</th><th>原因</th></tr></thead>
+              <tbody>
+                {returns.map(r => (
+                  <tr key={r.id ?? r.lot_no}>
+                    <td><code>{r.lot_no ?? r.lotNo}</code></td>
+                    <td>{r.material_code ?? r.materialCode}</td>
+                    <td>{Number(r.qty ?? r.return_qty ?? 0).toLocaleString()}</td>
+                    <td>{r.supplier_code ?? user.supplier_code}</td>
+                    <td><span className={`badge badge-${(r.status ?? "").toLowerCase().includes("return") ? "warning" : "danger"}`}>{r.status ?? "PENDING"}</span></td>
+                    <td>{r.reason ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+// ── 评审结果页面 ────────────────────────────────────────────────────────────
+function ReviewsPage({ user }: { user: User }) {
+  const [reviews, setReviews] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/supplier-api/reviews", { credentials: "include" })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => { setReviews(d.items ?? d ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  const gradeColor = (g: string) =>
+    g === "A" ? "var(--ok)" : g === "B" ? "#22c55e" : g === "C" ? "#f59e0b" : "var(--danger)";
+  return (
+    <div className="portal-page">
+      <div className="portal-heading">
+        <div>
+          <p className="eyebrow">EVALUATION RESULTS</p>
+          <h1>评审结果</h1>
+          <p>查看瑞晶对贵司的定期评审分数与等级。</p>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>加载中…</div>
+      ) : reviews.length === 0 ? (
+        <div className="portal-empty"><Star /><b>暂无评审记录</b></div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {reviews.map(r => (
+            <section key={r.id} className="portal-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h3>{r.eval_period ?? r.period}</h3>
+                  <small style={{ color: "var(--muted)" }}>评分周期</small>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 36, fontWeight: 800, color: gradeColor(r.grade) }}>{r.grade ?? "—"}</div>
+                  <small>等级</small>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginTop: 16 }}>
+                {[["iqc_pass_rate","IQC合格率"],["oqc_reject_rate","OQC拒收率"],["delivery_rate","准时交付率"],["complaint_count","投诉次数"],["eight_d_count","8D次数"],["total_score","综合评分"]].map(([k,l]) => (
+                  <div key={k} style={{ background: "var(--surface-2)", borderRadius: 8, padding: "10px 14px" }}>
+                    <div style={{ fontSize: 20, fontWeight: 700 }}>{r[k] ?? "—"}</div>
+                    <small style={{ color: "var(--muted)" }}>{l}</small>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── 改进内容页面 ────────────────────────────────────────────────────────────
+function ImprovementsPage({ user }: { user: User }) {
+  const [capa, setCapa] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    fetch("/supplier-api/capas", { credentials: "include" })
+      .then(r => r.ok ? r.json() : { items: [] })
+      .then(d => { setCapa(d.items ?? d ?? []); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+  const statusBadge = (s: string) => {
+    if (s === "CLOSED") return "badge-ok";
+    if (s === "IN_PROGRESS" || s === "IN_PROGRESS") return "badge-info";
+    if (s === "NOTIFIED" || s === "PENDING") return "badge-warning";
+    return "badge-muted";
+  };
+  return (
+    <div className="portal-page">
+      <div className="portal-heading">
+        <div>
+          <p className="eyebrow">IMPROVEMENT ACTIONS</p>
+          <h1>改进内容</h1>
+          <p>查看 CAPA 整改通知，提交遏制措施、根因分析和纠正计划。</p>
+        </div>
+      </div>
+      {loading ? (
+        <div style={{ textAlign: "center", padding: 48, color: "var(--muted)" }}>加载中…</div>
+      ) : capa.length === 0 ? (
+        <div className="portal-empty"><Wrench /><b>暂无 CAPA 记录</b></div>
+      ) : (
+        <div style={{ display: "grid", gap: 16 }}>
+          {capa.map(c => (
+            <section key={c.id} className="portal-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <h3><code>{c.capa_no ?? c.capaNo}</code></h3>
+                  <p style={{ margin: "4px 0", color: "var(--muted)", fontSize: 13 }}>
+                    供应商：{c.supplier_code ?? user.supplier_code} · 严重程度：{c.severity}
+                  </p>
+                </div>
+                <span className={`badge ${statusBadge(c.status)}`}>{c.status}</span>
+              </div>
+              <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, fontSize: 13 }}>
+                {[["containment","遏制措施"],["root_cause","根因分析"],["corrective_action","纠正措施"],["effectiveness_result","效果验证"]].map(([k,l]) => (
+                  <div key={k}>
+                    <b>{l}：</b>
+                    <span style={{ color: "var(--muted)" }}>{c[k] ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Portal() {
   const [user, setUser] = useState<User | null>(null),
     [loading, setLoading] = useState(true),
@@ -1635,6 +1920,9 @@ function Portal() {
         ["messages", "消息中心", MessageSquareText],
         ["profile", "公司资料", Building2],
         ["users", "用户与权限", Users],
+        ["returns", "退返物料", Truck],
+        ["reviews", "评审结果", Star],
+        ["improvements", "改进内容", Wrench],
       ] as Array<[Page, string, typeof Truck]>,
     [],
   );
@@ -1655,8 +1943,14 @@ function Portal() {
     );
     setPage("labels");
   };
+  const useOrder = (order: any) => {
+    const line=order.payload?.lines?.[0]||{};
+    localStorage.setItem("wms:supplier-label-draft",JSON.stringify({po:order.po_no,materialCode:line.material_code||"",materialName:line.description||line.material_name||"",spec:line.specification||"",total:line.qty_ordered==null?"":String(line.qty_ordered),unit:line.unit||line.uom||"PCS"}));
+    setPage("labels");
+  };
   if (loading) return <div className="portal-loading">正在验证登录状态…</div>;
   if (!user) return <Login onLogin={setUser} />;
+  if (user.must_change_password) return <FirstPasswordChange onComplete={() => { setUser({ ...user, must_change_password: false }); setPage("users"); }} />;
   return (
     <div className="supplier-shell portal-layout">
       <aside className={`portal-sidebar ${mobile ? "open" : ""}`}>
@@ -1719,7 +2013,7 @@ function Portal() {
           {page === "dashboard" ? (
             <Dashboard shipments={shipments} setPage={setPage} />
           ) : page === "orders" ? (
-            <OrdersPage onShipment={() => setPage("shipments")} />
+            <OrdersPage onShipment={() => setPage("shipments")} onLabels={useOrder} />
           ) : page === "shipments" ? (
             <Shipments
               items={shipments}
@@ -1747,6 +2041,12 @@ function Portal() {
             />
           ) : page === "users" ? (
             <AccountPage user={user} onUser={setUser} />
+          ) : page === "returns" ? (
+            <ReturnsPage user={user} />
+          ) : page === "reviews" ? (
+            <ReviewsPage user={user} />
+          ) : page === "improvements" ? (
+            <ImprovementsPage user={user} />
           ) : (
             <StaticPage page={page} />
           )}

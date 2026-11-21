@@ -36,20 +36,6 @@ const statusLabels: Record<string, string> = {
   inUse: "wms.inUse",
 };
 
-const _mockAux: AuxRecord[] = [
-  { id: 1, materialCode: "SP-SAC305-T4", materialNameZh: "SAC305锡膏 T4", lotNo: "SP-LOT-20260601-001", category: "solderPaste", storageStatus: "frozen", thawStartTime: "", thawHoursRequired: 4, thawElapsedHours: 0, openedAt: "", shelfLifeAfterOpenHours: 24, remainingShelfLifeHours: 24, location: "FRZ-001-A1", supplier: "贺利氏" },
-  { id: 2, materialCode: "SP-SAC305-T4", materialNameZh: "SAC305锡膏 T4", lotNo: "SP-LOT-20260610-002", category: "solderPaste", storageStatus: "thawing", thawStartTime: "2025-06-28 08:00", thawHoursRequired: 4, thawElapsedHours: 2.5, openedAt: "", shelfLifeAfterOpenHours: 24, remainingShelfLifeHours: 24, location: "THAW-BENCH-01", supplier: "贺利氏" },
-  { id: 3, materialCode: "SP-SAC305-T4", materialNameZh: "SAC305锡膏 T4", lotNo: "SP-LOT-20260615-003", category: "solderPaste", storageStatus: "ready", thawStartTime: "2025-06-27 06:00", thawHoursRequired: 4, thawElapsedHours: 4, openedAt: "2025-06-27 10:00", shelfLifeAfterOpenHours: 24, remainingShelfLifeHours: 8, location: "READY-AREA-01", supplier: "贺利氏" },
-  { id: 4, materialCode: "SP-SAC305-T4", materialNameZh: "SAC305锡膏 T4", lotNo: "SP-LOT-20260620-004", category: "solderPaste", storageStatus: "inUse", thawStartTime: "2025-06-20 05:00", thawHoursRequired: 4, thawElapsedHours: 4, openedAt: "2025-06-20 09:00", shelfLifeAfterOpenHours: 24, remainingShelfLifeHours: 2, location: "LINE-01-SPOT", supplier: "贺利氏" },
-  { id: 5, materialCode: "FLUX-WF-6318", materialNameZh: "助焊剂 WF-6318", lotNo: "FL-LOT-20260605-001", category: "flux", storageStatus: "frozen", thawStartTime: "", thawHoursRequired: 2, thawElapsedHours: 0, openedAt: "", shelfLifeAfterOpenHours: 72, remainingShelfLifeHours: 72, location: "FRZ-002-B1", supplier: "Kester" },
-  { id: 6, materialCode: "FLUX-WF-6318", materialNameZh: "助焊剂 WF-6318", lotNo: "FL-LOT-20260612-002", category: "flux", storageStatus: "ready", thawStartTime: "2025-06-26 14:00", thawHoursRequired: 2, thawElapsedHours: 2, openedAt: "2025-06-26 16:00", shelfLifeAfterOpenHours: 72, remainingShelfLifeHours: 48, location: "READY-AREA-02", supplier: "Kester" },
-  { id: 7, materialCode: "UF-LOCTITE-3515", materialNameZh: "底部填充胶 3515", lotNo: "UF-LOT-20260520-001", category: "underfill", storageStatus: "frozen", thawStartTime: "", thawHoursRequired: 24, thawElapsedHours: 0, openedAt: "", shelfLifeAfterOpenHours: 168, remainingShelfLifeHours: 168, location: "FRZ-003-C1", supplier: "Henkel" },
-  { id: 8, materialCode: "UF-LOCTITE-3515", materialNameZh: "底部填充胶 3515", lotNo: "UF-LOT-20260525-002", category: "underfill", storageStatus: "thawing", thawStartTime: "2025-06-27 12:00", thawHoursRequired: 24, thawElapsedHours: 14, openedAt: "", shelfLifeAfterOpenHours: 168, remainingShelfLifeHours: 168, location: "THAW-BENCH-02", supplier: "Henkel" },
-  { id: 9, materialCode: "GLUE-SILICONE-3140", materialNameZh: "硅胶密封胶 3140", lotNo: "GL-LOT-20260618-001", category: "glue", storageStatus: "frozen", thawStartTime: "", thawHoursRequired: 8, thawElapsedHours: 0, openedAt: "", shelfLifeAfterOpenHours: 336, remainingShelfLifeHours: 336, location: "FRZ-001-A2", supplier: "Dow" },
-  { id: 10, materialCode: "SP-SAC305-T3", materialNameZh: "SAC305锡膏 T3", lotNo: "SP-LOT-20260622-005", category: "solderPaste", storageStatus: "frozen", thawStartTime: "", thawHoursRequired: 4, thawElapsedHours: 0, openedAt: "", shelfLifeAfterOpenHours: 24, remainingShelfLifeHours: 24, location: "FRZ-001-A3", supplier: "千住" },
-  { id: 11, materialCode: "FLUX-ALPHA-100", materialNameZh: "助焊剂 Alpha 100", lotNo: "FL-LOT-20260608-003", category: "flux", storageStatus: "inUse", thawStartTime: "2025-06-25 09:00", thawHoursRequired: 2, thawElapsedHours: 2, openedAt: "2025-06-25 11:00", shelfLifeAfterOpenHours: 72, remainingShelfLifeHours: 12, location: "LINE-02-FLUX", supplier: "Alpha" },
-  { id: 12, materialCode: "UF-LOCTITE-3515", materialNameZh: "底部填充胶 3515", lotNo: "UF-LOT-20260601-003", category: "underfill", storageStatus: "inUse", thawStartTime: "2025-06-22 08:00", thawHoursRequired: 24, thawElapsedHours: 24, openedAt: "2025-06-23 08:00", shelfLifeAfterOpenHours: 168, remainingShelfLifeHours: 96, location: "LINE-01-UNDERFILL", supplier: "Henkel" },
-];
 
 const statusColors: Record<string, string> = {
   frozen: "var(--info)",
@@ -66,7 +52,7 @@ const statusIcons: Record<string, typeof Snowflake> = {
 };
 
 export function WmsAuxiliary({ locale }: { locale: Locale }) {
-  const [records] = useState<AuxRecord[]>(_mockAux);
+  const [records] = useState<AuxRecord[]>([]);
   const [catFilter, setCatFilter] = useState<string>("all");
   const [searchQ, setSearchQ] = useState("");
 

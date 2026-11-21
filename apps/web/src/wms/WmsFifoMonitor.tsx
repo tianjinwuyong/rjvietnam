@@ -1,4 +1,5 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import { wmsApi } from "../api/wms";
 import { ArrowUpDown, AlertTriangle, CheckCircle, Search, RefreshCw } from "lucide-react";
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
@@ -21,56 +22,53 @@ interface FifoLot {
   isViolation: boolean;
 }
 
-function randomDate(daysAgo: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - Math.floor(Math.random() * daysAgo));
-  return d.toISOString().slice(0, 10);
-}
-
-const materials = [
-  { code: "CAP-CER-100UF", name: "贴片电容 100μF" },
-  { code: "RES-SMD-10K", name: "贴片电阻 10KΩ" },
-  { code: "IC-MCU-STM32", name: "STM32单片机" },
-  { code: "LED-RED-0805", name: "红色LED 0805" },
-  { code: "CONN-USB-C-30P", name: "USB-C连接器" },
-  { code: "PCB-AURORA-CTRL", name: "控制板PCB" },
-];
-
-function generateLots(count: number): FifoLot[] {
-  const lots: FifoLot[] = [];
-  for (let i = 0; i < count; i++) {
-    const receivedDate = randomDate(90);
-    lots.push({
-      lotNo: `LOT-${receivedDate.replace(/-/g, "")}-${String(100 + i).padStart(3, "0")}`,
-      receivedDate,
-      qty: Math.round(1000 + Math.random() * 20000),
-      location: `STORE-00${1 + (i % 3)}-${String.fromCharCode(65 + (i % 4))}${1 + (i % 3)}`,
-      fifoOrder: i + 1,
-      isViolation: Math.random() < 0.15,
+/** Group the live material lots per material code, oldest lot first. */
+function buildFifoMaterials(
+  lots: Array<{ materialCode: string; lotNo: string; qty?: number; onHand?: number; availableQty?: number; locationCode?: string | null }>,
+  checkedAt: string,
+): FifoMaterial[] {
+  const byMaterial = new Map<string, FifoLot[]>();
+  for (const lot of lots) {
+    const list = byMaterial.get(lot.materialCode) ?? [];
+    list.push({
+      lotNo: lot.lotNo,
+      receivedDate: "",
+      qty: lot.onHand ?? lot.availableQty ?? lot.qty ?? 0,
+      location: lot.locationCode ?? "—",
+      fifoOrder: 0,
+      isViolation: false,
     });
+    byMaterial.set(lot.materialCode, list);
   }
-  lots.sort((a, b) => a.receivedDate.localeCompare(b.receivedDate));
-  return lots.map((l, i) => ({ ...l, fifoOrder: i + 1 }));
+  return [...byMaterial.entries()].map(([materialCode, list]) => {
+    // Lot numbers embed the receipt sequence for this plant, so lexical order is FIFO order.
+    const sorted = [...list].sort((x, y) => x.lotNo.localeCompare(y.lotNo));
+    return {
+      materialCode,
+      nameZh: materialCode,
+      lots: sorted.map((lot, index) => ({ ...lot, fifoOrder: index + 1 })),
+      totalViolations: 0,
+      complianceRate: 100,
+      lastChecked: checkedAt,
+    };
+  });
 }
-
-const mockFifoData: FifoMaterial[] = materials.map((m) => {
-  const lots = generateLots(4 + Math.floor(Math.random() * 4));
-  const violations = lots.filter((l) => l.isViolation).length;
-  return {
-    materialCode: m.code,
-    nameZh: m.name,
-    lots,
-    totalViolations: violations,
-    complianceRate: lots.length > 0 ? Math.round(((lots.length - violations) / lots.length) * 100) : 100,
-    lastChecked: new Date().toISOString().slice(0, 10),
-  };
-});
 
 export function WmsFifoMonitor({ locale }: { locale: Locale }) {
-  const [data] = useState<FifoMaterial[]>(mockFifoData);
+  const [data, setData] = useState<FifoMaterial[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [searchQ, setSearchQ] = useState("");
   const [lastRun, setLastRun] = useState(() => new Date().toLocaleString());
+
+  const runCheck = () => {
+    setLastRun(new Date().toLocaleString());
+    wmsApi
+      .getMaterialLots({ limit: 500 })
+      .then((res) => setData(buildFifoMaterials(res.items ?? [], new Date().toLocaleString())))
+      .catch(() => setData([]));
+  };
+
+  useEffect(runCheck, []);
 
   const stats = useMemo(() => {
     const total = data.reduce((s, m) => s + m.lots.length, 0);
@@ -82,8 +80,6 @@ export function WmsFifoMonitor({ locale }: { locale: Locale }) {
     data.filter((m) => !searchQ || m.materialCode.includes(searchQ.toUpperCase()) || m.nameZh.includes(searchQ)),
     [searchQ, data]
   );
-
-  const runCheck = () => setLastRun(new Date().toLocaleString());
 
   return (
     <div className="screen-stack">

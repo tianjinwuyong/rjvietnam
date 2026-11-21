@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "skipLibCheck": true,
+    "types": ["node"],
+    "tsBuildInfoFile": "node_modules/.cache/tsc-api.tsbuildinfo"
+  },
+  "include": ["services/api/src/**/*.js"]
+}

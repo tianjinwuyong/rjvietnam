@@ -1,5 +1,6 @@
 import type { FactoryPermissionKey, Locale, RoleKey } from "../../../../packages/shared-types/src/factory";
 import { pdaModule } from "../modules/pda";
+import { salesModule } from "../modules/sales";
 
 export type ApiModuleKey =
   | "auth"
@@ -21,6 +22,7 @@ export type ApiModuleKey =
   | "parts-suppliers"
   | "parts-pricing"
   | "equipment-archives"
+  | "sales"
   | "pda";
 
 export type ApiHttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -464,6 +466,12 @@ export const apiModuleCatalog: ApiModuleSpec[] = [
         path: "/wms/shelf/remove-label",
         summary: "Remove a label registration from a smart shelf cell (proxies to shelf controller)",
         request: "{ labelId: string }",
+        response: "ApiEnvelope<Record<string, unknown>>",
+      },
+      {
+        method: "POST",
+        path: "/wms/receiving/label-ai",
+        summary: "Parse a receiving-label image with local Ollama vision and return editable fields",
         response: "ApiEnvelope<Record<string, unknown>>",
       },
     ],
@@ -1416,6 +1424,17 @@ export const apiModuleCatalog: ApiModuleSpec[] = [
     name: "PDA Device Management",
     purpose: "PDA devices, assignments, repairs, managed applications, heartbeats and immutable operational audit.",
     endpoints: pdaModule.routes.map(({ method, path, summary }) => ({
+      method,
+      path,
+      summary,
+      response: "ApiEnvelope<Record<string, unknown>>",
+    })),
+  },
+  {
+    key: "sales",
+    name: "Sales order management and order-to-cash closed loop",
+    purpose: "Sales quotes, sales orders, and the order-to-cash closed loop.",
+    endpoints: salesModule.routes.map(({ method, path, summary }) => ({
       method,
       path,
       summary,

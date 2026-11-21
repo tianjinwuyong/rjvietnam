@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { apiClient } from "../api/client";
+import { wmsApi } from "../api/wms";
 import { Search, History, Package, ArrowRight, Clock, MapPin, User, AlertTriangle } from "lucide-react";
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
@@ -25,58 +27,72 @@ interface TraceLot {
   transactions: TxEvent[];
 }
 
-const mockTraces: TraceLot[] = [
-  {
-    materialCode: "CAP-CER-100UF", materialNameZh: "贴片电容 100μF",
-    lotNo: "LOT-20250615-001", supplier: "SUP-001 华新电子",
-    receivedDate: "2025-06-15", currentQty: 4200, location: "STORE-001-A1", status: "active",
-    transactions: [
-      { action: "RECEIVE", qty: 5000, fromLocation: "", toLocation: "RCV-A", operator: "VN_WHS_001", occurredAt: "2025-06-15 08:00", reference: "PO-20250610-001" },
-      { action: "IQC_RELEASE", qty: 5000, fromLocation: "RCV-A", toLocation: "IQC", operator: "VN_IQC_002", occurredAt: "2025-06-15 10:30", reference: "IQC-20250615-001" },
-      { action: "TRANSFER", qty: 5000, fromLocation: "IQC", toLocation: "STORE-001-A1", operator: "VN_WHS_001", occurredAt: "2025-06-15 14:00", reference: "TX-0615-001" },
-      { action: "PICK", qty: -800, fromLocation: "STORE-001-A1", toLocation: "LINE-01", operator: "VN_WHS_003", occurredAt: "2025-06-20 07:30", reference: "WO-20250620-003" },
-    ],
-  },
-  {
-    materialCode: "RES-SMD-10K", materialNameZh: "贴片电阻 10KΩ",
-    lotNo: "LOT-20250620-001", supplier: "SUP-002 利尔电子",
-    receivedDate: "2025-06-20", currentQty: 15000, location: "STORE-001-A2", status: "active",
-    transactions: [
-      { action: "RECEIVE", qty: 20000, fromLocation: "", toLocation: "RCV-B", operator: "VN_WHS_001", occurredAt: "2025-06-20 09:00", reference: "PO-20250618-002" },
-      { action: "IQC_RELEASE", qty: 20000, fromLocation: "RCV-B", toLocation: "IQC", operator: "VN_IQC_001", occurredAt: "2025-06-20 11:00", reference: "IQC-20250620-002" },
-      { action: "TRANSFER", qty: 20000, fromLocation: "IQC", toLocation: "STORE-001-A2", operator: "VN_WHS_001", occurredAt: "2025-06-20 15:00", reference: "TX-0620-001" },
-      { action: "PICK", qty: -5000, fromLocation: "STORE-001-A2", toLocation: "LINE-02", operator: "VN_WHS_002", occurredAt: "2025-06-21 07:30", reference: "WO-20250621-001" },
-      { action: "ADJUST", qty: 0, fromLocation: "STORE-001-A2", toLocation: "", operator: "VN_WHS_002", occurredAt: "2025-06-22 10:00", reference: "盘点调整" },
-    ],
-  },
-  {
-    materialCode: "IC-MCU-STM32", materialNameZh: "STM32单片机",
-    lotNo: "LOT-20250610-001", supplier: "SUP-TPE-RES 台北电阻厂",
-    receivedDate: "2025-06-10", currentQty: 480, location: "STORE-001-C2", status: "hold",
-    transactions: [
-      { action: "RECEIVE", qty: 500, fromLocation: "", toLocation: "RCV-A", operator: "VN_WHS_003", occurredAt: "2025-06-10 08:30", reference: "PO-20250608-003" },
-      { action: "IQC_HOLD", qty: 500, fromLocation: "RCV-A", toLocation: "IQC-HOLD", operator: "VN_IQC_003", occurredAt: "2025-06-10 13:00", reference: "功能测试异常" },
-    ],
-  },
-];
 
 const actionColors: Record<string, string> = {
   RECEIVE: "var(--ok)", IQC_RELEASE: "var(--info)", IQC_HOLD: "var(--warn)", IQC_REJECT: "var(--danger)",
   TRANSFER: "var(--accent)", PICK: "#8b5cf6", ADJUST: "var(--warn)", ISSUE: "#ec4899", RETURN: "#14b8a6",
 };
 
+interface TraceEventRow {
+  eventType: string;
+  ref: string;
+  actor: string;
+  occurredAt: string;
+  details: Record<string, unknown> | null;
+}
+
 export function WmsTraceability({ locale }: { locale: Locale }) {
-  const [traceData] = useState<TraceLot[]>(mockTraces);
   const [searchQ, setSearchQ] = useState("");
   const [selected, setSelected] = useState<TraceLot | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const search = () => {
-    const q = searchQ.trim().toLowerCase();
+  // Real lot lookup: material-lots row + its traceability_events chain.
+  const search = async () => {
+    const q = searchQ.trim();
     if (!q) return;
-    const found = traceData.find((t) => t.lotNo.toLowerCase().includes(q) || t.materialCode.toLowerCase().includes(q));
-    setSelected(found || null);
-    setNotFound(!found);
+    setBusy(true);
+    try {
+      const [lots, events] = await Promise.all([
+        wmsApi.getMaterialLots({ lotNo: q, limit: 1 }),
+        apiClient.get<{ items: TraceEventRow[] }>(`/traceability/${encodeURIComponent(q)}`),
+      ]);
+      const lot = lots.items?.[0];
+      if (!lot) {
+        setSelected(null);
+        setNotFound(true);
+        return;
+      }
+      const transactions: TxEvent[] = (events.items ?? []).map((e) => {
+        const payload = e.details ?? {};
+        return {
+          action: e.eventType,
+          qty: Number(payload.qty ?? 0),
+          fromLocation: String(payload.fromLocation ?? ""),
+          toLocation: String(payload.toLocation ?? ""),
+          operator: e.actor ?? "",
+          occurredAt: e.occurredAt,
+          reference: e.ref ?? "",
+        };
+      });
+      setSelected({
+        materialCode: lot.materialCode,
+        materialNameZh: lot.materialCode,
+        lotNo: lot.lotNo,
+        supplier: lot.supplierCode ?? "",
+        receivedDate: "",
+        currentQty: lot.onHand ?? lot.qty ?? 0,
+        location: lot.locationCode ?? "",
+        status: String(lot.iqcStatus ?? ""),
+        transactions,
+      });
+      setNotFound(false);
+    } catch {
+      setSelected(null);
+      setNotFound(true);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (

@@ -64,7 +64,7 @@ export function BomAiChat({ locale }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gemma4:latest",
+          model: "qwen3.8:latest",
           prompt: `${context}You are a BOM AI analysis assistant for a Vietnam SMT factory. The user is asking about BOM data quality and anomaly analysis in the factory system.\n\nUser: ${q}\n\nPlease provide a concise, technical analysis in the user's language (Chinese/Vietnamese/English). Keep response under 200 words.`,
           stream: false,
         }),
@@ -76,7 +76,7 @@ export function BomAiChat({ locale }: Props) {
         ...prev,
         {
           role: "assistant",
-          content: "⚠️ AI service unavailable. Please ensure Ollama is running with `gemma4:latest` model.\n\nDemo suggestions:\n- Check BOM data for phantom materials\n- Review duplicate entries in active BOMs\n- Verify material costs against benchmarks",
+          content: "⚠️ AI service unavailable. Please ensure Ollama is running with `qwen3.8:latest` model.\n\nDemo suggestions:\n- Check BOM data for phantom materials\n- Review duplicate entries in active BOMs\n- Verify material costs against benchmarks",
         },
       ]);
     } finally {

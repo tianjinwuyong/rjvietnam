@@ -1,0 +1,1106 @@
+{
+  "productCode": "EPS18R1G",
+  "productName": "EPS18R1G",
+  "lines": [
+    {
+      "seq": 1,
+      "materialCode": "0.14.00.00.0587",
+      "name": "Made in Vietnam L505*405*267mm T=6mm K=K 加强芯 抗裂强度14.5kgf/cm 96PCS/箱 RoHS REACH 和通",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.01041
+    },
+    {
+      "seq": 2,
+      "materialCode": "0.14.01.01.0178-HF",
+      "name": "120*170*0.025mm 双层厚度0.05mm 白色透明PE-LD 单面印黑色循环三角环保回收标签 无卤",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 3,
+      "materialCode": "0.14.02.00.0477",
+      "name": "CORRUGATED BOARD L490*390mm T=3mm K3K 加强芯  RoHS REACH 3PCS/箱 和通",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.03125
+    },
+    {
+      "seq": 4,
+      "materialCode": "0.14.02.01.0238",
+      "name": "489*116mm T=3mm 材质:K3K 加强芯 长刀卡两边各留边15mm 18PCS/箱 RoHS REACH 和通",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.1875
+    },
+    {
+      "seq": 5,
+      "materialCode": "0.14.02.01.0239",
+      "name": "387*116mm T=3mm 材质:K3K 加强芯 短刀卡两边各留边20mm 14PCS/箱 RoHS REACH 和通",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.1458
+    },
+    {
+      "seq": 6,
+      "materialCode": "0.14.06.02.1073",
+      "name": "EPS18R1G-36铭牌标签 Made in Vietnam 尺寸：28.3*25.2mm 底色:潘通冷灰1C 材质：54#珠光合成纸+可打印雾膜+单面背胶 厚度0.1mm 耐酒精擦拭 3倒圆角R2+1倒角C3 迈智",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 7,
+      "materialCode": "0.14.99.00.0121",
+      "name": "L50*50*1080mm 硬纸 RoHS REACH",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.00231
+    },
+    {
+      "seq": 8,
+      "materialCode": "0.14.99.00.0188",
+      "name": "L50*50*900mm 硬纸 RoHS REACH 和通",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 9,
+      "materialCode": "0.14.99.00.0189",
+      "name": "L1220mm*W1020mm*120mm 胶合板材质 承重动载800kg 静载1000kg RoHS REACH（960PCS产品1托盘）万盛兴",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 10,
+      "materialCode": "0.14.99.00.0191",
+      "name": "L50*50*800mm 硬纸 RoHS REACH 和通",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 11,
+      "materialCode": "1.02.00.00.0939",
+      "name": "NBT 12V1.5A美规插墙式电源适配器冷灰色 产品型号：EPS18R1G AI版 Vietnam版",
+      "spec": "",
+      "unit": "自制",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 12,
+      "materialCode": "0.12.00.00.0858",
+      "name": "62*34.5*43mm PC UL94V-0 冷灰1C 表面晒纹：VDI21 LOGO抛光处理 符合RoHS REACH 6P CP65 最新环保要求 无红磷 亚琪",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 13,
+      "materialCode": "0.12.01.00.0921",
+      "name": "61.15*32.8*3.6mm PC UL94V-0 冷灰3C 表面晒纹：VDI21+NEMA 1-15P美规金属PIN脚 （来料铆压好弹片：SUS301-3/4H T=0.25mm 16.75*7.8*4.6mm 用量：2PCS）  符合RoHS REACH 6P CP65 最新环保要求 无红磷 亚琪",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 14,
+      "materialCode": "0.13.00.00.0018",
+      "name": "无铅锡线 Φ1.2mm 品牌：荷花",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "KG",
+      "lossRate": 0.0004
+    },
+    {
+      "seq": 15,
+      "materialCode": "0.13.00.01.0006",
+      "name": "无铅锡条 Sn99.3/Cu0.7 品牌:泽云山",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "KG",
+      "lossRate": 0.00115
+    },
+    {
+      "seq": 16,
+      "materialCode": "0.13.01.00.0035-HF",
+      "name": "阻燃型单组分有机硅胶 JDB807 R，2600ml/支瓶装，每箱 4 支装 ROHS 品牌：嘉多宝",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "KG",
+      "lossRate": 0.0045
+    },
+    {
+      "seq": 17,
+      "materialCode": "0.13.01.00.0002B",
+      "name": "PAS-6750 品牌:高金浩",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "KG",
+      "lossRate": 0.0045
+    },
+    {
+      "seq": 18,
+      "materialCode": "0.13.01.99.0068",
+      "name": "不干胶 KO 810 品牌：嘉多宝",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "KG",
+      "lossRate": 0.0002
+    },
+    {
+      "seq": 19,
+      "materialCode": "0.13.01.99.0000",
+      "name": "不干胶品牌:高金浩",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "KG",
+      "lossRate": 0.0002
+    },
+    {
+      "seq": 20,
+      "materialCode": "0.13.02.00.0009-HF",
+      "name": "TFHF9200 无卤品牌:同方新源",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "L",
+      "lossRate": 0.0015
+    },
+    {
+      "seq": 21,
+      "materialCode": "0.13.02.08.0000",
+      "name": "TF-120 无色透明 同方",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "L",
+      "lossRate": 0.0025
+    },
+    {
+      "seq": 22,
+      "materialCode": "0.14.08.00.0017",
+      "name": "宽度450MM*厚度20U*3KG",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "卷",
+      "lossRate": 0.0
+    },
+    {
+      "seq": 23,
+      "materialCode": "0.14.99.00.0094",
+      "name": "塑料捆扎带 宽15mm 厚度1.3mm 黄色 一卷200米 (联想65W：960个产品15.5米 AE70：3360个产品用33.6米 EPS6：2520个产品用33.6米)",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "M",
+      "lossRate": 0.00896
+    },
+    {
+      "seq": 24,
+      "materialCode": "1.01.00.00.0660",
+      "name": "NBT 12V1.5A美规插墙式电源适配器冷灰色 产品型号：EPS18R1G AI版 Vietnam版",
+      "spec": "",
+      "unit": "自制",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 25,
+      "materialCode": "0.01.01.01.0166D",
+      "name": "22uF 50V ±20% 105℃ Ф5*11mm P:2.5 10000hrs 135mA RoHS REACH 无红磷 YXM系列 50YXM22MEFR5X11 品牌：红宝石",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 26,
+      "materialCode": "0.03.01.00.0199",
+      "name": "SQ1010 立式 12mH min MX-SQ101000G140 品牌：美希",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 27,
+      "materialCode": "0.07.01.00.0113-HF",
+      "name": "EL817 200≤CTR≤400 脚距=10mm DIP-4 无卤 品牌：亿光",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 28,
+      "materialCode": "0.09.00.00.0726U",
+      "name": "Transformer EE16（磁芯加宽）AE=53.63m㎡ PC95或同等材质磁芯 1150uH 五个绕组+磁芯接地 RoHs REACH 无红磷 GSEC-8124033 品牌：金莫特",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 29,
+      "materialCode": "1.00.00.00.0722",
+      "name": "NBT 12V1.5A美规插墙式电源适配器冷灰色 产品型号：EPS18R1G AI版 Vietnam版",
+      "spec": "",
+      "unit": "自制",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 30,
+      "materialCode": "0.00.00.00.0186B-HF",
+      "name": "5.1Ω ±5% 0805 1/8W 0805W8J051JT5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 31,
+      "materialCode": "0.00.00.00.0434B-HF",
+      "name": "47Ω ±1% 0805 1/8W 0805W8F470JT5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 32,
+      "materialCode": "0.00.00.01.0161B-HF",
+      "name": "20Ω ±5% 1206 1/4W 1206W4J0200T5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 33,
+      "materialCode": "0.00.00.01.0234B-HF",
+      "name": "300KΩ ±5% 1206 1/4W 1206W4J0304T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 34,
+      "materialCode": "0.00.00.01.0237B-HF",
+      "name": "390KΩ ±5% 1206 1/4W 1206W4J0394T5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 35,
+      "materialCode": "0.00.00.01.0357B-HF",
+      "name": "3.3MΩ ±5% 1206 1/4W 1206W4J0335T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 4.0
+    },
+    {
+      "seq": 36,
+      "materialCode": "0.00.00.01.0362B-HF",
+      "name": "75Ω ±5% 1206 1/4W 1206W4J0750T5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 37,
+      "materialCode": "0.00.00.01.0497B-HF",
+      "name": "2.2KΩ ±1% 1206 1/4W 1206W4F2201T5E 无卤 品牌：厚生",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 38,
+      "materialCode": "0.00.00.02.0043B-HF",
+      "name": "10KΩ ±1% 0603 1/10W 0603WAF1002T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 39,
+      "materialCode": "0.00.00.02.0043B",
+      "name": "10KΩ ±1% 0603 1/10W 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 40,
+      "materialCode": "0.00.00.02.0053B-HF",
+      "name": "24KΩ ±1% 0603 1/10W 0.45mm/-55~155℃ 0603WAF2402T5E（31003001501）品牌:厚声/ROYAL",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 41,
+      "materialCode": "0.00.00.02.0135B-HF",
+      "name": "5.1KΩ ±5% 0603 1/10W 0603WAJ0512T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 42,
+      "materialCode": "0.00.00.02.0245B-HF",
+      "name": "205KΩ ±1% 0603 1/10W 0603WAF2053T5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 43,
+      "materialCode": "0.00.00.02.0268B-HF",
+      "name": "10Ω ±1% 0603 1/10W 0603WAF0100T5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 44,
+      "materialCode": "0.00.00.02.0270B-HF",
+      "name": "330Ω ±5% 0603 1/10W 0603WAJ0331T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 45,
+      "materialCode": "0.00.00.02.0290B-HF",
+      "name": "2KΩ ±1% 0603 1/10W 0603SAF2001T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 46,
+      "materialCode": "0.00.00.02.0328B-HF",
+      "name": "51KΩ ±1% 0603 1/10W 0603WAF5102T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 47,
+      "materialCode": "0.00.00.02.0504B-HF",
+      "name": "39.2KΩ ±1% 0603 1/10W 0603WAF3922T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 48,
+      "materialCode": "0.00.00.02.0507A-HF",
+      "name": "470pF ±10％ 100V X7R 0603 471K  CC0603KRX7R0BB471 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 49,
+      "materialCode": "0.00.04.00.0009A-HF",
+      "name": "NTC 100KΩ ±1% 0603 B4100 CN0603R104B4100FT 无卤 品牌：仙桥",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 50,
+      "materialCode": "0.01.00.00.4031A-HF",
+      "name": "100nF ±10％ 50V X7R 0603 104K CC0603KRX7R9BB104 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 51,
+      "materialCode": "0.01.00.00.0003G",
+      "name": "100nF ±10％ 50V X7R 0603 104K（CL10B104KB8NNNC）品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 52,
+      "materialCode": "0.01.00.00.4031G-HF",
+      "name": "100nF ±10％ 50V X7R 0603 104K CL10B104KB8NNNC 无卤 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 53,
+      "materialCode": "0.01.00.00.4073A-HF",
+      "name": "10nF ±10％ 50V X7R 0603 103K (0.01uF) CC0603KRX7R9BB103 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 54,
+      "materialCode": "0.01.00.00.2002A",
+      "name": "10nF ±10％ 50V X7R 0603 103K (0.01uF) CC0603KRX7R9BB103 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 55,
+      "materialCode": "0.01.00.00.2002G",
+      "name": "10nF ±10％ 50V X7R 0603 103K (0.01uF) CL10B103KB8NNNC 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 56,
+      "materialCode": "0.01.00.00.4073G-HF",
+      "name": "10nF ±10％ 50V X7R 0603 103K (0.01uF) CL10B103KB8NNNC 无卤 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 57,
+      "materialCode": "0.01.00.00.4104A-HF",
+      "name": "100pF ±5％ 50V NPO 0603 101J CC0603JRNPO9BN101 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 58,
+      "materialCode": "0.01.00.00.0000A",
+      "name": "100pF ±5％ 50V NPO 0603 101J CC0603JRNPO9BN101 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 59,
+      "materialCode": "0.01.00.00.0000G",
+      "name": "100pF ±5％ 50V NPO 0603 101J（CL10C101JB8NNNC）品牌:三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 60,
+      "materialCode": "0.01.00.00.4104G",
+      "name": "100pF ±5％ 50V NPO 0603 101J CL10C101JB8NNNC 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 61,
+      "materialCode": "0.01.00.00.4104A",
+      "name": "100pF ±5％ 50V NPO 0603 101J 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 62,
+      "materialCode": "0.01.00.00.4104G-HF",
+      "name": "100pF ±5％ 50V NPO 0603 101J CL10C101JB8NNNC 无卤 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 63,
+      "materialCode": "0.01.00.00.4135A-HF",
+      "name": "470pF ±10％ 50V X7R 0603 471K CC0603KRX7R9BB471 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 64,
+      "materialCode": "0.01.00.00.4068A",
+      "name": "470pF ±10％ 50V X7R 0603 471K CC0603KRX7R9BB471 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 65,
+      "materialCode": "0.01.00.00.4068D",
+      "name": "470pF ±10％ 50V X7R 0603 471K 品牌:村田",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 66,
+      "materialCode": "0.01.00.00.4135G-HF",
+      "name": "470pF ±10％ 50V X7R 0603 471K CL10B471KB8NNNC 无卤 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 67,
+      "materialCode": "0.01.00.01.0037A-HF",
+      "name": "2.2nF ±10％ 100V X7R 0805 222K CC0805KRX7R0BB222 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 68,
+      "materialCode": "0.01.00.01.0037A",
+      "name": "2.2nF ±10％ 100V X7R 0805 222K品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 69,
+      "materialCode": "0.01.00.01.0037G-HF",
+      "name": "2.2nF ±10％ 100V X7R 0805 222K CL21B222KCANNNC 无卤 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 70,
+      "materialCode": "0.01.00.01.2002A-HF",
+      "name": "100nF ±10％ 50V X7R 0805 104K CC0805KRX7R9BB104 无卤 品牌：国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 71,
+      "materialCode": "0.01.00.01.2002A",
+      "name": "100nF ±10％ 50V X7R 0805 104K CC0805KRX7R9BB104 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 72,
+      "materialCode": "0.01.00.01.4136G",
+      "name": "100nF ±10% 50V X7R 0805 104K （CL21B104KBCNNNC）品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 73,
+      "materialCode": "0.01.00.01.2002G",
+      "name": "100nF ±10％ 50V X7R 0805 104K 品牌:三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 74,
+      "materialCode": "0.01.00.01.2002G-HF",
+      "name": "100nF ±10％ 50V X7R 0805 104K CL21B104KBCNNNC 无卤 品牌：三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 75,
+      "materialCode": "0.01.00.01.4188A-HF",
+      "name": "1nF ±10％ 500V X7R 0805 102K CC0805KRX7RBBB102 无卤 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 76,
+      "materialCode": "0.01.00.01.4188A",
+      "name": "1nF ±10％ 500V X7R 0805 102K 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 77,
+      "materialCode": "0.01.00.01.4188G-HF",
+      "name": "1nF ±10％ 500V X7R 0805 102K 无卤 品牌:三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 78,
+      "materialCode": "0.01.00.02.4042A-HF",
+      "name": "1nF ±10％ 500V X7R 1206 102K CC1206KKX7RBBB102 无卤 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 79,
+      "materialCode": "0.01.00.02.4042A",
+      "name": "1nF ±10％ 500V X7R 1206 102K CC1206KKX7RBBB102 品牌:国巨",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 80,
+      "materialCode": "0.01.00.02.4042G",
+      "name": "1nF ±10％ 500V X7R 1206 102K CL31B102KGFNFNE 品牌:三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 81,
+      "materialCode": "0.01.00.02.4042G-HF",
+      "name": "1nF ±10％ 500V X7R 1206 102K CL31B102KGFNFNE 无卤 品牌:三星",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 82,
+      "materialCode": "0.02.01.00.0055B",
+      "name": "ABS1510 1000V 1.5A ABS REACH RoHS 无红磷 品牌：平伟",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 83,
+      "materialCode": "0.02.03.00.0158Y",
+      "name": "A7(1N4007 1A 1000V) SOD-123FL 品牌：晶导微",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 84,
+      "materialCode": "0.02.03.00.0448Y",
+      "name": "BAV21WS 250V SOD-323 品牌:晶导微",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 85,
+      "materialCode": "0.02.04.00.0267B",
+      "name": "PS10T80LT 10A/80V TO-277 品牌：平伟",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 86,
+      "materialCode": "0.02.05.00.0258Y-HF",
+      "name": "SMD DIODE RS1M 1A 1KV 46mil SMA REACH RoHS 无红磷 晶导",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 87,
+      "materialCode": "0.07.00.00.0676-HF",
+      "name": "SMD IC LD5523NGL SOT-23-6 ROHS REACH 无红磷 Leadtrend",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 88,
+      "materialCode": "0.07.00.00.0945",
+      "name": "SMD IC LR431AKLT1G 36V 2.5V±0.5% SOT-23 REACH RoHS 无红磷 品牌：LRC",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 89,
+      "materialCode": "0.10.00.00.1152B",
+      "name": "单面板 22F 1OZ 56.6*38.3*1.2mm 94V-0 130℃ RoHS REACH 无红磷",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 90,
+      "materialCode": "1.00.00.00.0723",
+      "name": "NBT 12V1.5A美规插墙式电源适配器冷灰色 产品型号：EPS18R1G AI版 Vietnam版",
+      "spec": "",
+      "unit": "自制",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 91,
+      "materialCode": "0.00.00.00.0189B-HF",
+      "name": "15Ω ±5% 0805 1/8W 0805W8J0150T5E 无卤 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 92,
+      "materialCode": "0.00.00.00.0203B-HF",
+      "name": "150Ω ±5% 0805 1/8W 0805W8J0151T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 93,
+      "materialCode": "0.00.00.01.0415B-HF",
+      "name": "0.82Ω ±1% 1206 1/4W 1206W4F820LT5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 2.0
+    },
+    {
+      "seq": 94,
+      "materialCode": "0.00.00.02.0043B-HF",
+      "name": "10KΩ ±1% 0603 1/10W 0603WAF1002T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 95,
+      "materialCode": "0.00.00.02.0043B",
+      "name": "10KΩ ±1% 0603 1/10W 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 96,
+      "materialCode": "0.00.00.02.0338B-HF",
+      "name": "1KΩ ±1% 0603 1/10W 0603WAF1001T5E 无卤 品牌：厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 97,
+      "materialCode": "0.00.00.02.0016B",
+      "name": "1KΩ ±1% 0603 1/10W 品牌:厚声",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 98,
+      "materialCode": "0.02.05.00.0218-HF",
+      "name": "SMD二极管SMD DIODE 1N4148WS 0.3A 100V SOD-323 编带 ROHS REACH 无红磷 晶导微",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 99,
+      "materialCode": "0.05.01.00.0266",
+      "name": "JCS5N50RC 500V 5A TO-252 RoHS REACH 无红磷 品牌:吉林华微",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 100,
+      "materialCode": "0.10.00.00.1153A",
+      "name": "双面板 FR-4 1OZ 15*18*1.0mm 94V-0 130℃ RoHS REACH 无红磷",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 101,
+      "materialCode": "1.01.00.00.0661",
+      "name": "NBT 12V1.5A美规插墙式电源适配器冷灰色 产品型号：EPS18R1G AI版 Vietnam版",
+      "spec": "",
+      "unit": "自制",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 102,
+      "materialCode": "0.00.03.03.0025K",
+      "name": "14D391K 10% 125℃ Φ14mm PIN距7.5mm 外弯脚 立式AI编带  ROHS REACH 无红磷 V391K14HXAFD7H808 品牌：汇万",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 103,
+      "materialCode": "0.00.04.01.0152C",
+      "name": "MF72-7D11 7Ω 3A ±20% PIN=5.0mm 打外K脚 硅树脂 绿色本体 立式AI编带 ROHS REACH 无红磷 MF72 7D11-5.0 绿硅编带 品牌：南京时恒",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 104,
+      "materialCode": "0.01.01.07.0084D",
+      "name": "E-CAP 47uF 250V 105℃ Ф12.5*20mm PIN距5mm 立式AI编带  12000hrs 980mA/100KHz RoHS REACH 无红磷 BXC系列 250BXC47MEFC12.5X20 品牌：红宝石",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 105,
+      "materialCode": "0.01.04.01.0100P",
+      "name": "MPX224-C3 280V ±10% P:10 13*12*6mm 立式AI编带 UL/CQC/VDE ROHS REACH 无红磷 X200.224K2810LT0000Y1000C30 品牌：亿曼丰",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 106,
+      "materialCode": "0.01.05.00.0175K",
+      "name": "471K 470PF 500V ±10% 脚距=10mm Y5P Y1 Φ7.5mm 打外K脚 立式AI编带  ROHS REACH 无红磷 BAR471K07XASD0H815 品牌：汇万",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 107,
+      "materialCode": "0.01.09.00.0340P",
+      "name": "E-CAP 470uF 20V 105℃ Ф6.3*12mm PIN距2.5mm 立式AI编带   RoHS REACH 无红磷 PBC020M471E120TC1B 品牌：绿宝石",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 108,
+      "materialCode": "0.06.00.00.0146H",
+      "name": "T6.3A 250V 2010 方型保险丝 UL 慢断 立式AI编带 RoHS REACH 无红磷 品牌:华德",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 109,
+      "materialCode": "1.02.01.00.0014D",
+      "name": "Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) PVC 冷灰3C UL1571 22AWG L=6feet(1.828M) OD:3.2mm 30V 80℃ SR镀锡处打端子 无印字 RoHS REACH 6P CP65 凯盛",
+      "spec": "",
+      "unit": "自制",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    },
+    {
+      "seq": 110,
+      "materialCode": "0.15.06.00.0036",
+      "name": "Φ6.5*Φ4.4mm*Φ1.4mm*10mm(GENESIS P/N:151-10121-01) 铜镀镍 黑色绝缘环 UL94-V0 无印字 RoHS REACH 6P CP65 Genesis",
+      "spec": "",
+      "unit": "外购",
+      "qty": 1.0,
+      "position": "PCS",
+      "lossRate": 1.0
+    }
+  ]
+}

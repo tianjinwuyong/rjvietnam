@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi } from "../api/wms";
 
+
+
 export function WmsInventoryControlCenter({ locale }: { locale: Locale }) {
   const en = locale === "en-US";
   const [lots, setLots] = useState<any[]>([]);
@@ -11,7 +13,15 @@ export function WmsInventoryControlCenter({ locale }: { locale: Locale }) {
   const [query, setQuery] = useState("");
   useEffect(() => {
     Promise.all([wmsApi.getMaterialLots({ limit: 500 }), wmsApi.getStorageLocations({ limit: 500 }), wmsApi.getTransactions({ limit: 500 })])
-      .then(([l, s, t]) => { setLots(l.items || []); setLocations(s.items || []); setTransactions(t.items || []); })
+      .then(([l, s, t]) => {
+        setLots(l.items ?? []);
+        setLocations(s.items ?? []);
+        setTransactions(t.items || []);
+      })
+      .catch(() => {
+        setLots([]);
+        setLocations([]);
+      })
       .finally(() => setLoading(false));
   }, []);
   const filtered = useMemo(() => lots.filter(lot => !query || [lot.materialCode, lot.lotNo, lot.labelId, lot.locationCode].some(v => String(v || "").toLowerCase().includes(query.toLowerCase()))), [lots, query]);

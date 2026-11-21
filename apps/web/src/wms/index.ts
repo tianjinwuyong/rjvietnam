@@ -2,9 +2,9 @@ export type WmsTabKey =
   | "dashboard" | "receiving" | "returnReceive" | "supplierReturn" | "salesReturn"
   | "iqc" | "iqcClosedLoop" | "iqcDefectLoop" | "iqcInspectionLevels" | "iqcInspect" | "iqcReport" | "iqcStandards" | "supplierKpi" | "supplierManagement" | "qualityTrend"
   | "poReceipt" | "lineReturn" | "subcontractReturn" | "mrbReworkReturn" | "qrBinding" | "iqcPassMaintenance" | "defectArchive" | "mrbApproval" | "scrapFinanceApproval" | "reworkComplete" | "iqcReinspection"
-  | "putaway" | "inventory" | "picking" | "issue"
+  | "putaway" | "inventory" | "picking" | "issue" | "materialDistribution" | "woHandover"
   | "cycleCount" | "transferAdjust" | "expiryControl" | "fifoMonitor" | "fifoSimulation"
-  | "transactions" | "traceability" | "materialTrace" | "wms3dFlow" | "inventoryControl"
+  | "transactions" | "materialConsumption" | "traceability" | "materialTrace" | "wms3dFlow" | "inventoryControl"
   | "msd" | "solderPaste" | "auxiliary"
   | "collaboration" | "closure"
   | "smartShelf"
@@ -22,19 +22,31 @@ export type WmsTabKey =
   | "oqc"
   | "ngManagement"
   | "eightD" | "materialMaster" | "materialBarcodeLoop" | "locationManagement" | "batchManagement"
-  | "incoming" | "supplierLabel" | "materialReceiving" | "materialLoading" | "smtClosedLoop" | "nonSmtClosedLoop" | "nonIqcClosedLoop" | "finishedGoods"
+  | "incoming" | "materialReceiving" | "materialLoading" | "smtClosedLoop" | "nonSmtClosedLoop" | "nonIqcClosedLoop" | "finishedGoods"
   | "pdaReceiving" | "pdaReceivingMobile" | "pdaConsumption" | "pdaMsd" | "pdaCycleCount" | "pdaIqc" | "pdaHistory"
   | "productionInbound" | "productionOutbound"
-  | "inboundOrders" | "outboundOrders" | "requisitions" | "returnSlips" | "replenishments" | "syncHealth";
+  | "inboundOrders" | "outboundOrders" | "requisitions" | "returnSlips" | "replenishments" | "syncHealth"
+  | "rjvnData" | "rjvnIqc" | "rjvnReceipt" | "rjvnInventory" | "rjvnPicking" | "rjvnDocFlow" | "rjvnCanonical" | "rjvnClassic"
+  | "slips"
+  | "overPicking"
+  | "rework"
+  | "supplierDebt"
+  | "defectiveMove"
+  | "mrb"
+  | "supplierReturnOrder"
+  | "iqcTemplates"
+  | "graftOps"
+  | "substitution"
+  | "notices";
 
 export const wmsTabKeys: WmsTabKey[] = [
   "dashboard",
   "receiving", "returnReceive", "supplierReturn", "salesReturn",
   "iqc", "iqcClosedLoop", "iqcDefectLoop", "iqcInspectionLevels", "iqcInspect", "iqcReport", "iqcStandards", "supplierKpi", "supplierManagement", "qualityTrend",
   "poReceipt", "lineReturn", "subcontractReturn", "mrbReworkReturn", "qrBinding", "iqcPassMaintenance", "defectArchive", "mrbApproval", "scrapFinanceApproval", "reworkComplete", "iqcReinspection",
-  "putaway", "inventory", "picking", "issue",
+  "putaway", "inventory", "picking", "issue", "materialDistribution",
   "cycleCount", "transferAdjust", "expiryControl", "fifoMonitor", "fifoSimulation",
-  "transactions", "traceability", "materialTrace", "wms3dFlow", "inventoryControl",
+  "transactions", "materialConsumption", "traceability", "materialTrace", "wms3dFlow", "inventoryControl",
   "msd", "solderPaste", "auxiliary",
   "collaboration", "closure",
   "smartShelf",
@@ -48,14 +60,26 @@ export const wmsTabKeys: WmsTabKey[] = [
   "sqlConsole",
   "lifecycle",
   "basicData", "materialMaster", "materialBarcodeLoop", "locationManagement", "batchManagement",
-  "incoming", "supplierLabel", "materialReceiving", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop", "finishedGoods", "pdaReceiving", "pdaConsumption", "pdaMsd", "pdaIqc", "pdaHistory",
+  "incoming", "materialReceiving", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop", "finishedGoods", "pdaReceiving", "pdaReceivingMobile", "pdaConsumption", "pdaMsd", "pdaIqc", "rework", "supplierDebt", "defectiveMove", "pdaHistory",
   "inboundOrders", "outboundOrders", "requisitions", "returnSlips", "replenishments", "syncHealth",
   "productionInbound", "productionOutbound",
+  "rjvnData", "rjvnIqc", "rjvnReceipt", "rjvnInventory", "rjvnPicking", "rjvnDocFlow", "rjvnCanonical", "rjvnClassic",
+  "slips",
+  "overPicking",
+  "rework",
+  "supplierDebt",
+  "defectiveMove",
+  "mrb",
+  "supplierReturnOrder",
+  "iqcTemplates",
+  "graftOps",
+  "substitution",
+  "notices",
 ];
 
 export type WmsMenuGroupKey =
   | "overview" | "warehouse" | "receivingManagement" | "iqcManagement" | "collaborationManagement" | "specialMaterials"
-  | "traceability" | "msd" | "quality";
+  | "traceability" | "msd" | "quality" | "issuingManagement" | "returnsRework" | "basicData" | "devices";
 
 export interface WmsMenuGroup {
   key: WmsMenuGroupKey;
@@ -65,37 +89,72 @@ export interface WmsMenuGroup {
 
 // Canonical operator menu from WMS菜单界面.xlsx. Engineering/test utilities
 // remain routable for maintainers but are intentionally absent here.
+// 运营菜单按「货往哪走」排：首页 → 收货入库 → IQC → 库内 → 领料发料 → 退货返工 → 特殊物料 → 追溯 → 基础资料 → 质量 → 设备协同。
+// 原 WMS 的 62 个菜单在图里都能找到落点（docs/wms-menu-map-2026-11-20.md）。
+// 联调/测试类（shelfApi、shelfSim、sqlConsole）仍可按 URL 打开，不进运营菜单。
 export const wmsMenuGroups: WmsMenuGroup[] = [
-  { key: "overview", translationKey: "wms.group.overview", tabs: ["dashboard", "closure"] },
-  { key: "receivingManagement", translationKey: "wms.group.receiving", tabs: ["supplierLabel", "materialReceiving", "pdaReceiving", "inboundOrders", "iqcClosedLoop", "pdaIqc", "putaway", "locationManagement", "batchManagement", "pdaHistory", "syncHealth"] },
-  { key: "warehouse", translationKey: "wms.group.warehouse", tabs: [
-    "materialMaster", "materialBarcodeLoop", "locationManagement", "batchManagement", "materialLoading", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop",
-    "receiving", "inboundOrders", "returnReceive", "putaway",
-    "requisitions", "picking", "outboundOrders", "issue", "returnSlips", "replenishments", "pdaMsd",
-    "productionInbound", "productionOutbound",
-    "inventory", "inventoryControl", "cycleCount", "transactions", "smartRack", "pdaConsumption",
-    "transferAdjust", "expiryControl", "fifoMonitor", "fifoSimulation",
-    "smartShelf", "shelfApi", "shelfSim", "shelfSim3d", "shelfOps", "rackSim", "smartRackWorkflow",
+  { key: "overview", translationKey: "wms.group.overview", tabs: [
+    "dashboard", "closure", "rjvnClassic", "rjvnData", "rjvnCanonical", "notices",
+  ] },
+  { key: "receivingManagement", translationKey: "wms.group.receiving", tabs: [
+    "materialReceiving", "receiving", "returnReceive", "pdaReceiving", "pdaReceivingMobile",
+    "inboundOrders", "poReceipt", "putaway", "qrBinding", "materialLoading", "syncHealth",
   ] },
   { key: "iqcManagement", translationKey: "wms.group.iqc", tabs: [
-    "poReceipt", "lineReturn", "subcontractReturn", "mrbReworkReturn", "qrBinding", "incoming", "iqc", "iqcPassMaintenance", "defectArchive", "mrbApproval", "scrapFinanceApproval", "reworkComplete", "iqcReinspection", "iqcClosedLoop", "iqcDefectLoop", "iqcInspectionLevels", "iqcInspect", "iqcStandards", "iqcReport", "supplierReturn",
-    "salesReturn", "supplierKpi", "supplierManagement", "qualityTrend", "pdaIqc",
+    "iqc", "iqcInspect", "iqcInspectionLevels", "iqcClosedLoop", "iqcDefectLoop",
+    "iqcReport", "iqcStandards", "iqcTemplates", "iqcPassMaintenance", "defectArchive",
+    "iqcReinspection", "pdaIqc", "rjvnIqc", "qualityTrend", "graftOps",
   ] },
-  { key: "collaborationManagement", translationKey: "wms.group.collaboration", tabs: ["syncHealth", "pdaCycleCount", "pdaHistory", "collaboration"] },
-  { key: "specialMaterials", translationKey: "wms.group.special", tabs: ["lifecycle", "solderPaste", "auxiliary"] },
-  { key: "traceability", translationKey: "wms.group.traceability", tabs: ["traceability", "materialTrace", "wms3dFlow"] },
-  { key: "quality", translationKey: "wms.group.quality", tabs: ["qualityDashboard", "oqc", "ngManagement", "eightD"] },
-  { key: "msd", translationKey: "wms.group.msd", tabs: ["msd"] },
+  { key: "warehouse", translationKey: "wms.group.warehouse", tabs: [
+    "inventory", "inventoryControl", "rjvnInventory", "cycleCount", "transferAdjust",
+    "expiryControl", "lifecycle", "fifoMonitor", "fifoSimulation", "defectiveMove",
+    "transactions", "batchManagement", "locationManagement",
+  ] },
+  { key: "issuingManagement", translationKey: "wms.group.issuing", tabs: [
+    "picking", "issue", "requisitions", "slips", "materialDistribution", "woHandover",
+    "outboundOrders", "returnSlips", "replenishments", "overPicking",
+    "pdaConsumption", "rjvnPicking", "rjvnDocFlow", "productionInbound", "productionOutbound",
+    "materialConsumption", "smtClosedLoop", "nonSmtClosedLoop", "nonIqcClosedLoop",
+  ] },
+  { key: "returnsRework", translationKey: "wms.group.returns", tabs: [
+    "supplierReturn", "supplierReturnOrder", "salesReturn", "lineReturn", "rework", "reworkComplete",
+    "mrb", "mrbApproval", "mrbReworkReturn", "subcontractReturn", "scrapFinanceApproval",
+    "supplierDebt",
+  ] },
+  { key: "specialMaterials", translationKey: "wms.group.special", tabs: [
+    "solderPaste", "auxiliary", "msd", "pdaMsd",
+  ] },
+  { key: "traceability", translationKey: "wms.group.traceability", tabs: [
+    "traceability", "materialTrace", "wms3dFlow",
+  ] },
+  { key: "basicData", translationKey: "wms.group.basicData", tabs: [
+    "materialMaster", "materialBarcodeLoop", "substitution", "supplierManagement",
+    "supplierKpi", "basicData", "incoming",
+  ] },
+  { key: "quality", translationKey: "wms.group.quality", tabs: [
+    "qualityDashboard", "oqc", "ngManagement", "eightD",
+  ] },
+  { key: "devices", translationKey: "wms.group.devices", tabs: [
+    "smartRack", "smartShelf", "shelfOps", "rackSim", "smartRackWorkflow",
+    "pdaCycleCount", "pdaHistory", "collaboration",
+  ] },
 ];
 
 export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
+  rjvnData: "wms.rjvn.title",
+  rjvnIqc: "wms.rjvnIqc.title",
+  rjvnReceipt: "wms.rjvnReceipt.title",
+  rjvnInventory: "wms.rjvnInventory.title",
+  rjvnPicking: "wms.rjvnPicking.title",
+  rjvnDocFlow: "wms.rjvnDoc.title",
+  rjvnCanonical: "wms.canonical.title",
+  rjvnClassic: "wms.orig.nav.systemTitle",
   dashboard: "wms.subnav.dashboard",
   receiving: "wms.subnav.receiving",
   returnReceive: "wms.subnav.returnReceive",
   supplierReturn: "wms.subnav.supplierReturn",
   salesReturn: "wms.subnav.salesReturn",
   incoming: "wms.subnav.incoming",
-  supplierLabel: "wms.subnav.supplierLabel",
   materialReceiving: "wms.subnav.incoming",
   materialLoading: "wms.subnav.materialLoading",
   smtClosedLoop: "wms.subnav.smtClosedLoop",
@@ -134,12 +193,16 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   inventory: "wms.subnav.inventory",
   picking: "wms.subnav.picking",
   issue: "wms.subnav.issue",
+  woHandover: "wms.subnav.woHandover",
+  slips: "wms.subnav.slips",
+  materialDistribution: "wms.subnav.materialDistribution",
   cycleCount: "wms.subnav.cycleCount",
   transferAdjust: "wms.subnav.transferAdjust",
   expiryControl: "wms.subnav.expiryControl",
   fifoMonitor: "wms.subnav.fifoMonitor",
   fifoSimulation: "wms.subnav.fifoSimulation",
   transactions: "wms.subnav.transactions",
+  materialConsumption: "wms.subnav.materialConsumption",
   traceability: "wms.subnav.traceability",
   materialTrace: "wms.subnav.materialTrace",
   wms3dFlow: "wms.subnav.wms3dFlow",
@@ -176,6 +239,16 @@ export const wmsTabTranslationKeys: Record<WmsTabKey, string> = {
   syncHealth: "wms.subnav.syncHealth",
   productionInbound: "wms.subnav.productionInbound",
   productionOutbound: "wms.subnav.productionOutbound",
+  overPicking: "wms.subnav.overPicking",
+  rework: "wms.subnav.rework",
+  supplierDebt: "wms.subnav.supplierDebt",
+  defectiveMove: "wms.subnav.defectiveMove",
+  mrb: "wms.subnav.mrb",
+  supplierReturnOrder: "wms.subnav.supplierReturnOrder",
+  iqcTemplates: "wms.subnav.iqcTemplates",
+  graftOps: "wms.subnav.graftOps",
+  substitution: "wms.subnav.substitution",
+  notices: "wms.subnav.notices",
 };
 
 export { WmsIncoming } from "./WmsIncoming";
@@ -189,6 +262,14 @@ export { WmsFinishedGoods } from "./WmsFinishedGoods";
 export { WmsDashboard } from "./WmsDashboard";
 export { WmsReceiving } from "./WmsReceiving";
 export { WmsIqc } from "./WmsIqc";
+export { WmsRjvnData } from "./WmsRjvnData";
+export { WmsRjvnIqc } from "./WmsRjvnIqc";
+export { WmsRjvnReceipt } from "./WmsRjvnReceipt";
+export { WmsRjvnInventory } from "./WmsRjvnInventory";
+export { WmsRjvnPicking } from "./WmsRjvnPicking";
+export { WmsRjvnDocFlow } from "./WmsRjvnDocFlow";
+export { WmsCanonicalData } from "./WmsCanonicalData";
+export { WmsRjvnClassic } from "./WmsRjvnClassic";
 export { WmsIqcClosedLoop } from "./WmsIqcClosedLoop";
 export { WmsIqcDefectLoop } from "./WmsIqcDefectLoop";
 export { WmsIqcInspectionLevels } from "./WmsIqcInspectionLevels";
@@ -197,6 +278,8 @@ export { WmsPutAway } from "./WmsPutAway";
 export { WmsInventory } from "./WmsInventory";
 export { WmsPicking } from "./WmsPicking";
 export { WmsIssue } from "./WmsIssue";
+export { WmsWoHandover } from "./WmsWoHandover";
+export { WmsSlips } from "./WmsSlips";
 export { WmsPdaConsumption } from "./WmsPdaConsumption";
 export { WmsTransactions } from "./WmsTransactions";
 export { WmsSmartShelfTester } from "./WmsSmartShelfTester";
@@ -234,6 +317,8 @@ export { WmsTransferAdjust } from "./WmsTransferAdjust";
 export { WmsExpiryControl } from "./WmsExpiryControl";
 export { WmsFifoMonitor } from "./WmsFifoMonitor";
 export { WmsTraceability } from "./WmsTraceability";
+export { WmsMaterialConsumption } from "./WmsMaterialConsumption";
+export { WmsMaterialDistribution } from "./WmsMaterialDistribution";
 export { WmsMaterialTraceRoute } from "./WmsMaterialTraceRoute";
 export { Wms3dFlow } from "./Wms3dFlow";
 export { WmsInventoryControlCenter } from "./WmsInventoryControlCenter";
@@ -260,3 +345,10 @@ export { WmsQualityDashboard } from "./WmsQualityDashboard";
 export { WmsOqc } from "./WmsOqc";
 export { WmsNgManagement } from "./WmsNgManagement";
 export { Wms8DReport } from "./Wms8DReport";
+export { WmsOverPicking } from "./WmsOverPicking";
+export { WmsRework } from "./WmsRework";
+export { WmsSupplierDebt } from "./WmsSupplierDebt";
+export { WmsDefectiveMove } from "./WmsDefectiveMove";
+export { WmsMrb } from "./WmsMrb";
+export { WmsSupplierReturnOrder } from "./WmsSupplierReturnOrder";
+export { WmsNotices } from "./WmsNotices";

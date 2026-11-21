@@ -8,19 +8,6 @@ const api = {
   post: async <T = unknown>(path: string, body?: unknown) => ({ data: await apiClient.post<T>(path, body) }),
   patch: async <T = unknown>(path: string, body?: unknown) => ({ data: await apiClient.patch<T>(path, body) }),
 };
-import {
-  equipmentList as _demoEquipment,
-  maintenanceRecords as _demoRecords,
-  _demoInspectionTemplates,
-  _demoInspectionAssignments,
-  _demoInspectionRecords,
-  _demoInspectionAbnormals,
-  _demoMachineOeeLogs,
-  _demoMachineStatusSnapshots,
-  _demoPmTemplates,
-  _demoPmScheduleAssignments,
-  _demoPmExecutionLogs,
-} from "../data";
 import type {
   Equipment,
   MaintenanceRecord,
@@ -563,27 +550,14 @@ export const maintenanceApi = {
     const query = qs.toString();
     return apiClient
       .get<any>(`/maintenance/equipment${query ? `?${query}` : ""}`)
-      .catch(() => {
-        let items = _demoEquipment.map((e) => ({ ...e }));
-        if (params?.status && params.status !== "all") items = items.filter((e) => e.status === params.status);
-        if (params?.q || params?.search) {
-          const q = (params.q ?? params.search ?? "").toLowerCase();
-          items = items.filter((e) => (e.equipmentNo ?? "").toLowerCase().includes(q) || (e.name_zh ?? "").includes(q));
-        }
-        const limit = params?.limit ?? 100;
-        return { items: items.slice(0, limit), total: items.length };
-      });
+      ;
   },
 
   /** GET /maintenance/equipment/:id — single equipment detail */
   getEquipmentById(id: string) {
     return apiClient
       .get<Equipment>(`/maintenance/equipment/${id}`)
-      .catch(() => {
-        const item = _demoEquipment.find((e) => e.id === id);
-        if (!item) throw new Error("Equipment not found");
-        return item;
-      });
+      ;
   },
 
   // ── Maintenance Records ───────────────────────────────────────────────────
@@ -599,14 +573,7 @@ export const maintenanceApi = {
     const query = qs.toString();
     return apiClient
       .get<ListEnvelope<MaintenanceRecord>>(`/maintenance/records${query ? `?${query}` : ""}`)
-      .catch(() => {
-        let items = _demoRecords.map((r) => ({ ...r }));
-        if (params?.status && params.status !== "all") items = items.filter((r) => r.status === params.status);
-        if (params?.type && params.type !== "all") items = items.filter((r) => r.type === params.type);
-        if (params?.equipmentNo) items = items.filter((r) => r.equipmentNo === params.equipmentNo);
-        const limit = params?.limit ?? 100;
-        return { items: items.slice(0, limit), total: items.length };
-      });
+      ;
   },
 
   /** POST /maintenance/records — create a maintenance record */
@@ -636,25 +603,12 @@ export const maintenanceApi = {
 
   /** GET /maintenance/inspection/templates */
   getInspectionTemplates(params?: { machineType?: string; frequencyType?: string; q?: string }) {
-    return apiClient.get<ListEnvelope<InspectionTemplate>>("/maintenance/inspection/templates").catch(() => {
-      let items = _demoInspectionTemplates.map((t) => ({ ...t }));
-      if (params?.machineType && params.machineType !== "all") items = items.filter((t) => t.machineType === params.machineType);
-      if (params?.frequencyType && params.frequencyType !== "all") items = items.filter((t) => t.frequencyType === params.frequencyType);
-      if (params?.q) {
-        const q = params.q.toLowerCase();
-        items = items.filter((t) => t.templateCode.toLowerCase().includes(q) || t.templateName.toLowerCase().includes(q));
-      }
-      return { items, total: items.length };
-    });
+    return apiClient.get<ListEnvelope<InspectionTemplate>>("/maintenance/inspection/templates");
   },
 
   /** GET /maintenance/inspection/templates/:id */
   getInspectionTemplateById(id: string) {
-    return apiClient.get<InspectionTemplate>(`/maintenance/inspection/templates/${id}`).catch(() => {
-      const item = _demoInspectionTemplates.find((t) => t.id === id);
-      if (!item) throw new Error("Template not found");
-      return item;
-    });
+    return apiClient.get<InspectionTemplate>(`/maintenance/inspection/templates/${id}`);
   },
 
   // ── Inspection Assignments ─────────────────────────────────────────────────
@@ -666,14 +620,7 @@ export const maintenanceApi = {
     status?: string;
     limit?: number;
   }) {
-    return apiClient.get<ListEnvelope<InspectionAssignment>>("/maintenance/inspection/assignments").catch(() => {
-      let items = _demoInspectionAssignments.map((a) => ({ ...a }));
-      if (params?.machineId) items = items.filter((a) => a.machineId === params.machineId);
-      if (params?.shiftDate) items = items.filter((a) => a.shiftDate === params.shiftDate);
-      if (params?.status && params.status !== "all") items = items.filter((a) => a.status === params.status);
-      const limit = params?.limit ?? 100;
-      return { items: items.slice(0, limit), total: items.length };
-    });
+    return apiClient.get<ListEnvelope<InspectionAssignment>>("/maintenance/inspection/assignments");
   },
 
   /** POST /maintenance/inspection/assignments */
@@ -701,74 +648,40 @@ export const maintenanceApi = {
     result?: string;
     limit?: number;
   }) {
-    return apiClient.get<ListEnvelope<InspectionRecord>>("/maintenance/inspection/records").catch(() => {
-      let items = _demoInspectionRecords.map((r) => ({ ...r }));
-      if (params?.machineId) items = items.filter((r) => r.machineId === params.machineId);
-      if (params?.shiftDate) items = items.filter((r) => r.shiftDate === params.shiftDate);
-      if (params?.result && params.result !== "all") items = items.filter((r) => r.overallResult === params.result);
-      const limit = params?.limit ?? 100;
-      return { items: items.slice(0, limit), total: items.length };
-    });
+    return apiClient.get<ListEnvelope<InspectionRecord>>("/maintenance/inspection/records");
   },
 
   // ── Inspection Abnormalities ─────────────────────────────────────────────
 
   /** GET /maintenance/inspection/abnormals */
   getInspectionAbnormals(params?: { status?: string; severity?: string; limit?: number }) {
-    return apiClient.get<ListEnvelope<InspectionAbnormal>>("/maintenance/inspection/abnormals").catch(() => {
-      let items = _demoInspectionAbnormals.map((a) => ({ ...a }));
-      if (params?.status && params.status !== "all") items = items.filter((a) => a.status === params.status);
-      if (params?.severity && params.severity !== "all") items = items.filter((a) => a.severity === params.severity);
-      const limit = params?.limit ?? 100;
-      return { items: items.slice(0, limit), total: items.length };
-    });
+    return apiClient.get<ListEnvelope<InspectionAbnormal>>("/maintenance/inspection/abnormals");
   },
 
   // ── Machine OEE & Status ──────────────────────────────────────────────────
 
   /** GET /maintenance/oee */
   getMachineOeeLogs(params?: { machineId?: string; logDate?: string; limit?: number }) {
-    return apiClient.get<ListEnvelope<MachineOeeLog>>("/maintenance/oee").catch(() => {
-      let items = _demoMachineOeeLogs.map((o) => ({ ...o }));
-      if (params?.machineId) items = items.filter((o) => o.machineId === params.machineId);
-      if (params?.logDate) items = items.filter((o) => o.logDate === params.logDate);
-      const limit = params?.limit ?? 100;
-      return { items: items.slice(0, limit), total: items.length };
-    });
+    return apiClient.get<ListEnvelope<MachineOeeLog>>("/maintenance/oee");
   },
 
   /** GET /maintenance/machine-status */
   getMachineStatusSnapshots(params?: { machineId?: string }) {
-    return apiClient.get<ListEnvelope<MachineStatusSnapshot>>("/maintenance/machine-status").catch(() => {
-      let items = _demoMachineStatusSnapshots.map((s) => ({ ...s }));
-      if (params?.machineId) items = items.filter((s) => s.machineId === params.machineId);
-      return { items, total: items.length };
-    });
+    return apiClient.get<ListEnvelope<MachineStatusSnapshot>>("/maintenance/machine-status");
   },
 
   // ── PM Templates ──────────────────────────────────────────────────────────
 
   /** GET /maintenance/pm/templates */
   getPmTemplates(params?: { machineType?: string; frequencyCode?: string }) {
-    return apiClient.get<ListEnvelope<PmTemplate>>("/maintenance/pm/templates").catch(() => {
-      let items = _demoPmTemplates.map((t) => ({ ...t }));
-      if (params?.machineType && params.machineType !== "all") items = items.filter((t) => t.machineType === params.machineType);
-      if (params?.frequencyCode && params.frequencyCode !== "all") items = items.filter((t) => t.frequencyCode === params.frequencyCode);
-      return { items, total: items.length };
-    });
+    return apiClient.get<ListEnvelope<PmTemplate>>("/maintenance/pm/templates");
   },
 
   // ── PM Schedule Assignments ─────────────────────────────────────────────────
 
   /** GET /maintenance/pm/schedule */
   getPmScheduleAssignments(params?: { assetId?: string; status?: string; overdue?: boolean }) {
-    return apiClient.get<ListEnvelope<PmScheduleAssignment>>("/maintenance/pm/schedule").catch(() => {
-      let items = _demoPmScheduleAssignments.map((a) => ({ ...a }));
-      if (params?.assetId) items = items.filter((a) => a.assetId === params.assetId);
-      if (params?.status === "active") items = items.filter((a) => a.isActive);
-      if (params?.overdue) items = items.filter((a) => a.nextDueDate < new Date().toISOString().slice(0, 10));
-      return { items, total: items.length };
-    });
+    return apiClient.get<ListEnvelope<PmScheduleAssignment>>("/maintenance/pm/schedule");
   },
 
   /** POST /maintenance/pm/schedule */
@@ -786,13 +699,7 @@ export const maintenanceApi = {
 
   /** GET /maintenance/pm/execution-logs */
   getPmExecutionLogs(params?: { assetId?: string; result?: string; limit?: number }) {
-    return apiClient.get<ListEnvelope<PmExecutionLog>>("/maintenance/pm/execution-logs").catch(() => {
-      let items = _demoPmExecutionLogs.map((l) => ({ ...l }));
-      if (params?.assetId) items = items.filter((l) => l.assetId === params.assetId);
-      if (params?.result && params.result !== "all") items = items.filter((l) => l.result === params.result);
-      const limit = params?.limit ?? 100;
-      return { items: items.slice(0, limit), total: items.length };
-    });
+    return apiClient.get<ListEnvelope<PmExecutionLog>>("/maintenance/pm/execution-logs");
   },
 
   // ── Dashboard ─────────────────────────────────────────────────────────────
@@ -801,22 +708,7 @@ export const maintenanceApi = {
   getDashboardSummary() {
     return apiClient
       .get<MaintenanceDashboardSummary>("/maintenance/dashboard")
-      .catch(() => {
-        const today = new Date().toISOString().slice(0, 10);
-        return {
-          totalEquipment: _demoEquipment.length,
-          online: _demoEquipment.filter((e) => e.status === "online").length,
-          fault: _demoEquipment.filter((e) => e.status === "fault").length,
-          inMaintenance: _demoEquipment.filter((e) => e.status === "maintenance").length,
-          offline: _demoEquipment.filter((e) => e.status === "offline").length,
-          pendingMaintenance: _demoRecords.filter((r) => r.status === "pending" || r.status === "in_progress").length,
-          overdueMaintenance: _demoRecords.filter((r) => r.status === "overdue").length,
-          pendingInspections: _demoInspectionAssignments.filter((a) => a.shiftDate === today && a.status === "pending").length,
-          completedInspectionsToday: _demoInspectionRecords.filter((r) => r.shiftDate === today).length,
-          openAbnormals: _demoInspectionAbnormals.filter((a) => a.status === "reported" || a.status === "acknowledged").length,
-          overduePmSchedules: _demoPmScheduleAssignments.filter((a) => a.isActive && a.nextDueDate < today).length,
-        };
-      });
+      ;
   },
 
   // ── Checklist Templates ────────────────────────────────────────────────────

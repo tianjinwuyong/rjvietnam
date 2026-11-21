@@ -83,7 +83,7 @@ export function AiPatrolChat({ patrol, locale, initiallyCollapsed = false }: AiP
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gemma4:latest",
+          model: "qwen3.8:latest",
           prompt: `${context}${patrol.systemPrompt}\n\nUser (${locale}): ${q}\n\nKeep response under 200 words. Respond in the user's language.`,
           stream: false,
         }),

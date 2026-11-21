@@ -1,7 +1,7 @@
 /**
  * SmartRackAiChat — 智能料架 AI 分析助手（内嵌式）
  *
- * 调用 Ollama gemma4:latest 直接分析料架库存状态：
+ * 调用 Ollama qwen3.8:latest 直接分析料架库存状态：
  *   - 当前物料批次生命周期状态（过期/临期/正常）
  *   - FIFO 合规性分析
  *   - 库存短缺预测
@@ -107,7 +107,7 @@ export function SmartRackAiChat({ locale, cells, stats }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          model: "gemma4:latest",
+          model: "qwen3.8:latest",
           prompt: `${context}
 
 You are a Smart Rack AI analysis assistant for a Vietnam SMT factory WMS system.
@@ -135,10 +135,10 @@ User: ${q}`,
           role: "assistant",
           content:
             locale === "zh-CN"
-              ? `⚠️ AI 服务不可用（${msg}）。请确认 Ollama 已启动并加载 gemma4:latest 模型。`
+              ? `⚠️ AI 服务不可用（${msg}）。请确认 Ollama 已启动并加载 qwen3.8:latest 模型。`
               : locale === "vi-VN"
-              ? `⚠️ Dịch vụ AI không khả dụng (${msg}). Hãy đảm bảo Ollama đang chạy với model gemma4:latest.`
-              : `⚠️ AI service unavailable (${msg}). Please ensure Ollama is running with gemma4:latest.`,
+              ? `⚠️ Dịch vụ AI không khả dụng (${msg}). Hãy đảm bảo Ollama đang chạy với model qwen3.8:latest.`
+              : `⚠️ AI service unavailable (${msg}). Please ensure Ollama is running with qwen3.8:latest.`,
         },
       ]);
     } finally {

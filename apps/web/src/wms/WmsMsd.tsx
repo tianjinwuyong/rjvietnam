@@ -2,16 +2,16 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   AlertTriangle, Clock, Thermometer, Package, Search, ShieldAlert,
   Scan, X, CheckCircle, Zap, Flame, TrendingDown, Lock, Unlock,
-  ChevronDown, ChevronRight, RotateCcw, Printer
+  ChevronDown, ChevronRight, RotateCcw, Printer, ArrowLeftRight, MapPin
 } from "lucide-react";
 import { t } from "../i18n";
 import { wmsApi } from "../api/wms";
-import type { LifecycleAlertAction } from "../api/wms";
-import type { Locale } from "../../../../packages/shared-types/src/factory";
+import type { LifecycleAlertAction, StorageLocation } from "../api/wms";
+import type { Locale, MaterialLot } from "../../../../packages/shared-types/src/factory";
 import QRCode from "qrcode";
-import { MsMoistureControlDiagram } from "./MsMoistureControlDiagram";
 import { MsLabelPrintingPage } from "./MsLabelPrintingPage";
 import { MsPdaSyncPage } from "./MsPdaSyncPage";
+import { MsdEmployeeCommunication } from "./MsdEmployeeCommunication";
 
 // MSD Level 标准参照表 (IPC/JEDEC J-STD-033)
 const MSD_LEVELS: { level: string; floorLife: string; note: string; color: string }[] = [
@@ -125,7 +125,10 @@ async function printMaterialLabel(lot: OpenedLot, remainingHours: number): Promi
   printWindow.document.close();
 }
 
-export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; initialTab?: "opened" | "sealed" | "baking" | "label" | "pdaSync" }) {
+type MsdTab = "all" | "opened" | "sealed" | "baking" | "label" | "pdaSync";
+
+export function WmsMsd({ locale, initialTab = "all" }: { locale: Locale; initialTab?: MsdTab }) {
+  const [allMsdLots, setAllMsdLots] = useState<MaterialLot[]>([]);
   const [openings, setOpenings] = useState<OpenedLot[]>([]);
   const [sealedLots, setSealedLots] = useState<SealedLot[]>([]);
   const [bakingRecords, setBakingRecords] = useState<BakingRecord[]>([]);
@@ -138,7 +141,14 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
   const [materialQuery, setMaterialQuery] = useState("");
   const [submittedMaterialQuery, setSubmittedMaterialQuery] = useState("");
   const [warningOnly, setWarningOnly] = useState(false);
-  const [tab, setTab] = useState<"opened" | "sealed" | "baking" | "label" | "pdaSync">(initialTab);
+  const [tab, setTab] = useState<MsdTab>(initialTab);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [selectedMsdLot, setSelectedMsdLot] = useState<MaterialLot | null>(null);
+  const [storageLocations, setStorageLocations] = useState<StorageLocation[]>([]);
+  const [moveToLocation, setMoveToLocation] = useState("");
+  const [moveReason, setMoveReason] = useState("");
+  const [movingLot, setMovingLot] = useState(false);
+  const [moveFeedback, setMoveFeedback] = useState<{ ok: boolean; message: string } | null>(null);
 
   // 开箱 Modal
   const [showOpenModal, setShowOpenModal] = useState(false);
@@ -188,6 +198,27 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
     finally { setLoadingOpenings(false); }
   }, []);
 
+  const fetchAllMsdLots = useCallback(async () => {
+    setLoadingAll(true);
+    try {
+      const pageSize = 500;
+      const rows: MaterialLot[] = [];
+      let offset = 0;
+      let total = 0;
+      do {
+        const page = await wmsApi.getMaterialLots({ msdOnly: true, limit: pageSize, offset });
+        const items = page.items || [];
+        rows.push(...items);
+        total = Number(page.total ?? rows.length);
+        offset += pageSize;
+        if (items.length === 0) break;
+      } while (rows.length < total);
+      setAllMsdLots(rows);
+      setErr("");
+    } catch (e: any) { setErr(e.message); }
+    finally { setLoadingAll(false); }
+  }, []);
+
   const fetchSealed = useCallback(async () => {
     setLoadingSealed(true);
     try {
@@ -206,7 +237,10 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
     finally { setLoadingBaking(false); }
   }, []);
 
-  useEffect(() => { fetchOpenings(); }, [fetchOpenings]);
+  useEffect(() => { fetchOpenings(); fetchAllMsdLots(); }, [fetchOpenings, fetchAllMsdLots]);
+  useEffect(() => {
+    void wmsApi.getStorageLocations({ status: "active", limit: 500 }).then(result => setStorageLocations(result.items || [])).catch(() => setStorageLocations([]));
+  }, []);
   useEffect(() => {
     let active = true;
     const loadAlerts = async () => { try { const rows = await wmsApi.getLifecycleAlertsWithActions(); if (active) setAlerts(rows ?? []); } catch { /* dashboard remains usable when alert service is unavailable */ } };
@@ -316,6 +350,12 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
   const filteredBaking = useMemo(() =>
     bakingRecords.filter(r => !searchQ || r.lot_no.toLowerCase().includes(searchQ.toLowerCase()) || r.material_code.toLowerCase().includes(searchQ.toLowerCase()) || (r.operator_name || "").includes(searchQ)), [bakingRecords, searchQ]);
 
+  const filteredAllMsdLots = useMemo(() => {
+    const q = searchQ.trim().toLowerCase();
+    return allMsdLots.filter(row => !q || [row.materialCode, row.name_zh, row.name_en, row.name_vi, row.lotNo, row.poNo, row.locationCode, row.supplierCode]
+      .filter(Boolean).join(" ").toLowerCase().includes(q));
+  }, [allMsdLots, searchQ]);
+
   const materialQueryCount = useMemo(() => {
     const q = submittedMaterialQuery.toLowerCase();
     if (!q) return null;
@@ -347,9 +387,35 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
     setTab("opened");
   };
 
+  const openMsdLotDetails = (row: MaterialLot) => {
+    setSelectedMsdLot(row);
+    setMoveToLocation("");
+    setMoveReason("");
+    setMoveFeedback(null);
+  };
+
+  const moveSelectedMsdLot = async () => {
+    if (!selectedMsdLot || !moveToLocation || moveToLocation === selectedMsdLot.locationCode) {
+      setMoveFeedback({ ok: false, message: t("wms.msd.sameLocation", locale) });
+      return;
+    }
+    setMovingLot(true);
+    setMoveFeedback(null);
+    try {
+      const quantity = Number(selectedMsdLot.qty ?? selectedMsdLot.receivedQty ?? 0);
+      await wmsApi.postTransaction("TRANSFER", { materialLotId: selectedMsdLot.id, lotNo: selectedMsdLot.lotNo, qty: quantity, fromLocation: selectedMsdLot.locationCode || undefined, toLocation: moveToLocation, reason: moveReason || undefined });
+      await fetchAllMsdLots();
+      setSelectedMsdLot(current => current ? { ...current, locationCode: moveToLocation } : current);
+      setMoveFeedback({ ok: true, message: `${t("wms.msd.moveSuccess", locale)}: ${moveToLocation}` });
+      setMoveReason("");
+    } catch (error) {
+      setMoveFeedback({ ok: false, message: error instanceof Error ? error.message : String(error) });
+    } finally { setMovingLot(false); }
+  };
+
   return (
     <div className="screen-stack">
-      <MsMoistureControlDiagram />
+      <MsdEmployeeCommunication locale={locale} stats={stats} />
       <section className="surface-panel">
         <div className="section-header" style={{ marginBottom: 10 }}>
           <div>
@@ -531,6 +597,7 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
       <section className="surface-panel">
         <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
           {([
+            { key: "all", label: t("wms.msd.allMaterials", locale), count: allMsdLots.length },
             { key: "opened", label: t("wms.msd.openedLots", locale),     count: openings.length },
             { key: "sealed", label: t("wms.msd.sealedLots", locale),     count: sealedLots.length },
             { key: "baking",  label: "烘烤记录", count: bakingRecords.length },
@@ -547,6 +614,54 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
 
         {tab === "label" && <MsLabelPrintingPage />}
         {tab === "pdaSync" && <MsPdaSyncPage />}
+
+        {tab === "all" && (
+          <div className="table-shell" style={{ overflowX: "auto" }}>
+            <table>
+              <thead><tr>
+                <th>{t("wms.msd.materialCode", locale)}</th>
+                <th>{t("wms.msd.lotNo", locale)}</th>
+                <th>{t("wms.msd.poNo", locale)}</th>
+                <th>MSL</th>
+                <th>{t("wms.msd.location", locale)}</th>
+                <th>{t("wms.msd.totalQty", locale)}</th>
+                <th>{t("wms.msd.availableQty", locale)}</th>
+                <th>{t("wms.msd.reservedQty", locale)}</th>
+                <th>IQC</th>
+                <th>{t("wms.msd.supplier", locale)}</th>
+                <th>{t("wms.msd.receivedDate", locale)}</th>
+                <th>{t("wms.msd.trackingStatus", locale)}</th>
+              </tr></thead>
+              <tbody>
+                {loadingAll ? <tr><td colSpan={12} style={{ textAlign: "center", padding: 24 }}>{t("common.loading", locale)}</td></tr>
+                 : filteredAllMsdLots.length === 0 ? <tr><td colSpan={12} style={{ textAlign: "center", padding: 24, color: "var(--muted)" }}>{t("common.noData", locale)}</td></tr>
+                 : filteredAllMsdLots.map(row => {
+                    const name = locale === "vi-VN" ? row.name_vi : locale === "en-US" ? row.name_en : row.name_zh;
+                    const opened = Boolean(row.openedAt);
+                    const remaining = opened && row.openedShelfLifeDays ? calcRemainingHours(row.openedShelfLifeDays, row.openedAt!) : NaN;
+                    return <tr key={String(row.id ?? row.lotNo)} role="button" tabIndex={0}
+                      title={t("wms.msd.openDetailTooltip", locale)}
+                      onClick={() => openMsdLotDetails(row)}
+                      onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); openMsdLotDetails(row); } }}
+                      style={{ cursor: "pointer" }}>
+                      <td><strong>{row.materialCode}</strong><br /><span style={{ fontSize: 10, color: "var(--muted)" }}>{name || "-"}</span></td>
+                      <td><code>{row.lotNo}</code></td>
+                      <td><code>{row.poNo || "-"}</code></td>
+                      <td><span className="badge badge-info">MSL {row.msdLevel}</span></td>
+                      <td>{row.locationCode || "-"}</td>
+                      <td>{row.qty ?? row.receivedQty ?? 0} {row.uom || ""}</td>
+                      <td><strong>{row.availableQty ?? 0}</strong> {row.uom || ""}</td>
+                      <td>{row.reservedQty ?? 0} {row.uom || ""}</td>
+                      <td><span className={`badge badge-${row.iqcStatus === "released" ? "ok" : row.iqcStatus === "pending" ? "warning" : "danger"}`}>{row.iqcStatus}</span></td>
+                      <td>{row.supplierCode || "-"}</td>
+                      <td style={{ whiteSpace: "nowrap" }}>{fmtDt(row.receivedDate || null)}</td>
+                      <td>{opened ? <span className={`badge badge-${remaining <= 0 ? "danger" : "warning"}`}>{remaining <= 0 ? t("wms.msd.status.expired", locale) : `${t("wms.msd.status.open", locale)} · ${fmtHours(remaining)}`}</span> : <span className="badge badge-ok">{t("wms.msd.status.sealed", locale)}</span>}</td>
+                    </tr>;
+                  })}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {/* Opened lots */}
         {tab === "opened" && (
@@ -729,6 +844,62 @@ export function WmsMsd({ locale, initialTab = "opened" }: { locale: Locale; init
           </div>
         )}
       </section>
+
+      {selectedMsdLot && (() => {
+        const row = selectedMsdLot;
+        const name = locale === "vi-VN" ? row.name_vi : locale === "en-US" ? row.name_en : row.name_zh;
+        const opened = Boolean(row.openedAt);
+        const remaining = opened && row.openedShelfLifeDays ? calcRemainingHours(row.openedShelfLifeDays, row.openedAt!) : NaN;
+        const detailRows: Array<[string, string | number]> = [
+          [t("wms.msd.materialCode", locale), row.materialCode],
+          [t("wms.msd.lotNo", locale), row.lotNo],
+          [t("wms.msd.poNo", locale), row.poNo || "-"],
+          ["MSL", row.msdLevel || "-"],
+          [t("wms.msd.location", locale), row.locationCode || "-"],
+          [t("wms.msd.supplier", locale), row.supplierCode || "-"],
+          [t("wms.msd.labelId", locale), row.labelId || row.rollQr || "-"],
+          [t("wms.msd.totalQty", locale), `${row.qty ?? row.receivedQty ?? 0} ${row.uom || ""}`],
+          [t("wms.msd.availableQty", locale), `${row.availableQty ?? 0} ${row.uom || ""}`],
+          [t("wms.msd.reservedQty", locale), `${row.reservedQty ?? 0} ${row.uom || ""}`],
+          ["IQC", row.iqcStatus || "-"],
+          [t("wms.msd.lotStatus", locale), row.lotStatus || "-"],
+          [t("wms.msd.lifecycleStatus", locale), row.lifecycleStatus || "-"],
+          [t("wms.msd.receivedDate", locale), fmtDt(row.receivedDate || null)],
+          [t("wms.msd.manufacturingDate", locale), row.manufacturingDate ? new Date(row.manufacturingDate).toLocaleDateString() : "-"],
+          [t("wms.msd.expiryDate", locale), row.expiryDate ? new Date(row.expiryDate).toLocaleDateString() : "-"],
+          [t("wms.msd.exposedSince", locale), opened ? fmtDt(row.openedAt!) : "-"],
+          [t("wms.msd.floorLife", locale), row.openedShelfLifeDays ? `${fmtHours(row.openedShelfLifeDays * 24)}` : "-"],
+          [t("wms.msd.remainingLife", locale), opened ? (remaining <= 0 ? t("wms.msd.status.expired", locale) : fmtHours(remaining)) : t("wms.msd.status.sealed", locale)],
+        ];
+        return <div className="modal-overlay" onClick={() => setSelectedMsdLot(null)}>
+          <div className="modal-box" role="dialog" aria-modal="true" aria-labelledby="msd-lot-detail-title" onClick={event => event.stopPropagation()} style={{ width: "min(760px, calc(100vw - 32px))", maxWidth: 760, maxHeight: "calc(100vh - 48px)", overflowY: "auto", padding: 24, borderRadius: 12, border: "1px solid var(--border)", background: "var(--panel)", color: "var(--text)", boxShadow: "0 20px 60px rgba(0,0,0,.28)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "flex-start", marginBottom: 18 }}>
+              <div><h3 id="msd-lot-detail-title" style={{ margin: 0 }}>{t("wms.msd.detailTitle", locale)}</h3><div style={{ marginTop: 5 }}><strong>{row.materialCode}</strong> · <code>{row.lotNo}</code></div><div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3 }}>{name || "-"}</div></div>
+              <button className="btn-ghost" onClick={() => setSelectedMsdLot(null)} title={t("common.close", locale)} aria-label={t("common.close", locale)} style={{ flex: "0 0 auto", color: "var(--text)", background: "var(--surface-2)", border: "1px solid var(--border)" }}><X size={18} /></button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+              {detailRows.map(([label, value]) => <div key={label} style={{ padding: "10px 12px", border: "1px solid var(--border)", borderRadius: 8, background: "var(--surface-2)", color: "var(--text)" }}><div style={{ fontSize: 11, fontWeight: 600, color: "var(--text-2)", marginBottom: 4 }}>{label}</div><div style={{ fontSize: 13, fontWeight: 700, color: "var(--text)", wordBreak: "break-word" }}>{value}</div></div>)}
+            </div>
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid var(--border)" }}>
+              <h4 style={{ margin: "0 0 4px" }}><MapPin size={15} style={{ marginRight: 6, verticalAlign: "middle" }} />{t("wms.msd.operations", locale)} · {t("wms.msd.changeLocation", locale)}</h4>
+              <p style={{ margin: "0 0 12px", fontSize: 11, color: "var(--text-2)" }}>{t("wms.msd.wholeLotMove", locale)}</p>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(180px, 1fr) minmax(180px, 1fr) auto", gap: 10, alignItems: "end" }}>
+                <label style={{ display: "grid", gap: 5, fontSize: 11, color: "var(--text-2)" }}>{t("wms.toLocation", locale)}
+                  <select className="form-input" value={moveToLocation} onChange={event => { setMoveToLocation(event.target.value); setMoveFeedback(null); }} title={t("wms.msd.selectLocation", locale)}>
+                    <option value="">{t("wms.msd.selectLocation", locale)}</option>
+                    {storageLocations.filter(location => location.code !== row.locationCode && location.msdAllowed !== false).map(location => <option key={location.id} value={location.code}>{location.code} · {locale === "vi-VN" ? location.name_vi : locale === "en-US" ? location.name_en : location.name_zh}</option>)}
+                  </select>
+                </label>
+                <label style={{ display: "grid", gap: 5, fontSize: 11, color: "var(--text-2)" }}>{t("wms.msd.moveReason", locale)}
+                  <input className="form-input" value={moveReason} onChange={event => setMoveReason(event.target.value)} placeholder={t("wms.msd.moveReason", locale)} title={t("wms.msd.moveReason", locale)} />
+                </label>
+                <button className="btn-primary" disabled={movingLot || !moveToLocation || Number(row.qty ?? row.receivedQty ?? 0) <= 0} onClick={() => void moveSelectedMsdLot()} title={t("wms.msd.confirmMove", locale)}><ArrowLeftRight size={14} />{movingLot ? t("common.loading", locale) : t("wms.msd.confirmMove", locale)}</button>
+              </div>
+              {moveFeedback && <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 6, background: moveFeedback.ok ? "var(--ok-bg)" : "var(--danger-bg)", color: moveFeedback.ok ? "var(--ok)" : "var(--danger)", fontSize: 12 }}>{moveFeedback.message}</div>}
+            </div>
+          </div>
+        </div>;
+      })()}
 
       {/* 开箱 Modal */}
       {showOpenModal && (

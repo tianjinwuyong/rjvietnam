@@ -52,6 +52,7 @@ type FinishedGoodItem = {
 type FgInventoryResponse = { items: FinishedGoodItem[]; total: number };
 type Wms3dSnapshot={metrics:Record<string,number>;finishedGoods:Array<{id:number;sn:string;status:string;productCode:string;workOrderCode:string;locationCode:string;cartonCode?:string;palletCode?:string}>};
 type RawMaterialLot = { id?: number|string; labelId?: string; rollQr?: string; lotNo: string; materialCode: string; iqcStatus?: string; locationCode?: string|null; receivedDate?: string; createdAt?: string; boxQr?: string; palletQr?: string; workOrderCode?: string };
+type RawLotEnvelope = { items?: RawMaterialLot[]; data?: RawMaterialLot[] };
 
 function rawMaterialToSceneItem(item: RawMaterialLot, index = 0): FinishedGoodItem {
   const raw = item as RawMaterialLot & { receivedQty?: number; availableQty?: number; reservedQty?: number; supplierCode?: string; expiryDate?: string };
@@ -234,7 +235,7 @@ export function ProductWarehouseScene3d() {
   const locate=useCallback(async(term=search)=>{
     const [snap, raw] = await Promise.all([
       apiClient.get<Wms3dSnapshot>(`/api/3d/wms-snapshot${term.trim()?`?q=${encodeURIComponent(term.trim())}`:""}`),
-      apiClient.get<{ items?: RawMaterialLot[]; data?: RawMaterialLot[] }>(`/wms/material-lots?limit=500${term.trim()?`&q=${encodeURIComponent(term.trim())}`:""}`).catch(() => ({ items: [] })),
+      apiClient.get<RawLotEnvelope>(`/wms/material-lots?limit=500${term.trim()?`&q=${encodeURIComponent(term.trim())}`:""}`).catch((): RawLotEnvelope => ({ items: [] })),
     ]);
     setSearchResults(snap.finishedGoods??[]);setMetrics(snap.metrics??{});
     const termKey=term.trim().toLowerCase();
@@ -248,7 +249,7 @@ export function ProductWarehouseScene3d() {
     try {
       const [data, rawData] = await Promise.all([
         apiClient.get<FgInventoryResponse>("/wms/finished-goods-inventory?limit=500"),
-        apiClient.get<{ items?: RawMaterialLot[]; data?: RawMaterialLot[] }>("/wms/material-lots?limit=500").catch(() => ({ items: [] })),
+        apiClient.get<RawLotEnvelope>("/wms/material-lots?limit=500").catch((): RawLotEnvelope => ({ items: [] })),
       ]);
       const rawItems = (rawData.items ?? rawData.data ?? []).filter(item => item.locationCode).map(rawMaterialToSceneItem);
       const items = [...(data.items ?? []), ...rawItems];
@@ -291,7 +292,7 @@ export function ProductWarehouseScene3d() {
       <button type="button" onClick={() => selectGroup(null)} style={{ position: "absolute", right: 16, top: 60, zIndex: 3, padding: "8px 13px", borderRadius: 8, border: "1px solid #475569", background: "rgba(7,17,31,.92)", color: "white", fontWeight: 800 }}>总览</button>
 
       <div style={{ position: "absolute", left: 16, top: 60, padding: "12px 15px", borderRadius: 12, background: "rgba(7,17,31,.9)", color: "white" }}>
-        <div style={{ fontSize: 17, fontWeight: 800 }}>成品仓库 3D</div>
+        <div style={{ fontSize: 17, fontWeight: 800 }}>良品仓库 3D</div>
         <div style={{ marginTop: 4, fontSize: 12, color: "#cbd5e1" }}>
           {loading ? "加载中…" : `已占用 ${occupied} 件 · ${groups.length} 托盘位`}
         </div>
@@ -350,7 +351,7 @@ export function ProductWarehouseScene3d() {
             <WmsDetail label="箱内绑定" value={lineage?.containers?.map((row: any) => row.containerId).filter(Boolean).join("、") ?? selectedItem?.carton_code} />
             <WmsDetail label="栈板绑定" value={lineage?.pallets?.map((row: any) => row.palletCode).filter(Boolean).join("、") ?? selectedItem?.pallet_code} />
             <WmsDetail label="来源工站" value={lineage?.origin?.stationCode} />
-            <WmsDetail label="当前位置" value={lineage?.currentLocation?.stationCode ?? "成品仓库"} />
+            <WmsDetail label="当前位置" value={lineage?.currentLocation?.stationCode ?? "良品仓库"} />
             <WmsDetail label="下一节点" value={lineage?.nextExpectedStation?.stationCode ?? "出库/交货"} />
             <WmsDetail label="路由记录" value={lineage?.route?.length} />
             <div style={{ marginTop: 8, padding: 7, borderRadius: 6, background: lineage?.provenanceComplete ? "#dcfce7" : "#fef3c7", fontSize: 11 }}>{detailStatus || "点击托盘后同步 WMS 详情"}</div>

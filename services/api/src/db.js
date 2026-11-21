@@ -57,4 +57,28 @@ export async function getClient() {
   return p.connect();
 }
 
-export default { query, getClient };
+/** 参数读取（源 util.get_param；供 panel.js 等模块使用） */
+export async function getParam(key, dflt = "") {
+  const p = getPool();
+  if (!p) return dflt;
+  const r = await p.query("SELECT param_val FROM sys_param WHERE param_key=$1", [key]);
+  return r.rows[0] && r.rows[0].param_val != null ? r.rows[0].param_val : dflt;
+}
+
+/** 参数写入（源 util.set_param） */
+export async function setParam(key, val, name = "", group = "") {
+  const p = getPool();
+  if (!p) throw new Error("PostgreSQL not configured");
+  const r = await p.query("SELECT id FROM sys_param WHERE param_key=$1", [key]);
+  if (r.rows[0]) {
+    await p.query(
+      "UPDATE sys_param SET param_val=$1, param_name=COALESCE(NULLIF($2,''),param_name), group_name=COALESCE(NULLIF($3,''),group_name), updated_at=now() WHERE param_key=$4",
+      [String(val), name, group, key]);
+  } else {
+    await p.query(
+      "INSERT INTO sys_param (param_key, param_val, param_name, group_name, updated_at) VALUES ($1,$2,$3,$4,now())",
+      [key, String(val), name || key, group || ""]);
+  }
+}
+
+export default { query, getClient, getParam, setParam };

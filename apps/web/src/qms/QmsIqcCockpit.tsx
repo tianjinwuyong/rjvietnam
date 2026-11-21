@@ -199,9 +199,9 @@ export function QmsIqcCockpit({ locale = "zh-CN" }: { locale?: string } = {}) {
         fetch("/api/qms/iqc/alert-rules", auth).then(r => r.json()).catch(() => []),
       ]);
       setStats(statsR);
-      setPpmTrends(Array.isArray(ppmR) ? ppmR : generateMockPpmTrends());
-      setSupplierRanks(Array.isArray(rankR) ? rankR : generateMockSupplierRanks());
-      setEfficiencyData(Array.isArray(effR) ? effR : generateMockEfficiency());
+      setPpmTrends(Array.isArray(ppmR) ? ppmR : []);
+      setSupplierRanks(Array.isArray(rankR) ? rankR : []);
+      setEfficiencyData(Array.isArray(effR) ? effR : []);
       setAlertRules(Array.isArray(rulesR) ? rulesR : []);
     } catch {}
     setLoading(false);
@@ -245,32 +245,9 @@ export function QmsIqcCockpit({ locale = "zh-CN" }: { locale?: string } = {}) {
   };
 
   // Mock data generators (for when API doesn't exist yet)
-  function generateMockPpmTrends(): PpmTrend[] {
-    const months = ["2025-07", "2025-08", "2025-09", "2025-10", "2025-11", "2025-12", "2026-01", "2026-02", "2026-03", "2026-04", "2026-05", "2026-06"];
-    return months.map(m => ({
-      month: m, ppm: Math.round(100 + Math.random() * 900),
-      supplier_code: "SUPP-A", total_inspected: 50, total_failed: Math.round(Math.random() * 5),
-    }));
-  }
-  function generateMockSupplierRanks(): SupplierRank[] {
-    return [
-      { supplier_code: "SUPP-A", supplier_name: "供应商 A", ppm: 120, total: 200, rank: 1, trend: "up" },
-      { supplier_code: "SUPP-B", supplier_name: "供应商 B", ppm: 350, total: 180, rank: 2, trend: "down" },
-      { supplier_code: "SUPP-C", supplier_name: "供应商 C", ppm: 580, total: 150, rank: 3, trend: "up" },
-      { supplier_code: "SUPP-D", supplier_name: "供应商 D", ppm: 1200, total: 100, rank: 4, trend: "down" },
-      { supplier_code: "SUPP-E", supplier_name: "供应商 E", ppm: 2500, total: 80, rank: 5, trend: "down" },
-    ];
-  }
-  function generateMockEfficiency(): IqcEfficiency[] {
-    const days = 14;
-    return Array.from({ length: days }, (_, i) => {
-      const d = new Date(); d.setDate(d.getDate() - (days - 1 - i));
-      const date = d.toISOString().split("T")[0];
-      const inspected = Math.round(5 + Math.random() * 15);
-      const passed = Math.round(inspected * (0.85 + Math.random() * 0.12));
-      return { date, inspected, passed, failed: inspected - passed, avg_hours: +(2 + Math.random() * 4).toFixed(1), pass_rate: +(passed / inspected * 100).toFixed(1) };
-    });
-  }
+  
+  
+  
 
   if (loading) return <div style={{ padding: 40, color: "#94a3b8" }}>加载中…</div>;
 

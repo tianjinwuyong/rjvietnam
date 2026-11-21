@@ -1,0 +1,173 @@
+[
+  {
+    "productCode": "B2672111-001",
+    "productName": "B2672111-001",
+    "lineCount": 132,
+    "lines": [
+      {
+        "seq": 1,
+        "materialCode": "2.02.00.21.0139",
+        "name": "成品",
+        "spec": "海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版) SKU：B2672111-001 Vietnam版",
+        "unit": "PCS",
+        "qty": 1.0,
+        "position": "",
+        "lossRate": 0.0
+      },
+      {
+        "seq": 2,
+        "materialCode": "0.14.00.00.0614",
+        "name": "外箱",
+        "spec": "51001001447 V1 尺寸：L417*W305*H176mm T=6.0mm 材质K=K（BC坑）1/30PCS RoHS REACH 品牌：和通",
+        "unit": "PCS",
+        "qty": 0.03333,
+        "position": "30PCS/箱",
+        "lossRate": 0.0
+      },
+      {
+        "seq": 3,
+        "materialCode": "0.14.02.00.0498",
+        "name": "隔卡",
+        "spec": "51003003970 V1 尺寸：L400*W288mm T=3.0mm 材质:A3A（B坑）1/1PCS RoHS REACH 品牌：和通",
+        "unit": "PCS",
+        "qty": 0.03333,
+        "position": "1PCS/隔卡",
+        "lossRate": 0.0
+      },
+      {
+        "seq": 4,
+        "materialCode": "0.14.01.01.0245",
+        "name": "CPE袋",
+        "spec": "L100+35*107mm 材质CPE 厚度0.03mm 符合环保要求 “丝印增加意大利回收标PE-C7+实心三角形版本”",
+        "unit": "PCS",
+        "qty": 1.0,
+        "position": "",
+        "lossRate": 0.0
+      },
+      {
+        "seq": 5,
+        "materialCode": "0.14.06.02.0830",
+        "name": "封口贴",
+        "spec": "51004002204 V4 A2507011封口贴 50# 油胶透明PET 全胶 油胶强粘 Φ30mm 剥离力：6.3N 30*30mm",
+        "unit": "PCS",
+        "qty": 1.0,
+        "position": "",
+        "lossRate": 0.0
+      }
+    ]
+  },
+  {
+    "productCode": "EPS18R1G",
+    "productName": "EPS18R1G",
+    "lineCount": 110,
+    "lines": [
+      {
+        "seq": 1,
+        "materialCode": "0.14.00.00.0587",
+        "name": "Made in Vietnam L505*405*267mm T=6mm K=K 加强芯 抗裂强度14.5kgf/cm 96PCS/箱 RoHS REACH 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.01041
+      },
+      {
+        "seq": 2,
+        "materialCode": "0.14.01.01.0178-HF",
+        "name": "120*170*0.025mm 双层厚度0.05mm 白色透明PE-LD 单面印黑色循环三角环保回收标签 无卤",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 1.0
+      },
+      {
+        "seq": 3,
+        "materialCode": "0.14.02.00.0477",
+        "name": "CORRUGATED BOARD L490*390mm T=3mm K3K 加强芯  RoHS REACH 3PCS/箱 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.03125
+      },
+      {
+        "seq": 4,
+        "materialCode": "0.14.02.01.0238",
+        "name": "489*116mm T=3mm 材质:K3K 加强芯 长刀卡两边各留边15mm 18PCS/箱 RoHS REACH 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.1875
+      },
+      {
+        "seq": 5,
+        "materialCode": "0.14.02.01.0239",
+        "name": "387*116mm T=3mm 材质:K3K 加强芯 短刀卡两边各留边20mm 14PCS/箱 RoHS REACH 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.1458
+      }
+    ]
+  },
+  {
+    "productCode": "EPS48R1-36",
+    "productName": "EPS48R1-36",
+    "lineCount": 104,
+    "lines": [
+      {
+        "seq": 1,
+        "materialCode": "0.14.00.00.0585",
+        "name": "Made in Vietnam L505*405*234mm T=6mm K=K 加强芯 抗裂强度14.5kgf/cm 40PCS/箱 RoHS REACH 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.025
+      },
+      {
+        "seq": 2,
+        "materialCode": "0.14.01.01.0184",
+        "name": "L280*W185mm T=0.025mm 材质 白色透明PE-LD 黑色丝印 带气孔 符合环保要求",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 1.0
+      },
+      {
+        "seq": 3,
+        "materialCode": "0.14.02.00.0477",
+        "name": "CORRUGATED BOARD L490*390mm T=3mm K3K 加强芯  RoHS REACH 3PCS/箱 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.075
+      },
+      {
+        "seq": 4,
+        "materialCode": "0.14.02.01.0236",
+        "name": "490*104mm T=3mm 材质:K3K 加强芯 长刀卡两边各留边10.5mm 18PCS/箱 RoHS REACH 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.45
+      },
+      {
+        "seq": 5,
+        "materialCode": "0.14.02.01.0237",
+        "name": "387*104mm T=3mm 材质:K3K 加强芯 短刀卡两边不留边 6PCS/箱 RoHS REACH 和通",
+        "spec": "",
+        "unit": "外购",
+        "qty": 1.0,
+        "position": "PCS",
+        "lossRate": 0.15
+      }
+    ]
+  }
+]

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="iqc-loop-title iqc-loop-desc">
   <title id="iqc-loop-title">IQC and MRB material closed loop</title>
-  <desc id="iqc-loop-desc">Four receiving sources enter the receiving todo, receive a system QR document and warehouse binding, then go through IQC to finished goods or defective warehouse and MRB disposition.</desc>
+  <desc id="iqc-loop-desc">Four receiving sources enter the receiving todo, receive a system QR document and warehouse binding, then go through IQC to good stock or defective warehouse and MRB disposition.</desc>
   <defs>
     <marker id="arrow" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#4f5d75"/></marker>
     <marker id="arrow-accent" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto"><path d="M0 0L10 4L0 8Z" fill="#c65332"/></marker>
@@ -28,7 +28,7 @@
   <rect class="box" x="340" y="300" width="120" height="80" rx="6"/><text class="label" x="400" y="334">收货仓库</text><text class="small" x="400" y="358">待办确认</text>
   <rect class="focus" x="560" y="300" width="140" height="80" rx="6"/><text class="label" x="630" y="330">QR绑定仓库</text><text class="small" x="630" y="354">系统单据 + 仓位</text>
   <polygon class="decision" points="880,280 940,340 880,400 820,340"/><text class="label" x="880" y="336">IQC</text><text class="small" x="880" y="360">检验</text>
-  <rect class="box" x="1140" y="200" width="120" height="80" rx="6"/><text class="label" x="1200" y="232">成品仓库</text><text class="small" x="1200" y="256">解除 QR / 放行</text>
+  <rect class="box" x="1140" y="200" width="120" height="80" rx="6"/><text class="label" x="1200" y="232">良品仓库</text><text class="small" x="1200" y="256">解除 QR / 放行</text>
   <rect class="box" x="1140" y="420" width="120" height="80" rx="6"/><text class="label" x="1200" y="452">不良品仓库</text><text class="small" x="1200" y="476">离开 QR 仓</text>
   <polygon class="decision" points="1520,400 1580,460 1520,520 1460,460"/><text class="label" x="1520" y="456">MRB</text><text class="small" x="1520" y="480">物料评审</text>
   <rect class="box" x="1460" y="320" width="120" height="80" rx="6"/><text class="label" x="1520" y="352">报废</text><text class="small" x="1520" y="376">不生成 QR</text>

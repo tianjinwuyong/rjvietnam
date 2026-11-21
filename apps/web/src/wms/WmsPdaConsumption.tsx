@@ -4,6 +4,7 @@ import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { wmsApi, type MaterialTrace } from "../api/wms";
 import { WmsWorkOrderMaterialFlow, type WmsWorkOrderMaterialItem } from "./WmsWorkOrderMaterialFlow";
 import { WmsMaterialRealtimeFlow } from "./WmsMaterialRealtimeFlow";
+import { t } from "../i18n";
 
 const copy = {
   "zh-CN": { title:"PDA 物料消耗与追溯", scan:"扫描物料/栈板二维码", find:"查询", wo:"工单 WO", station:"工站", qty:"实际使用数量", operator:"操作员", consume:"确认消耗", remain:"当前剩余", warehouse:"仓库", line:"线边", partial:"半箱 / 余料", used:"按工单已使用", moves:"移动与消耗历史", quality:"IQC 质量档案", none:"无记录" },
@@ -14,6 +15,8 @@ const copy = {
 export function WmsPdaConsumption({ locale }: { locale: Locale }) {
   const c=copy[locale]??copy["en-US"];
   const [qr,setQr]=useState(""); const [trace,setTrace]=useState<MaterialTrace|null>(null);
+  const [fetchPackageQr,setFetchPackageQr]=useState("");
+  const [fetchPackageStatus,setFetchPackageStatus]=useState("");
   const [wo,setWo]=useState(""); const [station,setStation]=useState(""); const [qty,setQty]=useState(""); const [operator,setOperator]=useState("VN_OP_001");
   const [busy,setBusy]=useState(false); const [binding,setBinding]=useState(false); const [boundReservation,setBoundReservation]=useState<number|null>(null); const [message,setMessage]=useState("");
   useEffect(() => {
@@ -50,10 +53,14 @@ export function WmsPdaConsumption({ locale }: { locale: Locale }) {
   };
   const consume=async()=>{if(!trace||!wo.trim()||Number(qty)<=0)return;setBusy(true);setMessage("");try{
     if(!boundReservation) throw new Error("请先绑定工单并完成 FIFO 校验");
-    await wmsApi.postTransaction("CONSUME",{materialLotId:trace.id,qty:Number(qty),workOrderCode:wo.trim(),operator,reason:station.trim()?`STATION:${station.trim()}`:undefined});
+    if(!fetchPackageQr.trim()) throw new Error(t("wms.fetchPackage.required",locale));
+    await wmsApi.postTransaction("CONSUME",{materialLotId:trace.id,qty:Number(qty),workOrderCode:wo.trim(),operator,stationCode:station.trim()||undefined,fetchPackageQr:fetchPackageQr.trim()});
     const r=await wmsApi.getMaterialTrace(qr.trim());setTrace(r.data);setQty("");setMessage("OK");
   }catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
-  return <div className="screen-stack"><WmsMaterialRealtimeFlow locale={locale} materialCode={trace?.materialCode || ""} lotNo={trace?.lotNo || (trace ? qr : "")} boxQr={trace?.materialQr || (trace ? qr : "")} iqcStatus={trace?.quality?.iqcStatus || ""} locationCode={trace?.locationCode} approvalCount={trace?.quality?.specialApprovals.length || 0} inspectionCount={trace?.quality?.inspections.length || 0} /><WmsWorkOrderMaterialFlow locale={locale} workOrderCode={wo} onSelect={(item) => { if (item.bestLot?.lotNo) { setQr(item.bestLot.lotNo); setMessage(`FIFO 推荐批次 ${item.bestLot.lotNo}，请先扫描/查询后再绑定工单`); } else { setMessage(`物料 ${item.materialCode} 暂无可用 FIFO 批次，不能绑定`); } }} /><section className="surface-panel" style={{maxWidth:980,margin:"0 auto"}}>
+  const fetchPackageAction=async(action:"query"|"handover"|"receive")=>{if(!fetchPackageQr.trim()||!operator.trim())return;setBusy(true);setMessage("");try{const response=action==="query"?await wmsApi.getFetchPackage(fetchPackageQr.trim()):action==="handover"?await wmsApi.handoverFetchPackage(fetchPackageQr.trim(),{actor:operator,stationCode:station||undefined}):await wmsApi.receiveFetchPackage(fetchPackageQr.trim(),{actor:operator,stationCode:station||undefined});setFetchPackageStatus(String(response.item.status||""));if(response.item.work_order_code)setWo(String(response.item.work_order_code));setMessage("OK");}catch(e){setMessage(e instanceof Error?e.message:String(e));}finally{setBusy(false);}};
+  return <div className="screen-stack"><WmsMaterialRealtimeFlow locale={locale} materialCode={trace?.materialCode || ""} lotNo={trace?.lotNo || (trace ? qr : "")} boxQr={trace?.materialQr || (trace ? qr : "")} iqcStatus={trace?.quality?.iqcStatus || ""} locationCode={trace?.locationCode} approvalCount={trace?.quality?.specialApprovals.length || 0} inspectionCount={trace?.quality?.inspections.length || 0} /><WmsWorkOrderMaterialFlow locale={locale} workOrderCode={wo} onSelect={(item) => { if (item.bestLot?.lotNo) { setQr(item.bestLot.lotNo); setMessage(`FIFO 推荐批次 ${item.bestLot.lotNo}，请先扫描/查询后再绑定工单`); } else { setMessage(`物料 ${item.materialCode} 暂无可用 FIFO 批次，不能绑定`); } }} />
+  <section className="surface-panel" style={{maxWidth:980,margin:"0 auto"}}><div className="section-header"><div><h2>{t("wms.fetchPackage.handover",locale)}</h2><p>{t("wms.fetchPackage.handoverDesc",locale)}</p></div>{fetchPackageStatus&&<span className="badge badge-info">{fetchPackageStatus}</span>}</div><div className="scan-input"><Barcode size={22}/><input value={fetchPackageQr} onChange={e=>{setFetchPackageQr(e.target.value);setFetchPackageStatus("");}} placeholder={t("wms.fetchPackage.scan",locale)} title={t("wms.fetchPackage.scanTip",locale)}/><input value={operator} onChange={e=>setOperator(e.target.value)} placeholder={c.operator}/><button className="action-button" disabled={busy} onClick={()=>void fetchPackageAction("query")}>{c.find}</button><button className="action-button" disabled={busy} onClick={()=>void fetchPackageAction("handover")}>{t("wms.fetchPackage.handOut",locale)}</button><button className="action-button" disabled={busy} onClick={()=>void fetchPackageAction("receive")}>{t("wms.fetchPackage.receive",locale)}</button></div></section>
+  <section className="surface-panel" style={{maxWidth:980,margin:"0 auto"}}>
     <div className="section-header"><div><h2><PackageOpen size={20}/> {c.title}</h2><p>{c.scan}</p></div></div>
     <div className="scan-input"><Barcode size={22}/><input autoFocus value={qr} onChange={e=>setQr(e.target.value)} onKeyDown={e=>e.key==="Enter"&&load()} placeholder={c.scan}/><button className="action-button" onClick={load} disabled={busy}>{c.find}</button></div>
     {message&&<div style={{marginTop:10,color:message==="OK"?"var(--ok)":"var(--danger)"}}>{message==="OK"?<><CheckCircle size={16}/> OK</>:message}</div>}
@@ -61,7 +68,7 @@ export function WmsPdaConsumption({ locale }: { locale: Locale }) {
       {[trace.materialCode,`${c.remain}: ${trace.remainingQty}`,`${c.warehouse}: ${trace.warehouseQty}`,`${c.line}: ${trace.lineSideQty}`,trace.isPartial?c.partial:trace.locationCode||"—"].map((x,i)=><div key={i} className="metric-card"><strong>{x}</strong></div>)}
     </div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:10,marginTop:16}}>
-      <input value={wo} onChange={e=>{setWo(e.target.value.toUpperCase());setBoundReservation(null);}} placeholder={c.wo}/><input value={station} onChange={e=>setStation(e.target.value)} placeholder={c.station}/><input type="number" min="0" max={trace.lineSideQty} value={qty} onChange={e=>{setQty(e.target.value);setBoundReservation(null);}} placeholder={c.qty}/><input value={operator} onChange={e=>setOperator(e.target.value)} placeholder={c.operator}/>
+      <input value={fetchPackageQr} onChange={e=>setFetchPackageQr(e.target.value)} placeholder={t("wms.fetchPackage.scan",locale)} title={t("wms.fetchPackage.scanTip",locale)}/><input value={wo} onChange={e=>{setWo(e.target.value.toUpperCase());setBoundReservation(null);}} placeholder={c.wo}/><input value={station} onChange={e=>setStation(e.target.value)} placeholder={c.station}/><input type="number" min="0" max={trace.lineSideQty} value={qty} onChange={e=>{setQty(e.target.value);setBoundReservation(null);}} placeholder={c.qty}/><input value={operator} onChange={e=>setOperator(e.target.value)} placeholder={c.operator}/>
     </div><div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}><button className="action-button" disabled={busy||binding||!wo||Number(qty)<=0} onClick={bindWorkOrder}>{binding?"FIFO 检查中…":boundReservation?`已绑定工单 (${boundReservation})`:"绑定工单 / FIFO 校验"}</button><button className="action-button" style={{background:"var(--ok)"}} disabled={busy||!boundReservation||Number(qty)<=0} onClick={consume}>{c.consume}</button></div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:16,marginTop:20}}>
       <div><h3>{c.used}</h3>{trace.usedByWorkOrder.length?trace.usedByWorkOrder.map(x=><div key={x.workOrderCode}>{x.workOrderCode}: <strong>{x.usedQty}</strong></div>):c.none}</div>

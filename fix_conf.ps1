@@ -1,0 +1,11 @@
+$c = Get-Content "C:\PostgreSQL\data\postgresql.conf" -Raw
+$c = $c -replace "dynamic_shared_memory_type\s*=\s*posix", "dynamic_shared_memory_type = windows"
+$c = $c -replace "lc_monetary\s*=\s*'en_US\.utf8'", "lc_monetary = 'English_United States.1252'"
+$c = $c -replace "lc_numeric\s*=\s*'en_US\.utf8'", "lc_numeric = 'English_United States.1252'"
+$c = $c -replace "lc_time\s*=\s*'en_US\.utf8'", "lc_time = 'English_United States.1252'"
+$c = $c -replace "dynamic_shared_memory_type\s*=\s*windows\s*#.*windows", "dynamic_shared_memory_type = windows"
+$c = $c -replace "lc_monetary\s*=\s*'English_United States\.1252'\s*#.*", "lc_monetary = 'English_United States.1252'"
+$c = $c -replace "lc_numeric\s*=\s*'English_United States\.1252'\s*#.*", "lc_numeric = 'English_United States.1252'"
+$c = $c -replace "lc_time\s*=\s*'English_United States\.1252'\s*#.*", "lc_time = 'English_United States.1252'"
+$c | Set-Content "C:\PostgreSQL\data\postgresql.conf"
+Write-Host "Done"

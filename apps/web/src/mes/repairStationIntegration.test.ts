@@ -9,7 +9,7 @@ describe("repair station integration contract", () => {
   it("normalizes the three-domain context without inventing service data", () => {
     const context = normalizeRepairStationContext({
       mes: { available: true, workOrder: { status: "WAITING_REPAIR" } },
-      wms: { available: false },
+      wms: { available: false, lots: [] },
       qms: { available: true, case: { status: "OPEN" } },
     });
 

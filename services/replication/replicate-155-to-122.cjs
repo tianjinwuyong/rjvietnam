@@ -194,6 +194,7 @@ const cumulative = {};
 for (const spec of TABLE_SPECS) {
   cumulative[spec.name] = { scanned: 0, inserted: 0, updated: 0, skipped: 0, errors: 0 };
 }
+cumulative.supplier_master = { scanned: 0, inserted: 0, updated: 0, deactivated: 0, errors: 0 };
 
 async function ensureSourceState(client) {
   await client.query(`CREATE TABLE IF NOT EXISTS replication_watermark_155to122(
@@ -299,23 +300,30 @@ async function copyBatch(spec, rows) {
   }
   if (!toInsert.length) return;
   const { columns } = spec;
-  const placeholders = toInsert.map((_, i) =>
-    `(${columns.map((_, j) => `$${i * columns.length + j + 1}`).join(', ')})`).join(', ');
-  const flat = toInsert.flatMap((row) => columns.map((c) => serialize(row[c])));
-  let sql = `INSERT INTO ${spec.name} (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${placeholders}`;
-  if (spec.mode === 'upsert' && spec.conflict && spec.pkClause) {
-    const setCols = spec.columns
-      .filter((c) => !spec.precheck.some((p) => p.label === c))
-      .map((c) => `"${c}" = EXCLUDED."${c}"`).join(', ');
-    sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO UPDATE SET ${setCols}
-             WHERE ${spec.newerExpr(spec.name)}`;
-  } else if (spec.conflict) {
-    sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO NOTHING`;
-  }
-  const r = await dst.query(sql, flat);
-  stat.inserted += toInsert.length;
-  if (spec.mode === 'upsert' && r.rowCount !== null) {
-    stat.updated += Math.max(0, r.rowCount - toInsert.length);
+  // PostgreSQL's wire protocol caps bind parameters at 32767. Full-table reads
+  // (cursorCol === null, e.g. station_sn_route_progress) can exceed that in a
+  // single statement — chunk the insert so each statement stays under the cap.
+  const maxRowsPerStatement = Math.max(1, Math.floor(30000 / columns.length));
+  for (let offset = 0; offset < toInsert.length; offset += maxRowsPerStatement) {
+    const chunk = toInsert.slice(offset, offset + maxRowsPerStatement);
+    const placeholders = chunk.map((_, i) =>
+      `(${columns.map((_, j) => `$${i * columns.length + j + 1}`).join(', ')})`).join(', ');
+    const flat = chunk.flatMap((row) => columns.map((c) => serialize(row[c])));
+    let sql = `INSERT INTO ${spec.name} (${columns.map((c) => `"${c}"`).join(', ')}) VALUES ${placeholders}`;
+    if (spec.mode === 'upsert' && spec.conflict && spec.pkClause) {
+      const setCols = spec.columns
+        .filter((c) => !spec.precheck.some((p) => p.label === c))
+        .map((c) => `"${c}" = EXCLUDED."${c}"`).join(', ');
+      sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO UPDATE SET ${setCols}
+               WHERE ${spec.newerExpr(spec.name)}`;
+    } else if (spec.conflict) {
+      sql += ` ON CONFLICT (${spec.conflict.map((c) => `"${c}"`).join(', ')}) DO NOTHING`;
+    }
+    const r = await dst.query(sql, flat);
+    stat.inserted += chunk.length;
+    if (spec.mode === 'upsert' && r.rowCount !== null) {
+      stat.updated += Math.max(0, r.rowCount - chunk.length);
+    }
   }
 }
 
@@ -357,11 +365,71 @@ async function syncTable(spec) {
   }
 }
 
+// 155 is the supplier-master authority. Each cycle makes 122's active supplier
+// list exactly match the latest Excel replacement accepted on 155. Destination
+// IDs are preserved so historical PO, receiving and audit foreign keys remain valid.
+async function syncSupplierMaster() {
+  const stat = cumulative.supplier_master;
+  try {
+    const source = await src.query(`SELECT code,name_zh,name_en,name_vi,short_name,contact_name,contact_phone,email,country,
+      default_currency_code,tax_registration_no,payment_terms_days,portal_enabled,label_enabled,
+      qualification_status,risk_level,classification,website,pricing_tier,preferred_language
+      FROM suppliers WHERE lower(status)='active' ORDER BY code`);
+    if (!source.rowCount) throw new Error('source has no active suppliers; refusing to invalidate destination list');
+    stat.scanned += source.rowCount;
+    await dst.query('BEGIN');
+    await dst.query(`CREATE TEMP TABLE incoming_supplier_master(
+      code varchar(80) PRIMARY KEY,name_zh varchar(240) NOT NULL,payload jsonb NOT NULL) ON COMMIT DROP`);
+    await dst.query(`INSERT INTO incoming_supplier_master(code,name_zh,payload)
+      SELECT upper(x.code),x.name_zh,to_jsonb(x) FROM jsonb_to_recordset($1::jsonb)
+      AS x(code varchar(80),name_zh varchar(240),name_en varchar(240),name_vi varchar(240),short_name varchar(160),
+        contact_name varchar(160),contact_phone varchar(80),email varchar(240),country varchar(80),
+        default_currency_code varchar(10),tax_registration_no varchar(120),payment_terms_days integer,
+        portal_enabled boolean,label_enabled boolean,qualification_status varchar(30),risk_level varchar(20),
+        classification varchar(160),website text,pricing_tier varchar(30),preferred_language varchar(20))`,
+      [JSON.stringify(source.rows)]);
+    const updated = await dst.query(`UPDATE suppliers s SET
+      name_zh=i.name_zh,name_en=i.payload->>'name_en',name_vi=i.payload->>'name_vi',short_name=i.payload->>'short_name',
+      contact_name=i.payload->>'contact_name',contact_phone=i.payload->>'contact_phone',email=i.payload->>'email',
+      country=i.payload->>'country',default_currency_code=i.payload->>'default_currency_code',
+      tax_registration_no=i.payload->>'tax_registration_no',payment_terms_days=(i.payload->>'payment_terms_days')::integer,
+      portal_enabled=coalesce((i.payload->>'portal_enabled')::boolean,false),label_enabled=coalesce((i.payload->>'label_enabled')::boolean,false),
+      qualification_status=i.payload->>'qualification_status',risk_level=i.payload->>'risk_level',
+      classification=i.payload->>'classification',website=i.payload->>'website',pricing_tier=i.payload->>'pricing_tier',
+      preferred_language=i.payload->>'preferred_language',status='active',updated_at=now()
+      FROM incoming_supplier_master i WHERE upper(s.code)=i.code`);
+    const inserted = await dst.query(`INSERT INTO suppliers(code,name_zh,name_en,name_vi,status,short_name,contact_name,
+      contact_phone,email,country,default_currency_code,tax_registration_no,payment_terms_days,portal_enabled,label_enabled,
+      qualification_status,risk_level,classification,website,pricing_tier,preferred_language)
+      SELECT i.code,i.name_zh,i.payload->>'name_en',i.payload->>'name_vi','active',i.payload->>'short_name',
+      i.payload->>'contact_name',i.payload->>'contact_phone',i.payload->>'email',i.payload->>'country',
+      i.payload->>'default_currency_code',i.payload->>'tax_registration_no',(i.payload->>'payment_terms_days')::integer,
+      coalesce((i.payload->>'portal_enabled')::boolean,false),coalesce((i.payload->>'label_enabled')::boolean,false),
+      i.payload->>'qualification_status',i.payload->>'risk_level',i.payload->>'classification',i.payload->>'website',
+      i.payload->>'pricing_tier',i.payload->>'preferred_language'
+      FROM incoming_supplier_master i WHERE NOT EXISTS(SELECT 1 FROM suppliers s WHERE upper(s.code)=i.code)`);
+    const deactivated = await dst.query(`UPDATE suppliers s SET status='inactive',updated_at=now()
+      WHERE lower(s.status)='active' AND NOT EXISTS(SELECT 1 FROM incoming_supplier_master i WHERE i.code=upper(s.code))`);
+    const active = Number((await dst.query(`SELECT count(*)::int count FROM suppliers WHERE lower(status)='active'`)).rows[0].count);
+    if (active !== source.rowCount) throw new Error(`destination verification failed: expected ${source.rowCount}, got ${active}`);
+    await dst.query('COMMIT');
+    stat.updated += updated.rowCount || 0;
+    stat.inserted += inserted.rowCount || 0;
+    stat.deactivated += deactivated.rowCount || 0;
+  } catch (e) {
+    await dst.query('ROLLBACK').catch(() => {});
+    stat.errors += 1;
+    log(`supplier_master sync: ${e.message}`);
+  }
+}
+
 async function runCycle(timeBudgetMs) {
   const started = new Date();
+  await syncSupplierMaster();
   for (const spec of TABLE_SPECS) await syncTable(spec);
   const health = {};
   for (const spec of TABLE_SPECS) health[spec.name] = { ...cumulative[spec.name] };
+  health.supplier_master = { ...cumulative.supplier_master };
   await updateHealth(src, {
     last_run_at: started,
     last_success_at: new Date(),
@@ -372,9 +440,9 @@ async function runCycle(timeBudgetMs) {
 }
 
 function totalsLine() {
-  return TABLE_SPECS
+  return [`supplier_master=i${cumulative.supplier_master.inserted}/u${cumulative.supplier_master.updated}/d${cumulative.supplier_master.deactivated}${cumulative.supplier_master.errors ? '/E' + cumulative.supplier_master.errors : ''}`, ...TABLE_SPECS
     .map((s) => `${s.name}=i${cumulative[s.name].inserted}/u${cumulative[s.name].updated}/s${cumulative[s.name].skipped}${cumulative[s.name].errors ? '/E' + cumulative[s.name].errors : ''}`)
-    .join(' ');
+  ].join(' ');
 }
 
 async function main() {
@@ -412,6 +480,12 @@ async function main() {
     } catch (e) {
       log(`✗ cycle error: ${e.message}`);
       await updateHealth(src, { last_error: e.message, backup_reachable: false }).catch(() => {});
+      // node-postgres cannot reuse a client that hit a fatal error (timeout,
+      // connection loss) — rebuild the destination client so the next cycle
+      // starts from a clean connection instead of erroring forever.
+      try { await dst.end(); } catch (_) {}
+      dst = new Client(DEST_DB);
+      first = true;
     }
     await new Promise((r) => setTimeout(r, LOOP_MS));
   }

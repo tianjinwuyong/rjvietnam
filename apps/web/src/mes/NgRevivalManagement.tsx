@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
+import { authHeaders } from "../api/client";
 
 type Revival = {
   revivalId:number; sn:string; batchId?:string; originStation?:string; returnStation?:string;
@@ -43,7 +44,7 @@ export function NgRevivalManagement({locale}:{locale:Locale}){
     }catch(e){setMessage(`操作失败：${String(e)}`);}finally{setBusy(null);}
   };
   const acknowledgeAlarm=async(row:ReturnOrder)=>{
-    const response=await fetch(`/api/station/handovers/${row.transferId}/acknowledge-alarm`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({actor:'MES_MANUAL_RELEASE'})});
+    const response=await fetch(`/api/station/handovers/${row.transferId}/acknowledge-alarm`,{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({actor:'MES_MANUAL_RELEASE'})});
     const data=await response.json();if(!response.ok){setMessage(data?.message||`HTTP ${response.status}`);return;}await refresh();
   };
   const filtered=useMemo(()=>rows.filter(row=>(status==='ALL'||row.approvalStatus===status)&&

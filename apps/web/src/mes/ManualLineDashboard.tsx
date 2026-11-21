@@ -3724,7 +3724,7 @@ export function ManualLineDashboard() {
     async function loadFeederData() {
       try {
         const woRes = await pmcApi.getWorkOrders({ status: "running", limit: 10 });
-        const wos = (woRes.data?.items ?? []).filter((w: any) =>
+        const wos = (woRes.items ?? []).filter((w: any) =>
           w.status === "running" || w.status === "released"
         );
         if (cancelled) return;
@@ -3736,8 +3736,8 @@ export function ManualLineDashboard() {
           wos.slice(0, 5).map(async (wo: any) => {
             try {
               const res = await mesApi.getFeederBindings({ workOrderCode: wo.code, bound: true, limit: 50 });
-              if (!cancelled && res.data?.items) {
-                allBindings.push(...res.data.items.map((b: any) => ({ ...b, _wo: wo.code })));
+              if (!cancelled && res.items) {
+                allBindings.push(...res.items.map((b: any) => ({ ...b, _wo: wo.code })));
               }
             } catch { /* skip individual WO failures */ }
           })
@@ -5371,7 +5371,7 @@ export function ManualLineDashboard() {
           const tabs: { key: ViewMode; label: string }[] = [
             { key: 'full', label: '主厂房' },
             { key: 'material', label: '原材料仓库' },
-            { key: 'product', label: '成品仓库' },
+            { key: 'product', label: '良品仓库' },
             { key: 'quality', label: '质检' },
             { key: 'repair', label: '维修' },
             { key: 'smt', label: 'SMT产线' },
@@ -5529,7 +5529,7 @@ export function ManualLineDashboard() {
         </Warehouse3DErrorBoundary>
       )}
 
-      {/* 成品仓库 */}
+      {/* 良品仓库 */}
       {viewMode === 'product' && (
         <Warehouse3DErrorBoundary>
           <ProductWarehouseScene3d />

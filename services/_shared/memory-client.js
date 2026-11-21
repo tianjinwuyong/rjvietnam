@@ -75,6 +75,7 @@ export async function memoryHealth() {
  * @returns {{
  *   store,        // (messages, metadata?) => Promise<object>
  *   search,       // (query, top_k?, threshold?) => Promise<object>
+ *   searchAll,    // (query, agentIds?, top_k?, threshold?) => Promise<object>
  *   getAll,       // (top_k?) => Promise<object>
  *   delete,       // (memoryId?) => Promise<object>
  *   deleteAll,    // () => Promise<object>

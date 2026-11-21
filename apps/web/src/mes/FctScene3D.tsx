@@ -159,8 +159,8 @@ function ProgressLEDStrip({ progress }: { progress: number }) {
   return (
     <group position={[0, 2.15, -2.3]}>
       {Array.from({ length: ledCount }, (_, i) => (
-        <mesh key={i} position={[(i - ledCount / 2 + 0.5) * 0.4, 0, 0]}>
-          <cylinderGeometry args={[0.08, 0.08, 0.05, 12]} rotation={[Math.PI / 2, 0, 0]} />
+        <mesh key={i} position={[(i - ledCount / 2 + 0.5) * 0.4, 0, 0]} rotation={[Math.PI / 2, 0, 0]}>
+          <cylinderGeometry args={[0.08, 0.08, 0.05, 12]} />
           <meshStandardMaterial
             color={i < litCount ? "#22d3ee" : i === litCount ? "#f59e0b" : "#1e293b"}
             emissive={i < litCount ? "#22d3ee" : i === litCount ? "#f59e0b" : "#000000"}

@@ -17,19 +17,23 @@ export function WmsNonSmtClosedLoop({locale}:{locale:Locale}){
   const w=words[locale],[data,setData]=useState<Data|null>(null),[error,setError]=useState("");
   const load=useCallback(async()=>{try{setData(await apiClient.get<Data>("/api/wms/non-smt/dashboard"));setError("");}catch(e){setError(e instanceof Error?e.message:String(e));}},[]);
   useEffect(()=>{void load();const id=setInterval(()=>void load(),15000);return()=>clearInterval(id);},[load]);
-  const metrics=[[w.classified,data?.summary.classified_materials??0],[w.configured,data?.summary.configured_materials??0],[w.bindings,data?.summary.active_unit_bindings??0],[w.returns,data?.summary.pending_returns??0],[w.exceptions,data?.summary.open_exceptions??0],[w.failed,data?.summary.failed_reconciliations??0]];
+  const summary = data?.summary ?? { classified_materials: 0, configured_materials: 0, active_unit_bindings: 0, pending_returns: 0, open_exceptions: 0, failed_reconciliations: 0 };
+  const exceptions = data?.exceptions ?? [];
+  const returns = data?.returns ?? [];
+  const events = data?.events ?? [];
+  const metrics=[[w.classified,summary.classified_materials],[w.configured,summary.configured_materials],[w.bindings,summary.active_unit_bindings],[w.returns,summary.pending_returns],[w.exceptions,summary.open_exceptions],[w.failed,summary.failed_reconciliations]];
   return <div className="screen-stack">
     <section className="surface-panel"><div className="section-header"><div><h2>{w.title}</h2><p>{w.sub}</p></div><button onClick={()=>void load()}>{w.refresh}</button></div>{error&&<p style={{color:"#dc2626"}}>{error}</p>}
       <div className="metric-grid">{metrics.map(([x,n],i)=><div className="metric-card" key={String(x)} style={{borderTop:`4px solid ${i>3?"#dc2626":"#2563eb"}`}}><span>{x}</span><strong>{n}</strong></div>)}</div>
     </section>
     <section className="surface-panel"><h3>{w.alerts}</h3><div className="table-shell"><table><thead><tr><th>No.</th><th>Severity</th><th>Type</th><th>WO</th><th>Material/SN</th><th>Status</th><th>Time</th></tr></thead><tbody>
-      {data?.exceptions.length?data.exceptions.map(x=><tr key={x.id}><td>{x.exception_no}</td><td style={{fontWeight:800,color:x.severity==="CRITICAL"?"#dc2626":"#d97706"}}>{x.severity}</td><td>{x.exception_type}</td><td>{x.work_order_code||"-"}</td><td>{x.material_code||x.material_sn||"-"}</td><td>{x.status}</td><td>{new Date(x.detected_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
+      {exceptions.length?exceptions.map(x=><tr key={x.id}><td>{x.exception_no}</td><td style={{fontWeight:800,color:x.severity==="CRITICAL"?"#dc2626":"#d97706"}}>{x.severity}</td><td>{x.exception_type}</td><td>{x.work_order_code||"-"}</td><td>{x.material_code||x.material_sn||"-"}</td><td>{x.status}</td><td>{new Date(x.detected_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
     </tbody></table></div></section>
     <section className="surface-panel"><h3>{w.handover}</h3><div className="table-shell"><table><thead><tr><th>No.</th><th>WO</th><th>Material</th><th>Theoretical</th><th>Actual</th><th>Status</th><th>Sent</th></tr></thead><tbody>
-      {data?.returns.length?data.returns.map(x=><tr key={x.id}><td>{x.handover_no}</td><td>{x.work_order_code}</td><td>{x.material_code}</td><td>{x.theoretical_qty}</td><td>{x.actual_qty??"-"}</td><td>{x.status}</td><td>{new Date(x.sent_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
+      {returns.length?returns.map(x=><tr key={x.id}><td>{x.handover_no}</td><td>{x.work_order_code}</td><td>{x.material_code}</td><td>{x.theoretical_qty}</td><td>{x.actual_qty??"-"}</td><td>{x.status}</td><td>{new Date(x.sent_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
     </tbody></table></div></section>
     <section className="surface-panel"><h3>{w.flow}</h3><div className="table-shell"><table><thead><tr><th>Event</th><th>Mode</th><th>WO / Station</th><th>Material</th><th>SN/Lot/Product</th><th>Qty</th><th>Time</th></tr></thead><tbody>
-      {data?.events.length?data.events.map(x=><tr key={x.id}><td>{x.event_type}</td><td>{x.tracking_mode}</td><td>{x.work_order_code} / {x.station_code||"-"}</td><td>{x.material_code}</td><td>{x.material_sn||x.lot_no||"-"} / {x.product_sn||"-"}</td><td>{x.qty}</td><td>{new Date(x.occurred_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
+      {events.length?events.map(x=><tr key={x.id}><td>{x.event_type}</td><td>{x.tracking_mode}</td><td>{x.work_order_code} / {x.station_code||"-"}</td><td>{x.material_code}</td><td>{x.material_sn||x.lot_no||"-"} / {x.product_sn||"-"}</td><td>{x.qty}</td><td>{new Date(x.occurred_at).toLocaleString()}</td></tr>):<tr><td colSpan={7}>{w.empty}</td></tr>}
     </tbody></table></div></section>
   </div>;
 }

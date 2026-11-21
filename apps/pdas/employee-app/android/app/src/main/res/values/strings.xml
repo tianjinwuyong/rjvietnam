@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">EmployeeApp</string>
+    <string name="title_activity_main">EmployeeApp</string>
+    <string name="package_name">com.smtfactory.employeeapp</string>
+    <string name="custom_url_scheme">com.smtfactory.employeeapp</string>
+</resources>

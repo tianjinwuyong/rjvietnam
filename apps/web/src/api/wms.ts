@@ -7,6 +7,50 @@ export const api = apiClient;
 // Re-export for consumers
 export type { MaterialLot, IqcStatus, InventoryAction };
 
+/** Material collect order header (warehouse collection list for one WO). */
+export interface CollectOrder {
+  id: number;
+  collectNo: string;
+  workOrderCode: string;
+  lineCode?: string | null;
+  status: "OPEN" | "PARTIAL" | "COLLECTED" | "ISSUED" | "CANCELLED";
+  collector?: string | null;
+  collectedAt?: string | null;
+  createdAt: string;
+}
+
+/** One material line to collect: where to pick (location) + what + lot. */
+export interface CollectOrderLine {
+  id: number;
+  lineNo: number;
+  materialCode: string;
+  materialName?: Record<string, string> | null;
+  ruijingCode?: string | null;
+  lotNo?: string | null;
+  materialSn?: string | null;
+  locationCode?: string | null;
+  locationQr?: string | null;
+  requiredQty: number;
+  status: "PENDING" | "COLLECTED" | "ISSUED";
+  processStage?: string | null;
+  processDomain?: string | null;
+  scannedQr?: string | null;
+  collectedBy?: string | null;
+  collectedAt?: string | null;
+  assignedTo?: string | null;
+  assignedAt?: string | null;
+}
+
+/** Per-domain summary returned when GET filters by domain. */
+export interface CollectDomainSummary {
+  domain: string;
+  visible: number;
+  collected: number;
+  pending: number;
+  total: number;
+}
+
+
 
 export interface IncomingRecord {
   id:number; lot_no:string; material_code:string; material_name:string;
@@ -37,6 +81,13 @@ export interface IqcInspection {
 export interface IqcDefect {
   id:number; inspection_id:number; defect_type:string; defect_location:string;
   defect_count:number; severity:string; photo_url:string; created_at:string;
+}
+/** One lot waiting at the IQC bench (GET /wms/receiving/qr-bindings queue rows). */
+export interface IqcQueueItem {
+  id:number; lot_no:string; material_code:string; material_name?:string;
+  material_qr?:string; pallet_qr?:string; source_type?:string;
+  warehouse_code?:string; location_code?:string; quantity?:number; uom?:string;
+  status?:string; received_at?:string; waiting_minutes?:number; receiving_pda_id?:string;
 }
 export interface IqcSpecialApproval {
   id:number; inspection_id:number; applicant_id:string;
@@ -82,6 +133,7 @@ export interface StorageLocation {
   name_en: string;
   name_vi: string;
   warehouseType?: "RAW_MATERIAL" | "FINISHED_GOODS" | "WIP" | "QUARANTINE" | "SCRAP" | null;
+  msdAllowed?: boolean | null;
 }
 
 export interface InventoryTransaction {
@@ -103,12 +155,19 @@ export interface InventoryTransaction {
   lots?: { lotNo: string }[];
 }
 
+export interface MaterialConsumptionSummary {
+  summary: { consumedQty:number; totalLeftQty:number; warehouseQty:number; lineSideQty:number; materialCount:number; consumptionCount:number };
+  items: Array<{ materialId:number; materialCode:string; nameZh:string; nameEn:string; nameVi:string; uom:string; consumedQty:number; totalLeftQty:number; warehouseQty:number; lineSideQty:number; consumptionCount:number; lastConsumedAt?:string }>;
+  records: Array<{ id:number; txNo:string; materialCode:string; nameZh:string; nameEn:string; nameVi:string; lotNo:string; qty:number; uom:string; workOrderCode?:string; referenceNo?:string; station?:string; operator?:string; occurredAt:string }>;
+}
+
 export interface StockRow {
   materialCode: string;
   materialName?: string;
   lotNo?: string;
   locationCode?: string;
   availableQty: number;
+  onHand?: number;
   reservedQty?: number;
   uom?: string;
   iqcStatus?: string;
@@ -239,7 +298,393 @@ export interface OutboundItem {
   verified_at:string; verified_by:string; packed_at:string;
 }
 
-export const wmsApi: any = {
+// ── rjvn IQC core logic (ported from the source WMS) ───────────────
+/** Loosely typed backend row — the source WMS uses snake_case columns. */
+export interface RjvnIqcRow {
+  [key: string]: unknown;
+}
+export interface RjvnIqcPendingResponse {
+  rows: RjvnIqcRow[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+export interface RjvnIqcLotResponse {
+  lot: RjvnIqcRow | null;
+  records: RjvnIqcRow[];
+  report: RjvnIqcRow | null;
+  strictness: RjvnIqcRow | null;
+}
+export interface RjvnIqcStrictnessCurrentResponse {
+  rows: RjvnIqcRow[];
+}
+export interface RjvnIqcStrictnessListResponse {
+  rows: RjvnIqcRow[];
+  total: number;
+}
+export interface RjvnIqcTransferLogsResponse {
+  rows: RjvnIqcRow[];
+  total: number;
+}
+export interface RjvnSamplingResult {
+  sampleSize: number;
+  ac: number;
+  re: number;
+  planText: string;
+  aql: number;
+  level: string;
+  verdict?: string;
+}
+export interface RjvnInspectRecordInput {
+  itemName: string;
+  sectionType: string;
+  standard?: string;
+  measuredValue?: string;
+  defectQty?: number;
+  isPass: boolean;
+  sampleSize?: number;
+  AQL?: number;
+}
+export interface RjvnInspectResponse {
+  reportId: string;
+  decision: string;
+  strictnessUpdate: RjvnIqcRow;
+  transfer: RjvnIqcRow | null;
+}
+export interface RjvnIqcStatsResponse {
+  lots: number;
+  pending: number;
+  passed: number;
+  failed: number;
+  passRate: number;
+  byStrictness: Array<{ name: string; value: number }>;
+}
+
+// ── Missing WMS modules: over-picking / rework / supplier-debt / defective-move ──
+
+/** Over-picking order header. */
+export interface OverPickingOrder {
+  id: number;
+  orderNo: string;
+  workOrderNo: string;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  applicantName: string;
+  applicantRole: string;
+  approverName: string | null;
+  approverRole: string | null;
+  approvalRemark: string | null;
+  approvedAt: string | null;
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Over-picking item. */
+export interface OverPickingItem {
+  id: number;
+  materialCode: string;
+  materialName: string;
+  qty: number;
+  unit: string;
+}
+
+/** Rework order. */
+export interface ReworkOrder {
+  id: number;
+  reworkNo: string;
+  mrbNo: string | null;
+  materialCode: string;
+  materialName: string;
+  supplierCode: string | null;
+  supplierName: string | null;
+  batchNo: string | null;
+  quantity: number;
+  unit: string;
+  status: "pending" | "started" | "finished" | "reinspected_ok" | "reinspected_ng";
+  finishTime: string | null;
+  finishBy: string | null;
+  finishRemark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Supplier debt record. */
+export interface SupplierDebt {
+  id: number;
+  debtNo: string;
+  supplierCode: string;
+  supplierName: string;
+  materialCode: string;
+  materialName: string;
+  originQty: number;
+  settledQty: number;
+  sourceType: string;
+  sourceId: number;
+  sourceNo: string;
+  status: "pending" | "settled" | "voided";
+  remark: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Defective move task. */
+export interface DefectiveMoveTask {
+  id: number;
+  moveNo: string;
+  inventoryId: number;
+  fromStockStatus: string;
+  materialCode: string;
+  materialName: string;
+  quantity: number;
+  unit: string;
+  reason: string;
+  remark: string | null;
+  toLocationId: number | null;
+  status: "pending_confirm" | "pending" | "completed" | "cancelled";
+  createdBy: string;
+  createdByName: string | null;
+  confirmedBy: string | null;
+  confirmedAt: string | null;
+  confirmRemark: string | null;
+  executedBy: string | null;
+  executedAt: string | null;
+  cancelledBy: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Defective-move destination location (GET /api/defective-move/locations). */
+export interface DefectiveMoveLocation {
+  id: number;
+  locationCode: string;
+  nameZh: string;
+  nameEn: string;
+  nameVi: string;
+  status: string;
+}
+
+/** Defective-move source stock line (GET /api/defective-move/source-stock). */
+export interface DefectiveMoveSourceStock {
+  id: number;
+  materialId: number;
+  materialCode: string;
+  name_zh: string;
+  name_en: string;
+  name_vi: string;
+  storageLocationId: number | null;
+  locationCode: string | null;
+  qty: number;
+}
+
+export const wmsApi = {
+  // ── rjvn WMS mirror (read-only reference data) ──────────────────
+  getRjvnSummary() {
+    return apiClient.get<Record<string, number>>("/rjvn-wms/summary");
+  },
+  getRjvnTables() {
+    return apiClient.get<Array<{ name: string; approx_rows: number }>>("/rjvn-wms/tables");
+  },
+
+  // ── rjvn IQC core (ported from D:\rj\rjvn\WMS-20261019) ──────────
+  getRjvnIqcPending(params?: { q?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-iqc/pending", params as Record<string, unknown> | undefined);
+  },
+  getRjvnIqcLot(id: string) {
+    return apiClient.get<{
+      lot: Record<string, unknown>;
+      records: Array<Record<string, unknown>>;
+      report: Record<string, unknown> | null;
+      strictness: Record<string, unknown> | null;
+    }>(`/rjvn-iqc/lot/${encodeURIComponent(id)}`);
+  },
+  getRjvnIqcStrictnessCurrent(params?: { materialId?: string }) {
+    return apiClient.get<{ rows: Array<Record<string, unknown>> }>(
+      "/rjvn-iqc/strictness/current", params as Record<string, unknown> | undefined);
+  },
+  getRjvnIqcStrictnessList(params?: { limit?: number; offset?: number }) {
+    return apiClient.get<{ rows: Array<Record<string, unknown>>; total: number }>(
+      "/rjvn-iqc/strictness/list", params as Record<string, unknown> | undefined);
+  },
+  getRjvnIqcTransferLogs(params?: { materialId?: string; limit?: number }) {
+    return apiClient.get<{ rows: Array<Record<string, unknown>>; total: number }>(
+      "/rjvn-iqc/strictness/transfer-logs", params as Record<string, unknown> | undefined);
+  },
+  calculateRjvnSampling(params: {
+    lotId?: string; qty: number; aql?: number; inspectionLevel?: string; strictness?: string;
+  }) {
+    return apiClient.get<{
+      sampleSize: number; ac: number; re: number; planText: string;
+      aql: number; level: string; verdict?: string;
+    }>("/rjvn-iqc/sampling/calculate", params as Record<string, unknown>);
+  },
+  submitRjvnInspection(lotId: string, body: {
+    records: Array<{
+      itemName: string; sectionType: string; standard?: string;
+      measuredValue?: string; defectQty?: number; isPass: boolean;
+      sampleSize?: number; aql?: number;
+    }>;
+    inspector?: string;
+  }) {
+    return apiClient.post<{
+      reportId: string; decision: string; strictnessUpdate: Record<string, unknown>;
+      transfer: Record<string, unknown> | null;
+    }>(`/rjvn-iqc/inspect/${encodeURIComponent(lotId)}`, body);
+  },
+  getRjvnIqcStats() {
+    return apiClient.get<{
+      summary: { totalLots: number; passedLots: number; failedLots: number; passRate: number };
+      trend: Array<{ period: string; totalLots: number; passedLots: number; passRate: number }>;
+      topMaterials: Array<{ materialCode: string; materialName: string; totalLots: number; passedLots: number; passRate: number }>;
+      topSuppliers: Array<{ supplierCode: string; supplierName: string; totalLots: number; passedLots: number; passRate: number }>;
+    }>("/rjvn-iqc/stats");
+  },
+
+  // ── rjvn Receiving core ─────────────────────────────────────────
+  getRjvnReceiptPending(params?: { q?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-receipt/pending", params as Record<string, unknown> | undefined);
+  },
+  getRjvnReceiptList(params?: { status?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-receipt/list", params as Record<string, unknown> | undefined);
+  },
+  getRjvnReceiptDetail(id: string) {
+    return apiClient.get<{
+      receipt: Record<string, unknown>;
+      lots: Array<Record<string, unknown>>;
+    }>(`/rjvn-receipt/list/${encodeURIComponent(id)}`);
+  },
+  getRjvnReceiptWarehouses() {
+    return apiClient.get<{ rows: Array<Record<string, unknown>> }>("/rjvn-receipt/warehouses");
+  },
+  verifyRjvnReceiptQr(qrContent: string) {
+    return apiClient.post<Record<string, unknown>>("/rjvn-receipt/verify-qr", { qrContent });
+  },
+  previewRjvnReceiptSubmit() {
+    return apiClient.post<{ receipt_count: number; lot_count: number }>(
+      "/rjvn-receipt/submit-iqc/preview");
+  },
+  submitRjvnReceiptIqc() {
+    return apiClient.post<{
+      createdLotCount: number; submittedReceiptCount: number; lotNos: string[];
+    }>("/rjvn-receipt/submit-iqc");
+  },
+
+  // ── rjvn Inventory core ────────────────────────────────────────
+  getRjvnInventoryList(params?: { q?: string; stockStatus?: string; warehouseId?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-inventory/list", params as Record<string, unknown> | undefined);
+  },
+  getRjvnInventorySummary() {
+    return apiClient.get<{ rows: Array<Record<string, unknown>> }>("/rjvn-inventory/summary");
+  },
+  getRjvnInventoryTransactions(params?: { limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-inventory/transactions", params as Record<string, unknown> | undefined);
+  },
+  getRjvnInventoryTransfers(params?: { limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-inventory/transfers", params as Record<string, unknown> | undefined);
+  },
+  transferRjvnInventory(body: {
+    fromLocationId: string; toLocationId: string; materialId: string;
+    batchNo?: string; quantity: number; remark?: string;
+  }) {
+    return apiClient.post<Record<string, unknown>>("/rjvn-inventory/transfer", body);
+  },
+  adjustRjvnInventory(body: {
+    inventoryId: string; actualQty: number; reason: string; force?: boolean; forceReason?: string;
+  }) {
+    return apiClient.post<Record<string, unknown>>("/rjvn-inventory/adjust", body);
+  },
+  lockRjvnInventory(body: { inventoryId: string; lockReason: string }) {
+    return apiClient.post<Record<string, unknown>>("/rjvn-inventory/lock", body);
+  },
+  unlockRjvnInventory(body: { inventoryId: string; reason?: string }) {
+    return apiClient.post<Record<string, unknown>>("/rjvn-inventory/unlock", body);
+  },
+
+  // ── rjvn Picking core ──────────────────────────────────────────
+  getRjvnPickingList(params?: { q?: string; status?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+      byStatus: Record<string, number>;
+    }>("/rjvn-picking/list", params as Record<string, unknown> | undefined);
+  },
+  getRjvnPickingDetail(id: string) {
+    return apiClient.get<{ order: Record<string, unknown>; items: Array<Record<string, unknown>> }>(
+      `/rjvn-picking/detail/${encodeURIComponent(id)}`);
+  },
+  getRjvnPickingReels(params?: { limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>("/rjvn-picking/reels", params as Record<string, unknown> | undefined);
+  },
+  approveRjvnPicking(id: string, body: { pass: boolean; approvalRemark?: string }) {
+    return apiClient.post(`/rjvn-picking/${encodeURIComponent(id)}/approve`, body);
+  },
+  pickRjvnPicking(id: string, body: { items: Array<{ id: string; actualQty: number }> }) {
+    return apiClient.post(`/rjvn-picking/${encodeURIComponent(id)}/pick`, body);
+  },
+  receiveRjvnPicking(id: string, body: {
+    items: Array<{ id: string; receivedQty: number; remark?: string }>; remark?: string;
+  }) {
+    return apiClient.post(`/rjvn-picking/${encodeURIComponent(id)}/receive`, body);
+  },
+
+  // ── rjvn remaining document flows ──────────────────────────────
+  getRjvnDocList(kind: string, params?: { q?: string; status?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+      byStatus: Record<string, number>;
+    }>(`/rjvn-doc/${kind}/list`, params as Record<string, unknown> | undefined);
+  },
+  getRjvnDocDetail(kind: string, id: string) {
+    return apiClient.get<{ order: Record<string, unknown>; items: Array<Record<string, unknown>>; logs?: Array<Record<string, unknown>> }>(
+      `/rjvn-doc/${kind}/detail/${encodeURIComponent(id)}`);
+  },
+  rjvnDocAction(kind: string, id: string, action: string, body?: Record<string, unknown>) {
+    return apiClient.post(`/rjvn-doc/${kind}/${encodeURIComponent(id)}/${action}`, body ?? {});
+  },
+
+  // ── canonical (imported) data – read-only ────────────────────────
+  getCanonicalSummary() {
+    return apiClient.get<{
+      counts: Record<string, number>;
+      map: Record<string, number>;
+      translation: Record<string, { translated: number; pending: number }>;
+    }>("/canonical-data/summary");
+  },
+  getCanonicalList(entity: string, params?: { q?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>; total: number; limit: number; offset: number;
+    }>(`/canonical-data/${entity}`, params as Record<string, unknown> | undefined);
+  },
+  getRjvnIqcOverview() {
+    return apiClient.get<{
+      totals: { lots: number; passed: number; pending: number; failed: number };
+      bySupplier: Array<{ name: string; lots: number; passed: number }>;
+      byMaterial: Array<{ name: string; lots: number; passed: number }>;
+      byMonth: Array<{ month: string; lots: number }>;
+      defects: Array<{ name: string; lots: number }>;
+    }>("/rjvn-wms/iqc/overview");
+  },
+  getRjvnTableData(table: string, params?: { q?: string; limit?: number; offset?: number }) {
+    return apiClient.get<{
+      rows: Array<Record<string, unknown>>;
+      total: number; limit: number; offset: number; columns: string[];
+    }>(`/rjvn-wms/data/${encodeURIComponent(table)}`, params as Record<string, unknown> | undefined);
+  },
+
   getSupplierPreReceipt(qr: string) {
     return apiClient.get<{
       preReceiptQr: string; supplierCode: string; supplierName?: string; poNo?: string;
@@ -287,16 +732,22 @@ export const wmsApi: any = {
   },
 
   /** GET /wms/material-lots — PostgreSQL is authoritative; never substitute demo stock. */
-  getMaterialLots(params?: { lotNo?: string; labelId?: string; iqcStatus?: string; q?: string; limit?: number; offset?: number }) {
+  getMaterialLots(params?: { lotNo?: string; labelId?: string; iqcStatus?: string; q?: string; msdOnly?: boolean; limit?: number; offset?: number }) {
     const qs = new URLSearchParams();
     if (params?.lotNo) qs.set("lotNo", params.lotNo);
     if (params?.labelId) qs.set("labelId", params.labelId);
     if (params?.iqcStatus) qs.set("iqcStatus", params.iqcStatus);
     if (params?.q) qs.set("q", params.q);
+    if (params?.msdOnly != null) qs.set("msdOnly", String(params.msdOnly));
     if (params?.limit != null) qs.set("limit", String(params.limit));
     if (params?.offset != null) qs.set("offset", String(params.offset));
     const query = qs.toString();
     return apiClient.get<ListEnvelope<MaterialLot>>(`/wms/material-lots${query ? `?${query}` : ""}`);
+  },
+
+  /** PATCH /wms/material-lots/:id/low-stock-level — per-lot low-stock warning threshold. */
+  setLowStockLevel(id: number | string, lowStockLevel: number) {
+    return apiClient.patch(`/wms/material-lots/${id}/low-stock-level`, { lowStockLevel });
   },
 
   /** GET /wms/storage-locations */
@@ -330,8 +781,29 @@ export const wmsApi: any = {
   },
 
   /** POST /wms/transactions */
-  postTransaction(action: string, payload: { materialLotId?: number | string; lotNo?: string; qty?: number; operator?: number | string; workOrderCode?: string; fromLocation?: string; toLocation?: string; reason?: string }) {
+  postTransaction(action: string, payload: { materialLotId?: number | string; lotNo?: string; qty?: number; operator?: number | string; workOrderCode?: string; fromLocation?: string; toLocation?: string; reason?: string; stationCode?:string; fetchPackageQr?:string }) {
     return apiClient.post<MutateEnvelope<{ id: number; action: string }>>("/wms/transactions", { action, payload: { ...payload, action } });
+  },
+  getFetchPackage(qr:string) { return apiClient.get<MutateEnvelope<Record<string,unknown>>>(`/wms/fetch-packages/${encodeURIComponent(qr)}`); },
+  listFetchPackages(params?:{status?:string;q?:string;limit?:number}) { const qs=new URLSearchParams();if(params?.status)qs.set("status",params.status);if(params?.q)qs.set("q",params.q);if(params?.limit)qs.set("limit",String(params.limit));return apiClient.get<ListEnvelope<Record<string,unknown>>>(`/wms/fetch-packages?${qs}`); },
+  handoverFetchPackage(qr:string,payload:{actor:string;deviceCode?:string;stationCode?:string}) { return apiClient.post<MutateEnvelope<Record<string,unknown>>>(`/wms/fetch-packages/${encodeURIComponent(qr)}/handover`,{payload}); },
+  receiveFetchPackage(qr:string,payload:{actor:string;deviceCode?:string;stationCode?:string}) { return apiClient.post<MutateEnvelope<Record<string,unknown>>>(`/wms/fetch-packages/${encodeURIComponent(qr)}/receive`,{payload}); },
+  getMaterialConsumption(params?: { q?:string; fromDate?:string; toDate?:string; limit?:number }) {
+    const qs = new URLSearchParams();
+    if (params?.q) qs.set("q", params.q);
+    if (params?.fromDate) qs.set("fromDate", params.fromDate);
+    if (params?.toDate) qs.set("toDate", params.toDate);
+    if (params?.limit) qs.set("limit", String(params.limit));
+    return apiClient.get<MutateEnvelope<MaterialConsumptionSummary>>(`/wms/material-consumption-summary?${qs}`);
+  },
+  resolveReceivingMsl(payload: { lotNo: string; materialCode?: string }) {
+    return apiClient.post<MutateEnvelope<{ materialLotId: number; lotNo: string; materialCode: string; msdLevel: string; source: string }>>("/wms/receiving/msl-resolution", payload);
+  },
+  createReceivingQr(payload: { lotNo: string; materialCode: string; quantity: number; sourceType: "PO_RECEIPT" | "LINE_RETURN" | "REWORK_RETURN" | "SUBCONTRACT_RETURN"; warehouse: string; location: string; operator: string; sourcePalletCode?: string }) {
+    return apiClient.post<MutateEnvelope<{ material_lot_id: number; materialCode: string; lotNo: string; msdLevel: string; materialQr: string; pallet_qr: string; document_no: string; qrPayload: Record<string, unknown> }>>("/wms/receiving/qr-bindings", payload);
+  },
+  bindReceivingQrToPallet(payload: { palletQr: string; boxQr: string; lotNo: string; locationQr: string; supplier?: string; gps: { latitude: number; longitude: number; accuracy: number; capturedAt: string } }) {
+    return apiClient.post<{ success: boolean; data: Record<string, unknown> }>("/wms/receiving/pallet-box-bindings", payload);
   },
   getLotRecommendations(workOrderCode: string, materialCode: string) {
     return apiClient.get<{ policy: string; items: FifoLotRecommendation[] }>(`/wms/work-orders/${encodeURIComponent(workOrderCode)}/lot-recommendations/${encodeURIComponent(materialCode)}`);
@@ -380,14 +852,201 @@ export const wmsApi: any = {
     return apiClient.get<WmsDashboardSummary>("/dashboard/summary");
   },
 
-  /** GET /wms/pick-orders?workOrderCode= — get pick lines for a work order */
-  getPickOrders(workOrderCode: string) {
-    return apiClient.get<ListEnvelope<PickOrder>>(`/wms/pick-orders?workOrderCode=${encodeURIComponent(workOrderCode)}`);
+  /** GET /wms/pick-orders — list pending pick lines, optionally for one work order */
+  getPickOrders(workOrderCode?: string) {
+    const query = workOrderCode ? `?workOrderCode=${encodeURIComponent(workOrderCode)}` : "";
+    return apiClient.get<ListEnvelope<PickOrder>>(`/wms/pick-orders${query}`);
   },
 
   /** @deprecated Use getPickOrders() instead */
   getPickOrdersByWorkOrder(workOrderCode: string) {
     return this.getPickOrders(workOrderCode);
+  },
+
+  /** POST /wms/collect-orders/generate — material collector list for a WO */
+  generateCollectOrder(workOrderCode: string) {
+    return apiClient.post<{
+      order: CollectOrder;
+      items: CollectOrderLine[];
+      reused?: boolean;
+    }>("/wms/collect-orders/generate", { workOrderCode });
+  },
+
+  /** GET /wms/collect-orders?workOrderCode= — active collect list (order + lines) */
+  getCollectOrder(workOrderCode: string, domain?: string) {
+    const q = `workOrderCode=${encodeURIComponent(workOrderCode)}${domain ? `&domain=${encodeURIComponent(domain)}` : ""}`;
+    return apiClient.get<{
+      order: CollectOrder | null;
+      items: CollectOrderLine[];
+      summary?: CollectDomainSummary;
+    }>(`/wms/collect-orders?${q}`);
+  },
+
+  /** POST /wms/collect-orders/:id/confirm — collector scanned one line */
+  confirmCollectLine(
+    orderId: number,
+    payload: { lineId?: number; locationQr: string; scannedQr?: string; lotNo?: string },
+  ) {
+    return apiClient.post<{
+      orderId: number;
+      status: string;
+      line: CollectOrderLine;
+      remaining: number;
+    }>(`/wms/collect-orders/${orderId}/confirm`, payload);
+  },
+
+  /** GET /wms/collectors — warehouse collectors eligible for line allocation */
+  getCollectors() {
+    return apiClient.get<{
+      items: Array<{ username: string; displayName?: string | null; roleCode: string; pendingAssigned: number; domain: string }>;
+    }>("/wms/collectors");
+  },
+
+  /** POST /wms/collect-orders/:id/assign — allocate lines to employees */
+  assignCollectLines(
+    orderId: number,
+    payload: { assignments?: Array<{ lineId: number; assignee: string }>; assignees?: string[] },
+  ) {
+    return apiClient.post<{
+      orderId: number;
+      assigned: Array<{ id: number; lineNo: number; assignedTo: string }>;
+      assignedBy: string;
+    }>(`/wms/collect-orders/${orderId}/assign`, payload);
+  },
+
+  /** GET /wms/slips — material-issue ledger: collect orders + line acceptances */
+  getSlips(workOrderCode?: string) {
+    const q = workOrderCode ? `?workOrderCode=${encodeURIComponent(workOrderCode)}` : "";
+    return apiClient.get<{
+      collectOrders: Array<{
+        id: number;
+        slipNo: string;
+        workOrderCode: string;
+        lineCode?: string | null;
+        status: string;
+        domain?: string | null;
+        raisedBy?: string | null;
+        raisedAt: string;
+        collectedBy?: string | null;
+        collectedAt?: string | null;
+        acceptedBy?: string | null;
+        acceptedAt?: string | null;
+        pickers?: string | null;
+        lineCount: number;
+        doneLines: number;
+        issuedLines: number;
+      }>;
+      acceptances: Array<{
+        id: number;
+        slipNo: string;
+        workOrderCode: string;
+        receivedBy?: string | null;
+        itemCount: number;
+        receivedAt: string;
+        notes?: string | null;
+        lineSummary?: string | null;
+        items?: Array<{ materialCode?: string | null; qty?: number; lotNo?: string | null }>;
+        collectNo?: string | null;
+      }>;
+      ledger: Array<Record<string, unknown>>;
+    }>(`/wms/slips${q}`);
+  },
+
+  /** GET /wms/picking-status — line pick-PDA progress per WO collect order */
+  getPickingStatus(workOrderCode?: string) {
+    const q = workOrderCode ? `?workOrderCode=${encodeURIComponent(workOrderCode)}` : "";
+    return apiClient.get<{
+      items: Array<{
+        id: number;
+        collectNo: string;
+        workOrderCode: string;
+        lineCode?: string | null;
+        collectStatus: string;
+        collector?: string | null;
+        totalLines: number;
+        readyToPick: number;
+        acceptedLines: number;
+        lastPickingBy?: string | null;
+        lastPickingAt?: string | null;
+        acceptCount: number;
+        readyNotices: number;
+        pickingStatus: "COLLECTING" | "IN_PROGRESS" | "DONE";
+      }>;
+    }>(`/wms/picking-status${q}`);
+  },
+
+  /** POST /wms/collect-orders/:id/accept — WMS confirms acceptance, finishes the WO flow */
+  acceptCollectOrder(id: number) {
+    return apiClient.post<{
+      id: number;
+      collectNo: string;
+      workOrderCode: string;
+      status: string;
+      acceptedBy?: string | null;
+      acceptedAt?: string | null;
+      already?: boolean;
+    }>(`/wms/collect-orders/${id}/accept`, {});
+  },
+
+  /** GET /wms/shortages — open 缺料 lines for emergency handling */
+  getShortages() {
+    return apiClient.get<{
+      items: Array<{
+        lineId: number;
+        lineNo: number;
+        materialCode: string;
+        qty?: number | string | null;
+        lotNo?: string | null;
+        locationCode?: string | null;
+        locationQr?: string | null;
+        markedBy?: string | null;
+        markedAt?: string | null;
+        workOrderCode: string;
+        slipNo: string;
+        taskStatus?: string | null;
+      }>;
+    }>("/wms/shortages");
+  },
+
+  /** POST /wms/shortages/:lineId/resolve — handled, line back to PENDING */
+  resolveShortage(lineId: number) {
+    return apiClient.post<{
+      id: number;
+      lineNo: number;
+      materialCode: string;
+      status: string;
+      workOrderCode: string;
+      slipNo: string;
+      resolvedBy?: string | null;
+    }>(`/wms/shortages/${lineId}/resolve`, {});
+  },
+
+  /** GET /wms/collect-activity — live PDA collection feed + active orders */
+  getCollectActivity(limit = 30) {
+    return apiClient.get<{
+      feed: Array<{
+        at?: string | null;
+        by?: string | null;
+        status: string;
+        slipNo: string;
+        workOrderCode: string;
+        materialCode: string;
+        qty?: number | string | null;
+        lotNo?: string | null;
+        locationQr?: string | null;
+      }>;
+      active: Array<{
+        id: number;
+        slipNo: string;
+        workOrderCode: string;
+        status: string;
+        collector?: string | null;
+        totalLines: number;
+        doneLines: number;
+        lastAt?: string | null;
+        pickers?: string | null;
+      }>;
+    }>(`/wms/collect-activity?limit=${limit}`);
   },
 
   // ── PDA Inspection Records ───────────────────────────────────────────────────
@@ -419,7 +1078,7 @@ export const wmsApi: any = {
   },
 
   /** POST /wms/pda-inspection-records */
-  createPdaInspectionRecord(record: PdaInspectionRecord) {
+  createPdaInspectionRecord(record: Omit<PdaInspectionRecord, "record_type" | "lot_no">) {
     return apiClient.post<PdaInspectionRecord>("/wms/pda-inspection-records", record);
   },
 
@@ -737,6 +1396,291 @@ export const wmsApi: any = {
     const query = qs.toString();
     return apiClient.get<ListEnvelope<WmsLoadingHistoryItem>>(`/api/wms/loading/history${query ? `?${query}` : ""}`);
   },
+
+  // ── Incoming 来料原始档案 ──────────────────────────────────────────────
+  createIncomingRecord: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/incoming", data),
+
+  getIncomingRecords: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/incoming", params) as Promise<{items:IncomingRecord[];total:number;offset:number;limit:number}>,
+
+  getIncomingRecord: (id: number) =>
+    apiClient.get(`/api/wms/incoming/${id}`) as Promise<IncomingRecord>,
+
+  getIqcWaitingQueue: () =>
+    apiClient.get("/wms/receiving/qr-bindings") as Promise<{items: IqcQueueItem[]; total: number}>,
+
+  updateIncomingRecord: (id: number, data: Record<string,unknown>) =>
+    apiClient.put(`/api/wms/incoming/${id}`, data),
+
+  // ── IQC 来料检验 ──────────────────────────────────────────────────────
+  getIqcRules: () => apiClient.get("/api/wms/iqc/rules") as Promise<IqcAqlRule[]>,
+
+  getIqcSamplingPlans: (aql_level?: string) =>
+    apiClient.get("/api/wms/iqc/sampling-plans", aql_level ? {aql_level} : undefined) as Promise<IqcSamplingPlan[]>,
+
+  createIqcInspection: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/iqc/inspections", data),
+
+  getIqcInspections: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/iqc/inspections", params) as Promise<{items:IqcInspection[];total:number;offset:number;limit:number}>,
+
+  getIqcInspection: (id: number) =>
+    apiClient.get(`/api/wms/iqc/inspections/${id}`) as Promise<IqcInspection>,
+
+  addIqcDefect: (inspectionId: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/wms/iqc/inspections/${inspectionId}/defects`, data),
+
+  completeIqcInspection: (id: number) =>
+    apiClient.post(`/api/wms/iqc/inspections/${id}/complete`, {}),
+
+  createSpecialApproval: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/iqc/special-approvals", data),
+
+  approveSpecialApproval: (id: number, data: Record<string,unknown>) =>
+    apiClient.patch(`/api/wms/iqc/special-approvals/${id}`, data),
+
+  getSpecialApprovals: (status?: string) =>
+    apiClient.get("/api/wms/iqc/special-approvals", status ? {status} : undefined) as Promise<IqcSpecialApproval[]>,
+
+
+  // ── Material Loading / PDA上料 ───────────────────────────────────────────
+  createMaterialLoading: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/material-loading", data) as Promise<{id:number;quality_gate_passed:boolean;failed_items:string[];gates:Record<string,boolean>}>,
+
+  getMaterialLoading: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/material-loading", params) as Promise<{items:MaterialLoadingRecord[];total:number}>,
+
+  getSmtReelConsumption: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mes/smt/reel-consumption", params) as Promise<{items:Array<Record<string,unknown>>;summary:Record<string,number>}> ,
+
+  getPdaLoadingRecords: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/smt/loading/records", params) as Promise<{
+      items: Array<{
+        id:number; workOrderCode:string; lineCode:string; machineCode:string;
+        channelCode:string; slotNo:string; feederCode:string; materialCode:string;
+        materialNameZh:string; materialSn:string; lotNo:string; quantity:number;
+        consumedQty:number; remainingQty:number; operator:string; status:string;
+        qualityVerdict:string; boundAt:string; unboundAt:string; createdAt:string;
+        sessionId:number; sessionStatus:string;
+      }>;
+      total:number;
+      summary:{total:number;active:number;today:number;unverified:number;quantity:number;loading:number;released:number};
+    }>,
+
+  releaseMaterialLoading: (id: number, line_leader_id: string) =>
+    apiClient.patch(`/api/wms/material-loading/${id}/release`, {line_leader_id}) as Promise<{affected:number}>,
+
+  // ── Feeder Changes / 换料记录 ───────────────────────────────────────────
+  createFeederChange: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/feeder-changes", data),
+
+  getFeederChanges: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/feeder-changes", params) as Promise<{items:FeederChange[]}>,
+
+  // ── Line Stops / 停线记录 ───────────────────────────────────────────────
+  createLineStop: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/line-stops", data),
+
+  endLineStop: (id: number, data: Record<string,unknown>) =>
+    apiClient.patch(`/api/wms/line-stops/${id}/end`, data),
+
+  getLineStops: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/line-stops", params) as Promise<{items:LineStop[]}>,
+
+  // ── SN Traceability / SN追溯 ────────────────────────────────────────────
+  linkSnMaterialLot: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/sn-material-lot", data),
+
+  getSnMaterialLots: (sn: string) =>
+    apiClient.get(`/api/wms/sn-material-lot/${sn}`) as Promise<SnMaterialLotRecord[]>,
+
+  // ── Finished Goods / 成品 ───────────────────────────────────────────────
+  createFinishedGood: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/finished-goods", data),
+
+  getFinishedGoods: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/finished-goods", params) as Promise<{items:FinishedGood[];total:number}>,
+
+  oqcFinishedGood: (id: number, data: Record<string,unknown>) =>
+    apiClient.patch(`/api/wms/finished-goods/${id}/oqc`, data),
+
+  // ── Outbound / 出货 ─────────────────────────────────────────────────────
+  createOutboundOrder: (data: Record<string,unknown>) =>
+    apiClient.post("/api/wms/outbound-orders", data),
+
+  addOutboundItems: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/wms/outbound-orders/${id}/items`, data),
+
+  shipOutboundOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.patch(`/api/wms/outbound-orders/${id}/ship`, data),
+
+  getOutboundOrders: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/wms/outbound-orders", params) as Promise<{items:OutboundOrder[]}>,
+
+  getOutboundOrder: (id: number) =>
+    apiClient.get(`/api/wms/outbound-orders/${id}`) as Promise<OutboundOrder & {items:OutboundItem[]}>,
+
+  // ── Over-picking ─────────────────────────────────────────────────────
+  getOverPickingList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/over-picking/list", params) as Promise<{items:OverPickingOrder[];total:number;offset:number;limit:number}>,
+
+  getOverPickingDetail: (id: number) =>
+    apiClient.get(`/api/over-picking/detail/${id}`) as Promise<OverPickingOrder & {items:OverPickingItem[]}>,
+
+  createOverPickingOrder: (data: Record<string,unknown>) =>
+    apiClient.post("/api/over-picking", data),
+
+  approveOverPickingOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/over-picking/${id}/approve`, data),
+
+  cancelOverPickingOrder: (id: number) =>
+    apiClient.post(`/api/over-picking/${id}/cancel`, {}),
+
+  getOverPickingStats: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/over-picking/stats", params) as Promise<{stats:Record<string,number>;total:number}>,
+
+  // ── Rework ───────────────────────────────────────────────────────────
+  getReworkList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/rework/list", params) as Promise<{items:ReworkOrder[];total:number;offset:number;limit:number}>,
+
+  getReworkPendingCount: () =>
+    apiClient.get("/api/rework/pending-count") as Promise<Record<string,number>>,
+
+  getReworkDetail: (id: number) =>
+    apiClient.get(`/api/rework/detail/${id}`) as Promise<ReworkOrder>,
+
+  startReworkOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/rework/start`, data),
+
+  finishReworkOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/rework/finish`, data),
+
+  reinspectReworkOrder: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/rework/reinspect`, data),
+
+  // ── Supplier Debt ────────────────────────────────────────────────────
+  getSupplierDebtList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/supplier-debt/list", params) as Promise<{items:SupplierDebt[];total:number;offset:number;limit:number}>,
+
+  getSupplierDebtDetail: (id: number) =>
+    apiClient.get(`/api/supplier-debt/detail/${id}`) as Promise<SupplierDebt>,
+
+  // ── Defective Move ───────────────────────────────────────────────────
+  getDefectiveMoveList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/defective-move/list", params) as Promise<{items:DefectiveMoveTask[];total:number;page:number;pageSize:number}>,
+
+  getDefectiveMovePendingCount: () =>
+    apiClient.get("/api/defective-move/pending-count") as Promise<{pending:number;pendingConfirm:number;total:number}>,
+
+  getDefectiveMoveLocations: () =>
+    apiClient.get("/api/defective-move/locations") as Promise<DefectiveMoveLocation[]>,
+
+  getDefectiveMoveSourceStock: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/defective-move/source-stock", params) as Promise<{items:DefectiveMoveSourceStock[];total:number;page:number;pageSize:number}>,
+
+  getDefectiveMoveDetail: (id: number) =>
+    apiClient.get(`/api/defective-move/detail/${id}`) as Promise<unknown>,
+
+  createDefectiveMove: (data: Record<string,unknown>) =>
+    apiClient.post("/api/defective-move/create", data),
+
+  confirmDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/confirm`, data),
+
+  cancelDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/cancel`, data),
+
+  scanDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/scan`, data),
+
+  completeDefectiveMove: (id: number, data: Record<string,unknown>) =>
+    apiClient.post(`/api/defective-move/${id}/complete`, data),
+
+  // ── MRB (Material Review Board) ─────────────────────────────────────────
+  getMrbList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/list", params) as Promise<{list:Record<string,unknown>[];total:number;page:number;size:number}>,
+  getMrbDetail: (id: number | string) =>
+    apiClient.get(`/api/mrb/detail/${id}`) as Promise<Record<string, any>>,
+
+  getMrbPendingLots: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/pending-lots", params) as Promise<{items:Record<string,unknown>[];total:number}>,
+
+  getMrbMyTasks: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/my-tasks", params) as Promise<{items:Record<string,unknown>[];total:number}>,
+
+  getMrbReviewerCandidates: () =>
+    apiClient.get("/api/mrb/reviewer-candidates") as Promise<{items:Array<{id:number;username:string;displayName?:string}>}>,
+
+  createMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/initiate", data),
+
+  saveMrbPlan: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/plan", data),
+
+  assignMrbReviewers: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/assign-reviewers", data),
+
+  submitMrb: (mrbId: number | string) =>
+    apiClient.post("/api/mrb/submit", { mrbId }),
+
+  submitMrbReview: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/submit-review", data),
+
+  preApproveMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/pre-approve", data),
+
+  finalApproveMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/final-approve", data),
+
+  cancelMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/cancel", data),
+
+  rejectMrb: (data: Record<string,unknown>) =>
+    apiClient.post("/api/mrb/reject", data),
+
+  // MRB 遗留：批次折叠 / 一箱一码 / 方案读取 / 提走确认 / 报废销毁
+  getMrbLotGroups: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/mrb/lot-groups", params) as Promise<{items:Record<string, unknown>[]; total:number}>,
+  getMrbLotLabels: (params: { mrbId?: number | string; lotNo?: string }) =>
+    apiClient.get("/api/mrb/lot-labels", params) as Promise<{ items: Record<string, unknown>[]; lotNo: string }>,
+  getMrbPlan: (mrbId: number | string) =>
+    apiClient.get(`/api/mrb/plan/${mrbId}`) as Promise<{
+      mrbId: number; mrbNo: string; status: string; quantity: string | number;
+      dispositions: Array<Record<string, unknown>>; reviewers: Array<Record<string, unknown>>;
+    }>,
+  confirmMrbOut: (dispositionId: number | string) =>
+    apiClient.post(`/api/mrb/disposition/${dispositionId}/confirm-out`),
+  destroyMrbScrap: (dispositionId: number | string, remark?: string) =>
+    apiClient.post(`/api/mrb/disposition/${dispositionId}/destroy`, { remark }),
+
+  // ── Supplier return ─────────────────────────────────────────────────────
+  getSupplierReturnList: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/supplier-return/list", params) as Promise<{items:Record<string,unknown>[];total:number}>,
+  getSupplierReturnPendingCount: () =>
+    apiClient.get("/api/supplier-return/pending-count") as Promise<{pending:number}>,
+  getSupplierReturnDetail: (id: number | string) =>
+    apiClient.get(`/api/supplier-return/detail/${id}`) as Promise<Record<string, any>>,
+  createSupplierReturn: (data: Record<string,unknown>) =>
+    apiClient.post("/api/supplier-return/create", data),
+  outboundSupplierReturn: (data: Record<string,unknown>) =>
+    apiClient.post("/api/supplier-return/outbound", data),
+  cancelSupplierReturn: (data: Record<string,unknown>) =>
+    apiClient.post("/api/supplier-return/cancel", data),
+
+  // ── Notices ─────────────────────────────────────────────────────────────
+  getNotices: (params?: Record<string,unknown>) =>
+    apiClient.get("/api/notices/list", params) as Promise<{items:Record<string,unknown>[]}>,
+  getNoticeUnreadCount: () =>
+    apiClient.get("/api/notices/unread-count") as Promise<{count:number}>,
+  markNoticeRead: (id: number | string) =>
+    apiClient.post(`/api/notices/${id}/read`, {}),
+  markAllNoticesRead: () =>
+    apiClient.post("/api/notices/read-all", {}),
+
+  // ── OA integration ──────────────────────────────────────────────────────
+  submitToOa: (bizType: string, bizNo: string) =>
+    apiClient.post(`/api/integration/oa/submit-${bizType}/${bizNo}`, {}),
 
 };
 
@@ -1102,126 +2046,5 @@ export const docApi = {
     complete: (id: number) => docAction("replenishment", "complete", id),
     cancel:   (id: number) => docAction("replenishment", "cancel",   id),
   },
-
-  // ── Incoming 来料原始档案 ──────────────────────────────────────────────
-  createIncomingRecord: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/incoming", data),
-
-  getIncomingRecords: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/incoming", params) as Promise<{items:IncomingRecord[];total:number;offset:number;limit:number}>,
-
-  getIncomingRecord: (id: number) =>
-    apiClient.get(`/api/wms/incoming/${id}`) as Promise<IncomingRecord>,
-
-  updateIncomingRecord: (id: number, data: Record<string,unknown>) =>
-    apiClient.put(`/api/wms/incoming/${id}`, data),
-
-  // ── IQC 来料检验 ──────────────────────────────────────────────────────
-  getIqcRules: () => apiClient.get("/api/wms/iqc/rules") as Promise<IqcAqlRule[]>,
-
-  getIqcSamplingPlans: (aql_level?: string) =>
-    apiClient.get("/api/wms/iqc/sampling-plans", aql_level ? {aql_level} : undefined) as Promise<IqcSamplingPlan[]>,
-
-  createIqcInspection: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/iqc/inspections", data),
-
-  getIqcInspections: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/iqc/inspections", params) as Promise<{items:IqcInspection[];total:number;offset:number;limit:number}>,
-
-  getIqcInspection: (id: number) =>
-    apiClient.get(`/api/wms/iqc/inspections/${id}`) as Promise<IqcInspection>,
-
-  addIqcDefect: (inspectionId: number, data: Record<string,unknown>) =>
-    apiClient.post(`/api/wms/iqc/inspections/${inspectionId}/defects`, data),
-
-  completeIqcInspection: (id: number) =>
-    apiClient.post(`/api/wms/iqc/inspections/${id}/complete`, {}),
-
-  createSpecialApproval: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/iqc/special-approvals", data),
-
-  approveSpecialApproval: (id: number, data: Record<string,unknown>) =>
-    apiClient.patch(`/api/wms/iqc/special-approvals/${id}`, data),
-
-  getSpecialApprovals: (status?: string) =>
-    apiClient.get("/api/wms/iqc/special-approvals", status ? {status} : undefined) as Promise<IqcSpecialApproval[]>,
-
-
-  // ── Material Loading / PDA上料 ───────────────────────────────────────────
-  createMaterialLoading: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/material-loading", data) as Promise<{id:number;quality_gate_passed:boolean;failed_items:string[];gates:Record<string,boolean>}>,
-
-  getMaterialLoading: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/material-loading", params) as Promise<{items:MaterialLoadingRecord[];total:number}>,
-
-  getSmtReelConsumption: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/mes/smt/reel-consumption", params) as Promise<{items:Array<Record<string,unknown>>;summary:Record<string,number>}> ,
-
-  getPdaLoadingRecords: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/smt/loading/records", params) as Promise<{
-      items: Array<{
-        id:number; workOrderCode:string; lineCode:string; machineCode:string;
-        channelCode:string; slotNo:string; feederCode:string; materialCode:string;
-        materialNameZh:string; materialSn:string; lotNo:string; quantity:number;
-        consumedQty:number; remainingQty:number; operator:string; status:string;
-        qualityVerdict:string; boundAt:string; unboundAt:string; createdAt:string;
-        sessionId:number; sessionStatus:string;
-      }>;
-      total:number;
-      summary:{total:number;active:number;today:number;unverified:number;quantity:number;loading:number;released:number};
-    }>,
-
-  releaseMaterialLoading: (id: number, line_leader_id: string) =>
-    apiClient.patch(`/api/wms/material-loading/${id}/release`, {line_leader_id}) as Promise<{affected:number}>,
-
-  // ── Feeder Changes / 换料记录 ───────────────────────────────────────────
-  createFeederChange: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/feeder-changes", data),
-
-  getFeederChanges: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/feeder-changes", params) as Promise<{items:FeederChange[]}>,
-
-  // ── Line Stops / 停线记录 ───────────────────────────────────────────────
-  createLineStop: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/line-stops", data),
-
-  endLineStop: (id: number, data: Record<string,unknown>) =>
-    apiClient.patch(`/api/wms/line-stops/${id}/end`, data),
-
-  getLineStops: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/line-stops", params) as Promise<{items:LineStop[]}>,
-
-  // ── SN Traceability / SN追溯 ────────────────────────────────────────────
-  linkSnMaterialLot: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/sn-material-lot", data),
-
-  getSnMaterialLots: (sn: string) =>
-    apiClient.get(`/api/wms/sn-material-lot/${sn}`) as Promise<SnMaterialLotRecord[]>,
-
-  // ── Finished Goods / 成品 ───────────────────────────────────────────────
-  createFinishedGood: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/finished-goods", data),
-
-  getFinishedGoods: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/finished-goods", params) as Promise<{items:FinishedGood[];total:number}>,
-
-  oqcFinishedGood: (id: number, data: Record<string,unknown>) =>
-    apiClient.patch(`/api/wms/finished-goods/${id}/oqc`, data),
-
-  // ── Outbound / 出货 ─────────────────────────────────────────────────────
-  createOutboundOrder: (data: Record<string,unknown>) =>
-    apiClient.post("/api/wms/outbound-orders", data),
-
-  addOutboundItems: (id: number, data: Record<string,unknown>) =>
-    apiClient.post(`/api/wms/outbound-orders/${id}/items`, data),
-
-  shipOutboundOrder: (id: number, data: Record<string,unknown>) =>
-    apiClient.patch(`/api/wms/outbound-orders/${id}/ship`, data),
-
-  getOutboundOrders: (params?: Record<string,unknown>) =>
-    apiClient.get("/api/wms/outbound-orders", params) as Promise<{items:OutboundOrder[]}>,
-
-  getOutboundOrder: (id: number) =>
-    apiClient.get(`/api/wms/outbound-orders/${id}`) as Promise<OutboundOrder & {items:OutboundItem[]}>,
 
 };
