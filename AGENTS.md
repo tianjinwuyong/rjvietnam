@@ -88,12 +88,36 @@ adb shell am start -n com.ruijing.linemanager/com.smt.materialloader.MainActivit
 adb exec-out screencap -p > shot.png          :: 目检 UI 变更
 ```
 
-**MuMu 模拟器不可用于自动化**(本机约定):设备冒烟(含 ROLE_TASK_GRAPH 的三语冒烟门槛)
-须由操作者在真机/MuMu 界面手动完成;智能体不要尝试启动 MuMu 或经其执行测试。
+**MuMu 规程**(本机约定):智能体不得自行启动 MuMu;仅当操作者已打开模拟器实例后,
+方可经 `adb`(连接 `127.0.0.1:7555` 或 `adb connect 127.0.0.1:<端口>`)安装与测试。
+注意 MuMu 多屏:每个 app 实例可能在不同逻辑屏(`input -d <display>` 需先查
+`dumpsys display`);设备冒烟门槛(三语等)可由智能体在已开实例上执行。
 
-`hotelDebug` 为本地调试构建,但注意其每变体的 `API_BASE_URL` 字段是**死代码** ——
-运行时只读 `PRIMARY/SECONDARY/TERTIARY_API_BASE_URL`,所以它仍然打向 .155;
-如需本地服务,用 `adb reverse tcp:8080 tcp:8080` 加本地代理。
+`hotelDebug` 为厂外调试构建,端点见下文「厂外连真实 MES」;每变体遗留的
+`API_BASE_URL` 字段仍是死代码(运行时只读 `PRIMARY/SECONDARY/TERTIARY_API_BASE_URL`),
+除 hotelDebug 外各变体均指向厂区 LAN。
+
+**厂外连真实 MES(hotelDebug 已改好):** 出厂 LAN `192.168.6.0/24` 在本机不可路由,
+Tailscale 也不带子网路由(所有节点 `sub=` 空);但 `ruijing-management-122` =
+`100.116.166.118:8080` 可直连,且提供真实 MES `/api/auth/*`。hotelDebug 的三段端点现指向
+`http://127.0.0.1:8080/`,完整链路:
+
+```bat
+:: 1. 主机起兼容代理(legacy /auth/login|session → /api/auth/*,其余透传,保 query)
+python tools\mes-compat-proxy.py --listen 18080
+:: 2. 设备环回转发
+adb -s 127.0.0.1:16448 reverse tcp:8080 tcp:18080
+:: 3. 装 hotelDebug 即连真 MES 122(155/234 厂外不可用;X-PDA-Route 按 host 判定,环回标 FACTORY_UNKNOWN)
+```
+
+MES 122 能力矩阵(2026-11-21 实测):`/api/pda/{heartbeats,events}`、
+`/api/smt/loading/{work-orders,offline-violations,operators}`、`/mes/lines/{code}`、
+`/hr/employees`、`/api/wms/receiving/live-state`、`/api/oa/documents`、`/api/manager/team`
+在线;`/api/manager/{alerts,decisions,messages,targets,handover,audit}`、
+`/api/smt/loading/offline-lease`、`/api/dispatch/claim` 仍 404(Required,服务器侧);
+SMT WebView 面板(`TempSmtLoadingActivity` 硬编码 `155:5178/5180`)厂外不可达。
+`EMPLOYEE_VN001` 在 122 上未开通;`VN_WH_001 / VN_OP_001 / VN_LM_* / QC_VN_01 /
+PMC_CN_01 / MO_LI_BIN`(密码 `Factory@123`)可登录。
 
 |构建类型|applicationId 后缀|标志|
 |---|---|---|

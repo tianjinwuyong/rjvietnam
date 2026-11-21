@@ -187,7 +187,10 @@ Login and scope check
 - [x] Every privileged action has a MES authorization and audit requirement.
 - [x] Offline and stale-data behavior defined.
 - [ ] Management system implements the `Required` endpoints.
-- [ ] Existing loading violation endpoint is line-scoped for Manual Line before manager use.
+- [x] Existing loading violation endpoint is line-scoped for Manual Line before manager use.
+  (2026-11-21: PDA now sends `&lineCode=` from its MES-issued scope — proven on device against
+  MES 122 (`GET /api/smt/loading/offline-violations?status=OPEN&lineCode=L001` → 200). Server-side
+  filtering is unverifiable while no OPEN violations exist; re-check once seeded data appears.)
 - [ ] MES and PDA integration tests cover early/late loading, expired authority, duplicate approval, offline, and stale conflict.
 - [x] MuMu smoke test covers all three languages and quick-login debug build.
   (2026-11-21, `127.0.0.1:16448`, `app-unifiedManagement.apk`: zh/en/vi login render + switch OK;
