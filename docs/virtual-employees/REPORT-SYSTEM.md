@@ -94,3 +94,9 @@ npm run report:ve -- --report=all --out=... → 7 份报告写出，行数 44/37
 
 1. **`blocked` 归零、`approved` 补上，但 `p50_wait_ms` / `p90_wait_ms` 仍为空**。批准把任务从 `WAITING_APPROVAL` 放到 `OPEN`，`completed_at` 依然为空——等待时长要等任务真正执行完才计算得出来。这不是批准漏了什么，是这条指标本来依赖执行侧闭环。
 2. **每人每日 ≤30 单的口径这次被突破**：275 单在一次批处理里由同一人批准，报告不会自动告警（它按天聚合、按门分组，看不到单次批量）。批量批准是授权行为，但"一次 275 条"本身应当有约束，见 §6 尚未实现。
+
+## 10. 生产积压清零与探针覆盖（2026-11-21 07:12Z）
+
+生产库同一 CLI 以 `MO_LI_BIN` 批准 **200 条**（5 + 195，`refused=[]`）：`approved_by` 200 行、`HUMAN_APPROVED` 200 事件、`WRITEBACK_APPLIED` 197、`WRITEBACK_DECIDED` 3，`WAITING_APPROVAL=0`；后继 OPEN 草稿 `IQC_SUBMIT` 191 / `PM_SCHEDULE` 4 / `LOCATION_BIND` 2。这 200 条与 §9 的 275 条是**两个不同数据库**，不能相加报表。
+
+探针补齐后 `PROBES=37`，覆盖全部频率岗位（此前 30 个岗位每跳 `skipped:"NO_PROBE"`）。`registry.js` 也从 23 条补到 44 条，与 `ve_reporting_lines` 一致。本地 37 岗 `dryRun` 实测 13 岗有真实待办、24 岗空队列、`skipped=0`；生产 schema 上 30 条新 SQL 全部实测可执行。`competency` 报表此前只出现一条 WMS-RECEIVING 提级（`min_level` 0→1），岗位基数扩大后该报表的分母会随真实任务增长，不应人工造训练案例凑数。
