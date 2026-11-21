@@ -50,8 +50,9 @@ class ManagerCockpitViewModel : ViewModel() {
     private suspend fun refresh() {
         try {
             val heartbeat = api.pdaHeartbeats()
-            val violations = api.smtLoadingOfflineViolations("OPEN")
             val lineCode = MaterialLoaderApp.instance.prefs.getLineCode().ifBlank { "L004" }
+            // SITE-MAP: the violation feed must be line-scoped before manager use.
+            val violations = api.smtLoadingOfflineViolations("OPEN", lineCode)
             val managerAlertResponse = runCatching { api.managerAlerts(lineCode, "open") }.getOrNull()
             val hb = heartbeat.body()
             val open = violations.body()

@@ -142,7 +142,10 @@ interface ApiService {
     suspend fun smtLoadingOperators(): Response<JsonObject>
 
     @GET("/api/smt/loading/offline-violations")
-    suspend fun smtLoadingOfflineViolations(@Query("status") status: String = "OPEN"): Response<JsonObject>
+    suspend fun smtLoadingOfflineViolations(
+        @Query("status") status: String = "OPEN",
+        @Query("lineCode") lineCode: String? = null
+    ): Response<JsonObject>
 
     @GET("/api/pda/heartbeats")
     suspend fun pdaHeartbeats(): Response<JsonObject>
