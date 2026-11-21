@@ -397,6 +397,21 @@ export function crudViews(locale: Locale): CrudViewConfig[] {
       filters: [],
     },
     {
+      // 生产执行 → SN 规则：与配置中心同一张表/同一套 CRUD（旧只读 /exec/sn/rule 已退役）
+      code: "exec.snrule", basePath: "cfg", res: "snrule",
+      fields: [
+        { key: "sn_type", labelKey: "cfg.snrule.sn_type", required: true },
+        { key: "total_len", labelKey: "cfg.snrule.total_len", type: "number" },
+        { key: "segments", labelKey: "cfg.snrule.segments" },
+        { key: "cur_seq", labelKey: "cfg.snrule.cur_seq", type: "number" },
+        { key: "reset_cycle", labelKey: "cfg.snrule.reset_cycle" },
+        { key: "sample", labelKey: "cfg.snrule.sample", readonly: true },
+        { key: "enabled", labelKey: "field.status", type: "bool", options: S(locale) },
+        { key: "remark", labelKey: "field.remark" },
+      ],
+      filters: [],
+    },
+    {
       code: "cfg.packrule", basePath: "cfg", res: "packrule",
       fields: [
         { key: "product_code", labelKey: "md.product.product_code", required: true },

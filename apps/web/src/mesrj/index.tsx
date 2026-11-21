@@ -10,7 +10,7 @@ import { BomImportView, BomTreeView, IssueView, MoView, PlanBoardView, PlanLoadV
 import { ModelProcessView } from "./views-w5";
 import { ExecScanView, ExecMoRouteView, ExecReleaseView } from "./views-w6a";
 import { AoiDashView, ReportTplView } from "./views-w8";
-import { SnPoolView, SnRuleView, SnBatchView, SnVoidView, SnDetailView, SnTestView,
+import { SnPoolView, SnBatchView, SnVoidView, SnDetailView, SnTestView,
   StationNextView, StationPendingView, PassListView, PanelPreviewView, PassPanelView } from "./views-w6b";
 import { RepairView, ScrapView, DeviceHealthView, YieldView, RepairListView, MoMaterialsView,
   AiStationsView, AgingView, AgingDetailView, TraceMaterialBySnView, TraceMaterialByMaterialView } from "./views-w6c";
@@ -27,6 +27,7 @@ import { DwellView } from "./views-w13";
 import { BindView, DecodeView } from "./views-w14";
 import { ShiftBoardView } from "./views-w15";
 import { LaserView } from "./views-w16";
+import { ItfWmsView } from "./itf";
 
 interface SysInfo {
   sys_name: string;
@@ -77,21 +78,29 @@ function WipView({ locale }: { locale: Locale }) {
   );
 }
 
-export function MesrjModule({ locale }: { locale: Locale }) {
+export function MesrjModule({ locale, groups }: { locale: Locale; groups?: string[] }) {
+  // 组内保留原 mesrj 菜单层级：groups 只是把顶层菜单组分配到 MES 各业务分组，
+  // 不做叶子扁平化（例如 groups=["exec","smt","dev"] → 生产执行分组下的瑞晶执行页）。
+  const onlyHome = Boolean(groups && groups.length === 1 && groups[0] === "home");
+  const groupKey = (groups ?? []).join(",");
   const [menu, setMenu] = useState<MesrjMenuGroup[] | null>(null);
   const [error, setError] = useState("");
   const [active, setActive] = useState("home");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    if (onlyHome) return;
     mesrjApi.get<MesrjMenuGroup[]>("/menu")
-      .then(groups => {
-        setMenu(groups);
-        // 默认展开第一组
-        setOpenGroups(prev => (groups.length ? { ...prev, [groups[0].code]: true } : prev));
+      .then(all => {
+        const visible = groupKey ? all.filter(g => groupKey.split(",").includes(g.code)) : all;
+        setMenu(visible);
+        // 组内页签数量有限，默认全部展开，避免多一次点击
+        setOpenGroups(Object.fromEntries(visible.map(g => [g.code, true])));
+        const firstLeaf = visible.find(g => (g.children ?? []).length > 0)?.children?.[0]?.code;
+        if (firstLeaf) setActive(firstLeaf);
       })
       .catch(ex => setError(ex instanceof Error ? ex.message : String(ex)));
-  }, []);
+  }, [groupKey, onlyHome]);
 
   const views = crudViews(locale);
   const activeView = views.find(v => v.code === active);
@@ -136,7 +145,6 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "qlt.poexport") return <PoExportView locale={locale} />;
     // W6b 生产执行（SN 池 / 批次 / 工位 / 过站列表 / 面板）
     if (active === "exec.snpool") return <SnPoolView locale={locale} />;
-    if (active === "exec.snrule") return <SnRuleView locale={locale} />;
     if (active === "exec.snbatch") return <SnBatchView locale={locale} />;
     if (active === "exec.snvoid") return <SnVoidView locale={locale} />;
     if (active === "exec.sndetail") return <SnDetailView locale={locale} />;
@@ -173,6 +181,9 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     if (active === "dev.machinedata") return <MachineDataView locale={locale} />;
     if (active === "dev.packing") return <PackingView locale={locale} />;
     if (active === "dev.itflog") return <ItfLogView locale={locale} />;
+    // MES ⇄ WMS 集成（工单下发 WMS）—— 源 web 页「订单管理 → 工单下发 WMS」
+    // 目录: mesrj/itf/（树状，标准见 docs/grafting-standards.md §7）
+    if (active === "wmsmo") return <ItfWmsView locale={locale} />;
     if (active === "mo" && activeView) {
       return <MoView key={activeView.code} locale={locale}
         fields={activeView.fields} filters={activeView.filters} />;
@@ -192,6 +203,9 @@ export function MesrjModule({ locale }: { locale: Locale }) {
     return <WipView locale={locale} />;
   }, [active, activeView, locale]);
 
+  if (onlyHome) return <HomeView locale={locale} />;
+
+  const showHome = !groups || groups.includes("home");
   const activeTitle = active === "home"
     ? t("menu.home", locale)
     : t(`menu.${active}`, locale) !== `menu.${active}` ? t(`menu.${active}`, locale) : active;
@@ -202,6 +216,7 @@ export function MesrjModule({ locale }: { locale: Locale }) {
         {error && <div style={{ color: "#b91c1c", fontSize: 13, padding: "6px 0" }}>{error}</div>}
         {!menu && !error && <div style={{ color: "#94a3b8", fontSize: 13 }}>{t("loading", locale)}</div>}
         <ul style={{ listStyle: "none", margin: 0, padding: 0, fontSize: 13 }}>
+          {showHome && (
           <li style={{ marginBottom: 2 }}>
             <button
               onClick={() => setActive("home")}
@@ -215,6 +230,7 @@ export function MesrjModule({ locale }: { locale: Locale }) {
               {t("menu.home", locale)}
             </button>
           </li>
+          )}
           {(menu ?? []).map(group => {
             const open = openGroups[group.code] ?? false;
             return (

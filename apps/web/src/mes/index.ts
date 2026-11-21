@@ -49,7 +49,12 @@ export type MesTabKey =
   | "materialRollQr"
   | "smtMaterialBindings"
   | "smtLoading3d"
-  | "tooljetSmtLoading";
+  // 瑞晶 MES（原 mesrj 独立模块）按业务域拆分到各 MES 分组，组内保留原菜单层级
+  | "mesrjHome"
+  | "mesrjMaterial"
+  | "mesrjExec"
+  | "mesrjQuality"
+  | "mesrjCfg"; // 瑞晶 MES 配置与系统（工艺 / 配置中心 / 系统管理）
 
 // SMT exception authorization is a dedicated MES material-control page.
 export const mesTabKeys: MesTabKey[] = [
@@ -102,8 +107,12 @@ export const mesTabKeys: MesTabKey[] = [
   "materialRollQr",
   "smtMaterialBindings",
   "smtLoading3d",
-  "tooljetSmtLoading",
   "smtExemptions",
+  "mesrjHome",
+  "mesrjMaterial",
+  "mesrjExec",
+  "mesrjQuality",
+  "mesrjCfg",
 ];
 
 export const mesTabTranslationKeys: Record<MesTabKey, string> = {
@@ -153,11 +162,15 @@ export const mesTabTranslationKeys: Record<MesTabKey, string> = {
   materialRollQr: "MES料卷二维码",
   smtMaterialBindings: "SMT物料绑定表",
   smtLoading3d: "SMT上料3D模拟",
-  tooljetSmtLoading: "mes.tooljetSmtLoading.title",
   smtLoader: "SMT上料监控",
   journey: "mes.subnav.journey",
   bomReconciliation: "mes.subnav.bomReconciliation",
   smtExemptions: "mes.smtExemption.title",
+  mesrjHome: "nav.mesrjHome",
+  mesrjMaterial: "nav.mesrjMaterial",
+  mesrjExec: "nav.mesrjExec",
+  mesrjQuality: "nav.mesrjQuality",
+  mesrjCfg: "nav.mesrjCfg",
 };
 
 export type MesGroupKey =
@@ -175,13 +188,13 @@ export type MesGroupKey =
 export type MesThemeKey = "product" | "ng";
 
 export const mesGroups: Array<{ key: MesGroupKey; theme: MesThemeKey; labelKey: string; tabs: MesTabKey[] }> = [
-  { key: "productOverview", theme: "product", labelKey: "mes.group.overview", tabs: ["overview", "managerConsole", "dashboard"] },
-  { key: "productExecution", theme: "product", labelKey: "mes.group.execution", tabs: ["productionLine", "manualLine", "autoLine", "stationOperator", "stationPass", "processFlow", "stationWorkflow"] },
-  { key: "productMaterial", theme: "product", labelKey: "mes.group.material", tabs: ["materialVerify", "materialLoad", "smtMaterialBindings", "materialRollQr", "smtLoading3d", "tooljetSmtLoading", "dispatchBoard", "smtLoader", "pdaLoad", "pdaDevice", "pdaScan", "pdaOnline", "smtExemptions"] },
+  { key: "productOverview", theme: "product", labelKey: "mes.group.overview", tabs: ["overview", "managerConsole", "dashboard", "mesrjHome"] },
+  { key: "productExecution", theme: "product", labelKey: "mes.group.execution", tabs: ["productionLine", "manualLine", "autoLine", "stationOperator", "stationPass", "processFlow", "stationWorkflow", "mesrjExec"] },
+  { key: "productMaterial", theme: "product", labelKey: "mes.group.material", tabs: ["materialVerify", "materialLoad", "smtMaterialBindings", "materialRollQr", "smtLoading3d", "dispatchBoard", "smtLoader", "pdaLoad", "pdaDevice", "pdaScan", "pdaOnline", "smtExemptions", "mesrjMaterial"] },
   { key: "productPackaging", theme: "product", labelKey: "mes.group.packaging", tabs: ["packagingBoxes", "qrWorkOrders", "oqcAql"] },
-  { key: "productTraceability", theme: "product", labelKey: "mes.group.traceability", tabs: ["trace", "journey", "bomReconciliation"] },
+  { key: "productTraceability", theme: "product", labelKey: "mes.group.traceability", tabs: ["trace", "journey", "bomReconciliation", "mesrjQuality"] },
   { key: "productDigitalTwin", theme: "product", labelKey: "mes.group.digitalTwin", tabs: ["manualLine3d", "autoLine3d", "warehouseStorage", "ictMonitor"] },
-  { key: "productConfiguration", theme: "product", labelKey: "mes.group.configuration", tabs: ["stationType", "stationMaster", "processDoc", "processManagement", "timeControl"] },
+  { key: "productConfiguration", theme: "product", labelKey: "mes.group.configuration", tabs: ["stationType", "stationMaster", "processDoc", "processManagement", "timeControl", "mesrjCfg"] },
   { key: "ngDetection", theme: "ng", labelKey: "mes.group.ngDetection", tabs: ["ngTracking", "firstArticle", "foolProof"] },
   { key: "ngRepair", theme: "ng", labelKey: "mes.group.ngRepair", tabs: ["ngManagement", "ngClosedLoop", "ngRouting", "repair", "rework", "ngRevival", "retestRules"] },
   { key: "ngDisposition", theme: "ng", labelKey: "mes.group.ngDisposition", tabs: ["stagnation", "passShortage", "scrap"] },
@@ -204,7 +217,7 @@ const productCore = new Set<MesTabKey>([
 ]);
 const ngCore = new Set<MesTabKey>(["ngTracking", "ngRouting", "ngManagement", "repair", "rework", "ngRevival", "retestRules", "scrap"]);
 const ngPrevention = new Set<MesTabKey>(["firstArticle", "foolProof", "stagnation", "passShortage"]);
-const materialSupport = new Set<MesTabKey>(["materialVerify", "materialLoad", "smtMaterialBindings", "materialRollQr", "smtLoading3d", "tooljetSmtLoading", "dispatchBoard", "smtLoader", "pdaLoad", "pdaDevice", "pdaScan", "pdaOnline"]);
+const materialSupport = new Set<MesTabKey>(["materialVerify", "materialLoad", "smtMaterialBindings", "materialRollQr", "smtLoading3d", "dispatchBoard", "smtLoader", "pdaLoad", "pdaDevice", "pdaScan", "pdaOnline"]);
 const digitalTwinSupport = new Set<MesTabKey>(["manualLine3d", "autoLine3d", "warehouseStorage", "ictMonitor"]);
 
 export function getMesContribution(tab: MesTabKey): MesContribution {

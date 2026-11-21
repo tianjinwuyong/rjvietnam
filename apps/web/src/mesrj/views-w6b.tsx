@@ -2,7 +2,6 @@
 // 源 api/exec.py 的发码、工位、过站记录、面板 11 个页面的移植。
 // 路由（后端 services/api/src/routes/mesrj.js）：
 //   GET  /exec/sn/pool      SN 池查询
-//   GET  /exec/sn/rule      SN 规则列表
 //   GET  /exec/sn/batch     SN 批次汇总
 //   POST /exec/sn/void      SN 作废
 //   GET  /exec/sn/detail    SN 详情
@@ -120,31 +119,6 @@ export function SnPoolView({ locale }: { locale: Locale }) {
         <span>{page}</span>
         <button disabled={page * size >= total || busy} onClick={() => setPage(p => p + 1)}>{t("common.next", locale)}</button>
       </div>
-    </div>
-  );
-}
-
-export function SnRuleView({ locale }: { locale: Locale }) {
-  const [rows, setRows] = useState<Record<string, unknown>[]>([]);
-  const [err, setErr] = useState("");
-  const [busy, setBusy] = useState(false);
-  const load = useCallback(async () => {
-    setBusy(true);
-    try { setRows(await mesrjApi.get<Record<string, unknown>[]>("/exec/sn/rule")); }
-    catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
-    finally { setBusy(false); }
-  }, []);
-  useEffect(() => { load(); }, [load]);
-  return (
-    <div>
-      <div style={box}>{t("snlist.rule", locale)}</div>
-      <Err msg={err} />
-      <Table header={[t("sn.field.prefix", locale), t("sn.field.year_digits", locale), t("sn.field.seq_digits", locale),
-        t("sn.field.check_digit", locale), t("sn.field.format_pattern", locale), t("field.status", locale),
-        t("sn.field.description", locale)]} rows={rows.map(r => ({
-        prefix: r.prefix, year_digits: r.year_digits, seq_digits: r.seq_digits, check_digit: r.check_digit,
-        format_pattern: r.format_pattern, is_active: r.is_active, description: r.description,
-      } as Record<string, unknown>))} />
     </div>
   );
 }
