@@ -9,13 +9,21 @@ import { validateApiContract } from "../services/api/src/contracts/validation";
 import { validateInventoryTransaction } from "../packages/business-rules/src/inventory";
 import { startBackendValidationLoop } from "../services/worker/backend-validator";
 
-// Enable the API smoke test when a PostgreSQL host is reachable at 127.0.0.1
-// Always set defaults so vitest workers (which isolate env) also see them
+// The API boot smoke test needs a live PostgreSQL AND a configured JWT_SECRET
+// (server.js refuses to start without one). Capture whether the SHELL actually
+// provides them BEFORE defaulting anything: the old code set process.env.PGHOST
+// unconditionally and then gated on it, so the "skip when no DB" branch was dead
+// and the test failed on every database-free runner (CI).
+const shellHasDb = Boolean(process.env.PGHOST || process.env.DATABASE_URL);
+// Defaults so vitest workers (which isolate env) still see them when a DB exists.
 process.env.PGHOST = process.env.PGHOST || process.env.DATABASE_URL || "127.0.0.1";
 process.env.PGPASSWORD = process.env.PGPASSWORD || "postgres";
 process.env.PGUSER = process.env.PGUSER || "postgres";
 process.env.PGDATABASE = process.env.PGDATABASE || "smt_factory";
 process.env.PGPORT = process.env.PGPORT || "5432";
+// Ephemeral test secret: the boot guard only rejects empty/placeholder values.
+// Never used to sign anything a real client sees — the child lives for one test.
+process.env.JWT_SECRET = process.env.JWT_SECRET || "backend-validation-smoke-test-secret";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.join(__dirname, "..");
@@ -126,8 +134,9 @@ describe("backend contract validation", () => {
 });
 
 describe("backend service startup smoke checks", () => {
-  // Requires a live PostgreSQL connection — skip when PGHOST is not configured in the shell environment
-  if (process.env.PGHOST || process.env.DATABASE_URL) {
+  // Requires a live PostgreSQL connection — skip when the shell provides no DB.
+  // shellHasDb was captured before the defaults above, so this gate is real.
+  if (shellHasDb) {
     it("boots the API service on an ephemeral port and serves health plus OpenAPI", async () => {
       const apiScript = path.join(projectRoot, "services", "api", "server.js");
       const child = spawnService(apiScript, { API_PORT: "0" });

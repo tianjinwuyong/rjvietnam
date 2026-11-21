@@ -1,6 +1,7 @@
 {
   "_what_this_is": "Route registrations in services/api (server.js plus src/**/*.js), keyed by first path segment. Ratcheted DOWNWARD ONLY: the total and every prefix may grow, never shrink. Built to make the planned server.js split verifiable -- after moving a route group into src/*.js the totals must be identical.",
   "_how_to_update": "Deliberately removing an endpoint: delete it, run check:route-census, then re-run with --update and say why in the commit. Running --update to silence an accidental drop defeats the only thing this check does.",
+  "_correction_2026_11_22": "Removed 5 phantom prefixes (ar-invoices=4, ap-invoices=4, payments=2, gl-journals=2, gl-accounts=1; 13 registrations). They were recorded on 2026-11-20 from a DIRTY worktree: the untracked services/api/src/routes/finance.js router declares bare paths, but no committed tree ever mounted it — the live surface is the 41 /finance/* routes in server.js, which are intact. Verified by running the census regex over a clean `git archive HEAD` extract: total=2759 (grows), only these 5 prefixes absent. Total kept at 2726 (the ratchet floor); NOT raised to the dirty-tree 2867, which would bake in other lanes' uncommitted routes.",
   "total": 2726,
   "by_prefix": {
     "api": 953,
@@ -73,8 +74,6 @@
     "receiving": 4,
     "rjvn-wms": 4,
     "parts-pricing": 4,
-    "ar-invoices": 4,
-    "ap-invoices": 4,
     "Packing": 4,
     "itf": 4,
     "skip-releases": 4,
@@ -91,8 +90,6 @@
     "equipment-supplier-comms": 2,
     "parts-supplier-comms": 2,
     "supplier-quotes": 2,
-    "payments": 2,
-    "gl-journals": 2,
     "data-lifecycle": 2,
     "cancel": 2,
     "detail": 2,
@@ -112,7 +109,6 @@
     "manager": 1,
     "quick-search": 1,
     "parts-suppliers": 1,
-    "gl-accounts": 1,
     "process-map": 1,
     "continuity-gaps": 1,
     "data-relay": 1,
@@ -166,5 +162,5 @@
     "post": 1093,
     "put": 132
   },
-  "updated_at": "2026-11-20"
+  "updated_at": "2026-11-22"
 }
