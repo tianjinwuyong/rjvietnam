@@ -104,6 +104,17 @@ reports/ 目录)留在工作区未提交;bwip-js 锁 4.6.0 缺 `padding` 类型�
 遗留:`typecheck:api` 基线 595 → 实测 590(live-sync  lane 修掉了自己的 6 个错),
 降基线是人工决定,未动。
 
+**第二波(2026-11-22)**:typecheck 绿后远端又照出两处旧账,均已修(ca50f93):
+① committed server.js 尾部重复 `import { registerDatasourceRoutes }` ×3 → ESM SyntaxError,
+干净克隆 node 拒解析(b9ce680 删重复,canonical 单挂载不动);
+② unit 梯级号称 database-free 实则必连库——boot-smoke 测试先无条件设 PGHOST 再拿它当跳过
+条件,跳过分支是死的,且没给 JWT_SECRET(启动守卫拒空值)。改为先捕获 shellHasDb 再设默认,
+并给一次性测试 secret;本地有库时 smoke 照跑(906 passed)。
+③ route-census 基线含 5 个幽灵前缀(ar-invoices 等 13 条),是 2026-11-20 从脏工作区未跟踪的
+finance.js 录进去的,任何已提交树都没挂载过它;活面是 server.js 的 41 条 /finance/*,完好。
+用 `git archive HEAD` 干净提取复算确认(total=2759 只升不降)后删幽灵前缀,地板保持 2726,
+不抬到脏树 2867(那会把别的 lane 未提交路由烤进基线)。
+
 ## 阶段 3 — server.js 拆分(6 轮,每轮半天)
 
 方法"搬迁而非复制"保留;每轮固定四步保留;独立提交保留。修正:
