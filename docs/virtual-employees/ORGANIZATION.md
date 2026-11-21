@@ -113,10 +113,10 @@
 
 ## 4. 当前真实状态（不要高估）
 
-- 37 个在岗岗位中，**只有 `WMS-RECEIVING`、`WMS-INVENTORY`、`IQC` 有真实执行代码**，另有 `OPS` 的 Hermes 骨架和 `PURCHASING` 的任务驱动路径。
-- 报告实测（2026-11-21 03:42Z 重算）：**7 个岗位有任务、8 个有事件** —— `WMS-RECEIVING` 269、`WMS-IQC-HANDOFF` 266、`OPS-SUPERVISOR` 80、`MAINTENANCE` 8、`WMS-INVENTORY` 3、`OA-DOCUMENT-CONTROL` 2、`IQC` 1；其余 30 个在岗岗位仍 `tasks=0, events=0`。待批积压已清零（见 §9），队列从 0 重新累积。
+- 37 个在岗岗位现已全部有只读探针：30 条新增在 `probe-library.js`，逐条用真实 schema 验证；`dryRun` 实跑 13 岗有真实待办、24 岗空队列、`skipped=0`。
+- 报告快照（03:42Z 重算）：7 个岗位有任务、8 个有事件。此后本地 275 条、生产 200 条积压已分别清零，队列重新累积；生产批准后回写 197 条后继 OPEN 草稿（详见 `JOB-DESCRIPTIONS.md` §25）。
 - 频率配置的**消费方是调度器**（`dueNow()` / `dueJobs()` 直接读 `FREQUENCIES`，跑法 `npm run schedule:ve` 或 `start_dev.js` 子进程），但配置本身**未写回数据库**，DB 里仍是默认 300 秒；改频率目前只改代码。
-- 三个真源必须同步：运行时 `registry.js`（23 条，其中 `DATA-QUALITY` / `UI-DESIGN-QA` 标为占位 enabled=false）、报表镜像 `ve_reporting_lines`（迁移 324 种子，44 条）、能力契约 `services/api/src/virtual-employees/{skills-catalog,role-capabilities}.js`（44 岗全覆盖）。`npm run check:ve-capabilities -- --db` 实测三者一致：roles db=44 declared=44、permissions live=95 mirrored=95、在用门 unknown=0、enabled 冲突 0。改岗位必须同改三处。
+- 三个真源必须同步：运行时 `registry.js`（**44 条**，其中 `DATA-QUALITY` / `UI-DESIGN-QA` / `LINE-CADENCE` / `MRB` / `SPARE-PARTS` / `SUPPLIER-CLAIM` / `SUPPLIER-DEBT` 共 7 个占位 `enabled=false`）、报表镜像 `ve_reporting_lines`（迁移 324 种子，44 条）、能力契约 `services/api/src/virtual-employees/{skills-catalog,role-capabilities}.js`（44 岗全覆盖）。`check:ve-capabilities` 实测 `problems=0 warnings=8`。
 
 ## 5. 产物索引
 
@@ -179,12 +179,12 @@ npm run runner:ve -- --employee=IQC-VIRTUAL-01    # 再跑 duplicate=1（task_ke
 
 落库证据：任务 `163841` = `IQC-VIRTUAL-01 / IQC_INSPECT / WAITING_APPROVAL / ve:IQC-VIRTUAL-01 / task_key=IQC-VIRTUAL-01:IQC_INSPECT:ZZ-INSP`，并有对应 `AGENT_TOOL_CALL` 审计事件（`actor=ve:IQC-VIRTUAL-01`）。
 
-边界：7 个探针的 taskType 全部是契约里已声明的技能（`tests/virtual-employee-capabilities.test.mjs` 逐条校验，漂移即红），`runner.js` 每轮先问 `canUseSkill()`，未授权不落任务；其余 16 个 registry 岗位跑 `NO_PROBE`；runner 尚未自动定时（需外部 cron/工作流调用）；任务批准后如何回写业务表仍未实现。频率配置尚未写回 DB。
+边界：37 条探针的 taskType 全部是契约里已声明的技能，`tests/virtual-employee-capabilities.test.mjs` 逐条校验（含只读、row_key、LIMIT $1、闸门登记），漂移即红；`runner.js` 每轮先问 `canUseSkill()`，未授权不落任务；调度器已挂进 `start_dev.js` 与生产容器；批准后的业务回写由 `writeback.js` 处理（只推进流程，不写业务台账）。频率配置尚未写回 DB。
 
 ### 8.1 自学习与知识收集（同日）
 
 ```bash
-npm run runner:ve -- --all --limit=5            # 7 个探针，草稿进人工门队列
+npm run runner:ve -- --all --limit=5            # 37 条探针，草稿进人工门队列
 npm run learn:ve -- --all                       # 人类决定 → DRAFT 案例 + WAITING_REVIEW
 npm run learn:ve -- --review=1 --reviewer=admin --pass   # 只有人能批准（ve: 身份被拒）
 npm run knowledge:ve -- --all --remember        # 7 岗采集本领域经验并写入 mem0 :9876
@@ -213,5 +213,5 @@ npm run schedule:ve -- --once --limit=80                     # 按频率表跑�
 
 **存量审批已处置（2026-11-21 03:42Z）**：业务授权后以 `MO_LI_BIN`（莫立斌）为批准人，一次清掉 275 条 `WAITING_APPROVAL`（attempted 275 / approved 275 / refused 0）；写回创建 270 条后继草稿（IQC_SUBMIT 265、PM_SCHEDULE 4、LOCATION_BIND 1），5 条按设计不推进。库存与业务表零写入。旧向量集合 `smt_factory_memory` 决定**保留不删**。
 
-未做：**生产待批 200 条**（`receive_variance` 191 等）需要一个真实的生产 reviewer 用户名，之前批掉的 275 条属本地库；12+ 个岗位有频率无探针（`NO_PROBE`），要补的是探针不是配置；跨谱系合并已完成为 `merge/origin-main-ready`（`16dfc17`，可 fast-forward 到当前尖端）但未落到共享分支；`harness/**`、locks、ratchet 基线未碰。
+已做：**生产待批 200 条**用 `MO_LI_BIN` 清零（`approved_by` 200 行、`HUMAN_APPROVED` 200 事件、`WAITING_APPROVAL=0`）；30 个 `NO_PROBE` 岗位全部补齐探针并验证。跨谱系合并 `65e1743` 已落到当前分支（`180 ahead / 0 behind origin/main`），未 push；`harness/**`、locks、ratchet 基线未碰。待定：是否 push，以及生产调度器镜像是否更新到含新探针的版本。
 

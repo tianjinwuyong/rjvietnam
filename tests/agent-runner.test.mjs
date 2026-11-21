@@ -55,18 +55,15 @@ describe("virtual-employee runner", () => {
     expect(insert.params[6]).toBe(false);
   });
 
-  it("respects cadence classes and missing probes", async () => {
+  it("respects cadence classes and has no unprobed in-post role", async () => {
     const { query } = fakeQuery();
     expect(await runEmployeeCycle({ employeeId: "TRACE-VIRTUAL-01", query }))
       .toMatchObject({ skipped: "DEMAND_NO_TRIGGER" });
     expect(await runEmployeeCycle({ employeeId: "NOT-A-JOB", query }))
       .toMatchObject({ skipped: "NO_CADENCE" });
-    expect(await runEmployeeCycle({ employeeId: "SAFETY-VIRTUAL-01", query })).toMatchObject({ skipped: "NO_PROBE" });
-    expect(Object.keys(PROBES).sort()).toEqual([
-      "IQC-VIRTUAL-01", "MAINTENANCE-VIRTUAL-01", "OA-DOCUMENT-CONTROL-VIRTUAL-01",
-      "OPS-SUPERVISOR-VIRTUAL-01", "SUPPLIER-COLLAB-VIRTUAL-01",
-      "WMS-INVENTORY-VIRTUAL-01", "WMS-RECEIVING-VIRTUAL-01",
-    ]);
+    expect(await runEmployeeCycle({ employeeId: "SAFETY-VIRTUAL-01", query }))
+      .not.toMatchObject({ skipped: "NO_PROBE" });
+    expect(Object.keys(PROBES)).toHaveLength(37);
   });
 
   it("keeps every probe gate inside the employee's registered humanGates", () => {

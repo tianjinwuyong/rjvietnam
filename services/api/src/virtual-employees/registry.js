@@ -1,4 +1,4 @@
-import { skillsFor, mcpFor } from "./capabilities.js";
+import { skillsFor, mcpFor, gatesFor } from "./capabilities.js";
 
 export const FACTORY_VIRTUAL_EMPLOYEES = Object.freeze([
   employee('OPS-SUPERVISOR-VIRTUAL-01', '全厂运营虚拟主管 Hermes', 'cmd', 'SUPERVISOR', ['FACTORY_PATROL', 'KPI_MONITOR', 'EXCEPTION_ROUTE', 'CROSS_DOMAIN_COORDINATION', 'APPROVAL_COORDINATION', 'SHIFT_HANDOVER', 'WECHAT_NOTIFY'], ['release_inventory', 'approve_scrap', 'change_po', 'stop_line', 'approve_payment', 'final_iqc_decision'], '统一管理虚拟员工，验证事实、分配唯一主责、协调跨部门交接、跟踪时限并升级异常；不替代专业岗位或人工审批。', 'HERMES_OPS_SUPERVISOR_V1'),
@@ -24,20 +24,42 @@ export const FACTORY_VIRTUAL_EMPLOYEES = Object.freeze([
   employee('BACKUP-VIRTUAL-01', '备份与恢复虚拟员工', 'it', 'SPECIALIST', ['BACKUP_VERIFY', 'RETENTION_MONITOR', 'RESTORE_DRILL'], ['production_restore', 'delete_backup']),
   employee('RELEASE-VIRTUAL-01', '发布虚拟员工', 'it', 'SPECIALIST', ['BUILD_VERIFY', 'MIGRATION_CHECK', 'ROLLOUT_MONITOR', 'ROLLBACK_PLAN'], ['production_deploy', 'database_migration']),
   employee('UI-DESIGN-QA-VIRTUAL-01', 'UI 设计与测试虚拟员工', 'it', 'SPECIALIST', ['VISUAL_AUDIT', 'RESPONSIVE_TEST', 'ACCESSIBILITY_CHECK', 'REGRESSION_TEST'], ['change_design_system', 'release_ui']),
+  employee('ANDON-VIRTUAL-01', '安灯与换线虚拟员工', 'mes', 'SPECIALIST', ['ANDON_INTAKE','ESCALATION_TIMER','RESPONSE_ASSIGN','ROOT_CAUSE_LOG','LINE_EXCEPTION'], [], '', ''),
+  employee('E-INVOICE-VIRTUAL-01', '电子发票虚拟员工', 'finance', 'SPECIALIST', ['INVOICE_DRAFT','TAX_CODE_CHECK','INVOICE_ISSUE','CREDIT_NOTE','INVOICE_ARCHIVE'], [], '', ''),
+  employee('HR-VIRTUAL-01', '行政与人事主管虚拟员工', 'hr', 'SPECIALIST', ['EMPLOYEE_MASTER_DATA','ATTENDANCE_AUDIT','SHIFT_ROSTER','CERT_EXPIRY','GRIEVANCE_INTAKE','TRAINING_ASSIGN','WORKLOAD_BALANCE','GATE_PACKET_ASSEMBLE'], [], '', ''),
+  employee('LINE-CADENCE-VIRTUAL-01', '自动线与手动线节拍虚拟员工', 'mes', 'PLACEHOLDER', ['CT_MEASURE','BALANCE_ANALYSIS','CHANGEOVER_MONITOR','CADENCE_ALERT'], [], '', ''),
+  employee('MRB-VIRTUAL-01', '报废评审虚拟员工', 'quality', 'PLACEHOLDER', ['MRB_CONVENE','MRB_DISPOSITION_DRAFT','COST_TAG','REPEAT_DEFECT_FLAG'], [], '', ''),
+  employee('OQC-VIRTUAL-01', '出货检验虚拟员工', 'quality', 'SPECIALIST', ['OQC_AQL_PLAN','SHIPMENT_SAMPLE','DEFECT_CLASSIFY','OQC_DISPOSITION','PACKING_AUDIT'], [], '', ''),
+  employee('PACK-VIRTUAL-01', '包装与出货虚拟员工', 'mes', 'SPECIALIST', ['PACK_LIST_VALIDATE','CARTON_LABEL_PLAN','OUTBOUND_SCAN','SHIPMENT_HOLD','SERIAL_EXPORT_PACK'], [], '', ''),
+  employee('REPAIR-VIRTUAL-01', '维修与返工虚拟员工', 'maintenance', 'SPECIALIST', ['REWORK_ROUTE','REWORK_LIMIT_CHECK','RETEST_PLAN','DISPOSITION_APPLY','DOWNTIME_RECORD'], [], '', ''),
+  employee('REPORTS-VIRTUAL-01', '指标与看板虚拟员工', 'it', 'SPECIALIST', ['METRIC_DICT','KPI_DEFINITION','DASHBOARD_AUDIT','DATA_LINEAGE','ADHOC_QUERY','KPI_MONITOR','REPORT_DISTRIBUTE'], [], '', ''),
+  employee('SAFETY-VIRTUAL-01', '安全虚拟员工', 'hr', 'SPECIALIST', ['HAZARD_INTAKE','SAFETY_ROUND','INCIDENT_REPORT','PPE_AUDIT','DRILL_SCHEDULE'], [], '', ''),
+  employee('SALES-VIRTUAL-01', '销售订单与交期虚拟员工', 'finance', 'SPECIALIST', ['ORDER_INTAKE','ATP_CHECK','DELIVERY_REPLY','CHANGE_ORDER_NOTICE'], [], '', ''),
+  employee('SMT-LOOP-VIRTUAL-01', 'SMT 上料与料盘消耗虚拟员工', 'mes', 'SPECIALIST', ['FEEDER_LOADING','REEL_CONSUME','SPLICING_TRACE','JOINT_VALIDATE','MISSING_PART_ALERT','LOADING_PLAN_DRAFT'], [], '', ''),
+  employee('SPARE-PARTS-VIRTUAL-01', '备件虚拟员工', 'maintenance', 'PLACEHOLDER', ['PARITY_LEVEL','CONSUME_FORECAST','STOCKOUT_ALERT','SPARE_LEAD_TRACK'], [], '', ''),
+  employee('STATION-EQUIP-VIRTUAL-01', '站机群虚拟员工', 'maintenance', 'SPECIALIST', ['STATION_CONFIG_AUDIT','PROGRAM_VERSION_CHECK','EQUIP_INTERLOCK','TORQUE_DATA_TRACE','STATION_HEARTBEAT'], [], '', ''),
+  employee('SUPPLIER-CLAIM-VIRTUAL-01', '退货与索赔虚拟员工', 'pmc', 'PLACEHOLDER', ['CLAIM_DRAFT','EVIDENCE_PACKAGE','CREDIT_NOTE_TRACK','IQC_FEEDBACK'], [], '', ''),
+  employee('SUPPLIER-DEBT-VIRTUAL-01', '供应商欠款虚拟员工', 'finance', 'PLACEHOLDER', ['DEBT_AGING','PAYMENT_PLAN_DRAFT','OVERDUE_ESCALATE','TERMS_CHECK'], [], '', ''),
+  employee('TRACE-VIRTUAL-01', '追溯与 ECN 虚拟员工', 'quality', 'SPECIALIST', ['SERIAL_TRACE','RECALL_SCOPE','ECN_TRACE','CUSTOMER_IMPACT_LIST','RETENTION_PURGE_PROPOSE','QR_TRACE'], [], '', ''),
+  employee('WMS-COUNT-VIRTUAL-01', '循环盘点虚拟员工', 'wms', 'SPECIALIST', ['COUNT_PLAN','COUNT_SHEET','CYCLE_COUNT','VARIANCE_ANALYSIS','RECOUNT_REQUEST'], [], '', ''),
+  employee('WMS-IQC-HANDOFF-VIRTUAL-01', '来料交接虚拟员工', 'wms', 'SPECIALIST', ['IQC_SUBMIT','IQC_HANDOFF','HOLD_ENFORCE','HANDOFF_RECEIPT','SAMPLE_WITNESS'], [], '', ''),
+  employee('WMS-ISSUE-VIRTUAL-01', '发料与线边配送虚拟员工', 'wms', 'SPECIALIST', ['KIT_PICK','FOFO_ALLOC','LINE_FEED','ISSUE_CONFIRM','SHORTAGE_ESCALATE','KANBAN_REFRESH','DISTRIBUTION_SLA_MONITOR'], [], '', ''),
+  employee('WMS-SUPERVISOR-VIRTUAL-01', '来料与仓储虚拟主管', 'wms', 'COORDINATOR', ['SUPERVISE_INTAKE','INBOUND_ARBITRATION','WORKLOAD_BALANCE','GATE_PACKET_ASSEMBLE','EXCEPTION_ROUTE','KPI_MONITOR','SHIFT_HANDOVER','OVERDUE_ESCALATE'], [], '', ''),
 ]);
 
 function employee(id, name, domain, level, capabilities, humanGates, jobDescription = '', promptProfile = '') {
   return {
-    id, name, domain, level, capabilities, humanGates, jobDescription, promptProfile,
+    id, name, domain, level, capabilities, humanGates: humanGates.length ? humanGates : (gatesFor(id) || []), jobDescription, promptProfile,
     // Capability contract (see capabilities.js): skill ids resolve through the
     // catalog, MCP servers are the union of what those skills need plus this
     // employee's own memory namespace. Previously `skills` was a one-off literal
     // for the UI role only.
     skills: skillsFor(id) || [],
     mcpServers: mcpFor(id) || [],
-    // The org chart marks these two as placeholders (ve_reporting_lines.enabled
-    // = false); the code registry mirrors that instead of claiming 23 active.
-    enabled: !['DATA-QUALITY-VIRTUAL-01', 'UI-DESIGN-QA-VIRTUAL-01'].includes(id),
+    // The org chart marks seven positions as placeholders
+    // (ve_reporting_lines.enabled = false); the code registry mirrors that
+    // instead of claiming all 44 positions are active.
+    enabled: !['DATA-QUALITY-VIRTUAL-01', 'UI-DESIGN-QA-VIRTUAL-01', 'LINE-CADENCE-VIRTUAL-01', 'MRB-VIRTUAL-01', 'SPARE-PARTS-VIRTUAL-01', 'SUPPLIER-CLAIM-VIRTUAL-01', 'SUPPLIER-DEBT-VIRTUAL-01'].includes(id),
     mode: id === 'IQC-VIRTUAL-01' ? 'ACTIVE_EXECUTOR' : 'GOVERNED_SCAFFOLD',
     status: 'IDLE',
     policy: { readAllowed: true, draftAllowed: true, externalWriteRequiresApproval: true, destructiveActionDenied: true },

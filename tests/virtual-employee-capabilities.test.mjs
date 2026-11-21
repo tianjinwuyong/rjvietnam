@@ -5,6 +5,7 @@ import {
 } from "../services/api/src/virtual-employees/capabilities.js";
 import { FACTORY_VIRTUAL_EMPLOYEES, getFactoryVirtualEmployee } from "../services/api/src/virtual-employees/registry.js";
 import { runEmployeeCycle, PROBES } from "../services/api/src/agent/runner.js";
+import { FREQUENCIES } from "../services/api/src/virtual-employees/frequencies.js";
 
 const registryAudit = () => auditCapabilities({ registryEntries: FACTORY_VIRTUAL_EMPLOYEES });
 
@@ -39,9 +40,9 @@ describe("capability contract covers the whole org", () => {
     }
   });
 
-  it("covers positions that exist only in ve_reporting_lines", () => {
+  it("mirrors every position from ve_reporting_lines in the runtime registry", () => {
     for (const id of ["SMT-LOOP-VIRTUAL-01", "E-INVOICE-VIRTUAL-01", "MRB-VIRTUAL-01", "TRACE-VIRTUAL-01", "REPORTS-VIRTUAL-01"]) {
-      expect(getFactoryVirtualEmployee(id)).toBeNull();
+      expect(getFactoryVirtualEmployee(id)).not.toBeNull();
       expect(capabilitiesFor(id).skillIds.length).toBeGreaterThan(3);
     }
     expect(capabilitiesFor("NOT-A-ROLE")).toBeNull();
@@ -104,12 +105,24 @@ describe("dispatch-time enforcement surface", () => {
       const verdict = canUseSkill(roleId, probe.taskType);
       if (!verdict.ok) drift.push(`${roleId}:${probe.taskType}=${verdict.code}`);
     }
+    // Every probe is checked, including the 30 added for the NO_PROBE gap.
+    expect(PROBES).toHaveProperty("WMS-COUNT-VIRTUAL-01");
     expect(drift).toEqual([]);
   });
 
-  it("refuses work the contract does not allow instead of drafting it", async () => {
-    const noProbe = await runEmployeeCycle({ employeeId: "HR-VIRTUAL-01", query: async () => ({ rows: [] }) });
-    expect(noProbe.skipped).toBe("NO_PROBE");
+  it("gives every cadence role a runnable probe over a read-only source", async () => {
+    const { FACTORY_VIRTUAL_EMPLOYEES: registry } = await import("../services/api/src/virtual-employees/registry.js");
+    const missing = Object.keys(FREQUENCIES).filter(id => !PROBES[id] || !registry.some(e => e.id === id));
+    expect(missing).toEqual([]);
+    for (const [roleId, probe] of Object.entries(PROBES)) {
+      expect(probe.sql, `${roleId} must alias row_key`).toMatch(/AS row_key/i);
+      expect(probe.sql, `${roleId} must order and limit`).toMatch(/ORDER BY[\s\S]+LIMIT \$1\s*$/i);
+      expect(/\b(insert|update|delete|drop|truncate|alter|create|grant)\b/i.test(probe.sql), `${roleId} probe must be read-only`).toBe(false);
+      if (probe.gate) expect((await getFactoryVirtualEmployee(roleId)).humanGates).toContain(probe.gate);
+    }
+  });
+
+  it("does not skip NO_PROBE once a role has a declared probe", async () => {
     // A role whose probe task type is not declared for it never reaches the DB:
     // build the refusal by asking the contract about a probe it does not own.
     const { canUseSkill: check } = await import("../services/api/src/virtual-employees/capabilities.js");

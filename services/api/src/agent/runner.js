@@ -7,12 +7,14 @@
 import { getFactoryVirtualEmployee } from "../virtual-employees/registry.js";
 import { cadenceFor } from "../virtual-employees/frequencies.js";
 import { canUseSkill } from "../virtual-employees/capabilities.js";
+import { EXTRA_PROBES } from "./probe-library.js";
 
 // A probe is the smallest unit of "work" for one employee: one read-only SQL
 // query over real business data plus a task template. Adding a position means
 // adding one probe, not copying a runner. `gate` MUST be in that employee's
 // registry.humanGates or the runner refuses to create the task.
 export const PROBES = Object.freeze({
+  ...EXTRA_PROBES,
   "IQC-VIRTUAL-01": {
     taskType: "IQC_INSPECT",
     sql: `SELECT inspection_no AS row_key, lot_no, material_code, supplier_code, supplier_name

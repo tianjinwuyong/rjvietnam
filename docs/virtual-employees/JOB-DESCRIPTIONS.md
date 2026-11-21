@@ -831,10 +831,7 @@ overlay 合并        docker compose -f docker-compose.yml -f docker-compose.ve-
 
 关于那次 `pg_restore`：恢复结束后虚拟员工数据**没有丢** —— 生产 `factory_virtual_employee_tasks` 从恢复中途的 0 回到 **186**（20:37 那份 `smt_factory_pre_purge.dump` 里就有），加上调度器新建的 19 条 = 205。中途量到的 `inventory_transactions=0 / material_lots=0` 是恢复未完成的瞬时状态，现已是 `inv=1152 / lots=647 / materials=1030 / locations=213`。
 
-两个新暴露的事实（都不是配置能掩盖的）：
-
-1. **12+ 个岗位声明了频率却没有探针**：`ANDON / APP-OPS / DATABASE / E-INVOICE / INFRA / INTEGRATION / MES / MSD-CONTROL / OQC / PACK / PDA-FLEET / PURCHASING / STATION-EQUIP …` 每轮都是 `skipped:"NO_PROBE"`。频率表写了 37 条，真正有探针的只有少数几个岗位；这些等于"有排班、没活干"，要补的是探针本身，不是配置。
-2. **生产待批队列 200 条**：`receive_variance 191 / return_machine_to_service 4 / hand_over_package 3 / final_iqc_decision 2`。之前批准的 275 条是**本地开发库**的事，生产这边一条没批过，需要一个真实的生产 reviewer 用户名才能动。
+上面两条已经处置完，证据留在 §25；保留原记录以便追溯当时的真实缺口。
 
 ## 24. L1 受控文件语料（已入库）
 
@@ -845,4 +842,13 @@ overlay 合并        docker compose -f docker-compose.yml -f docker-compose.ve-
 两处真实缺陷是这轮实测暴露的，不是设计时想到的：汇总事件写 `employee_id=NULL` 违反 NOT NULL（现归口文控岗）；`next_review_date` 是 Date 对象，`String(...).slice(0,10)` 得到 `Mon Au` 这种垃圾（现显式格式化，畸形文本的 50 条已 `deleteAll()` 清掉重灌）。
 
 共享语料现在是三个，读侧都自动带上：`ve/shared/general`（主管批准的实践）、`ve/shared/controlled-docs`（受控文件）、`ve/shared/exception-signatures`（跨岗例外特征）。仍是一套 RAG、一个集合，隔离靠命名空间与 `recall()` 的 scope 白名单。
+
+
+## 25. 探针全覆盖与生产积压清零（2026-11-21）
+
+**探针**：新增 `services/api/src/agent/probe-library.js`，30 条只读 SQL 逐条在真实 `smt_factory` schema 上执行通过（每条都别名 `row_key`、`ORDER BY … LIMIT $1`、无 DML/DDL），全部复用已在能力契约里声明的 taskType，闸门均为 `null`（提醒类任务只写 VE 表，不碰业务表）。`runner.js` 的 `PROBES` 合并为 37 条，覆盖全部频率岗位。同时 `registry.js` 从 23 条补到 **44 条**（与 `ve_reporting_lines` 一致，其中 7 个占位 `enabled=false`；新增岗位的闸门从能力契约继承，避免写技能无门）。实测 `runEmployeeCycle` 对 37 岗 `dryRun`：**13 岗有真实待办、24 岗空队列、`skipped=0`**；`check:ve-capabilities` = `problems=0`。
+
+数据源只用真实存在且经过列校验的表：`wms_receipt_orders`、`oa.iqc_lot_mirror`、`count_sessions`、`wms_picking_order_items`、`prd_pcb_reel`、`pmc_master_plans`、`purchase_order_headers`、`work_orders`、`feeders`、`parts_wear_alerts`、`packaging_records_2026`、`mrb_disposition`、`oqc_inspection_records_2026`、`traceability_events_2026`、`equipment_assets`、`station_repair_work_orders`、`ap_invoices`、`sales_order_lines`、`tax_codes`、`oa.staff_certificate`、`emergency_drills`、`oa.sys_integration_alert`、`cfg_capacity`、`pg_stat_activity`、`itf_api_log`、`sys_audit_log`、`pda_devices`、`station_data_retention_policies`、`schema_migrations`/`_migrations`、`ve_kpi_daily`。其中 `cfg_capacity.enabled`、`itf_api_log.success` 是 **integer 而非 boolean**（首轮实跑报 `integer = boolean` 后改正）；`wms_receipt_orders.status='iqc_pass'` 才是待放行复核的状态，`iqc_lot_mirror` 只用 `status='pending' AND wms_status='pending' AND record_id IS NULL` 才不会把已关闭批次重复拉进来。
+
+**生产积压**：先用生产库 SQL 复核 `MO_LI_BIN` 是 `active`、99 条权限、同时覆盖 `wms.execute` 与 `quality.write`（生产上只有 4 个账号同时满足），再用同一审批 CLI 批准 **5 + 195 = 200 条**（`refused=[]`、`failed=0`）。事后核验：`approved_by='MO_LI_BIN'` 200 行、`HUMAN_APPROVED` 200 事件、`WRITEBACK_APPLIED` 197、`WRITEBACK_DECIDED` 3（`hand_over_package` 按设计不推进），`WAITING_APPROVAL=0`；回写后继 `IQC_SUBMIT` 191 / `PM_SCHEDULE` 4 / `LOCATION_BIND` 2，均为 OPEN 草稿，库存与业务表零写入。`CONFIRM_REQUIRED` 守卫同时实测（不带 `--confirm` 直接拒绝）。调度器随后会把这些后继任务变成新的待批门 —— 这是设计内的闭环，不是漏批。
 
