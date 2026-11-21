@@ -34,6 +34,7 @@
     "check:route-shadowing": "node scripts/check-route-shadowing.mjs",
     "check:picking-drift": "node scripts/check-picking-drift.mjs",
     "check:register-deps": "node scripts/check-register-deps.mjs",
+    "check:integration": "node scripts/check-integration-contracts.mjs",
     "report:ve": "node scripts/ve-report.mjs",
     "runner:ve": "node scripts/ve-runner.mjs",
     "learn:ve": "node scripts/ve-learn.mjs",
