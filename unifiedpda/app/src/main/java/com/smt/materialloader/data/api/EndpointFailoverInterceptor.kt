@@ -35,11 +35,16 @@ class EndpointFailoverInterceptor(
     @Volatile private var selected: HttpUrl = primary
     @Volatile private var selectedAt: Long = 0L
 
-    /** Returns the route label for a given endpoint. */
-    private fun routeLabel(url: HttpUrl) = when (url) {
-        primary -> "FACTORY_155_PRIMARY"
-        secondary -> "FACTORY_122_SECONDARY"
-        tertiary -> "FACTORY_234_TERTIARY"
+    /**
+     * Returns the route label for a given endpoint. Derived from the host, not
+     * from the position in the chain, so off-factory builds (hotelDebug points
+     * the whole chain at 127.0.0.1 -> tools/mes-compat-proxy -> MES 122) do not
+     * falsely report the factory 155 audit label.
+     */
+    private fun routeLabel(url: HttpUrl): String = when {
+        url.host.endsWith(".155") -> "FACTORY_155_PRIMARY"
+        url.host.endsWith(".122") -> "FACTORY_122_SECONDARY"
+        url.host.endsWith(".234") -> "FACTORY_234_TERTIARY"
         else -> "FACTORY_UNKNOWN"
     }
 

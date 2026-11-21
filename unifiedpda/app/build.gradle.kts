@@ -52,10 +52,15 @@ android {
         }
         create("hotelDebug") {
             initWith(getByName("debug"))
-            // Hotel Wi-Fi uses the workstation's WLAN address. Keep the same
-            // unified PDA quick-login and scanner flow as debug builds.
-            // Hotel USB test route: adb reverse tcp:8080 tcp:8080
-            buildConfigField("String", "API_BASE_URL", "\"http://127.0.0.1:8080/\"")
+            // Off-factory test route (original "hotel USB" design, now working):
+            // device 127.0.0.1:8080 --adb reverse--> host proxy :8080 --Tailscale-->
+            // MES 122 at 100.116.166.118:8080. Start `tools/mes-compat-proxy` on the
+            // workstation and run `adb reverse tcp:8080 tcp:8080` per device; the
+            // proxy bridges legacy /auth/* to 122's /api/auth/* and passes the rest.
+            // Requires a working `tailscale` on the host; 155/234 stay LAN-only.
+            buildConfigField("String", "PRIMARY_API_BASE_URL", "\"http://127.0.0.1:8080/\"")
+            buildConfigField("String", "SECONDARY_API_BASE_URL", "\"http://127.0.0.1:8080/\"")
+            buildConfigField("String", "TERTIARY_API_BASE_URL", "\"http://127.0.0.1:8080/\"")
         }
         create("receivingOnly") {
             initWith(getByName("debug"))
