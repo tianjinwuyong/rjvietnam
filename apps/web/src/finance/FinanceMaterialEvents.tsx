@@ -152,7 +152,7 @@ export function FinanceMaterialEvents({ locale }: { locale: Locale }) {
               fontSize: 12,
               fontWeight: 600,
             }}>
-              {t(EVENT_TYPE_KEYS[s.eventType], locale) ?? s.eventType}: {s.count}{t("finance.items", locale)} | {t("finance.loss")}${fmt(s.totalLoss)} | {t("finance.profit")}${fmt(s.totalProceeds)}
+              {t(EVENT_TYPE_KEYS[s.eventType], locale) ?? s.eventType}: {s.count}{t("finance.items", locale)} | {t("finance.loss", locale)}${fmt(s.totalLoss)} | {t("finance.profit", locale)}${fmt(s.totalProceeds)}
             </div>
           ))}
         </div>

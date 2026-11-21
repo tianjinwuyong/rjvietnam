@@ -78,8 +78,10 @@ function clearToken() {
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const token = getToken();
+  const isFormData = typeof FormData !== "undefined" && init.body instanceof FormData;
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    // FormData（文件上传）不能手动设 Content-Type，浏览器需要自动生成 multipart boundary
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...(init.headers as Record<string, string> ?? {}),
   };
   if (token) {
@@ -143,6 +145,11 @@ export const apiClient = {
     });
   },
 
+  /** multipart 文件上传（FormData），浏览器自动生成 boundary */
+  postForm<T>(path: string, form: FormData): Promise<T> {
+    return request<T>(path, { method: "POST", body: form });
+  },
+
   patch<T>(path: string, body?: unknown): Promise<T> {
     return request<T>(path, {
       method: "PATCH",
@@ -167,5 +174,15 @@ export const authStorage = {
   setToken,
   clearToken,
 };
+
+/**
+ * Headers for the few MES screens that still call `fetch()` directly instead of
+ * `apiClient`. The routes they hit are permission-checked at the API boundary,
+ * so an unauthenticated fetch is a 401 — the token has to travel with it.
+ */
+export function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
+  const token = getToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
+}
 
 export { API_BASE };

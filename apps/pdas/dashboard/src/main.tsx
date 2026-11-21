@@ -223,13 +223,25 @@ const mesApiBase = () => {
   return `${window.location.protocol}//${mesHost()}:8080`;
 };
 const smtMachinePositions = ["NPM-01", "NPM-02", "NPM-03", "NPM-04", "NPM-05", "NPM-06"] as const;
+// Device credentials are provisioned at runtime (window.__PDA_MES__ or sessionStorage);
+// no account or password lives in the bundle.
+function readDeviceCredentials(): { user: string; pass: string } {
+  const injected = (globalThis as any).__PDA_MES__;
+  return {
+    user: String(injected?.username ?? sessionStorage.getItem("pda_mes_user") ?? ""),
+    pass: String(injected?.password ?? sessionStorage.getItem("pda_mes_password") ?? ""),
+  };
+}
+
 async function getPdaMesToken(): Promise<string> {
+  const { user: deviceUser, pass: devicePass } = readDeviceCredentials();
+  if (!deviceUser || !devicePass) throw new Error("MES device credentials are not provisioned on this terminal");
   const cached=sessionStorage.getItem("pda_mes_token");
   if(cached) {
     if (sessionStorage.getItem("pda_mes_device_id") || await syncMesManagedPdaProfile(cached)) return cached;
     sessionStorage.removeItem("pda_mes_token");
   }
-  const response=await fetch(`${mesApiBase()}/api/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:"admin",password:"Factory@123"})});
+  const response=await fetch(`${mesApiBase()}/api/auth/login`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:deviceUser,password:devicePass})});
   const body=await response.json().catch(()=>({}));
   const token=body?.data?.token ?? body?.data?.item?.token;
   if(!response.ok||!token) throw new Error(body?.error?.message||"MES temporary login failed");

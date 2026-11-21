@@ -31,6 +31,8 @@ interface IqcLot {
   supplier_name: string;
   batch_size: number;
   received_qty: number;
+  /** GET /wms/receiving-queue returns the receiving timestamp. */
+  received_at?: string;
   inspection_result?: string;
   aql_level: string;
   dynamic_aql_status: string; // NORMAL | REDUCED | TIGHTENED

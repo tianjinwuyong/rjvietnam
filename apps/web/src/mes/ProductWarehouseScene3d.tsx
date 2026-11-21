@@ -52,6 +52,7 @@ type FinishedGoodItem = {
 type FgInventoryResponse = { items: FinishedGoodItem[]; total: number };
 type Wms3dSnapshot={metrics:Record<string,number>;finishedGoods:Array<{id:number;sn:string;status:string;productCode:string;workOrderCode:string;locationCode:string;cartonCode?:string;palletCode?:string}>};
 type RawMaterialLot = { id?: number|string; labelId?: string; rollQr?: string; lotNo: string; materialCode: string; iqcStatus?: string; locationCode?: string|null; receivedDate?: string; createdAt?: string; boxQr?: string; palletQr?: string; workOrderCode?: string };
+type RawLotEnvelope = { items?: RawMaterialLot[]; data?: RawMaterialLot[] };
 
 function rawMaterialToSceneItem(item: RawMaterialLot, index = 0): FinishedGoodItem {
   const raw = item as RawMaterialLot & { receivedQty?: number; availableQty?: number; reservedQty?: number; supplierCode?: string; expiryDate?: string };
@@ -234,7 +235,7 @@ export function ProductWarehouseScene3d() {
   const locate=useCallback(async(term=search)=>{
     const [snap, raw] = await Promise.all([
       apiClient.get<Wms3dSnapshot>(`/api/3d/wms-snapshot${term.trim()?`?q=${encodeURIComponent(term.trim())}`:""}`),
-      apiClient.get<{ items?: RawMaterialLot[]; data?: RawMaterialLot[] }>(`/wms/material-lots?limit=500${term.trim()?`&q=${encodeURIComponent(term.trim())}`:""}`).catch(() => ({ items: [] })),
+      apiClient.get<RawLotEnvelope>(`/wms/material-lots?limit=500${term.trim()?`&q=${encodeURIComponent(term.trim())}`:""}`).catch((): RawLotEnvelope => ({ items: [] })),
     ]);
     setSearchResults(snap.finishedGoods??[]);setMetrics(snap.metrics??{});
     const termKey=term.trim().toLowerCase();
@@ -248,7 +249,7 @@ export function ProductWarehouseScene3d() {
     try {
       const [data, rawData] = await Promise.all([
         apiClient.get<FgInventoryResponse>("/wms/finished-goods-inventory?limit=500"),
-        apiClient.get<{ items?: RawMaterialLot[]; data?: RawMaterialLot[] }>("/wms/material-lots?limit=500").catch(() => ({ items: [] })),
+        apiClient.get<RawLotEnvelope>("/wms/material-lots?limit=500").catch((): RawLotEnvelope => ({ items: [] })),
       ]);
       const rawItems = (rawData.items ?? rawData.data ?? []).filter(item => item.locationCode).map(rawMaterialToSceneItem);
       const items = [...(data.items ?? []), ...rawItems];

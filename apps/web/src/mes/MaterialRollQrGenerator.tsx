@@ -1,7 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import bwipjs from "bwip-js";
+import bwipjs from "bwip-js/browser";
 import * as XLSX from "xlsx";
-import type { Locale } from "../i18n";
+import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { apiClient, type ListEnvelope } from "../api/client";
 
 type Roll = { id:number; materialSn:string; materialCode:string; supplierName?:string; supplierCode?:string; msdLevel?:string; lotNo:string; originalQty:number; remainingQty:number; unit:string; qrPayload:Record<string,unknown>; lifecycleStatus:string; printCount:number; lastPrintedAt?:string; createdAt?:string };
@@ -59,7 +59,7 @@ export function MaterialRollQrGenerator({ locale, prefill, variant = "smt" }: { 
     internalCode: form.internalCode || "0.01.00.01.4231A-HF",
     description: form.description || "33pF ±5% 500V NP0 0805 330J CC0805JRNPOBBN330 无卤 品牌：国巨"
   };
-  useEffect(() => { if (prefill) { setForm(v => ({ ...v, ...prefill })); setRecord(null); setEvents([]); setMessage(""); } }, [prefill]);
+  useEffect(() => { if (prefill) { setForm(v => ({ ...v, ...prefill, caseCount: prefill.caseCount == null ? v.caseCount : String(prefill.caseCount) })); setRecord(null); setEvents([]); setMessage(""); } }, [prefill]);
 
   useEffect(() => { try { const c=document.createElement("canvas"); bwipjs.toCanvas(c,{bcid:"datamatrix",text:payload,scale:2,padding:2}); setQr(c.toDataURL("image/png")); } catch { setQr(""); } }, [payload]);
   useEffect(() => {
@@ -131,7 +131,7 @@ export function MaterialRollQrGenerator({ locale, prefill, variant = "smt" }: { 
     const masterHeaderIndex=masterMatrix.findIndex(row=>row.some(v=>["越南东泰料号","品号"].includes(String(v).trim())));
     const masterHeaders=masterHeaderIndex>=0?masterMatrix[masterHeaderIndex].map(v=>String(v).trim()):[];
     const masterRows=masterHeaderIndex>=0?masterMatrix.slice(masterHeaderIndex+1).map(row=>Object.fromEntries(masterHeaders.map((h,i)=>[h,row[i]??""]))):[];
-    const masterByVietnamCode=new Map(masterRows.map(r=>[String(r["越南东泰料号"]||r["品号"]||"").trim().toUpperCase(),{internalCode:String(r["深圳瑞晶料号"]||"").trim(),description:String(r["规格"]||"").trim(),msdLevel:String(r["MSD"]||"").trim()}]).filter(([k])=>k));
+    const masterByVietnamCode=new Map(masterRows.map(r=>[String(r["越南东泰料号"]||r["品号"]||"").trim().toUpperCase(),{internalCode:String(r["深圳瑞晶料号"]||"").trim(),description:String(r["规格"]||"").trim(),msdLevel:String(r["MSD"]||"").trim()}] as [string,{internalCode:string;description:string;msdLevel:string}]).filter(([k])=>k));
     const sheetName="Sheet1"; const sheet=wb.Sheets[sheetName]; if(!sheet){setBatchRows([]);setMessage("Sheet1 not found; hidden/secondary sheets are not used");return;} const matrix=XLSX.utils.sheet_to_json<unknown[]>(sheet,{header:1,defval:""});
     const headerIndex=matrix.findIndex(row=>row.some(v=>["越南东泰料号","深圳瑞晶料号","规格"].includes(String(v).trim()))); if(headerIndex<0){setBatchRows([]);setMessage("Sheet1 material-master header not recognized");return;}
     const headers=matrix[headerIndex].map(v=>String(v).trim()); const raw=matrix.slice(headerIndex+1).filter(row=>row.some(v=>String(v).trim()!=="")).map(row=>Object.fromEntries(headers.map((h,i)=>[h,row[i]??""]))); const seen=new Set<string>();

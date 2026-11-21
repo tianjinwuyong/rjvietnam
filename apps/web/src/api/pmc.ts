@@ -140,34 +140,6 @@ export interface DeliveryWatchItem {
 }
 
 
-// ── Demo store ───────────────────────────────────────────────────────
-
-const demoStore: { workOrders: WorkOrder[]; nextId: number; customerPos: CustomerPo[] } = {
-  workOrders: [
-    { id: 1, code: "26061010001", type: 1, plannedQty: 9600, completedQty: 9600, status: "closed", productCode: "PCBA-AURORA-CTRL", productNameZh: "Aurora PCB", lineCode: "L001", lineNameZh: "SMT Line", poNumber: "RJ-VN-PO-240611" },
-    { id: 2, code: "26061010002", type: 1, plannedQty: 7200, completedQty: 4800, status: "running", productCode: "PCBA-AURORA-CTRL", productNameZh: "Aurora PCB", lineCode: "L002", lineNameZh: "AOI Line", poNumber: "RJ-VN-PO-240612" },
-    { id: 3, code: "26061020003", type: 2, plannedQty: 200, completedQty: 200, status: "closed", productCode: "PCBA-AURORA-CTRL", productNameZh: "Aurora PCB(Product)", lineCode: "L001", lineNameZh: "SMT Line", poNumber: "RJ-VN-PO-240615" },
-  ],
-  nextId: 4,
-  customerPos: [
-    { id: 1, poNumber: "RJ-VN-PO-240611", customerName: "Ruijing Vietnam", orderQty: 9600, dueDate: "2026-06-25", status: "confirmed" },
-    { id: 2, poNumber: "RJ-VN-PO-240612", customerName: "Ruijing Vietnam", orderQty: 7200, dueDate: "2026-06-30", status: "confirmed" },
-    { id: 3, poNumber: "RJ-VN-PO-240615", customerName: "Aurora Tech", orderQty: 200, dueDate: "2026-06-20", status: "confirmed" },
-  ],
-};
-
-const LINE_NAMES: Record<string, string> = {
-  L001: "SMT Line", L002: "AOI Line", L003: "Assembly", L004: "Manual", L099: "Test Line",
-};
-
-function isDemoMode(): boolean {
-  return !authStorage.getToken();
-}
-
-function delay<T>(value: T, ms = 200): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
-}
-
 
 // ── pmcApi ───────────────────────────────────────────────────────────
 
@@ -216,18 +188,6 @@ export const pmcApi = {
 
   /** GET /pmc/work-orders */
   async getWorkOrders(params?: { status?: string; q?: string; limit?: number; offset?: number }): Promise<ListEnvelope<WorkOrder>> {
-    if (isDemoMode()) {
-      let items = [...demoStore.workOrders];
-      if (params?.status) items = items.filter((w) => w.status === params.status);
-      if (params?.q) {
-        const q = params.q.toLowerCase();
-        items = items.filter((w) => w.code.toLowerCase().includes(q) || w.productCode.toLowerCase().includes(q));
-      }
-      const total = items.length;
-      const offset = params?.offset ?? 0;
-      const limit = params?.limit ?? 20;
-      return delay({ items: items.slice(offset, offset + limit), total });
-    }
     const qs = new URLSearchParams();
     if (params?.status) qs.set("status", params.status);
     if (params?.q) qs.set("q", params.q);
@@ -239,44 +199,16 @@ export const pmcApi = {
 
   /** POST /pmc/work-orders */
   async createWorkOrder(workOrder: { customerPoId?: number; woType?: number; lineCode: string; productCode: string; plannedQty: number; bomId: number | string; bomRevision: string; dueDate: string }): Promise<MutateEnvelope<{ id: number; code: string; woType: number }>> {
-    if (isDemoMode()) {
-      const id = demoStore.nextId++;
-      const now = new Date();
-      const yy = String(now.getFullYear()).slice(-2);
-      const mm = String(now.getMonth() + 1).padStart(2, "0");
-      const numericLine = workOrder.lineCode.replace(/[^0-9]/g, "").slice(-2).padStart(2, "0");
-      const code = `${yy}${mm}${workOrder.woType ?? 1}${numericLine}${String(id).padStart(4, "0")}`;
-      const wo: WorkOrder = {
-        id, code, type: workOrder.woType ?? 1,
-        plannedQty: workOrder.plannedQty, completedQty: 0, status: "released",
-        productCode: workOrder.productCode, productNameZh: workOrder.productCode,
-        lineCode: workOrder.lineCode, lineNameZh: LINE_NAMES[workOrder.lineCode] ?? workOrder.lineCode,
-        poNumber: workOrder.customerPoId ? demoStore.customerPos.find((p) => p.id === workOrder.customerPoId)?.poNumber ?? null : null,
-        bomId: workOrder.bomId, bomRevision: workOrder.bomRevision,
-      };
-      demoStore.workOrders.unshift(wo);
-      return delay({ item: { id: wo.id, code: wo.code, woType: wo.type }, auditEventId: id });
-    }
     return apiClient.post<MutateEnvelope<{ id: number; code: string; woType: number }>>("/pmc/work-orders", { payload: { workOrder } });
   },
 
   /** PATCH /pmc/work-orders/:code */
   async updateWorkOrderStatus(code: string, status: string): Promise<{ code: string; status: string }> {
-    if (isDemoMode()) {
-      const wo = demoStore.workOrders.find((w) => w.code === code);
-      if (wo) wo.status = status;
-      return delay({ code, status });
-    }
     return apiClient.patch<{ code: string; status: string }>(`/pmc/work-orders/${code}`, { payload: { status } });
   },
 
   /** POST /pmc/work-orders/:code/quick-approve-release */
   async quickApproveAndReleaseWorkOrder(code: string, reason = "Quick approval from PMC work-order list") {
-    if (isDemoMode()) {
-      const wo = demoStore.workOrders.find((w) => w.code === code);
-      if (wo) wo.status = "released";
-      return delay({ item: { code, status: "released" } });
-    }
     return apiClient.post<MutateEnvelope<{ code: string; status: string; releasedAt: string }>>(
       `/pmc/work-orders/${encodeURIComponent(code)}/quick-approve-release`,
       { payload: { reason } },
@@ -303,9 +235,6 @@ export const pmcApi = {
 
   /** GET /pmc/customer-pos */
   async getCustomerPos(): Promise<ListEnvelope<CustomerPo>> {
-    if (isDemoMode()) {
-      return delay({ items: [...demoStore.customerPos], total: demoStore.customerPos.length });
-    }
     return apiClient.get<ListEnvelope<CustomerPo>>("/pmc/customer-pos");
   },
 
@@ -338,7 +267,7 @@ export const pmcApi = {
     return apiClient.post(`/erp/customers/${id}/transition`, { payload: { action, reason } });
   },
 
-  async updateErpCustomer(id: number, payload: { code?: string; nameZh?: string; nameEn?: string }) {
+  async updateErpCustomer(id: number, payload: { code?: string; nameZh?: string; nameEn?: string; contactName?: string; email?: string; phone?: string; paymentTermsDays?: number; riskLevel?: string }) {
     return apiClient.patch(`/erp/customers/${id}`, { payload });
   },
 
@@ -406,15 +335,6 @@ export const pmcApi = {
   },
 
   async getSchedules(params?: { lineCode?: string; limit?: number; offset?: number }): Promise<ListEnvelope<Schedule>> {
-    if (isDemoMode()) {
-      const items: Schedule[] = demoStore.workOrders
-        .filter((w) => !params?.lineCode || w.lineCode === params.lineCode)
-        .map((w) => ({ id: w.id, code: w.code, plannedQty: w.plannedQty, completedQty: w.completedQty, status: w.status, lineCode: w.lineCode, lineNameZh: w.lineNameZh, productCode: w.productCode }));
-      const total = items.length;
-      const offset = params?.offset ?? 0;
-      const limit = params?.limit ?? 20;
-      return delay({ items: items.slice(offset, offset + limit), total });
-    }
     const qs = new URLSearchParams();
     if (params?.lineCode) qs.set("lineCode", params.lineCode);
     if (params?.limit != null) qs.set("limit", String(params.limit));
@@ -581,61 +501,12 @@ export const pmcApi = {
   // ── Patrol State (reads from patrol state JSON written by patrol scripts) ──
 
   async getPatrolState(): Promise<PatrolState> {
-    if (isDemoMode()) {
-      return delay({
-        cycle: 42,
-        timestamp: new Date().toISOString(),
-        nodes: {
-          delivery_watch:     { state: "idle", detail: "No delivery alerts", escalations: 0 },
-          rate_check:         { state: "idle", detail: "All WOs within rate", escalations: 0 },
-          abnormal_detector:  { state: "idle", detail: "No abnormal events", escalations: 0 },
-          material_shortage:  { state: "idle", detail: "All materials ready", escalations: 0 },
-          notification_router:{ state: "idle", detail: "No notifications needed", escalations: 0 },
-        },
-        total_escalations: 0,
-        overdue_count: 0,
-        patrol_duration_ms: 2847,
-      });
-    }
     return apiClient.get<PatrolState>("/pmc/patrol-state");
   },
 
   // ── Delivery Watch ───────────────────────────────────────────────
 
   async getDeliveryWatch(): Promise<{ items: DeliveryWatchItem[]; last_run: string }> {
-    if (isDemoMode()) {
-      return delay({
-        last_run: new Date().toISOString(),
-        items: [
-          {
-            wo_code: "26061030009", product_code: "EPS48R1-36", line_code: "L002",
-            due_date: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-            completion_pct: 23.6, completed_qty: 118, planned_qty: 500,
-            delay_hours: -4.2, tier: "OVERDUE",
-            rate_detail: "required_rate 90.9 > current_rate 5.1 × 1.2",
-          },
-          {
-            wo_code: "26061010003", product_code: "B2672111-001", line_code: "L001",
-            due_date: new Date(Date.now() + 20 * 3600 * 1000).toISOString(),
-            completion_pct: 15.0, completed_qty: 75, planned_qty: 500,
-            delay_hours: 18.5, tier: "WARNING",
-            rate_detail: "required_rate 18.5 > current_rate 3.1 × 1.2",
-          },
-          {
-            wo_code: "26061010010", product_code: "EPS18R1G", line_code: "L002",
-            due_date: new Date(Date.now() + 36 * 3600 * 1000).toISOString(),
-            completion_pct: 58.0, completed_qty: 580, planned_qty: 1000,
-            delay_hours: 34.0, tier: "CAUTION",
-          },
-          {
-            wo_code: "26061010011", product_code: "B2672111-001", line_code: "L001",
-            due_date: new Date(Date.now() + 72 * 3600 * 1000).toISOString(),
-            completion_pct: 70.0, completed_qty: 700, planned_qty: 1000,
-            delay_hours: 70.0, tier: "ON_TRACK",
-          },
-        ],
-      });
-    }
     return apiClient.get<{ items: DeliveryWatchItem[]; last_run: string }>("/pmc/delivery-watch");
   },
 

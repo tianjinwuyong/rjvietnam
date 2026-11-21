@@ -1,0 +1,7 @@
+{
+  "_what_this_is": "Guarded `app.*` routes in services/api/server.js declared above every authenticateJWT mount covering them. They answer 401 to a valid JWT. Ratcheted: a new stranded route fails the gate; repair one and re-run with --update to lower it.",
+  "gate_line": 16674,
+  "stranded": 0,
+  "routes": [],
+  "updated_at": "2026-11-20"
+}

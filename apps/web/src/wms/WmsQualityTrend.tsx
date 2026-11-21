@@ -8,30 +8,10 @@ interface WeeklyQuality {
   categories: { name: string; passRate: number; sampleSize: number; defectCount: number }[];
 }
 
-function generateTrendData(): WeeklyQuality[] {
-  const categories = ["电阻 Resistor", "电容 Capacitor", "IC 集成电路", "连接器 Connector", "PCB 线路板"];
-  const weeks: WeeklyQuality[] = [];
-  for (let w = 12; w >= 1; w--) {
-    const d = new Date();
-    d.setDate(d.getDate() - w * 7);
-    const weekLabel = `${d.getMonth() + 1}/${Math.ceil(d.getDate() / 7)}W`;
-    weeks.push({
-      week: weekLabel,
-      categories: categories.map((cat) => {
-        const baseRate = cat === "IC 集成电路" ? 99 : cat === "PCB 线路板" ? 95 : 97;
-        const variance = (Math.random() - 0.3) * 4;
-        const passRate = Math.min(100, Math.max(85, baseRate + variance));
-        const sampleSize = Math.round(50 + Math.random() * 200);
-        const defectCount = Math.round(sampleSize * (100 - passRate) / 100);
-        return { name: cat, passRate: Math.round(passRate * 10) / 10, sampleSize, defectCount };
-      }),
-    });
-  }
-  return weeks;
-}
-
 export function WmsQualityTrend({ locale }: { locale: Locale }) {
-  const [data] = useState<WeeklyQuality[]>(generateTrendData);
+  // No weekly IQC-trend endpoint yet, so the chart starts empty instead of showing
+  // randomised pass rates.
+  const [data] = useState<WeeklyQuality[]>([]);
   const [filterCat, setFilterCat] = useState("");
 
   const categories = useMemo(() =>

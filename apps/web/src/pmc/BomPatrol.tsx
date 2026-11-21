@@ -96,19 +96,9 @@ export function BomPatrol({ locale }: Props) {
       setResult(data);
       setLastRun(new Date());
     } catch {
-      setResult({
-        timestamp: new Date().toISOString(),
-        cycle: 0,
-        checks: {
-          phantom: { status: "pass", count: 0, detail: "Check unavailable (demo)" },
-          duplicate: { status: "pass", count: 0, detail: "Check unavailable (demo)" },
-          zeroQty: { status: "pass", count: 0, detail: "Check unavailable (demo)" },
-          orphan: { status: "pass", count: 0, detail: "Check unavailable (demo)" },
-          costAnomaly: { status: "pass", count: 0, detail: "Check unavailable (demo)" },
-          missing: { status: "pass", count: 0, detail: "Check unavailable (demo)" },
-        },
-        totalAnomalies: 0,
-      });
+      // /boms/patrol is not implemented server-side yet: show the empty state rather than
+      // inventing a clean patrol result.
+      setResult(null);
       setLastRun(new Date());
     } finally {
       setLoading(false);

@@ -1,0 +1,83 @@
+{
+  "_what_this_is": [
+    "Deliberate defects injected into REAL source on a throwaway copy. Each must make",
+    "the gate go red. One that escapes is a class of bug that can currently merge with",
+    "nobody reading the diff.",
+    "",
+    "THIS FILE IS PROTECTED. A builder that can edit its own defect set can pass it."
+  ],
+  "_how_to_write_one": [
+    "id      a name that says what broke, not which line changed",
+    "file    path relative to the repo root",
+    "find    an exact snippet from that file. Keep it SHORT and distinctive -- a long",
+    "        anchor breaks the moment anyone reformats, and a broken anchor is",
+    "        reported as NOT_INJECTED rather than silently passing",
+    "replace what to put there instead",
+    "why     what it would mean if this escaped. You write this before you know",
+    "        whether it does, and it is the sentence you will read when it escapes"
+  ],
+  "_this_repo": [
+    "Five defects, one per static/unit rung that exists today: parse, i18n, two type",
+    "ratchets, and the auth-ordering ratchet. The e2e and holdout rungs cannot be",
+    "faulted until a journey agent is installed (harness.config.json agent.cmd) and the",
+    "web console runs on :5178; run.py refuses to score against a red gate, so adding",
+    "defects aimed at rungs that cannot run would only manufacture a fake number.",
+    "",
+    "Every anchor below is a single line, so a reformat reports NOT_INJECTED instead of",
+    "silently testing nothing."
+  ],
+  "_copy": "What to copy into each throwaway build. Must cover every input the gate's commands read, plus node_modules, which run.py links in rather than copies.",
+  "copy": [
+    "services",
+    "apps/web/src",
+    "packages",
+    "tests",
+    "scripts",
+    "harness",
+    ".factory",
+    "package.json",
+    "tsconfig.base.json",
+    "tsconfig.tests.json",
+    "tsconfig.api.json",
+    "vitest.config.ts",
+    "vitest.unit.config.ts",
+    "vitest.hardware.config.ts"
+  ],
+  "defects": [
+    {
+      "id": "worker-script-stops-parsing",
+      "file": "services/worker/wms-query.js",
+      "find": "open_hours: r.msd_open_at",
+      "replace": "open_hours: r.msd_open_at(",
+      "why": "Unbalanced parenthesis: the whole WMS manager patrol script fails to parse, so every patrol run crashes before it queries anything."
+    },
+    {
+      "id": "vietnamese-label-blanked-out",
+      "file": "apps/web/src/i18n.ts",
+      "find": "\"maintenance.factory3d.units\": { \"zh-CN\": \"个\", \"en-US\": \"units\", \"vi-VN\": \"cái\" },",
+      "replace": "\"maintenance.factory3d.units\": { \"zh-CN\": \"个\", \"en-US\": \"units\", \"vi-VN\": \"\" },",
+      "why": "A shop-floor label renders as an empty string on the Vietnamese console; a grep for the key finds a definition, so only a per-locale check catches it."
+    },
+    {
+      "id": "web-module-assigns-string-to-number",
+      "file": "apps/web/src/i18n.ts",
+      "find": "export const locales: Locale[] = [\"zh-CN\", \"vi-VN\", \"en-US\"];",
+      "replace": "const __MUTANT: number = \"x\";\nexport const locales: Locale[] = [\"zh-CN\", \"vi-VN\", \"en-US\"];",
+      "why": "A type error that a bundler happily strips: the build still runs, the console shows garbage where the number should be."
+    },
+    {
+      "id": "api-module-violates-its-own-jsdoc-type",
+      "file": "services/api/src/db.js",
+      "find": "let pool = null;",
+      "replace": "let pool = null;\nconst __MUTANT = /** @type {number} */ (\"x\");",
+      "why": "The type ratchet exists precisely so services/api can drift one error at a time instead of all at once; an escape means new type rot is invisible."
+    },
+    {
+      "id": "new-guarded-route-above-the-auth-gate",
+      "file": "services/api/server.js",
+      "find": "app.get(\"/wms/pda-devices\", requirePermission(\"wms.view\"), wmsPdaPoolResponse);",
+      "replace": "app.get(\"/wms/pda-devices\", requirePermission(\"wms.view\"), wmsPdaPoolResponse);\napp.get(\"/wms/pda-devices-shadow\", requirePermission(\"wms.view\"), wmsPdaPoolResponse);",
+      "why": "A new endpoint that answers 401 to every valid token -- the exact defect already present 277 times in this file, now prevented from growing."
+    }
+  ]
+}

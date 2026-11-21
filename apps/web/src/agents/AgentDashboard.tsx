@@ -253,18 +253,9 @@ export function AgentDashboard({ locale, currentUser }: Props) {
   const [refreshKey, setRefreshKey] = useState(0);
   const locale_key = locale as "zh-CN" | "en-US" | "vi-VN";
 
-  // 模拟告警数据（来自 API /agents/alerts）
+  // /agents/alerts has no route yet: the panel stays empty instead of showing demo alerts.
   const fetchAlerts = useCallback(async () => {
-    // 实际应从 /agents/alerts 获取
-    // 模拟告警
-    const now = Date.now();
-    const mockAlerts: Alert[] = [
-      { id: 1, agent_name: "MES虚拟调度主管", severity: "warn", node: "SMT-2", message: "换线时间超过目标 25 分钟，请关注", created_at: new Date(now - 5 * 60000).toISOString() },
-      { id: 2, agent_name: "IQC虚拟检验员", severity: "critical", node: "IQC", message: "三星来料不良率 8%，超出 AQL 标准", created_at: new Date(now - 18 * 60000).toISOString() },
-      { id: 3, agent_name: "WMS虚拟仓储主管", severity: "info", node: "WMS", message: "效期预警：3 批物料将在 15 天内到期", created_at: new Date(now - 45 * 60000).toISOString() },
-      { id: 4, agent_name: "PMC虚拟计划主管", severity: "warn", node: "PMC", message: "LG 紧急订单交期评估：原材料库存不足", created_at: new Date(now - 90 * 60000).toISOString() },
-    ];
-    setAlerts(mockAlerts);
+    setAlerts([]);
   }, []);
 
   useEffect(() => { fetchAlerts(); }, [fetchAlerts, refreshKey]);

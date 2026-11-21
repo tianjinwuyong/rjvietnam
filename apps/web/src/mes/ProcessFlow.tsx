@@ -277,7 +277,10 @@ export function ProcessFlow({ locale }: { locale: Locale }) {
     }
   }
   const assignedKeys = liveLineStationMap[selectedLineId] ?? [];
-  const lineStates = demoStationStates[selectedLineId] ?? [];
+  // Per-station cycle time / defects / output used to come from a demo map. No endpoint
+  // exposes them yet, so the diagram renders live topology with blank metrics instead of
+  // fabricated numbers.
+  const lineStates: LineStationState[] = [];
 
   function stationState(key: StationKey): LineStationState | undefined {
     return lineStates.find((s) => s.stationKey === key);

@@ -33,9 +33,6 @@ type HistoryItem = {
   notes: string | null;
 };
 
-const text = (zh: string, vi: string, en: string, locale: Locale) =>
-  locale === "zh-CN" ? zh : locale === "vi-VN" ? vi : en;
-
 function buildSignatureHash(woCode: string, items: PendingItem[], operatorTo: string, nonce: string) {
   const payload = [
     woCode,
@@ -67,6 +64,9 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
 
   const trimWo = workOrder.trim();
+  const zh = locale === "zh-CN";
+  const vi = locale === "vi-VN";
+  const text = (z: string, v: string, e: string) => (zh ? z : vi ? v : e);
 
   const load = useCallback(async (wo: string) => {
     if (!wo) { setPending([]); setHistory([]); return; }
@@ -100,9 +100,9 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
   const selectedItems = useMemo(() => pending.filter(it => selected[it.issueTxId]), [pending, selected]);
 
   const submit = async () => {
-    if (!trimWo) { setFeedback({ ok: false, msg: text("请先输入工单号", "Vui lòng nhập mã lệnh SX", "Enter a work order code first", locale) }); return; }
-    if (!operatorTo.trim()) { setFeedback({ ok: false, msg: text("请填写领料人/线长工号", "Vui lòng nhập tài khoản nhân viên nhận", "Receiver operator required", locale) }); return; }
-    if (selectedItems.length === 0) { setFeedback({ ok: false, msg: text("请勾选至少一条待交接物料", "Vui lòng chọn ít nhất 1 dòng", "Select at least one pending row", locale) }); return; }
+    if (!trimWo) { setFeedback({ ok: false, msg: text("请先输入工单号", "Vui lòng nhập mã lệnh SX", "Enter a work order code first") }); return; }
+    if (!operatorTo.trim()) { setFeedback({ ok: false, msg: text("请填写领料人/线长工号", "Vui lòng nhập tài khoản nhân viên nhận", "Receiver operator required") }); return; }
+    if (selectedItems.length === 0) { setFeedback({ ok: false, msg: text("请勾选至少一条待交接物料", "Vui lòng chọn ít nhất 1 dòng", "Select at least one pending row") }); return; }
     setSubmitting(true);
     setFeedback(null);
     const nonce = Math.random().toString(36).slice(2, 10) + Date.now().toString(36).toUpperCase();
@@ -120,7 +120,7 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
         })),
       });
       const signed = res?.data?.signedCount ?? selectedItems.length;
-      setFeedback({ ok: true, msg: text(`已签收 ${signed} 条 / Đã ký nhận ${signed} / Signed ${signed} items`, "", "", locale) });
+      setFeedback({ ok: true, msg: text(`已签收 ${signed} 条 / Đã ký nhận ${signed} / Signed ${signed} items`, "", "") });
       setNotes("");
       await load(trimWo);
     } catch (err) {
@@ -139,7 +139,7 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
         </div>
         <button className="action-button" type="button" title={t("common.refresh", locale)} onClick={() => void load(trimWo)} disabled={loading || !trimWo}><RefreshCw size={16} /> {t("common.refresh", locale)}</button>
       </div>
-      <div className="scan-input" style={{ maxWidth: 360 }}><Search size={24} /><input value={workOrder} onChange={e => setWorkOrder(e.target.value.toUpperCase())} placeholder={text("工单号 (例如 26091010001)", "Mã lệnh SX", "Work-order code", locale)} title={text("扫描或输入工单号", "Quét hoặc nhập mã lệnh SX", "Scan or type work order", locale)} /></div>
+      <div className="scan-input" style={{ maxWidth: 360 }}><Search size={24} /><input value={workOrder} onChange={e => setWorkOrder(e.target.value.toUpperCase())} placeholder={text("工单号 (例如 26091010001)", "Mã lệnh SX", "Work-order code")} title={text("扫描或输入工单号", "Quét hoặc nhập mã lệnh SX", "Scan or type work order")} /></div>
     </section>
 
     <section className="surface-panel">
@@ -155,7 +155,7 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
             const next: Record<number, boolean> = {};
             for (const it of pending) next[it.issueTxId] = e.target.checked;
             setSelected(next);
-          }} title={text("全选", "Chọn tất cả", "Select all", locale)} /></th>
+          }} title={text("全选", "Chọn tất cả", "Select all")} /></th>
           <th>{text("工单", "Lệnh SX", "WO")}</th>
           <th>{text("物料", "Vật liệu", "Material")}</th>
           <th>{text("批次", "Lô", "Lot")}</th>
@@ -175,7 +175,7 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
             <td>{it.occurredAt ? new Date(it.occurredAt).toLocaleString(locale) : "—"}</td>
             <td><code>{it.issueTxId}</code></td>
           </tr>)}
-          {!loading && pending.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{trimWo ? text("该工单无待交接物料", "Không có vật liệu chờ bàn giao", "No pending handover", locale) : text("请输入工单号", "Vui lòng nhập mã lệnh SX", "Enter a work order code", locale)}</td></tr>}
+          {!loading && pending.length === 0 && <tr><td colSpan={8} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{trimWo ? text("该工单无待交接物料", "Không có vật liệu chờ bàn giao", "No pending handover") : text("请输入工单号", "Vui lòng nhập mã lệnh SX", "Enter a work order code")}</td></tr>}
         </tbody>
       </table></div>
     </section>
@@ -189,18 +189,18 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 12, maxWidth: 720 }}>
         <label style={{ display: "grid", gap: 4 }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>{text("领料人/线长工号", "Tài khoản nhận", "Receiver operator", locale)}</span>
-          <input className="form-input" value={operatorTo} onChange={e => setOperatorTo(e.target.value)} placeholder={text("例如 VN_OP_001", "VD: VN_OP_001", "e.g. VN_OP_001", locale)} title={text("扫码或输入工号", "Quét hoặc nhập tài khoản", "Scan or type operator", locale)} />
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{text("领料人/线长工号", "Tài khoản nhận", "Receiver operator")}</span>
+          <input className="form-input" value={operatorTo} onChange={e => setOperatorTo(e.target.value)} placeholder={text("例如 VN_OP_001", "VD: VN_OP_001", "e.g. VN_OP_001")} title={text("扫码或输入工号", "Quét hoặc nhập tài khoản", "Scan or type operator")} />
         </label>
         <label style={{ display: "grid", gap: 4 }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>{text("备注", "Ghi chú", "Notes", locale)}</span>
-          <input className="form-input" value={notes} onChange={e => setNotes(e.target.value)} placeholder={text("可空，例如 早班/晚班/SMT-A1", "Có thể trống", "optional", locale)} />
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{text("备注", "Ghi chú", "Notes")}</span>
+          <input className="form-input" value={notes} onChange={e => setNotes(e.target.value)} placeholder={text("可空，例如 早班/晚班/SMT-A1", "Có thể trống", "optional")} />
         </label>
       </div>
       <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10 }}>
-        <button className="action-button action-button-primary" type="button" disabled={submitting || !trimWo || selectedItems.length === 0 || !operatorTo.trim()} onClick={() => void submit()}><ClipboardCheck size={16} /> {submitting ? text("提交中…", "Đang nộp…", "Submitting…", locale) : text(`提交签收 (${selectedItems.length})`, `Nộp ký nhận (${selectedItems.length})`, `Submit sign-off (${selectedItems.length})`, locale)}</button>
+        <button className="action-button action-button-primary" type="button" disabled={submitting || !trimWo || selectedItems.length === 0 || !operatorTo.trim()} onClick={() => void submit()}><ClipboardCheck size={16} /> {submitting ? text("提交中…", "Đang nộp…", "Submitting…") : text(`提交签收 (${selectedItems.length})`, `Nộp ký nhận (${selectedItems.length})`, `Submit sign-off (${selectedItems.length})`)}</button>
         <ShieldCheck size={16} style={{ color: "var(--ok)" }} />
-        <span style={{ color: "var(--muted)", fontSize: 12 }}>{text("签名 = (工单 + 物料行 + nonce) 的 SHA-like 指纹", "Chữ ký = SHA-like fingerprint", "Signature = SHA-like fingerprint", locale)}</span>
+        <span style={{ color: "var(--muted)", fontSize: 12 }}>{text("签名 = (工单 + 物料行 + nonce) 的 SHA-like 指纹", "Chữ ký = SHA-like fingerprint", "Signature = SHA-like fingerprint")}</span>
       </div>
       {feedback && <div style={{ marginTop: 10, padding: "8px 12px", borderRadius: 6, background: feedback.ok ? "var(--ok-bg)" : "var(--danger-bg)", color: feedback.ok ? "var(--ok)" : "var(--danger)", fontSize: 13 }}>{feedback.msg}</div>}
     </section>
@@ -230,7 +230,7 @@ export function WmsWoHandover({ locale }: { locale: Locale }) {
             <td>{h.operator_from} → <strong>{h.operator_to}</strong></td>
             <td><code style={{ fontSize: 11 }}>{h.signature_hash.slice(0, 18)}…</code></td>
           </tr>)}
-          {!loading && history.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{trimWo ? text("该工单还没有签收记录", "Chưa có lịch sử", "No history yet", locale) : text("请输入工单号", "Vui lòng nhập mã lệnh SX", "Enter a work order code", locale)}</td></tr>}
+          {!loading && history.length === 0 && <tr><td colSpan={6} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>{trimWo ? text("该工单还没有签收记录", "Chưa có lịch sử", "No history yet") : text("请输入工单号", "Vui lòng nhập mã lệnh SX", "Enter a work order code")}</td></tr>}
         </tbody>
       </table></div>
     </section>

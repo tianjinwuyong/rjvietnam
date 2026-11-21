@@ -240,21 +240,8 @@ export function PmcPatrolDashboard({ locale }: { locale: Locale }) {
         }
       }
     } catch {
-      // If both fail, use mock data for demo
-      setPatrolState({
-        cycle: 0,
-        timestamp: new Date().toISOString(),
-        nodes: {
-          delivery_watch:    { state: "idle", detail: "No delivery alerts", escalations: 0 },
-          rate_check:        { state: "idle", detail: "All WOs within rate", escalations: 0 },
-          abnormal_detector: { state: "idle", detail: "No abnormal events", escalations: 0 },
-          material_shortage: { state: "idle", detail: "All materials ready", escalations: 0 },
-          notification_router: { state: "idle", detail: "No notifications needed", escalations: 0 },
-        },
-        total_escalations: 0,
-        overdue_count: 0,
-        patrol_duration_ms: 0,
-      });
+      // Both sources down: report "unavailable" instead of inventing a healthy patrol.
+      setPatrolState(null);
       setLastRefresh(new Date());
     } finally {
       setLoading(false);

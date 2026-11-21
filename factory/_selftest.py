@@ -27,6 +27,19 @@ from pathlib import Path
 # separate state, so a test that reaches for the second one is configuring a copy
 # of the thing it believes it is testing. That mistake is silent: the calls all
 # succeed and every assertion about the effect comes back false.
+# Version guard BEFORE the imports below: `gate` is written for 3.12+ (f-strings
+# with backslashes in expressions), so on an older interpreter this file died with a
+# SyntaxError traceback out of a module the reader was not looking at, and `doctor`
+# reported it only as "machinery self-test did not run". `python` on this box is
+# 3.8.10 while 3.14 is installed, so the mismatch is one PATH order away and worth
+# naming outright.
+if sys.version_info < (3, 12):
+    sys.exit(
+        "factory machinery needs Python 3.12+ (gate.py uses 3.12 f-string syntax); this "
+        "interpreter is %d.%d -- run `py -3.14 factory/_selftest.py` instead."
+        % sys.version_info[:2]
+    )
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import config  # noqa: E402

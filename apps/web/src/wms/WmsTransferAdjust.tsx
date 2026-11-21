@@ -20,14 +20,6 @@ interface TxRecord {
   reason?: string;
 }
 
-const _mockTxs: TxRecord[] = [
-  { id: 1, txNo: "TX-20250627-001", action: "TRANSFER", materialCode: "CAP-CER-100UF", lotNo: "LOT-20250627-001", qty: 2000, fromLocation: "RCV-A", toLocation: "STORE-001-A1", operator: "VN_WHS_001", occurredAt: "2025-06-27 08:30", reason: "" },
-  { id: 2, txNo: "TX-20250627-002", action: "ADJUST", materialCode: "RES-SMD-10K", lotNo: "LOT-20250625-003", qty: -50, fromLocation: "STORE-001-A1", toLocation: "", operator: "VN_WHS_002", occurredAt: "2025-06-27 09:15", reason: "盘点差异调整" },
-  { id: 3, txNo: "TX-20250626-001", action: "TRANSFER", materialCode: "IC-MCU-STM32", lotNo: "LOT-20250622-005", qty: 100, fromLocation: "IQC-HOLD", toLocation: "STORE-001-B2", operator: "VN_WHS_001", occurredAt: "2025-06-26 14:00", reason: "IQC放行后入仓" },
-  { id: 4, txNo: "TX-20250625-001", action: "ADJUST", materialCode: "LED-RED-0805", lotNo: "LOT-20250620-002", qty: 500, fromLocation: "RCV-B", toLocation: "STORE-002-C3", operator: "VN_WHS_001", occurredAt: "2025-06-25 10:30", reason: "收货录入修正" },
-  { id: 5, txNo: "TX-20250624-001", action: "TRANSFER", materialCode: "CONN-USB-C-30P", lotNo: "LOT-20250623-004", qty: 3000, fromLocation: "STORE-002-C3", toLocation: "LINE-01-FEEDER", operator: "VN_WHS_003", occurredAt: "2025-06-24 07:45", reason: "产线发料" },
-  { id: 6, txNo: "TX-20250624-002", action: "ADJUST", materialCode: "RES-SMD-10K", lotNo: "LOT-20250625-003", qty: -20, fromLocation: "STORE-001-A1", toLocation: "", operator: "VN_WHS_002", occurredAt: "2025-06-24 11:00", reason: "损耗报废" },
-];
 
 export function WmsTransferAdjust({ locale }: { locale: Locale }) {
   const [tab, setTab] = useState<Tab>("transfer");

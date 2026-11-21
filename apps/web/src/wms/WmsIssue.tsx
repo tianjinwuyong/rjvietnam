@@ -91,7 +91,7 @@ export function WmsIssue({ locale }: { locale: Locale }) {
   const [scanInput, setScanInput] = useState("");
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [txLog, setTxLog] = useState<InventoryTransaction[]>([..._demoTxs as unknown as InventoryTransaction[]]);
+  const [txLog, setTxLog] = useState<InventoryTransaction[]>([]);
   const [returns, setReturns] = useState<ReturnRecord[]>([]);
   const [scraps, setScraps] = useState<ScrapRecord[]>([]);
   const scanRef = useRef<HTMLInputElement>(null);

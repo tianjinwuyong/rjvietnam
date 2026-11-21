@@ -3,6 +3,7 @@ import { CheckCircle, XCircle } from "lucide-react";
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { mesApi } from "../api";
+import { authHeaders } from "../api/client";
 import type { ScrapRecord, ScrapReasonCode } from "../api/mes";
 
 const statusBadgeClass: Record<string, string> = {
@@ -134,7 +135,7 @@ export function ScrapRegistration({ locale }: { locale: Locale }) {
     const reason = window.prompt('请输入批准意见');
     if (!reason) return;
     const response = await fetch(`/api/station/scrap-requests/${row.requestId}/approve`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ role: 'MES_MANAGER', approver, reason }),
     });
     if (!response.ok) return window.alert(`MES审批失败 HTTP ${response.status}`);
@@ -147,7 +148,7 @@ export function ScrapRegistration({ locale }: { locale: Locale }) {
     const reason = window.prompt('请输入驳回原因');
     if (!reason) return;
     const response = await fetch(`/api/station/scrap-requests/${row.requestId}/reject`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ approver, reason }),
+      method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ approver, reason }),
     });
     if (!response.ok) return window.alert(`MES驳回失败 HTTP ${response.status}`);
     load();
@@ -161,7 +162,7 @@ export function ScrapRegistration({ locale }: { locale: Locale }) {
     const deductionAmount = Number(window.prompt('考核金额（没有填0）', '0') || 0);
     const assessmentNote = window.prompt('请输入考核说明'); if (!assessmentNote) return;
     const response = await fetch(`/api/station/scrap-requests/${row.requestId}/assessment`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ assessedBy,
+      method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }), body: JSON.stringify({ assessedBy,
         responsiblePerson, responsibilityType, equipmentNo: row.equipmentNo, score, deductionAmount,
         assessmentResult: 'RECORDED', assessmentNote }),
     });

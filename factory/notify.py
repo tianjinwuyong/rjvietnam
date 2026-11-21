@@ -43,12 +43,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import config  # noqa: E402
 
 
+
+def _relative_or_self(path, root):
+    """3.8-safe stand-in for `path.relative_to(root) if path.is_relative_to(root) else path`.
+
+    `is_relative_to` is 3.9+; this box runs 3.8.10. Part of the same fix as
+    doctor.py's _display -- the escalation channel must not be the thing that raises.
+    """
+    try:
+        return path.relative_to(root)
+    except ValueError:
+        return path
+
 def send(target: str, reason: str) -> str:
     """Returns a one-line status for the caller's log. Never raises."""
     if not config.NOTIFY_CMD:
         return (
             "NOT NOTIFIED - FACTORY_NOTIFY_CMD unset; this waits in "
-            f"{config.NEEDS_HUMAN.relative_to(config.ROOT) if config.NEEDS_HUMAN.is_relative_to(config.ROOT) else config.NEEDS_HUMAN}"
+            f"{_relative_or_self(config.NEEDS_HUMAN, config.ROOT)}"
         )
     # TERMINATED, and it is not cosmetic. The channel receives this on stdin, and the
     # documented starting point is `tee -a .factory/escalations.log`. Without the

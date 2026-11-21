@@ -1,7 +1,19 @@
-import { useState, type ChangeEvent } from "react";
-import type { Locale, FactoryLine } from "../../../../packages/shared-types/src/factory";
+import { useEffect, useState, type ChangeEvent } from "react";
 import { t } from "../i18n";
-import { lines } from "../data";
+import { mesApi } from "../api";
+
+// /mes/lines answers camelCase (lineCode, nameZh...) while the shared FactoryLine type is
+// snake_case; the demo list that used to feed this table is gone, so the rows are mapped
+// from the API instead of being invented.
+interface LineRow {
+  lineCode: string;
+  name_zh?: string;
+  name_en?: string;
+  name_vi?: string;
+  status?: string;
+  stationCount?: number;
+  currentWorkOrderCode?: string | null;
+}
 
 const lineStatusTone: Record<string, "ok" | "warning" | "info" | "muted"> = {
   running: "ok",
@@ -12,14 +24,46 @@ const lineStatusTone: Record<string, "ok" | "warning" | "info" | "muted"> = {
 
 function AdminLineManagement({ locale }: { locale: Locale }) {
   const [filter, setFilter] = useState("");
+  const [lines, setLines] = useState<LineRow[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    mesApi
+      .getLines({ limit: 200 })
+      .then((res) => {
+        if (!alive) return;
+        setLines(
+          res.items.map((row) => ({
+            lineCode: row.lineCode,
+            name_zh: row.nameZh,
+            name_en: row.nameEn,
+            name_vi: row.nameVi,
+            status: row.status,
+            stationCount: row.stationCount ?? 0,
+            currentWorkOrderCode: row.currentWorkOrderCode ?? null,
+          })),
+        );
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (alive) {
+          setLines([]);
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const filtered = lines.filter(
-    (l: FactoryLine) =>
+    (l) =>
       !filter ||
       l.lineCode.includes(filter) ||
       (l.name_zh ?? "").includes(filter) ||
       (l.name_en ?? "").toLowerCase().includes(filter.toLowerCase()) ||
-      (l.name_vi ?? "").includes(filter)
+      (l.name_vi ?? "").includes(filter),
   );
 
   return (
@@ -38,6 +82,12 @@ function AdminLineManagement({ locale }: { locale: Locale }) {
             value={filter}
             onChange={(e: ChangeEvent<HTMLInputElement>) => setFilter(e.target.value)}
           />
+          {error ? (
+            <p className="text-xs" style={{ color: "var(--danger)" }}>
+              {locale === "zh-CN" ? "产线加载失败：" : locale === "vi-VN" ? "Không tải được chuyền: " : "Line list failed: "}
+              {error}
+            </p>
+          ) : null}
         </div>
       </section>
 

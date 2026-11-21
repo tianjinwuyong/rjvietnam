@@ -174,29 +174,29 @@ export function WmsPdaIqc({ locale }: { locale: Locale }) {
 
   const lookupLot = useCallback(async (lotNo: string) => {
     try {
-      // In production: call GET /wms/material-lots?lotNo=X
-      // Demo: simulate lookup
-      const demoLot: IqcLot = {
-        lot_no: lotNo,
-        material_code: "MAT-IC-001",
-        material_name_zh: "集成电路 IC",
-        supplier_code: "SUP-NEW-01",
-        supplier_name_zh: "新越电子",
-        received_qty: 500,
-        received_at: new Date().toISOString(),
-        iqc_status: "pending",
-        msd_level: "MSD-3",
-        supplier_pass_rate: 0.92,
-        previous_defects: 1,
+      const res = await wmsApi.getMaterialLots({ lotNo, limit: 1 });
+      const found = res.items?.[0];
+      if (!found) {
+        setFeedback({ ok: false, msg: t("pda.lotNotFound", locale) });
+        return;
+      }
+      const resolved: IqcLot = {
+        lot_no: found.lotNo,
+        material_code: found.materialCode,
+        material_name_zh: found.materialCode,
+        supplier_code: found.supplierCode ?? "",
+        supplier_name_zh: found.supplierCode ?? "",
+        received_qty: found.receivedQty ?? found.qty ?? 0,
+        received_at: "",
+        iqc_status: String(found.iqcStatus ?? "pending"),
+        msd_level: "",
+        supplier_pass_rate: 0,
+        previous_defects: 0,
         previous_rejects: 0,
       };
-      setLot(demoLot);
-      savePdaSyncRecord({ lot_no: demoLot.lot_no, material_code: demoLot.material_code, material_name: demoLot.material_name_zh, status: "INSPECTING", result: "pending", operator_name: operatorName.trim() || "IQC测试员", device_id: deviceId, started_at: new Date().toISOString() });
-
-      // Simulate Ornith recommendation
-      const action = demoLot.supplier_pass_rate > 0.9 ? "PASS" : demoLot.supplier_pass_rate > 0.7 ? "HOLD" : "REJECT";
-      const conf = 0.65 + Math.random() * 0.3;
-      setDecision({ action, reason: "Ornith分析建议", confidence: conf, auto: true });
+      setLot(resolved);
+      savePdaSyncRecord({ lot_no: resolved.lot_no, material_code: resolved.material_code, material_name_zh: resolved.material_name_zh, status: "looked_up" } as any);
+      setDecision(null);
       setStep("inspect");
     } catch {
       setFeedback({ ok: false, msg: t("pda.lotNotFound", locale) });

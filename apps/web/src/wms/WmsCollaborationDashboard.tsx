@@ -25,27 +25,7 @@ const deptColors: Record<string, string> = {
   "engineering": "#14b8a6",
 };
 
-const mockCards: Record<string, CollabCard[]> = {
-  urgent: [
-    { id: 1, title: "急料: IC-MCU-STM32 库存不足", department: "warehouse", priority: "urgent", status: "open", timestamp: "2025-06-29 08:30", description: "Line 01 产线急缺 STM32，预计 2 小时内需到料" },
-    { id: 2, title: "IQC 积压: 来料 15 批未检", department: "quality", priority: "urgent", status: "open", timestamp: "2025-06-29 07:45", description: "收货区积压 15 批来料，其中 3 批为急料" },
-    { id: 3, title: "供应商 002 批次异常需处理", department: "purchasing", priority: "urgent", status: "inProgress", timestamp: "2025-06-28 16:00", description: "电阻批次 LOT-20250625-003 阻值偏差" },
-  ],
-  quality: [
-    { id: 4, title: "IQC 标准更新: 电容 AQL 调整", department: "quality", priority: "normal", status: "open", timestamp: "2025-06-28 14:00", description: "陶瓷电容 AQL 从 0.65 调整为 0.4" },
-    { id: 5, title: "MSD 预警: 3 批 IC 即将超期", department: "quality", priority: "urgent", status: "open", timestamp: "2025-06-28 10:00", description: "STM32/FPGA 暴露时间即将超过 MSD-3 限值" },
-  ],
-  expiry: [
-    { id: 6, title: "近效期: 贴片电容 100μF 批次", department: "warehouse", priority: "normal", status: "open", timestamp: "2025-06-28 09:00", description: "LOT-20250115-001 已过期，库存 5000pcs 需处理" },
-    { id: 7, title: "锡膏 SP-LOT-20260610-002 回温完成", department: "warehouse", priority: "normal", status: "resolved", timestamp: "2025-06-28 08:00", description: "已回温完毕，可领用" },
-    { id: 8, title: "FIFO 违规: 电阻批次出库顺序错误", department: "warehouse", priority: "urgent", status: "inProgress", timestamp: "2025-06-27 15:00", description: "LOT-20250625-003 先出，违反 FIFO" },
-  ],
-  tasks: [
-    { id: 9, title: "跨部门盘点: A 库区本周盘点", department: "pmc", priority: "normal", status: "open", timestamp: "2025-06-27 11:00", description: "PMC+仓库+财务三方盘点 A 库区，需协调时间" },
-    { id: 10, title: "产线退料: Line 02 退料 5 项", department: "production", priority: "normal", status: "inProgress", timestamp: "2025-06-27 09:30", description: "5 项多余物料退回仓库" },
-    { id: 11, title: "新供应商导入: SUP-005 审厂安排", department: "purchasing", priority: "normal", status: "open", timestamp: "2025-06-26 14:00", description: "品质+工程+采购三方审厂，需预约" },
-  ],
-};
+const emptyCards: Record<string, CollabCard[]> = { urgent: [], quality: [], expiry: [], tasks: [] };
 
 const statusBadge: Record<CardStatus, { bg: string; label: string }> = {
   open: { bg: "var(--warn)", label: "待处理" },
@@ -54,7 +34,7 @@ const statusBadge: Record<CardStatus, { bg: string; label: string }> = {
 };
 
 export function WmsCollaborationDashboard({ locale }: { locale: Locale }) {
-  const [cards] = useState(mockCards);
+  const [cards] = useState(emptyCards);
 
   const colHeaders = [
     { key: "urgent", icon: Bell, label: t("wms.collaborationBoard", locale) + " — " + t("wms.urgentMark", locale), color: "var(--danger)" },

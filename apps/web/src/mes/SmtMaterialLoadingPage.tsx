@@ -135,7 +135,7 @@ export function SmtMaterialLoadingPage({ locale }: { locale: Locale }) {
     const baselineMinutes = Math.max(1, first.plannedMaterialCount || 1);
     const rateShift = Math.round((baselineMinutes / rate) * 10) / 10;
     let cursor = new Date(first.plannedStartAt).getTime() + idle * 60_000;
-    const next = ordered.map((plan, index) => {
+    const next: DailyPlan[] = ordered.map((plan, index) => {
       const duration = Math.max(15, Math.round((plan.plannedMaterialCount || 1) / rate * 60_000));
       const start = new Date(cursor);
       const finish = new Date(cursor + duration);

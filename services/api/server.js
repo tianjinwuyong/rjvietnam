@@ -52,10 +52,41 @@ import { sqlQuery } from "./src/sqlserver.js";
 import { mysqlQuery, mysqlGetOne, psQuery, psGetOne } from "./src/mysql.js";
 import { TtlCache } from "./src/_shared/cache.js";
 import { neuralBus, neuralBroadcast } from "./src/shared/neural-bus.js";
-import { envelope, listEnvelope, mutateEnvelope, errorEnvelope } from "./src/shared/helpers.js";
+import { envelope, listEnvelope, mutateEnvelope, errorEnvelope, successEnvelope } from "./src/shared/helpers.js";
+import { isRevokedToken, revokedTokens } from "./src/auth/revocation-registry.js";
+import { createAccountStateCache, createLoginThrottle } from "./src/auth/session-tokens.js";
+import { createStationLoginPolicy } from "./src/auth/station-login-policy.js";
+import { registerRjvnIqcRoutes } from "./src/rjvn-iqc.js";
+import { registerRjvnReceiptRoutes } from "./src/rjvn-receipt.js";
+import { registerRjvnInventoryRoutes } from "./src/rjvn-inventory.js";
+import { registerRjvnPickingRoutes } from "./src/rjvn-picking.js";
+import { registerRjvnDocFlowRoutes } from "./src/rjvn-docflow.js";
+import { registerCanonicalDataRoutes } from "./src/rjvn-canonical-api.js";
+// ── OA module (merged from the standalone OA system, parity port) ──
+import { createOaRouter } from "./src/oa/shim.js";
+import { config as oaConfig } from "./src/oa/config/index.js";
+import { registerRoutes as registerOaRoutes } from "./src/oa/routes/index.js";
+
+import { startCron as startOaCron, stopCron as stopOaCron } from "./src/oa/services/cron.js";
+import { bootstrapAdmin as oaBootstrapAdmin } from "./src/oa/services/bootstrap.js";
+import { checkConnection as oaCheckConnection } from "./src/oa/db/index.js";
 import manualLineRouter from "./src/routes/manual-line.js";
 import autoLineRouter from "./src/routes/auto-line.js";
 import manuLineRouter from "./src/routes/manu-line.js";
+import { createStationPassRouter } from "./src/routes/station-pass.js";
+import { createOqcAqlRouter } from "./src/routes/oqc-aql.js";
+import { createMesrjRouter } from "./src/routes/mesrj.js";
+// 旧版 MES-ruijing 站点根路径兼容表（/exec/pass 等 → /mesrj/exec/pass）
+// 旧版 MES-ruijing 根路径 → /api/mesrj/*（307 保留方法/请求体）
+import { MESRJ_API_PREFIX, legacyMesrjTarget } from "./src/mesrj/legacy-paths.js";
+import { createMrbRouter } from "./src/routes/mrb.js";
+import { createMrbExtrasRouter } from "./src/routes/mrb-extra.js";
+import { registerWmsParityRoutes } from "./src/routes/wms-parity.js";
+import { registerWmsGraftRoutes } from "./src/routes/wms-graft.js";
+import { createSupplierDebtRouter, settleDebtOnReceipt } from "./src/routes/supplier-debt-hooks.js";
+import { createSupplierReturnRouter } from "./src/routes/supplier-return.js";
+import { createNoticesRouter } from "./src/routes/notices.js";
+import { createOaIntegrationRouter } from "./src/routes/oa-integration.js";
 import { canonicalLineCode, canonicalStationCode } from "./src/shared/station-identity.js";
 import { evaluateVisualInspection, DEFAULT_POLICY as VISUAL_INSPECTION_POLICY } from "./src/visual-inspection.js";
 import { evaluateProductGate } from "./src/product-gate.js";
@@ -68,6 +99,20 @@ import { askLLMWithFallback } from "../_shared/llm-router.js";
 import { classifySafetyStock, safetyReportTaskKey, WAREHOUSE_INVENTORY_EMPLOYEE_ID, WAREHOUSE_SAFETY_REPORT_RECIPIENTS } from "./src/virtual-employees/warehouse-safety-report.js";
 import { buildPutawayPath, PUTAWAY_RULES, rankPutawayLocations } from "./src/virtual-employees/putaway-recommendation.js";
 import { validateStationConfiguration } from "../../packages/station-config/validate-stations.mjs";
+import { registerMaintenanceRoutes } from "./src/routes/maintenance.js";
+import { registerPmcRoutes } from "./src/routes/pmc.js";
+import { registerQmsRoutes } from "./src/routes/qms.js";
+import { registerLifecycleRoutes } from "./src/routes/lifecycle.js";
+import { registerCountRoutes } from "./src/routes/wms-counting.js";
+import { registerStationOpsRoutes } from "./src/routes/station-ops.js";
+import { registerWmsSmtLoopRoutes } from "./src/routes/wms-smt-loop.js";
+import { registerMasterDataRoutes } from "./src/routes/master-data.js";
+import { registerErpMasterRoutes } from "./src/routes/erp-master.js";
+import { registerVirtualEmployeeRoutes } from "./src/routes/virtual-employees.js";
+import { registerQualityIqcLoopRoutes } from "./src/routes/quality-iqc-loop.js";
+import { registerReportsRoutes } from "./src/routes/reports.js";
+import { registerPdaRoutes } from "./src/routes/pda.js";
+import { registerWmsProductionRoutes } from "./src/routes/wms-production.js";
 import {
   askChat,
   askReceivingLabelVision,
@@ -77,7 +122,7 @@ import {
   askReport,
   health as llmHealth,
 } from "../../integrations/llm/index.js";
-import { createHmac, createHash, randomUUID } from "node:crypto";
+import { createHmac, createHash, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import http from "node:http";
 if(process.env.DEBUG_STARTUP==="1")console.log("startup: imports loaded");
 const api = express.Router();
@@ -107,6 +152,24 @@ for (const method of ["get", "post", "put", "patch", "delete"]) {
     }),
   );
 }
+
+// ═══ Authentication gate (must stay the FIRST registration on the api router) ═══
+// Security finding 3: this used to be registered ~200 route definitions further
+// down the file, so every route declared above it was reachable without a JWT.
+// Registering it before the first route guarantees no api route escapes the gate.
+const DEVICE_OPEN_PATHS = ["/mesrj/DeviceConfig", "/mesrj/StationPass",
+  "/mesrj/MachineData", "/mesrj/Packing"];
+api.use((req, res, next) => {
+  // 设备侧路径（ICT/FCT/贴标机等）只持 X-Api-Key，没有 JWT。这几个前缀下的
+  // 每一个处理器都自己调 requireDeviceKey / 内联 sys_api_key 校验，所以在这里
+  // 放行不会漏鉴权；/mesrj/* 其余路径仍由 mesrj 路由器内的 authenticateJWT 兜底。
+  // (源 legacy 直连 devsrc.py，没有 JWT 这一层；不放开就等于设备全线 401。)
+  if (DEVICE_OPEN_PATHS.some(p => req.path.startsWith(p))) return next();
+  // Assignment lookup is a read-only station handshake; the PDA supplies its
+  // device identity and line in the query before an operator JWT is present.
+  if (req.path === "/dispatch/assignments" && req.method === "GET") return next();
+  return authenticateJWT(req, res, next);
+});
 
 // ═══ Emergency Management System ═══
 // Q11-Q14: 全覆盖应变平台
@@ -842,6 +905,79 @@ if (!JWT_SECRET || JWT_SECRET === "change_me_in_production") {
   throw new Error("JWT_SECRET must be configured with a non-placeholder value before the API can start");
 }
 const JWT_EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
+// ── Session tokens ──────────────────────────────────────────────────────────
+// ONE signer and ONE verifier for every login path, so a hardening applied to
+// the JWT cannot be missing from the second copy of the same call. `jti` exists
+// only so a token can be revoked: /auth/logout used to answer `{revoked:true}`
+// while the token kept working for the rest of its 24 hours.
+//
+// A station-agent login carries no credential today, so it hands out a
+// full-permission session for any username that guesses right. Setting
+// STATION_LOGIN_KEY makes /auth/station-login prove it is a station through
+// `x-station-key`; leaving it unset keeps the pre-credential station agents
+// working and says so loudly at boot.
+const STATION_LOGIN_KEY = String(process.env.STATION_LOGIN_KEY ?? "").trim();
+// Shared with the OA middleware (src/auth/revocation-registry.js): one Set, so a
+// token signed out here is dead for the OA routes in this process too.
+// Two windows, not one. The username key is the account protection and stays
+// tight. The IP key cannot be tight here: `trust proxy` is off, so the nginx
+// front end makes every browser and PDA arrive as one address -- five wrong
+// guesses from one operator would lock the whole site out for 15 minutes. It is
+// only there to stop a spray across many usernames.
+const loginUserThrottle = createLoginThrottle({ windowMs: 15 * 60_000, maxFailures: 5 });
+const loginIpThrottle = createLoginThrottle({ windowMs: 15 * 60_000, maxFailures: 50 });
+const accountStates = createAccountStateCache({
+  lookup: async (userId) => {
+    const { rows } = await authPool.query("SELECT status FROM users WHERE id = $1", [userId]);
+    return rows.length ? rows[0].status : null;
+  },
+});
+
+function issueSessionToken(payload, expiresIn = "24h") {
+  return jwt.sign({ ...payload, jti: randomUUID() }, JWT_SECRET, { algorithm: "HS256", expiresIn });
+}
+
+function decodeSessionToken(token) {
+  // Pinned algorithm: jsonwebtoken would otherwise accept any HMAC variant the
+  // header claims, all verified against the same secret.
+  const payload = jwt.verify(token, JWT_SECRET, { algorithms: ["HS256"] });
+  // One verifier for the whole process, so a revoked token cannot pass a second
+  // copy of this check that forgot the list.
+  if (isRevokedToken(payload)) {
+    const err = new Error("Token was revoked at logout");
+    err.name = "TokenRevokedError";
+    err.code = "TOKEN_REVOKED";
+    throw err;
+  }
+  return payload;
+}
+
+function revokeSessionToken(payload, reason) {
+  if (!payload?.jti) return false;
+  if (!revokedTokens.add(payload.jti, payload.exp)) return false;
+  query(
+    `INSERT INTO auth_revoked_token (jti, user_id, expires_at, reason)
+     VALUES ($1, $2, to_timestamp($3), $4)
+     ON CONFLICT (jti) DO NOTHING`,
+    [payload.jti, payload.userId ?? null, payload.exp, reason],
+  ).catch((err) => console.error(`revoke ${reason}:`, err.message));
+  return true;
+}
+
+// Revocations must survive a restart, and the harness starts its own API
+// process that has to see the same list.
+async function loadRevokedTokens() {
+  try {
+    const { rows } = await query(
+      `SELECT jti, EXTRACT(EPOCH FROM expires_at)::bigint AS exp
+         FROM auth_revoked_token WHERE expires_at > now()`,
+    );
+    for (const row of rows) revokedTokens.add(row.jti, Number(row.exp));
+    if (rows.length) console.log(`[auth] loaded ${rows.length} revoked token(s)`);
+  } catch (err) {
+    console.error("[auth] revoked-token load skipped:", err.message);
+  }
+}
 const MES_SIGNATURE_MODE = String(process.env.MES_SIGNATURE_ENFORCEMENT ?? "enforce").trim().toLowerCase();
 const MES_SIGNATURE_FLAG_UNTIL = String(process.env.MES_SIGNATURE_FLAG_UNTIL ?? "").trim();
 
@@ -948,6 +1084,7 @@ app.use(cors());
 // Station inventory snapshots contain complete 12-board motherboard objects.
 // Keep enough headroom for backlog reconciliation without splitting a snapshot.
 app.use(express.json({ limit: "10mb" }));
+
 const API_DOMAIN_RULES=[
   ["/api/integration","INTEGRATION"],["/api/wms","WMS"],["/api/smt","STATION"],["/api/station","STATION"],["/api/auth","AUTH"],
   ["/pmc","PMC"],["/mes","MES"],["/wms","WMS"],["/hr","HR"],["/finance","FINANCE"],
@@ -3099,6 +3236,20 @@ app.get("/api/pda/events", (req, res) => {
   const heartbeat = setInterval(() => { try { res.write(": heartbeat\n\n"); } catch { clearInterval(heartbeat); neuralBus.delete(sub); } }, 30000);
   req.on("close", () => { clearInterval(heartbeat); neuralBus.delete(sub); });
 });
+
+// ── 认证挂载：这些根路径路由注册在全局 app.use(authenticateJWT)（约 34071 行）之前，
+//    原本依赖全局门禁，实际 req.user 为空 —— 带合法 JWT 也返回 401。
+//    这里按前缀显式补挂，不移动全局门禁、不改公开路径白名单。
+//    /wms/receiving 下的 live-state / label-ai / po-queue 已在 authenticateJWT 白名单内。
+app.use("/wms/receiving", authenticateJWT);
+app.use("/wms/pda-devices", authenticateJWT);
+// /api/wms/pda-devices 同样在全局门禁之前注册（检查脚本按 /api 前缀跳过，但实际同样 401）。
+app.use("/api/wms/pda-devices", authenticateJWT);
+app.use("/hr/grievance-cases", authenticateJWT);
+app.use("/quality/iqc-defect-cases", authenticateJWT);
+app.use("/quality/iqc-mrb-tasks", authenticateJWT);
+app.use("/quality/iqc-scrap-finance-approvals", authenticateJWT);
+app.use("/quality/iqc-reinspections", authenticateJWT);
 
 app.get("/wms/receiving/live-state", (req, res) => {
   res.json({ ok: true, data: wmsReceivingLiveDraft });
@@ -5911,342 +6062,20 @@ app.post("/api/station/sync/conflicts/:id/resolve", async (req, res) => {
 // Explicit operator command. Browsers may request a lifecycle transition but
 // never submit replacement bucket arrays; MES reads and mutates authoritative
 // server state by SN/batch identity.
-app.post("/api/station/operator-command", async (req, res) => {
-  const {
-    action, sourceStationCode, destinationStationCode,
-    batchId, sn, destinationBucket = "confirmed_ng", disposition,
-  } = req.body ?? {};
-  if (!action || !sourceStationCode || (!batchId && !sn)) {
-    return res.status(400).json(errorEnvelope("VALIDATION", "action, sourceStationCode and batchId/sn required"));
-  }
-  try {
-    const source = await readStationBuckets(sourceStationCode);
-    const matches = item => batchId ? String(item.batchId || "") === String(batchId) : item.sn === sn;
-    if (action === "RELEASE_CONFIRMED") {
-      const released = source.confirmed_ng.filter(matches);
-      source.confirmed_ng = source.confirmed_ng.filter(item => !matches(item));
-      await commitStationBucket(sourceStationCode, "confirmed_ng", source.confirmed_ng);
-      return res.json({ ok: true, action, affected: released.length });
-    }
-    if (action === "ACCEPT_TRANSFER" && destinationStationCode) {
-      const destination = await readStationBuckets(destinationStationCode);
-      const incoming = destination.pending_ng.filter(item => matches(item) && item.transferStatus === "WAITING_RECEIPT");
-      if (!incoming.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "waiting transfer not found"));
-      const acceptedAt = Date.now();
-      await stationHandoverReady;
-      await query(`UPDATE station_handover_transfers SET status='COMPLETED',received_at=NOW(),accepted_by=$4
-        WHERE batch_id=$1 AND source_station=$2 AND destination_station=$3 AND status='WAITING_RECEIPT'`,
-        [String(batchId || ""), sourceStationCode, destinationStationCode, req.body.acceptedBy || destinationStationCode]);
-      destination.pending_ng = destination.pending_ng.map(item => matches(item)
-        ? { ...item, transferStatus: "RECEIVED", receivedAt: acceptedAt, acceptedBy: req.body.acceptedBy || destinationStationCode }
-        : item);
-      source.pending_ng = source.pending_ng.filter(item => !matches(item));
-      source.confirmed_ng = source.confirmed_ng.filter(item => !matches(item));
-      source.pass = source.pass.filter(item => !matches(item));
-      await commitStationBucket(destinationStationCode, "pending_ng", destination.pending_ng);
-      await commitStationBucket(destinationStationCode, "process", [{ stage: "TRANSFER_RECEIVED", batchId, sourceStationCode, acceptedAt }]);
-      await commitStationBucket(sourceStationCode, "pending_ng", source.pending_ng);
-      await commitStationBucket(sourceStationCode, "confirmed_ng", source.confirmed_ng);
-      await commitStationBucket(sourceStationCode, "pass", source.pass);
-      await commitStationBucket(sourceStationCode, "process", [{ stage: "HANDOVER_COMPLETED", batchId, destinationStationCode, acceptedAt }]);
-      return res.json({ ok: true, action, batchId, accepted: incoming.length, acceptedAt });
-    }
-    if (action !== "MIGRATE_BATCH" || !destinationStationCode) {
-      return res.status(400).json(errorEnvelope("VALIDATION", "unsupported operator command"));
-    }
-    const destination = await readStationBuckets(destinationStationCode);
-    const ngUnits = source.confirmed_ng.filter(matches);
-    const passUnits = source.pass.filter(matches);
-    source.confirmed_ng = source.confirmed_ng.filter(item => !matches(item));
-    source.pass = source.pass.filter(item => !matches(item));
-    let routedNg = ngUnits.map(item => ({
-      ...item,
-      disposition: disposition || item.disposition,
-      originStationCode: item.originStationCode || sourceStationCode,
-      returnStationCode: sourceStationCode,
-      isConfirmed: destinationBucket === "confirmed_ng",
-      time: Date.now(),
-    }));
-    const requiresTransferReceipt = Boolean(destinationStationCode);
-    const requiresReturnReceipt = disposition === "return_source" && sourceStationCode === "manu_rework";
-    if (requiresTransferReceipt) {
-      routedNg = routedNg.map(item => ({ ...item,
-        transferStatus: "WAITING_RECEIPT", sentAt: Date.now(),
-        sourceStationCode, destinationStationCode,
-      }));
-    }
-    if (destinationStationCode === "manu_depanel") {
-      const sourceKind = sourceStationCode === "manu_ict" ? "ICT" : "FCT";
-      const sameMotherboard = destination[destinationBucket].filter(item =>
-        String(item.batchId || item.sn) === String(batchId || sn));
-      const otherSourceExists = sameMotherboard.some(item => sourceKind === "ICT"
-        ? ["FCT_ONLY_NG", "ICT_FCT_NG"].includes(item.defectCode)
-        : ["ICT_ONLY_NG", "ICT_FCT_NG"].includes(item.defectCode));
-      const defectCode = otherSourceExists ? "ICT_FCT_NG" : `${sourceKind}_ONLY_NG`;
-      const description = otherSourceExists
-        ? "NG at both ICT and FCT → Depanel ICT+FCT NG BOX"
-        : `${sourceKind} Confirmed NG → Depanel ${sourceKind} NG BOX`;
-      if (otherSourceExists) {
-        destination[destinationBucket] = destination[destinationBucket].map(item =>
-          String(item.batchId || item.sn) === String(batchId || sn)
-            ? { ...item, defectCode: "ICT_FCT_NG", defectDescription: description }
-            : item);
-      }
-      routedNg = routedNg.map(item => ({ ...item, defectCode, defectDescription: description,
-        sourceStationCode, destinationStationCode }));
-    }
-    destination[destinationBucket] = destination[destinationBucket].filter(item => !routedNg.some(row => row.sn === item.sn));
-    destination[destinationBucket].push(...routedNg);
-    destination.pass = destination.pass.filter(item => !passUnits.some(row => row.sn === item.sn));
-    destination.pass.push(...passUnits.map(item => ({
-      ...item, stationCode: destinationStationCode,
-      sourceStationCode, destinationStationCode, time: Date.now(),
-      ...(requiresTransferReceipt ? { transferStatus: "WAITING_RECEIPT", sentAt: Date.now() } : {}),
-    })));
-    if (requiresTransferReceipt) {
-      const members = [...routedNg, ...passUnits];
-      const transferBatchId = String(batchId || sn || "");
-      await stationHandoverReady;
-      await query(`INSERT INTO station_handover_transfers
-        (batch_id,source_station,destination_station,destination_type,motherboard,member_count,status,sent_at,received_at,accepted_by,alarmed_at)
-        VALUES ($1,$2,$3,$4,$5,$6,'WAITING_RECEIPT',NOW(),NULL,NULL,NULL)
-        ON CONFLICT(batch_id,source_station,destination_station) DO UPDATE SET
-          destination_type=EXCLUDED.destination_type,motherboard=EXCLUDED.motherboard,member_count=EXCLUDED.member_count,
-          status='WAITING_RECEIPT',sent_at=NOW(),received_at=NULL,accepted_by=NULL,alarmed_at=NULL`,
-        [transferBatchId, sourceStationCode, destinationStationCode,
-         String(disposition || "NG_ROUTE").toUpperCase(),
-         JSON.stringify({ batchId: transferBatchId, subBoards: members }), members.length]);
-      await commitStationBucket(sourceStationCode, "process", [{ stage: requiresReturnReceipt ? "REPAIR_RETURN_WAITING_RECEIPT" : "NG_ROUTE_WAITING_RECEIPT",
-        batchId: transferBatchId, destinationStationCode, memberCount: members.length, updatedAt: Date.now() }]);
-      await commitStationBucket(destinationStationCode, "process", [{ stage: requiresReturnReceipt ? "REPAIR_RETURN_INCOMING" : "NG_TRANSFER_INCOMING",
-        batchId: transferBatchId, sourceStationCode, memberCount: members.length, updatedAt: Date.now() }]);
-      neuralBroadcast({ from: "mes_server", to: "*", type: requiresReturnReceipt ? "REPAIR_RETURN_WAITING_RECEIPT" : "TRANSFER_WAITING_RECEIPT",
-        stationCode: sourceStationCode, payload: { batchId: transferBatchId, sourceStationCode,
-          destinationStationCode, memberCount: members.length }, priority: "critical" });
-    }
-    await commitStationBucket(sourceStationCode, "confirmed_ng", source.confirmed_ng);
-    await commitStationBucket(sourceStationCode, "pass", source.pass);
-    await commitStationBucket(destinationStationCode, destinationBucket, destination[destinationBucket]);
-    await commitStationBucket(destinationStationCode, "pass", destination.pass);
-    return res.json({ ok: true, action, ngMoved: routedNg.length, passMoved: passUnits.length });
-  } catch (error) {
-    res.status(500).json(errorEnvelope("COMMAND_FAILED", error.message));
-  }
-});
+// `authenticateJWT` is declared at ~13679, i.e. AFTER this line, and it is a `const`:
+// passing the identifier here would evaluate it inside its temporal dead zone and hand
+// Express `undefined`, which it rejects with "argument handler must be a function" at
+// load. Forwarding through a function defers the lookup to request time, by which point
+// the binding is initialised. Everything else below is declared above this point.
+const stationOpsDeps = {
+  query, errorEnvelope, neuralBroadcast, readStationBuckets, commitStationBucket,
+  projectStationProductionEvent, recordSnJourney, authenticateJWT: (req, res, next) => authenticateJWT(req, res, next),
+  stationHandoverReady, stationHandoverAlarmReady, passShortageReady, passReturnReady,
+  stationRetestReady, stationAgingHistoryReady, packagingBoxReady, packagingBoxAuditReady,
+  snJourneyReady, boxJourneyReady, palletBindingReady, qrWorkOrderReady,
+};
+registerStationOpsRoutes(app, stationOpsDeps);
 
-app.post("/api/station/assembly-ate/test-position",async(req,res)=>{
-  try{
-    const side=String(req.body?.side||'').trim().toUpperCase();
-    const operator=String(req.body?.operator||'OPERATOR').trim();
-    if(!['L','R'].includes(side))return res.status(400).json(errorEnvelope('INVALID_ATE_BANK','side must be L or R'));
-    const channels=Array.from({length:8},(_,index)=>`${side}${index+1}`);
-    const requestedAt=Date.now();
-    await commitStationBucket('manu_assem_ate','process',[{stage:'BANK_TEST_REQUESTED',side,channels,
-      operator,requestedAt,awaitingExcelResults:true,independentProducts:true}]);
-    neuralBroadcast({from:'mes_server',to:'manu_assem_ate',type:'ASSEMBLY_ATE_TEST_BANK_REQUESTED',
-      priority:'critical',stationCode:'manu_assem_ate',payload:{side,channels,operator,requestedAt,
-        expectedExcelChannels:channels,independentProducts:true}});
-    const testTime=new Date(requestedAt).toISOString();
-    const runId=`SIM-${requestedAt}`;
-    const results=[];
-    for(let index=0;index<channels.length;index+=1){
-      const channel=channels[index];
-      const sn=`ASM${String(requestedAt).slice(-8)}${side}${index+1}`;
-      const result=index===5?'FAIL':'PASS';
-      const row={channel,sn,result,testTime,errorCode:result==='FAIL'?'ATE_SIM_NG':'0',
-        testDurationSeconds:Number((1.2+index*0.17).toFixed(2)),runId,independentProduct:true,simulation:true};
-      results.push(row);
-      if(result==='PASS')await projectStationProductionEvent(`${runId}:${channel}`,'manu_assem_ate','SN_SCAN',{
-        ...row,batchId:sn,eventType:'assembly_ate_bank_test'});
-      else await projectStationProductionEvent(`${runId}:${channel}`,'manu_assem_ate','NG_DEFECT',{
-        ...row,batchId:sn,overallResult:'FAIL',subBoards:[{...row,slot:index+1}],eventType:'assembly_ate_bank_test'});
-    }
-    neuralBroadcast({from:'manu_assem_ate',to:'*',type:'ASSEMBLY_ATE_BANK_TEST_COMPLETED',priority:'info',
-      stationCode:'manu_assem_ate',payload:{side,runId,testTime,results,passCount:7,failCount:1}});
-    res.json({ok:true,side,channels,status:'COMPLETED',requestedAt,testTime,runId,results,passCount:7,failCount:1});
-  }catch(error){res.status(500).json(errorEnvelope('ATE_POSITION_TEST_REQUEST_FAILED',error.message));}
-});
-
-app.get("/api/station/handovers", async (req, res) => {
-  try {
-    await stationHandoverAlarmReady;
-    const values = [];
-    const clauses = [];
-    if (req.query.stationCode) {
-      values.push(String(req.query.stationCode));
-      clauses.push(`(source_station=$${values.length} OR destination_station=$${values.length})`);
-    }
-    if (req.query.status) {
-      values.push(String(req.query.status));
-      clauses.push(`status=$${values.length}`);
-    }
-    const result = await query(`SELECT h.transfer_id AS "transferId",h.batch_id AS "batchId",
-      h.source_station AS "sourceStation",h.destination_station AS "destinationStation",
-      h.destination_type AS "destinationType",h.member_count AS "memberCount",h.status,
-      h.sent_at AS "sentAt",h.received_at AS "receivedAt",h.accepted_by AS "acceptedBy",h.alarmed_at AS "alarmedAt",
-      ack.acknowledged_at AS "alarmAcknowledgedAt",ack.acknowledged_by AS "alarmAcknowledgedBy",h.motherboard
-      FROM station_handover_transfers h LEFT JOIN station_handover_alarm_ack ack ON ack.transfer_id=h.transfer_id
-      ${clauses.length ? `WHERE ${clauses.map(clause=>clause.replaceAll('source_station','h.source_station').replaceAll('destination_station','h.destination_station').replaceAll('status','h.status')).join(" AND ")}` : ""}
-      ORDER BY sent_at DESC LIMIT 500`, values);
-    res.json({ ok: true, items: result.rows });
-  } catch (error) {
-    res.status(500).json(errorEnvelope("HANDOVER_QUERY_FAILED", error.message));
-  }
-});
-
-app.get('/api/station/pass-shortages',async(req,res)=>{
-  try{await passShortageReady;const status=String(req.query.status||'').trim();const params=[];
-    const where=status?(params.push(status),`WHERE status=$1`):'';
-    const result=await query(`SELECT shortage_id AS "shortageId",source_station AS "sourceStation",
-      destination_station AS "destinationStation",batch_id AS "batchId",expected_count AS "expectedCount",
-      actual_count AS "actualCount",missing_sns AS "missingSns",reason_code AS "reasonCode",reason_detail AS "reasonDetail",
-      status,reported_by AS "reportedBy",detected_at AS "detectedAt",explained_at AS "explainedAt",
-      resolved_at AS "resolvedAt",alarm_acknowledged_at AS "alarmAcknowledgedAt",
-      alarm_acknowledged_by AS "alarmAcknowledgedBy" FROM station_pass_shortages ${where}
-      ORDER BY detected_at DESC LIMIT 1000`,params);res.json({ok:true,items:result.rows});
-  }catch(error){res.status(500).json(errorEnvelope('PASS_SHORTAGE_QUERY_FAILED',error.message));}
-});
-app.get('/api/station/retest/status',async(req,res)=>{try{await stationRetestReady;const station=String(req.query.stationCode||''),sn=String(req.query.sn||'').toUpperCase();if(!station||!sn)return res.status(400).json(errorEnvelope('VALIDATION','stationCode and sn required'));const q=await query(`SELECT station_code AS "stationCode",execution_station AS "executionStation",sn,batch_id AS "batchId",first_failed_at AS "firstFailedAt",attempts_used AS "attemptsUsed",max_attempts AS "maxAttempts",armed,armed_at AS "armedAt",permission_by AS "permissionBy",last_result AS "lastResult" FROM station_retest_control WHERE (station_code=$1 OR ($1='manu_agingcab' AND station_code IN('manu_hivolt_ate','manu_package_ate'))) AND UPPER(sn)=UPPER($2) ORDER BY updated_at DESC LIMIT 1`,[station,sn]);res.json({ok:true,item:q.rows[0]||null});}catch(error){res.status(500).json(errorEnvelope('RETEST_STATUS_FAILED',error.message));}});
-
-app.get('/api/station/aging-records',async(req,res)=>{try{
-  await stationAgingHistoryReady;
-  const sn=String(req.query.sn||'').trim().toUpperCase();
-  const limit=Math.min(Math.max(Number(req.query.limit)||200,1),1000);
-  const current=await query(`SELECT sn,batch_id AS "batchId",station_code AS "stationCode",
-    aging_started_at AS "agingStartedAt",aging_deadline_at AS "agingDeadlineAt",latest_result AS "latestResult",
-    status,ng_detected_at AS "ngDetectedAt",completed_at AS "completedAt",updated_at AS "updatedAt"
-    FROM station_aging_control WHERE ($1='' OR UPPER(sn)=UPPER($1)) ORDER BY updated_at DESC LIMIT $2`,[sn,limit]);
-  const events=await query(`SELECT aging_event_id AS "eventId",sn,batch_id AS "batchId",event_type AS "eventType",
-    result,station_code AS "stationCode",source_type AS "sourceType",aging_started_at AS "agingStartedAt",
-    aging_deadline_at AS "agingDeadlineAt",event_at AS "eventAt",destination_station AS "destinationStation",detail
-    FROM station_aging_events WHERE ($1='' OR UPPER(sn)=UPPER($1)) ORDER BY event_at DESC,aging_event_id DESC LIMIT $2`,[sn,limit]);
-  res.json({ok:true,current:current.rows,events:events.rows});
-}catch(error){res.status(500).json(errorEnvelope('AGING_RECORDS_FAILED',error.message));}});
-app.post('/api/station/retest/mode',async(req,res)=>{try{await stationRetestReady;const p=req.body||{},station=String(p.stationCode||''),actor=String(p.actor||'OPERATOR');if(!station)return res.status(400).json(errorEnvelope('VALIDATION','stationCode required'));const oneShot=Boolean(p.oneShot);if(Boolean(p.enabled)&&!oneShot)return res.status(403).json(errorEnvelope('MES_POLICY_REQUIRED','retest limits are configured in MES; unlimited mode is not permitted'));await query(`INSERT INTO station_retest_mode(station_code,enabled,changed_at,changed_by) VALUES($1,FALSE,NOW(),$2) ON CONFLICT(station_code) DO UPDATE SET enabled=FALSE,changed_at=excluded.changed_at,changed_by=excluded.changed_by`,[station,actor]);await query(`INSERT INTO station_retest_audit(station_code,sn,action,actor,detail) VALUES($1,'*',$2,$3,$4)`,[station,oneShot?'RETEST_REQUESTED':'RETEST_MODE_DISABLED',actor,JSON.stringify({oneShot,source:'MES_POLICY'})]);res.json({ok:true,stationCode:station,enabled:false,oneShot});}catch(error){res.status(500).json(errorEnvelope('RETEST_MODE_FAILED',error.message));}});
-app.get('/api/station/retest/mode',async(req,res)=>{try{await stationRetestReady;const station=String(req.query.stationCode||'');if(!station)return res.status(400).json(errorEnvelope('VALIDATION','stationCode required'));const row=(await query(`SELECT station_code AS "stationCode",enabled,changed_at AS "changedAt",changed_by AS "changedBy" FROM station_retest_mode WHERE station_code=$1`,[station])).rows[0];res.json({ok:true,item:row||{stationCode:station,enabled:false}});}catch(error){res.status(500).json(errorEnvelope('RETEST_MODE_FAILED',error.message));}});
-app.post('/api/station/retest/arm',async(req,res)=>{try{await stationRetestReady;const p=req.body||{};const station=String(p.stationCode||''),sn=String(p.sn||'').toUpperCase(),actor=String(p.actor||'OPERATOR');if(!station||!sn)return res.status(400).json(errorEnvelope('VALIDATION','stationCode and sn required'));
-  const unlimitedMode=false;
-  const specialOrigins=['manu_hivolt_ate','manu_package_ate'];
-  let configuredLimit=specialOrigins.includes(station)?3:2;
-  try { const published=(await query(`SELECT configuration FROM mes_route_configurations WHERE status='PUBLISHED' LIMIT 1`)).rows[0]?.configuration; const policy=(published?.ngPolicies||[]).find((item)=>Array.isArray(item.appliesTo)&&item.appliesTo.includes(station)); if(policy?.action?.retestLimit!==undefined) configuredLimit=Math.max(0,Number(policy.action.retestLimit)||0); } catch (_) {}
-  if(station!=='manu_agingcab')await query(`INSERT INTO station_retest_control(station_code,sn,batch_id,first_failed_at,max_attempts) VALUES($1,$2,$3,COALESCE($4::timestamptz,NOW()),$5) ON CONFLICT(station_code,sn) DO NOTHING`,[station,sn,p.batchId||null,p.firstFailedAt||null,configuredLimit]);
-  const state=(await query(`SELECT *,NOW()-first_failed_at AS age FROM station_retest_control WHERE UPPER(sn)=UPPER($2)
-    AND (station_code=$1 OR ($1='manu_agingcab' AND station_code=ANY($3::text[]))) ORDER BY updated_at DESC LIMIT 1`,[station,sn,specialOrigins])).rows[0];
-  if(!state)return res.status(409).json(errorEnvelope('RETEST_SOURCE_NOT_FOUND','no high-voltage/package ATE retest record for this SN'));
-  if(!unlimitedMode&&specialOrigins.includes(state.station_code)&&state.attempts_used>=1&&station!=='manu_agingcab')return res.status(409).json({ok:false,code:'AGING_CAB_RETEST_REQUIRED',destinationStation:'manu_agingcab',nextAttempt:state.attempts_used+1});
-  if(!unlimitedMode&&specialOrigins.includes(state.station_code)&&state.attempts_used<1&&station==='manu_agingcab')return res.status(409).json({ok:false,code:'FIRST_RETEST_REQUIRED_AT_ORIGIN',originStation:state.station_code});
-  if(!unlimitedMode&&state.attempts_used>=state.max_attempts)return res.status(409).json({ok:false,code:'NO_RETEST_CHANCE',remaining:0,destinationRequired:true});
-  const overdue=Date.now()-new Date(state.first_failed_at).getTime()>2*60*60*1000;if(!unlimitedMode&&overdue&&!p.permissionBy)return res.status(403).json({ok:false,code:'RETEST_PERMISSION_REQUIRED',overdue:true,remaining:state.max_attempts-state.attempts_used});
-  const executionStation=specialOrigins.includes(state.station_code)&&state.attempts_used>=1?'manu_agingcab':state.station_code;
-  const armed=await query(`UPDATE station_retest_control SET armed=TRUE,execution_station=$3,armed_at=NOW(),armed_by=$4,permission_by=COALESCE($5,permission_by),permission_reason=COALESCE($6,permission_reason),updated_at=NOW() WHERE station_code=$1 AND sn=$2 RETURNING attempts_used,max_attempts,batch_id`,[state.station_code,sn,executionStation,actor,p.permissionBy||null,p.permissionReason||null]);const attempt=armed.rows[0].attempts_used+1;
-  await query(`INSERT INTO station_retest_audit(station_code,sn,batch_id,action,attempt_no,actor,detail) VALUES($1,$2,$3,'ARMED',$4,$5,$6)`,[state.station_code,sn,armed.rows[0].batch_id,attempt,actor,JSON.stringify({overdue,permissionBy:p.permissionBy||null,executionStation,unlimitedMode})]);res.json({ok:true,armed:true,originStation:state.station_code,executionStation,attempt,unlimitedMode,remaining:unlimitedMode?null:Math.max(0,armed.rows[0].max_attempts-attempt)});
- }catch(error){res.status(500).json(errorEnvelope('RETEST_ARM_FAILED',error.message));}});
-app.post('/api/station/retest/complete',async(req,res)=>{try{await stationRetestReady;const p=req.body||{},station=String(p.stationCode||''),sn=String(p.sn||'').toUpperCase(),result=String(p.result||'REVIEWED').toUpperCase();const done=await query(`UPDATE station_retest_control SET attempts_used=attempts_used+1,armed=FALSE,armed_at=NULL,last_result=$3,last_completed_at=NOW(),updated_at=NOW() WHERE (station_code=$1 OR execution_station=$1) AND sn=$2 AND armed=TRUE RETURNING station_code,attempts_used,max_attempts,batch_id`,[station,sn,result]);if(!done.rows.length)return res.status(409).json(errorEnvelope('RETEST_NOT_ARMED','press retest before scan/test'));const row=done.rows[0];await query(`INSERT INTO station_retest_audit(station_code,sn,batch_id,action,attempt_no,actor,result,detail) VALUES($1,$2,$3,'COMPLETED',$4,$5,$6,$7)`,[row.station_code,sn,row.batch_id,row.attempts_used,p.actor||'OPERATOR',result,JSON.stringify({...p.detail,executionStation:station})]);const confirmedNg=result==='FAIL'&&row.attempts_used>=row.max_attempts;res.json({ok:true,originStation:row.station_code,executionStation:station,attemptsUsed:row.attempts_used,remaining:row.max_attempts-row.attempts_used,confirmedNg,maintenanceAllowed:confirmedNg});}catch(error){res.status(500).json(errorEnvelope('RETEST_COMPLETE_FAILED',error.message));}});
-app.post('/api/station/pass-shortages',async(req,res)=>{
-  try{await passShortageReady;const p=req.body||{};const expected=Number(p.expectedCount||0),actual=Number(p.actualCount||0);
-    if(!p.sourceStation||!p.destinationStation||expected<=actual)return res.status(400).json(errorEnvelope('VALIDATION','sourceStation, destinationStation and expectedCount > actualCount required'));
-    const created=await query(`INSERT INTO station_pass_shortages(source_station,destination_station,batch_id,expected_count,actual_count,missing_sns,reported_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING shortage_id AS "shortageId"`,[p.sourceStation,p.destinationStation,p.batchId||null,expected,actual,JSON.stringify(p.missingSns||[]),p.reportedBy||null]);
-    const payload={shortageId:created.rows[0].shortageId,batchId:p.batchId,sourceStation:p.sourceStation,destinationStation:p.destinationStation,
-      expectedCount:expected,actualCount:actual,shortageCount:expected-actual,missingSns:p.missingSns||[]};
-    neuralBroadcast({from:'mes_server',to:'*',type:'PASS_SHORTAGE_ALARM',priority:'critical',stationCode:p.destinationStation,payload});
-    res.status(201).json({ok:true,item:payload});
-  }catch(error){res.status(500).json(errorEnvelope('PASS_SHORTAGE_CREATE_FAILED',error.message));}
-});
-app.post('/api/station/pass-shortages/:id/explain',async(req,res)=>{
-  try{await passShortageReady;const reasonCode=String(req.body?.reasonCode||'');const allowed=['TEST_USE','IN_TRANSFER','TEMP_STORAGE','REPAIR_QUALITY_HOLD','SCRAP_PENDING','OTHER'];
-    if(!allowed.includes(reasonCode)||!String(req.body?.reasonDetail||'').trim())return res.status(400).json(errorEnvelope('VALIDATION','valid reasonCode and reasonDetail required'));
-    const result=await query(`UPDATE station_pass_shortages SET reason_code=$2,reason_detail=$3,reported_by=$4,
-      status='EXPLAINED',explained_at=NOW() WHERE shortage_id=$1 AND status IN('OPEN','EXPLAINED') RETURNING shortage_id`,
-      [req.params.id,reasonCode,String(req.body.reasonDetail).trim(),req.body.reportedBy||'MES']);
-    if(!result.rows.length)return res.status(409).json(errorEnvelope('INVALID_STATE','shortage is already resolved'));
-    res.json({ok:true});
-  }catch(error){res.status(500).json(errorEnvelope('PASS_SHORTAGE_EXPLAIN_FAILED',error.message));}
-});
-app.post('/api/station/pass-shortages/:id/acknowledge-alarm',async(req,res)=>{
-  try{await passShortageReady;const updated=await query(`UPDATE station_pass_shortages SET alarm_acknowledged_at=NOW(),alarm_acknowledged_by=$2
-    WHERE shortage_id=$1 AND status<>'RESOLVED' RETURNING destination_station`,[req.params.id,req.body?.actor||'MES_MANUAL_RELEASE']);
-    const stationCode=updated.rows[0]?.destination_station;neuralBroadcast({from:'mes_server',to:'*',type:'PASS_SHORTAGE_ALARM_RELEASE',priority:'info',stationCode,payload:{shortageId:req.params.id,stationCode,stillOpen:true}});res.json({ok:true});
-  }catch(error){res.status(500).json(errorEnvelope('PASS_SHORTAGE_ACK_FAILED',error.message));}
-});
-app.post('/api/station/pass-shortages/:id/resolve',async(req,res)=>{
-  try{await passShortageReady;const result=await query(`UPDATE station_pass_shortages SET status='RESOLVED',resolved_at=NOW()
-    WHERE shortage_id=$1 AND reason_code IS NOT NULL AND status<>'RESOLVED' RETURNING shortage_id`,[req.params.id]);
-    if(!result.rows.length)return res.status(409).json(errorEnvelope('REASON_REQUIRED','explain the shortage before resolution'));res.json({ok:true});
-  }catch(error){res.status(500).json(errorEnvelope('PASS_SHORTAGE_RESOLVE_FAILED',error.message));}
-});
-app.get('/api/station/pass-returns',async(_req,res)=>{try{await passReturnReady;const r=await query(`SELECT return_id AS "returnId",shortage_id AS "shortageId",source_station AS "sourceStation",destination_station AS "destinationStation",batch_id AS "batchId",sns,quantity,reason,status,requested_by AS "requestedBy",requested_at AS "requestedAt",approved_by AS "approvedBy",approved_at AS "approvedAt",received_at AS "receivedAt",received_by AS "receivedBy" FROM station_pass_return_requests ORDER BY requested_at DESC LIMIT 1000`);res.json({ok:true,items:r.rows});}catch(error){res.status(500).json(errorEnvelope('PASS_RETURN_QUERY_FAILED',error.message));}});
-app.get('/api/station/packaging-boxes',async(req,res)=>{try{await packagingBoxReady;const search=String(req.query.search||'').trim();const params=search?[`%${search}%`]:[];const where=search?'WHERE container_id ILIKE $1 OR work_order_code ILIKE $1 OR items::text ILIKE $1':'';const r=await query(`SELECT container_id AS "containerId",work_order_code AS "workOrderCode",station_code AS "stationCode",capacity,current_count AS "currentCount",status,items,created_at AS "createdAt",updated_at AS "updatedAt",sealed_at AS "sealedAt" FROM station_packaging_boxes ${where} ORDER BY updated_at DESC LIMIT 1000`,params);res.json({ok:true,items:r.rows});}catch(error){res.status(500).json(errorEnvelope('PACKAGING_BOX_QUERY_FAILED',error.message));}});
-app.get('/api/station/packaging-box-audit',async(req,res)=>{try{await packagingBoxAuditReady;const container=String(req.query.containerId||'').trim().toUpperCase(),sn=String(req.query.sn||'').trim().toUpperCase();const r=await query(`SELECT audit_id AS "auditId",container_id AS "containerId",product_sn AS "productSn",action,actor,detail,created_at AS "createdAt" FROM station_packaging_box_audit WHERE ($1='' OR UPPER(container_id)=UPPER($1)) AND ($2='' OR UPPER(product_sn)=UPPER($2)) ORDER BY created_at DESC LIMIT 2000`,[container,sn]);res.json({ok:true,items:r.rows});}catch(error){res.status(500).json(errorEnvelope('PACKAGING_AUDIT_QUERY_FAILED',error.message));}});
-// SN行程查询 API
-app.get('/api/journey/sn/:sn',async(req,res)=>{try{await snJourneyReady;const sn=String(req.params.sn||'').trim().toUpperCase();const [events,defects,repairs]=await Promise.all([query(`SELECT journey_id AS "journeyId",sn,batch_id AS "batchId",work_order_code AS "workOrderCode",event_type AS "eventType",event_stage AS "eventStage",station_code AS "stationCode",station_name AS "stationName",result,defect_code AS "defectCode",defect_description AS "defectDescription",operator,actor,detail,event_at AS "eventAt" FROM sn_journey_events WHERE UPPER(sn)=UPPER($1) ORDER BY event_at ASC`,[sn]),query(`SELECT id AS "ngDefectId",sn,station_code AS "stationCode",defect_code AS "defectCode",result,repair_status AS "repairStatus",operator,created_at AS "createdAt" FROM ng_defect_records WHERE UPPER(sn)=UPPER($1) ORDER BY created_at ASC`,[sn]),query(`SELECT repair_work_order_id AS "repairWorkOrderId",work_order_no AS "workOrderNo",batch_id AS "batchId",ng_sn AS "ngSn",source_station AS "sourceStation",status,repair_result AS "repairResult",repair_operator AS "repairOperator",repair_started_at AS "repairStartedAt",repair_completed_at AS "repairCompletedAt",created_at AS "createdAt" FROM station_repair_work_orders WHERE UPPER(ng_sn)=UPPER($1) ORDER BY created_at ASC`,[sn])]);res.json({ok:true,sn,pastEvents:events.rows,ngDefectRecords:defects.rows,repairWorkOrders:repairs.rows});}catch(error){res.status(500).json(errorEnvelope('SN_JOURNEY_QUERY_FAILED',error.message));}});
-// SN行程列表查询
-app.get('/api/journey/sns',async(req,res)=>{try{await snJourneyReady;const wo=String(req.query.workOrderCode||'').trim();const stage=String(req.query.stage||'').trim();const status=String(req.query.status||'').trim();const limit=Math.min(Number(req.query.limit||100),500);let params=[],where=['1=1'];if(wo){params.push(wo);where.push(`work_order_code=$${params.length}`);}if(stage){params.push(stage);where.push(`event_stage=$${params.length}`);}if(status){params.push(status);where.push(`(SELECT journey_status FROM sn_journey_view WHERE sn=sn_journey_events.sn LIMIT 1)=$${params.length}`);}const r=await query(`SELECT DISTINCT ON(sn) sn,batch_id AS "batchId",work_order_code AS "workOrderCode",(SELECT journey_status FROM sn_journey_view WHERE sn=sn_journey_events.sn LIMIT 1) AS "journeyStatus",(SELECT event_type FROM sn_journey_events e2 WHERE e2.sn=sn_journey_events.sn ORDER BY event_at DESC LIMIT 1) AS "lastEvent",(SELECT event_at FROM sn_journey_events e3 WHERE e3.sn=sn_journey_events.sn ORDER BY event_at DESC LIMIT 1) AS "lastEventAt" FROM sn_journey_events WHERE ${where.join(' AND ')} ORDER BY sn,event_at DESC`,params);res.json({ok:true,items:r.rows.slice(0,limit)});}catch(error){res.status(500).json(errorEnvelope('SN_JOURNEY_LIST_FAILED',error.message));}});
-
-// SN进站报到 — 记录LINE_ENTRY事件到sn_journey_events，供进出平衡分析用
-app.post('/api/station/:code/arrive',async(req,res)=>{try{const stationCode=String(req.params.code||'').trim().toLowerCase();const{sn,workOrderCode,operator,batchId}=req.body||{};if(!sn)return res.status(400).json(errorEnvelope('VALIDATION','sn required'));const normalizedSn=String(sn).trim().toUpperCase();// 查询工站信息
-let stationName=stationCode;try{const st=await query(`SELECT name_zh FROM stations WHERE LOWER(code)=LOWER($1) LIMIT 1`,[stationCode]);if(st.rows.length)stationName=st.rows[0].name_zh;}catch(_){}// 查询工单信息
-let wo=workOrderCode||'';if(!wo&&normalizedSn){try{const w=await query(`SELECT w.work_order_code FROM pcb_serials p JOIN work_orders w ON p.work_order_id=w.id WHERE UPPER(p.serial_no)=UPPER($1) LIMIT 1`,[normalizedSn]);if(w.rows.length)wo=w.rows[0].work_order_code;}catch(_){}}await recordSnJourney({sn:normalizedSn,batchId:batchId||null,workOrderCode:wo,eventType:'LINE_ENTRY',eventStage:'ENTER',stationCode,stationName,result:'ENTERED',defectCode:null,defectDescription:null,operator:operator||null,actor:null,detail:{报到来源:'API'}});res.json({ok:true,sn:normalizedSn,stationCode,stationName,workOrderCode:wo,eventType:'LINE_ENTRY'});}catch(error){res.status(500).json(errorEnvelope('STATION_ARRIVE_FAILED',error.message));}});
-// 箱行程查询 API
-app.get('/api/journey/box/:containerId',async(req,res)=>{try{await boxJourneyReady;const containerId=String(req.params.containerId||'').trim().toUpperCase();const r=await query(`SELECT journey_id AS "journeyId",container_id AS "containerId",work_order_code AS "workOrderCode",pallet_code AS "palletCode",event_type AS "eventType",event_stage AS "eventStage",location_code AS "locationCode",location_name AS "locationName",next_location_code AS "nextLocationCode",next_location_name AS "nextLocationName",operator,actor,detail,event_at AS "eventAt" FROM box_journey_records WHERE UPPER(container_id)=UPPER($1) ORDER BY event_at ASC`,[containerId]);res.json({ok:true,containerId,pastEvents:r.rows});}catch(error){res.status(500).json(errorEnvelope('BOX_JOURNEY_QUERY_FAILED',error.message));}});
-// 箱行程列表查询
-app.get('/api/journey/boxes',async(req,res)=>{try{await boxJourneyReady;const wo=String(req.query.workOrderCode||'').trim();const stage=String(req.query.stage||'').trim();const pallet=String(req.query.palletCode||'').trim();const limit=Math.min(Number(req.query.limit||100),500);let params=[],where=['1=1'];if(wo){params.push(wo);where.push(`work_order_code=$${params.length}`);}if(stage){params.push(stage);where.push(`event_stage=$${params.length}`);}if(pallet){params.push(pallet);where.push(`pallet_code=$${params.length}`);}const r=await query(`SELECT DISTINCT ON(container_id) container_id AS "containerId",work_order_code AS "workOrderCode",pallet_code AS "palletCode",(SELECT logistics_status FROM box_journey_view WHERE container_id=box_journey_records.container_id LIMIT 1) AS "logisticsStatus",(SELECT event_type FROM box_journey_records b2 WHERE b2.container_id=box_journey_records.container_id ORDER BY event_at DESC LIMIT 1) AS "lastEvent",(SELECT event_at FROM box_journey_records b3 WHERE b3.container_id=box_journey_records.container_id ORDER BY event_at DESC LIMIT 1) AS "lastEventAt" FROM box_journey_records WHERE ${where.join(' AND ')} ORDER BY container_id,event_at DESC`,params);res.json({ok:true,items:r.rows.slice(0,limit)});}catch(error){res.status(500).json(errorEnvelope('BOX_JOURNEY_LIST_FAILED',error.message));}});
-
-// NG闭环状态查询 — 所有NG板的完整闭环链路
-app.get('/api/ng-closed-loop',async(req,res)=>{try{await snJourneyReady;const wo=String(req.query.workOrderCode||'').trim();const station=String(req.query.stationCode||'').trim();const limit=Math.min(Number(req.query.limit||200),500);let ngParams=[],ngWhere=['1=1'];if(wo){ngParams.push(wo);ngWhere.push(`work_order_code=$${ngParams.length}`);}if(station){ngParams.push(station);ngWhere.push(`station_code=$${ngParams.length}`);}const ngRecords=await query(`SELECT DISTINCT ON(n.sn) n.ng_defect_id AS "ngDefectId",n.sn,n.batch_id AS "batchId",n.line_name AS "lineName",n.station_code AS "stationCode",n.defect_code AS "defectCode",n.defect_description AS "defectDescription",n.result,n.repair_status AS "repairStatus",n.created_at AS "ngDetectedAt" FROM ng_defect_records n WHERE n.result='fail' AND COALESCE(n.repair_status,'pending') NOT IN('repaired','scrapped') ${ngWhere.join(' AND ')} ORDER BY n.sn,n.created_at DESC`,ngParams);const sns=ngRecords.rows.map(r=>r.sn);let repairWos=[],revivalRecords=[],ngGuardStatus=[];if(sns.length>0){const[woResult,revResult,guardResult]=await Promise.all([query(`SELECT repair_work_order_id AS "repairWorkOrderId",work_order_no AS "workOrderNo",ng_sn AS "ngSn",source_station AS "sourceStation",status,repair_result AS "repairResult",repair_started_at AS "repairStartedAt",repair_completed_at AS "repairCompletedAt" FROM station_repair_work_orders WHERE UPPER(ng_sn)=ANY($1::text[])`,[sns]),query(`SELECT revival_id AS "revivalId",sn,approval_status AS "approvalStatus",revived_at AS "revivedAt" FROM ng_revival_audit WHERE UPPER(sn)=ANY($1::text[]) AND approval_status IN('RETURN_PENDING','APPROVED','PENDING_QUALITY','PENDING_LINE_LEADER')`,[sns]),query(`WITH active_ng AS(SELECT sn,'ng_defect' AS src,'DEFECT_RECORD' AS ngState FROM ng_defect_records WHERE UPPER(sn)=ANY($1::text[]) AND result='fail' UNION ALL SELECT UPPER(COALESCE(item->>'sn','')),s.station_code,CASE WHEN s.bucket_name='confirmed_ng' THEN 'CONFIRMED_NG' ELSE 'PENDING_NG' END FROM station_bucket_snapshots s CROSS JOIN LATERAL jsonb_array_elements(s.payload) item WHERE s.bucket_name IN('pending_ng','confirmed_ng') AND UPPER(COALESCE(item->>'sn',''))=ANY($1::text[])) SELECT sn,src AS "ngSource",ngState FROM active_ng`,[sns])]);repairWos=woResult.rows;revivalRecords=revResult.rows;ngGuardStatus=guardResult.rows;}const items=ngRecords.rows.map(ng=>{const repair=repairWos.filter(w=>String(w.ngSn||'').toUpperCase()===String(ng.sn||'').toUpperCase());const revival=revivalRecords.filter(r=>String(r.sn||'').toUpperCase()===String(ng.sn||'').toUpperCase());const guard=ngGuardStatus.filter(g=>String(g.sn||'').toUpperCase()===String(ng.sn||'').toUpperCase());let loopStatus='OPEN';if(guard.some(g=>g.ngState==='CONFIRMED_NG'))loopStatus='BLOCKED';else if(repair.some(r=>r.status==='REPAIR_IN_PROGRESS'))loopStatus='UNDER_REPAIR';else if(revival.some(r=>r.approvalStatus==='RETURN_PENDING'))loopStatus='RETURN_PENDING';else if(repair.some(r=>r.repairResult==='repaired')&&!guard.length)loopStatus='REVIVED';else if(repair.some(r=>r.repairResult==='scrapped'))loopStatus='SCRAPPED';return{...ng,repairWorkOrders:repair,revivalAudit:revival,ngGuardStatus:guard,loopStatus};});res.json({ok:true,total:items.length,items:items.slice(0,limit)});}catch(error){res.status(500).json(errorEnvelope('NG_CLOSED_LOOP_QUERY_FAILED',error.message));}});
-
-// SN行程计划查询 — 基于工艺路线，返回计划节点序列（含NG分叉、维修、报废等计划节点）
-app.get('/api/journey/plan/sn/:sn',async(req,res)=>{try{const sn=String(req.params.sn||'').trim().toUpperCase();if(!sn)return res.status(400).json(errorEnvelope('VALIDATION','sn required'));const workOrderCode=String(req.query.workOrderCode||'').trim();const productCode=String(req.query.productCode||'').trim();let routeId=null;let planSteps=[];// 查找SN对应的工艺路线
-if(workOrderCode){const wo=await query(`SELECT route_id,product_code FROM work_orders WHERE work_order_code=$1`,[workOrderCode]);if(wo.rows.length){routeId=wo.rows[0].route_id;}}if(!routeId&&productCode){const pr=await query(`SELECT id FROM process_routes WHERE product_code=$1 AND status='active' ORDER BY revision DESC LIMIT 1`,[productCode]);if(pr.rows.length)routeId=pr.rows[0].id;}if(!routeId){const pcb=await query(`SELECT w.route_id,w.product_code FROM pcb_serials p JOIN work_orders w ON p.work_order_id=w.id WHERE UPPER(p.serial_no)=UPPER($1)`,[sn]);if(pcb.rows.length){routeId=pcb.rows[0].route_id;}}if(!routeId)return res.status(404).json(errorEnvelope('ROUTE_NOT_FOUND','工艺路线未找到，请提供workOrderCode或productCode'))// 获取工艺路线步骤
-const steps=await query(`SELECT prs.step_no,prs.station_type,prs.required_scan,prs.required_inspection,prs.output_rule,s.code AS station_code,s.name_zh AS station_name FROM process_route_steps prs LEFT JOIN stations s ON s.id=prs.station_id WHERE prs.route_id=$1 ORDER BY prs.step_no`,[routeId]);// 生成计划节点序列
-const planNodes=[];for(const step of steps.rows){const node={stepNo:step.step_no,stationType:step.station_type,stationCode:step.station_code,stationName:step.station_name,requiredScan:step.required_scan,requiredInspection:step.required_inspection,// 分叉定义
-exits:[],// 该工站可能的退出路径
-nextSteps:[]};// 如果output_rule包含NG相关，添加NG分叉
-if(step.output_rule&&(step.output_rule.includes('ng')||step.output_rule.includes('reject'))){node.exits.push({type:'NG',label:'NG退出（报废/维修）',targetStage:'REPAIR',description:'NG时进入维修流程或报废'});}// 如果是测试工站（ICT/FCT），添加NG分叉
-if(step.station_type&&(step.station_type.includes('ict')||step.station_type.includes('fct')||step.station_type.includes('test'))){node.exits.push({type:'NG',label:'NG退出（报废/维修）',targetStage:'REPAIR',description:'测试失败进入维修流程'});}planNodes.push(node);}// 添加维修节点（在任何NG之后可能出现的）
-const repairNode={stepNo:999,stationType:'repair',stationCode:'manu_rework',stationName:'维修站',requiredScan:true,requiredInspection:false,exits:[{type:'RETURN',label:'返回产线复测',targetStage:'LINE',description:'维修完成后返回原工站复测'},{type:'SCRAP',label:'报废',targetStage:'DESTRUCTION',description:'维修失败报废'}],nextSteps:[],isRepair:true};planNodes.push(repairNode);// 添加包装节点
-const packNode={stepNo:1000,stationType:'packaging',stationCode:'manu_case_binding',stationName:'包装工位',requiredScan:true,requiredInspection:false,exits:[],nextSteps:[],isPackaging:true};planNodes.push(packNode);// 添加最终的NG/报废/样品退出选项
-for(let i=0;i<planNodes.length;i++){if(planNodes[i].stationType&&(planNodes[i].stationType.includes('ict')||planNodes[i].stationType.includes('fct')||planNodes[i].stationType.includes('test'))){planNodes[i].exits.push({type:'SAMPLE',label:'留样',targetStage:'SAMPLE',description:'抽取样品'});planNodes[i].exits.push({type:'SCRAP',label:'报废',targetStage:'DESTRUCTION',description:'直接报废'});}}res.json({ok:true,sn,workOrderCode,productCode,planNodes,totalSteps:planNodes.length});}catch(error){res.status(500).json(errorEnvelope('SN_PLAN_QUERY_FAILED',error.message));}});
-
-// 箱行程计划查询 — 基于物流路线，返回计划节点序列
-app.get('/api/journey/plan/box/:containerId',async(req,res)=>{try{const containerId=String(req.params.containerId||'').trim().toUpperCase();const workOrderCode=String(req.query.workOrderCode||'').trim();// 标准箱物流计划节点
-const planNodes=[{stepNo:1,eventType:'ONLINE',eventStage:'PRODUCTION',locationCode:'manu_case_binding',locationName:'包装工位',description:'产品包装入箱',exits:[{type:'PALLETIZING',label:'上栈板',targetStage:'WAREHOUSE',description:'箱上栈板'}]},{stepNo:2,eventType:'PALLETIZING',eventStage:'WAREHOUSE',locationCode:'manu_pallet_binding',locationName:'栈板工位',description:'箱上栈板',exits:[{type:'WAREHOUSE_IN',label:'入库',targetStage:'WAREHOUSE',description:'栈板入库'}]},{stepNo:3,eventType:'WAREHOUSE_IN',eventStage:'WAREHOUSE',locationCode:'WH_STAGING',locationName:'仓库暂存区',description:'仓库入库',exits:[{type:'STORAGE',label:'存放',targetStage:'WAREHOUSE',description:'库存存放'},{type:'TRANSFER',label:'场内转移',targetStage:'WAREHOUSE',description:'厂内转移'}]},{stepNo:4,eventType:'STORAGE',eventStage:'WAREHOUSE',locationCode:'WH_STORAGE',locationName:'仓库存储区',description:'库存存储',exits:[{type:'EXPORT',label:'出口',targetStage:'DISTRIBUTION',description:'出库出口'},{type:'MOVE',label:'转移',targetStage:'WAREHOUSE',description:'库位转移'}]},{stepNo:5,eventType:'EXPORT',eventStage:'DISTRIBUTION',locationCode:'WH_OUTBOUND',locationName:'出库月台',description:'出库装车',exits:[{type:'IN_TRANSIT',label:'在途',targetStage:'DISTRIBUTION',description:'运输中'}]},{stepNo:6,eventType:'IN_TRANSIT',eventStage:'DISTRIBUTION',locationCode:'IN_TRANSIT',locationName:'运输中',description:'运输中',exits:[{type:'SOLD',label:'售出送达',targetStage:'COMPLETED',description:'客户签收'},{type:'RETURN_REQUEST',label:'退货',targetStage:'RETURN',description:'客户退货'}]},{stepNo:7,eventType:'SOLD',eventStage:'COMPLETED',locationCode:'CUSTOMER',locationName:'客户',description:'销售完成',exits:[{type:'RETURN_REQUEST',label:'退货',targetStage:'RETURN',description:'需要退货'}]},{stepNo:8,eventType:'RETURN_REQUEST',eventStage:'RETURN',locationCode:'RETURN_CENTER',locationName:'退货中心',description:'退货处理',exits:[{type:'RETURN_INBOUND',label:'退货入库',targetStage:'RETURN',description:'退货验收入库'},{type:'DESTROY',label:'销毁',targetStage:'DESTRUCTION',description:'退货销毁'}]},{stepNo:9,eventType:'RETURN_INBOUND',eventStage:'RETURN',locationCode:'WH_RETURN',locationName:'退货仓库',description:'退货入库',exits:[{type:'RETURN_REPAIR',label:'返厂维修',targetStage:'REPAIR',description:'退回工厂维修'},{type:'DESTROY',label:'销毁',targetStage:'DESTRUCTION',description:'直接销毁'}]},{stepNo:10,eventType:'RETURN_REPAIR',eventStage:'REPAIR',locationCode:'manu_rework',locationName:'维修站',description:'返厂维修',exits:[{type:'RE_WAREHOUSE',label:'重新入库',targetStage:'WAREHOUSE',description:'维修后重新入库'},{type:'DESTROY',label:'销毁',targetStage:'DESTRUCTION',description:'维修失败销毁'}]}];res.json({ok:true,containerId,workOrderCode,planNodes,totalSteps:planNodes.length});}catch(error){res.status(500).json(errorEnvelope('BOX_PLAN_QUERY_FAILED',error.message));}});
-app.get('/api/station/pallets',async(_req,res)=>{try{await palletBindingReady;const r=await query(`SELECT p.pallet_code AS "palletCode",p.work_order_code AS "workOrderCode",p.station_code AS "stationCode",p.target_cartons AS "targetCartons",p.status,p.created_at AS "createdAt",p.sealed_at AS "sealedAt",COUNT(pc.container_id)::int AS "cartonCount",COALESCE(jsonb_agg(pc.container_id) FILTER(WHERE pc.container_id IS NOT NULL),'[]'::jsonb) AS cartons FROM station_pallets p LEFT JOIN station_pallet_cartons pc ON pc.pallet_code=p.pallet_code GROUP BY p.pallet_code ORDER BY p.updated_at DESC LIMIT 1000`);res.json({ok:true,items:r.rows});}catch(error){res.status(500).json(errorEnvelope('PALLET_QUERY_FAILED',error.message));}});
-app.post('/api/station/pallets',async(req,res)=>{try{await Promise.all([palletBindingReady,qrWorkOrderReady]);const p=req.body||{},code=String(p.palletCode||'').trim().toUpperCase(),wo=String(p.workOrderCode||'');if(!code||!wo||Number(p.targetCartons||0)<1)return res.status(400).json(errorEnvelope('VALIDATION','palletCode,workOrderCode,targetCartons required'));await query(`INSERT INTO station_pallets(pallet_code,work_order_code,station_code,target_cartons,created_by) VALUES($1,$2,$3,$4,$5)`,[code,wo,p.stationCode||'manu_pallet_binding',Number(p.targetCartons),p.createdBy||'OPERATOR']);await query(`INSERT INTO station_qr_workorder_bindings(qr_code,qr_type,work_order_code,station_code,bound_by) VALUES($1,'PALLET_QR',$2,$3,$4) ON CONFLICT(qr_code) DO NOTHING`,[code,wo,p.stationCode||'manu_pallet_binding',p.createdBy||'OPERATOR']);await query(`INSERT INTO station_pallet_audit(pallet_code,action,actor,detail) VALUES($1,'CREATED',$2,$3)`,[code,p.createdBy||'OPERATOR',JSON.stringify({workOrderCode:wo,targetCartons:Number(p.targetCartons)})]);res.status(201).json({ok:true,palletCode:code});}catch(error){res.status(409).json(errorEnvelope('PALLET_CREATE_FAILED',error.message));}});
-app.post('/api/station/pallets/:code/cartons',async(req,res)=>{try{await Promise.all([palletBindingReady,packagingBoxReady]);const pallet=(await query(`SELECT * FROM station_pallets WHERE pallet_code=$1`,[req.params.code])).rows[0];if(!pallet||pallet.status!=='loading')return res.status(409).json(errorEnvelope('PALLET_NOT_LOADING','pallet missing or sealed'));const before=Number((await query(`SELECT COUNT(*)::int count FROM station_pallet_cartons WHERE pallet_code=$1`,[req.params.code])).rows[0].count);if(before>=pallet.target_cartons)return res.status(409).json(errorEnvelope('PALLET_OVER_CAPACITY','target carton count reached'));const box=(await query(`SELECT * FROM station_packaging_boxes WHERE container_id=$1`,[req.body?.containerId])).rows[0];if(!box||!['full','sealed'].includes(box.status))return res.status(409).json(errorEnvelope('CARTON_NOT_SEALED','carton must be sealed'));if(box.work_order_code!==pallet.work_order_code)return res.status(409).json(errorEnvelope('WORK_ORDER_MISMATCH','carton and pallet work orders differ'));const sns=(Array.isArray(box.items)?box.items:[]).map(x=>String(typeof x==='string'?x:x?.sn||'').toUpperCase()).filter(Boolean);if(sns.length){const blocked=await query(`SELECT item->>'sn' sn FROM station_bucket_snapshots s CROSS JOIN LATERAL jsonb_array_elements(s.payload) item WHERE s.bucket_name='confirmed_ng' AND UPPER(COALESCE(item->>'sn',''))=ANY($1::text[]) LIMIT 1`,[sns]);if(blocked.rows.length)return res.status(409).json(errorEnvelope('PALLET_CONTAINS_NG',`confirmed NG ${blocked.rows[0].sn} cannot enter pallet`));const pending=await query(`SELECT transfer_id FROM station_handover_transfers WHERE status='WAITING_RECEIPT' AND motherboard::text ILIKE ANY($1::text[]) LIMIT 1`,[sns.map(sn=>`%${sn}%`)]);if(pending.rows.length)return res.status(409).json(errorEnvelope('PALLET_HAS_PENDING_HANDOVER','carton contains product with unfinished handover'));}await query(`INSERT INTO station_pallet_cartons(pallet_code,container_id,added_by) VALUES($1,$2,$3)`,[req.params.code,box.container_id,req.body?.addedBy||'OPERATOR']);await query(`INSERT INTO station_pallet_audit(pallet_code,action,actor,detail) VALUES($1,'CARTON_ADDED',$2,$3)`,[req.params.code,req.body?.addedBy||'OPERATOR',JSON.stringify({containerId:box.container_id,snCount:sns.length})]);const count=before+1;res.json({ok:true,count,remaining:pallet.target_cartons-count});}catch(error){const duplicate=error.code==='23505';res.status(409).json(errorEnvelope(duplicate?'CARTON_ALREADY_ON_PALLET':'PALLET_CARTON_ADD_FAILED',duplicate?'carton is already bound to a pallet':error.message));}});
-app.post('/api/station/pallets/:code/seal',async(req,res)=>{try{await palletBindingReady;const p=(await query(`SELECT p.target_cartons,COUNT(pc.container_id)::int count,COALESCE(SUM(b.current_count),0)::int units,BOOL_AND(b.status IN('full','sealed')) all_sealed FROM station_pallets p LEFT JOIN station_pallet_cartons pc ON pc.pallet_code=p.pallet_code LEFT JOIN station_packaging_boxes b ON b.container_id=pc.container_id WHERE p.pallet_code=$1 AND p.status='loading' GROUP BY p.pallet_code`,[req.params.code])).rows[0];if(!p||p.count!==p.target_cartons)return res.status(409).json(errorEnvelope('PALLET_COUNT_MISMATCH','target carton quantity not reached'));if(!p.all_sealed)return res.status(409).json(errorEnvelope('PALLET_HAS_OPEN_CARTON','all cartons must be sealed'));await query(`UPDATE station_pallets SET status='sealed',sealed_at=NOW(),updated_at=NOW() WHERE pallet_code=$1`,[req.params.code]);await query(`INSERT INTO station_pallet_audit(pallet_code,action,actor,detail) VALUES($1,'SEALED',$2,$3)`,[req.params.code,req.body?.actor||'OPERATOR',JSON.stringify({cartonCount:p.count,unitCount:p.units})]);res.json({ok:true,cartonCount:p.count,unitCount:p.units});}catch(error){res.status(500).json(errorEnvelope('PALLET_SEAL_FAILED',error.message));}});
-app.get('/api/station/qr-workorders',async(req,res)=>{try{await qrWorkOrderReady;const station=String(req.query.stationCode||'');const lineCode=String(req.query.lineCode||'L001').trim().toUpperCase();const params=station?[station]:[];const where=station?'WHERE station_code=$1':'';const bindingWhere=station?'WHERE "stationCode"=$1':'';const bindingsSql=`WITH combined AS (SELECT qr_code AS "qrCode",qr_type AS "qrType",work_order_code AS "workOrderCode",station_code AS "stationCode",bound_by AS "boundBy",bound_at AS "boundAt",status,detail FROM station_qr_workorder_bindings UNION ALL SELECT codes.qr_code,codes.qr_type,COALESCE(j.work_order_code,a.work_order_code,'UNRESOLVED'),p.station_code,p.operator,p.created_at,CASE WHEN COALESCE(j.work_order_code,a.work_order_code) IS NULL THEN 'WORK_ORDER_PENDING' ELSE 'ACTIVE' END,jsonb_build_object('pcbaSn',p.pcb_sn,'shellSn',p.shell_sn,'source','pcb_shell_bindings') FROM pcb_shell_bindings p CROSS JOIN LATERAL (VALUES (p.pcb_sn,'BOARD_QR'),(p.shell_sn,'SHELL_QR')) codes(qr_code,qr_type) LEFT JOIN LATERAL (SELECT e.work_order_code FROM sn_journey_events e WHERE UPPER(e.sn) IN (UPPER(p.pcb_sn),UPPER(p.shell_sn)) AND NULLIF(e.work_order_code,'') IS NOT NULL ORDER BY e.event_at DESC LIMIT 1) j ON TRUE LEFT JOIN station_active_workorders a ON a.station_code=p.station_code AND a.status='ACTIVE' WHERE NOT EXISTS (SELECT 1 FROM station_qr_workorder_bindings m WHERE UPPER(m.qr_code)=UPPER(codes.qr_code))) SELECT * FROM combined ${bindingWhere} ORDER BY "boundAt" DESC LIMIT 2000`;const [active,bindings,trace,available]=await Promise.all([query(`SELECT station_code AS "stationCode",work_order_code AS "workOrderCode",selected_by AS "selectedBy",selected_at AS "selectedAt",status FROM station_active_workorders ${where} ORDER BY selected_at DESC`,params),query(bindingsSql,params),query(`SELECT trace_id AS "traceId",qr_code AS "qrCode",work_order_code AS "workOrderCode",station_code AS "stationCode",event_type AS "eventType",result,scanned_at AS "scannedAt" FROM station_qr_workorder_trace ${where} ORDER BY scanned_at DESC LIMIT 2000`,params),query(`SELECT wo.code AS "workOrderCode",wo.status,wo.planned_qty AS "plannedQty",wo.completed_qty AS "completedQty",p.code AS "productCode",p.name_zh AS "productNameZh",pl.internal_code AS "lineCode",wo.created_at AS "createdAt" FROM work_orders wo JOIN products p ON p.id=wo.product_id JOIN production_lines pl ON pl.id=wo.line_id WHERE UPPER(pl.internal_code)=UPPER($1) AND LOWER(wo.status) IN ('released','running') ORDER BY CASE LOWER(wo.status) WHEN 'running' THEN 0 ELSE 1 END,wo.created_at ASC LIMIT 50`,[lineCode])]);res.json({ok:true,available:available.rows,active:active.rows,items:bindings.rows,trace:trace.rows,meta:{lineCode,count:available.rows.length}});}catch(error){res.status(500).json(errorEnvelope('QR_WORKORDER_QUERY_FAILED',error.message));}});
-app.post('/api/station/active-workorder',async(req,res)=>{try{await qrWorkOrderReady;const station=String(req.body?.stationCode||''),workOrder=String(req.body?.workOrderCode||'');if(!station||!workOrder)return res.status(400).json(errorEnvelope('VALIDATION','stationCode and workOrderCode required'));await query(`INSERT INTO station_active_workorders(station_code,work_order_code,selected_by) VALUES($1,$2,$3) ON CONFLICT(station_code) DO UPDATE SET work_order_code=EXCLUDED.work_order_code,selected_by=EXCLUDED.selected_by,selected_at=NOW(),status='ACTIVE'`,[station,workOrder,req.body?.selectedBy||'MES']);res.json({ok:true,stationCode:station,workOrderCode:workOrder});}catch(error){res.status(500).json(errorEnvelope('ACTIVE_WORKORDER_FAILED',error.message));}});
-app.post('/api/station/qr-workorders/bind',async(req,res)=>{try{await qrWorkOrderReady;const p=req.body||{},qr=String(p.qrCode||'').trim().toUpperCase(),station=String(p.stationCode||'');let workOrder=String(p.workOrderCode||'');if(!qr||!station)return res.status(400).json(errorEnvelope('VALIDATION','qrCode and stationCode required'));if(!workOrder){const active=await query(`SELECT work_order_code FROM station_active_workorders WHERE station_code=$1 AND status='ACTIVE'`,[station]);workOrder=active.rows[0]?.work_order_code||'';}if(!workOrder)return res.status(409).json(errorEnvelope('WORK_ORDER_REQUIRED','select active work order before scanning QR'));const existing=await query(`SELECT work_order_code FROM station_qr_workorder_bindings WHERE qr_code=$1`,[qr]);if(existing.rows.length&&existing.rows[0].work_order_code!==workOrder)return res.status(409).json(errorEnvelope('QR_WORK_ORDER_CONFLICT',`QR already belongs to ${existing.rows[0].work_order_code}`));await query(`INSERT INTO station_qr_workorder_bindings(qr_code,qr_type,work_order_code,station_code,bound_by,detail) VALUES($1,$2,$3,$4,$5,$6) ON CONFLICT(qr_code) DO UPDATE SET station_code=EXCLUDED.station_code,status='ACTIVE',detail=EXCLUDED.detail`,[qr,p.qrType||'PRODUCT',workOrder,station,p.boundBy||station,JSON.stringify(p.detail||{})]);res.json({ok:true,qrCode:qr,workOrderCode:workOrder});}catch(error){res.status(500).json(errorEnvelope('QR_WORKORDER_BIND_FAILED',error.message));}});
-app.post('/api/station/pass-returns',async(req,res)=>{try{await passReturnReady;const p=req.body||{};const sns=Array.isArray(p.sns)?p.sns.map(String).filter(Boolean):[];
-  if(!p.sourceStation||!p.destinationStation||!p.reason||!sns.length)return res.status(400).json(errorEnvelope('VALIDATION','sourceStation,destinationStation,reason and sns required'));
-  const r=await query(`INSERT INTO station_pass_return_requests(shortage_id,source_station,destination_station,batch_id,sns,quantity,reason,requested_by) VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING return_id AS "returnId"`,[p.shortageId||null,p.sourceStation,p.destinationStation,p.batchId||null,JSON.stringify(sns),sns.length,p.reason,p.requestedBy||'STATION']);res.status(201).json({ok:true,returnId:r.rows[0].returnId});
- }catch(error){res.status(500).json(errorEnvelope('PASS_RETURN_CREATE_FAILED',error.message));}});
-app.post('/api/station/pass-returns/:id/approve',async(req,res)=>{try{await Promise.all([passReturnReady,stationHandoverReady]);const approvedBy=String(req.body?.approvedBy||'MES');
-  const updated=await query(`UPDATE station_pass_return_requests SET status='WAITING_RECEIPT',approved_by=$2,approved_at=NOW() WHERE return_id=$1 AND status='PENDING_MES_APPROVAL' RETURNING *`,[req.params.id,approvedBy]);
-  if(!updated.rows.length)return res.status(409).json(errorEnvelope('INVALID_STATE','return request is not pending approval'));const x=updated.rows[0];const batch=String(x.batch_id||`PASS-RETURN-${x.return_id}`);const boards=x.sns.map(sn=>({sn,result:'PASS'}));
-  await query(`INSERT INTO station_handover_transfers(batch_id,source_station,destination_station,destination_type,motherboard,member_count,status,sent_at) VALUES($1,$2,$3,'PASS_RETURN',$4,$5,'WAITING_RECEIPT',NOW()) ON CONFLICT(batch_id,source_station,destination_station) DO UPDATE SET destination_type='PASS_RETURN',motherboard=EXCLUDED.motherboard,member_count=EXCLUDED.member_count,status='WAITING_RECEIPT',sent_at=NOW(),received_at=NULL,accepted_by=NULL,alarmed_at=NULL`,[batch,x.source_station,x.destination_station,JSON.stringify({batchId:batch,subBoards:boards,passReturnId:x.return_id}),boards.length]);
-  neuralBroadcast({from:'mes_server',to:'*',type:'PASS_RETURN_WAITING_RECEIPT',priority:'critical',stationCode:x.source_station,payload:{returnId:x.return_id,batchId:batch,sourceStation:x.source_station,destinationStation:x.destination_station,quantity:boards.length,timeoutSeconds:120}});res.json({ok:true});
- }catch(error){res.status(500).json(errorEnvelope('PASS_RETURN_APPROVE_FAILED',error.message));}});
-
-app.post("/api/station/handovers/:id/acknowledge-alarm",async(req,res)=>{
-  try{
-    await stationHandoverAlarmReady;
-    const actor=String(req.body?.actor||"MES_MANUAL_RELEASE").trim();
-    const active=await query(`SELECT transfer_id AS "transferId",batch_id AS "batchId",source_station AS "sourceStation",
-      destination_station AS "destinationStation" FROM station_handover_transfers
-      WHERE transfer_id=$1 AND status='WAITING_RECEIPT' AND alarmed_at IS NOT NULL`,[req.params.id]);
-    if(!active.rows.length)return res.status(409).json(errorEnvelope("ALARM_NOT_ACTIVE","handover alarm is not active"));
-    await query(`INSERT INTO station_handover_alarm_ack(transfer_id,acknowledged_at,acknowledged_by)
-      VALUES($1,NOW(),$2) ON CONFLICT(transfer_id) DO UPDATE SET acknowledged_at=NOW(),acknowledged_by=EXCLUDED.acknowledged_by`,[req.params.id,actor]);
-    const result={rows:[{...active.rows[0],alarmAcknowledgedAt:new Date().toISOString()}]};
-    if(!result.rows.length)return res.status(409).json(errorEnvelope("ALARM_NOT_ACTIVE","handover alarm is not active"));
-    const row=result.rows[0];
-    neuralBroadcast({from:'mes_server',to:'*',type:'HANDOVER_ALARM_ACKNOWLEDGED',priority:'info',
-      stationCode:row.sourceStation,payload:{...row,actor,stillWaitingReceipt:true}});
-    res.json({ok:true,item:{...row,actor,stillWaitingReceipt:true}});
-  }catch(error){res.status(500).json(errorEnvelope("HANDOVER_ALARM_ACK_FAILED",error.message));}
-});
 
 // Unified production scrap workflow for every manual/automatic station.
 // The product remains locked in confirmed NG until both MES approvals finish.
@@ -6294,7 +6123,7 @@ app.get("/api/station/scrap-assessments", async (_req, res) => {
   } catch (error) { res.status(500).json(errorEnvelope("SCRAP_ASSESSMENT_QUERY_FAILED", error.message)); }
 });
 
-app.put("/api/station/scrap-requests/:id/assessment", async (req, res) => {
+app.put("/api/station/scrap-requests/:id/assessment", authenticateJWT, async (req, res) => {
   try {
     await Promise.all([stationScrapColumnsReady, stationScrapAssessmentReady, stationScrapAuditReady]);
     const requestId = Number(req.params.id);
@@ -6320,7 +6149,7 @@ app.put("/api/station/scrap-requests/:id/assessment", async (req, res) => {
   } catch (error) { res.status(500).json(errorEnvelope("SCRAP_ASSESSMENT_FAILED", error.message)); }
 });
 
-app.post("/api/station/scrap-requests/:id/approve", async (req, res) => {
+app.post("/api/station/scrap-requests/:id/approve", authenticateJWT, async (req, res) => {
   try {
     await stationScrapColumnsReady;
     const requestId = Number(req.params.id);
@@ -6382,7 +6211,7 @@ app.post("/api/station/scrap-requests/:id/approve", async (req, res) => {
   } catch (error) { res.status(500).json(errorEnvelope("SCRAP_APPROVAL_FAILED", error.message)); }
 });
 
-app.post("/api/station/scrap-requests/:id/reject", async (req, res) => {
+app.post("/api/station/scrap-requests/:id/reject", authenticateJWT, async (req, res) => {
   try {
     await stationScrapColumnsReady;
     const requestId = Number(req.params.id);
@@ -7539,7 +7368,7 @@ app.get("/api/smt/loading/approvals/:sessionId", async (req, res) => {
   } catch (err) { res.status(500).json(errorEnvelope("SMT_LOADING_APPROVALS_FAILED", err.message)); }
 });
 
-app.post("/api/smt/loading/approvals/:sessionId/decision", async (req, res) => {
+app.post("/api/smt/loading/approvals/:sessionId/decision", authenticateJWT, async (req, res) => {
   const client = await pgPool.connect();
   try {
     const sessionId = Number(req.params.sessionId);
@@ -8405,7 +8234,7 @@ app.post("/api/smt/loading/offline-events", async (req, res) => {
   }
 });
 
-app.post("/api/smt/loading/offline-events/:eventId/leader-decision", async (req, res) => {
+app.post("/api/smt/loading/offline-events/:eventId/leader-decision", authenticateJWT, async (req, res) => {
   try {
     const p = req.body?.payload ?? req.body ?? {};
     const decision = String(p.decision || "").toUpperCase();
@@ -9162,12 +8991,101 @@ app.post("/api/mes/product-gate/evaluate", async (req, res) => {
   }
 });
 
+// ── OA module (merged from the standalone OA system) ─────────────────
+// Mounted BEFORE app.use("/api", api): the SMT api router has an api-wide
+// JWT gate at its top (Bearer-only), which would otherwise swallow every
+// OA request that authenticates via x-token / x-api-key / ?token= before
+// the OA router ever sees it. Mounted here, OA owns its 607 non-colliding
+// routes with its own authenticate (SMT-JWT-only since the single-token
+// change), while the two colliding paths (POST /api/auth/login, POST
+// /api/auth/logout) are NOT registered by the shim and fall through to the
+// SMT api router — single-login policy: users authenticate against the
+// SMT user store; the embedded OA UI receives the same SMT JWT.
+// MRB (物料评审) — 必须在 OA 之前挂载：OA 的 GET /api/mrb/:id 是单段 catch-all，
+// 会把 /api/mrb/list、/api/mrb/pending-lots、/api/mrb/lot-groups、/api/mrb/lot-labels
+// 当成 :id 拦下（400 参数不合法）。两个挂载都用 app 级，注册顺序决定谁先应答。
+// 路由内部各自 router.use(authenticateJWT)，与原先 api.use("/mrb", …) 等价。
+app.use("/api/mrb", createMrbRouter({ authenticateJWT }));
+app.use("/api/mrb", createMrbExtrasRouter({ authenticateJWT }));
+const { router: oaRouter, app: oaApp } = createOaRouter(oaConfig);
+await registerOaRoutes(oaApp);
+app.use(oaRouter);
+console.log("[oa] routes registered on the SMT Express app (search_path=oa,public)");
+
+// ── OA frontends (ported from the standalone OA system) ──────────────
+// Legacy hash-router SPA at /oa/ and the "strangler" rebuild at /next/ —
+// the same mounts as the golden master, so the asset URLs baked into the
+// builds resolve as-is (web-next hardcodes /next/assets/...; the legacy
+// build uses absolute /assets/... which are rebased to /oa/assets/ below).
+// index.html is transformed per request (never cached, matching the golden
+// master) and gets an SSO bootstrap script injected: ?smt_token=<SMT JWT>
+// is copied into localStorage.oa_token — the single token key both OA
+// builds read — so the embedded UI runs on the one SMT JWT with no second
+// login. /oa-logo.png is aliased at the root because the legacy runtime
+// patches reference it with an absolute path.
+const oaWebDist = path.join(__dirname, "oa-web");
+const oaWebNextDist = path.join(__dirname, "oa-web-next");
+const OA_SSO_SNIPPET = '<script>(function(){try{var q=new URLSearchParams(location.search);var t=q.get("smt_token");if(t){localStorage.setItem("oa_token",t);q.delete("smt_token");var s=q.toString();history.replaceState(null,"",location.pathname+(s?"?"+s:"")+location.hash);}}catch(e){}})();</script>';
+function sendOaIndex(distDir, transform, req, res) {
+  let html = fs.readFileSync(path.join(distDir, "index.html"), "utf8");
+  if (transform) html = transform(html);
+  html = html.replace(/<head>/i, "<head>" + OA_SSO_SNIPPET);
+  res.setHeader("Cache-Control", "no-store, must-revalidate");
+  res.type("html").send(html);
+}
+function mountOaSpa(mount, distDir, transform, label) {
+  if (!fs.existsSync(path.join(distDir, "index.html"))) {
+    console.warn("[oa]", label, "dist not found at", distDir);
+    return;
+  }
+  const staticHandler = express.static(distDir, { index: false });
+  app.use(mount, (req, res, next) => {
+    if (req.method !== "GET") return next();
+    if (req.path === "/" || req.path === "" || req.path === "/index.html" || !req.path.includes(".")) {
+      return sendOaIndex(distDir, transform, req, res);
+    }
+    staticHandler(req, res, next);
+  });
+  console.log("[oa]", label, "served at", mount, "from", distDir);
+}
+mountOaSpa("/oa", oaWebDist, (html) => html
+  .replace(/src="\/assets\//g, 'src="/oa/assets/')
+  .replace(/href="\/assets\//g, 'href="/oa/assets/')
+  .replace(/src="\/oa-/g, 'src="/oa/oa-'), "legacy frontend");
+// 注：index.html 里的 /favicon.png 不重写 —— legacy dist 本身就没有这个文件
+//（golden master 同样 404），保留原路径让 SMT 自己的 favicon 接管。
+mountOaSpa("/next", oaWebNextDist, null, "next frontend");
+if (fs.existsSync(path.join(oaWebDist, "oa-logo.png"))) {
+  app.get("/oa-logo.png", (req, res) => res.sendFile(path.join(oaWebDist, "oa-logo.png")));
+}
+// ── end OA module mount ──────────────────────────────────────────────
+
 app.use("/api", api);
 
 // ── Line-specific API routers (extracted to src/routes/) ──────────────────
 api.use("/mes/manual-line", manualLineRouter);
 api.use("/mes/auto-line",   autoLineRouter);
 api.use("/mes/manu-line",   manuLineRouter);
+// Native station-pass engine (PG): 过站校验 + NG 路线 + 跳站放行单
+api.use("/mes/station-pass", createStationPassRouter({ authenticateJWT, requirePermission }));
+// OQC AQL 出货抽检（Z1.4 抽样方案 + CR/MA/MI 判定 + 处置）
+api.use("/qms/oqc-aql", createOqcAqlRouter({ authenticateJWT, requirePermission }));
+// MES-ruijing 移植（W2 基座：sys/md/basic + CRUD 引擎；设备接口走 X-Api-Key）
+api.use("/mesrj", createMesrjRouter({ authenticateJWT }));
+// WMS 补齐：IQC 模板库 / 物料替代关系 / 有效期管控（原 WMS 有菜单、SMT 只有表）
+registerWmsParityRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope });
+registerWmsGraftRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope });
+// MRB (物料评审) — grafted from WMS-20261019; downstream of IQC fails
+// ⚠️ 必须挂在 OA 之前：OA 的 GET /api/mrb/:id 是单段 catch-all，
+// 会把 /api/mrb/list、/api/mrb/lot-groups、/api/mrb/pending-lots 当成 :id 拦下（400 参数不合法）。
+// 这里用 app 级挂载（OA 也是 app 级），注册顺序决定谁先应答。
+// Supplier-debt write hooks (create / settle) — writes originate from MRB & IQC
+api.use("/supplier-debt", createSupplierDebtRouter({ authenticateJWT }));
+// Supplier-return order lifecycle (reference supplier-return module)
+api.use("/supplier-return", createSupplierReturnRouter({ authenticateJWT }));
+// Notifications + OA integration (reference compatibility surfaces)
+api.use("/notices", createNoticesRouter({ authenticateJWT }));
+api.use("/integration/oa", createOaIntegrationRouter({ authenticateJWT }));
 
 // ── Finance Routes ─────────────────────────────────────────────────────────
 // GET /api/finance/ar-invoices
@@ -12120,427 +12038,42 @@ async function runWarehouseSafetyReport(){
     return summary;
   }finally{warehouseSafetyReportBusy=false;}
 }
-app.post('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-report/run-now',async(_req,res)=>{try{res.json(mutateEnvelope(await runWarehouseSafetyReport()));}catch(e){res.status(409).json(errorEnvelope('WAREHOUSE_SAFETY_REPORT_FAILED',e.message));}});
-app.get('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/safety-reports',async(_req,res)=>{try{await factoryVirtualEmployeesReady;const reports=await query(`SELECT id,detail,created_at FROM factory_virtual_employee_events WHERE employee_id=$1 AND event_type='SAFETY_STOCK_REPORT_ISSUED' ORDER BY created_at DESC LIMIT 100`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID]);res.json(listEnvelope(reports.rows));}catch(e){res.status(500).json(errorEnvelope('WAREHOUSE_SAFETY_REPORT_LIST_FAILED',e.message));}});
-app.get('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/putaway-rules',requirePermission('wms.view'),(_req,res)=>res.json(listEnvelope(PUTAWAY_RULES)));
-app.post('/api/factory/virtual-employees/WMS-INVENTORY-VIRTUAL-01/putaway-recommendations',requirePermission('wms.view'),async(req,res)=>{try{
-  await factoryVirtualEmployeesReady;const p=req.body||{},lotId=Number(p.materialLotId||0),materialCode=String(p.materialCode||'').trim();
-  if(!lotId&&!materialCode)return res.status(400).json(errorEnvelope('PUTAWAY_MATERIAL_REQUIRED','materialLotId or materialCode is required'));
-  const material=(await query(`SELECT m.id,m.code,m.msd_level,m.storage_condition,ml.id AS lot_id,ml.lot_no,ml.iqc_status
-    FROM materials m LEFT JOIN material_lots ml ON ml.material_id=m.id AND ($1::bigint=0 OR ml.id=$1)
-    WHERE ($1::bigint>0 AND ml.id=$1) OR ($1::bigint=0 AND UPPER(m.code)=UPPER($2)) ORDER BY ml.created_at DESC NULLS LAST LIMIT 1`,[lotId,materialCode])).rows[0];
-  if(!material)return res.status(404).json(errorEnvelope('PUTAWAY_MATERIAL_NOT_FOUND','material or lot not found'));
-  const locations=(await query(`SELECT sl.id,sl.code,sl.status,w.code AS warehouse_code,w.status AS warehouse_status,z.code AS zone_code,z.status AS zone_status,z.zone_type,
-    sl.allow_putaway,sl.locked_reason,sl.capacity_qty,sl.max_pallets,sl.length_cm,sl.width_cm,sl.height_cm,
-    sl.floor_id,sl.position_code,sl.aisle_code,sl.cross_aisle_code,sl.aisle_side,sl.access_direction,sl.rack_code,sl.level_code,sl.bin_code,sl.x_coord,sl.y_coord,sl.z_coord,sl.orientation_deg,
-    sl.capacity_uom,sl.max_weight_kg,sl.max_volume_m3,sl.max_stack_height,sl.route_node_id,sl.handling_equipment,sl.fire_zone_code,sl.esd_controlled,sl.hazardous_allowed,sl.cold_storage,
-    COALESCE(sl.temperature_min,z.temperature_min) AS temperature_min,COALESCE(sl.temperature_max,z.temperature_max) AS temperature_max,
-    COALESCE(sl.humidity_min,z.humidity_min) AS humidity_min,COALESCE(sl.humidity_max,z.humidity_max) AS humidity_max,sl.msd_allowed,
-    COALESCE(SUM(CASE WHEN ml.lot_status IN('open','active') THEN ml.received_qty ELSE 0 END),0)::numeric AS occupied_qty,
-    COUNT(DISTINCT ml.id) FILTER(WHERE ml.lot_status IN('open','active'))::int AS occupied_pallets,
-    COUNT(DISTINCT ml.id) FILTER(WHERE ml.material_id=$1 AND ml.lot_status IN('open','active'))::int AS same_material_lots
-    FROM storage_locations sl JOIN wms_warehouses w ON w.id=sl.warehouse_id JOIN wms_zones z ON z.id=sl.zone_id
-    LEFT JOIN material_lots ml ON ml.storage_location_id=sl.id GROUP BY sl.id,w.code,w.status,z.code,z.status,z.zone_type,z.temperature_min,z.temperature_max,z.humidity_min,z.humidity_max ORDER BY sl.code`,[material.id])).rows;
-  const goods={qty:Number(p.qty||0),palletCount:Number(p.palletCount||1),lengthCm:p.lengthCm,widthCm:p.widthCm,heightCm:p.heightCm,weightKg:p.weightKg,temperature:p.temperature,humidity:p.humidity,iqcStatus:String(p.iqcStatus||material.iqc_status||'pending'),msdLevel:material.msd_level,storageCondition:material.storage_condition};
-  const source=p.sourceLocationCode?(await query(`SELECT code,x_coord,y_coord FROM storage_locations WHERE UPPER(code)=UPPER($1) LIMIT 1`,[String(p.sourceLocationCode)])).rows[0]||{}:{code:'RECEIVING_STAGING',x_coord:p.sourceXCoord,y_coord:p.sourceYCoord};
-  const candidates=locations.map(row=>({id:row.id,code:row.code,status:row.status,warehouseCode:row.warehouse_code,warehouseStatus:row.warehouse_status,zoneCode:row.zone_code,zoneStatus:row.zone_status,zoneType:row.zone_type,floorId:row.floor_id,positionCode:row.position_code,aisleCode:row.aisle_code,crossAisleCode:row.cross_aisle_code,aisleSide:row.aisle_side,accessDirection:row.access_direction,rackCode:row.rack_code,levelCode:row.level_code,binCode:row.bin_code,xCoord:row.x_coord,yCoord:row.y_coord,zCoord:row.z_coord,orientationDeg:row.orientation_deg,routeNodeId:row.route_node_id,routeDistance:[source.x_coord,source.y_coord,row.x_coord,row.y_coord].every(value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value)))?Math.hypot(Number(row.x_coord)-Number(source.x_coord),Number(row.y_coord)-Number(source.y_coord)):null,allowPutaway:row.allow_putaway,lockedReason:row.locked_reason,capacityQty:row.capacity_qty,capacityUom:row.capacity_uom,maxPallets:row.max_pallets,maxWeightKg:row.max_weight_kg,maxVolumeM3:row.max_volume_m3,maxStackHeight:row.max_stack_height,lengthCm:row.length_cm,widthCm:row.width_cm,heightCm:row.height_cm,handlingEquipment:row.handling_equipment,fireZoneCode:row.fire_zone_code,esdControlled:row.esd_controlled,hazardousAllowed:row.hazardous_allowed,coldStorage:row.cold_storage,temperatureMin:row.temperature_min,temperatureMax:row.temperature_max,humidityMin:row.humidity_min,humidityMax:row.humidity_max,msdAllowed:row.msd_allowed,occupiedQty:row.occupied_qty,occupiedPallets:row.occupied_pallets,sameMaterialLots:row.same_material_lots,utilization:Number(row.capacity_qty)>0?Number(row.occupied_qty)/Number(row.capacity_qty):0,zoneStorageMatch:material.storage_condition?String(row.zone_type||'').toUpperCase().includes(String(material.storage_condition).toUpperCase()):false}));
-  const recommendations=rankPutawayLocations(candidates,goods,p.limit||5).map(location=>({...location,path:buildPutawayPath(location,{code:source.code,xCoord:source.x_coord,yCoord:source.y_coord})})),warnings=[];if(p.weightKg!=null&&candidates.every(x=>x.maxWeightKg==null))warnings.push('LOCATION_WEIGHT_LIMIT_NOT_CONFIGURED');if(!recommendations.length)warnings.push('NO_ELIGIBLE_LOCATION');
-  const output={employeeId:WAREHOUSE_INVENTORY_EMPLOYEE_ID,rulesVersion:'1.0.0',rules:PUTAWAY_RULES,material:{id:material.id,code:material.code,lotId:material.lot_id,lotNo:material.lot_no,iqcStatus:goods.iqcStatus,msdLevel:material.msd_level,storageCondition:material.storage_condition},goods,recommendations,warnings,approvalRequired:!recommendations.length};
-  await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'PUTAWAY_RECOMMENDATION_CREATED',$2::jsonb,$3)`,[WAREHOUSE_INVENTORY_EMPLOYEE_ID,JSON.stringify({materialCode:material.code,lotId:material.lot_id,recommendationCodes:recommendations.map(x=>x.code),warnings}),req.user?.username||WAREHOUSE_INVENTORY_EMPLOYEE_ID]);
-  res.json(mutateEnvelope(output));
-}catch(e){res.status(409).json(errorEnvelope('PUTAWAY_RECOMMENDATION_FAILED',e.message));}});
-const warehouseSafetyReportInterval=Math.max(300000,Number(process.env.WAREHOUSE_SAFETY_REPORT_INTERVAL_MS||21600000));
-setInterval(()=>{void runWarehouseSafetyReport().catch(error=>console.error('[WMS-INVENTORY-VIRTUAL-01]',error.message));},warehouseSafetyReportInterval);
-app.put('/api/factory/virtual-employees/:id/config', async (req,res) => {
-  try {
-    await factoryVirtualEmployeesReady;
-    const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};
-    if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
-    const provider=String(p.provider||'minimax').trim().toLowerCase(),model=String(p.model||'MiniMax-M2.7').trim().slice(0,160);
-    const intervalSeconds=Math.max(60,Math.min(86400,Number(p.intervalSeconds||p.interval_seconds||300)));
-    const baseUrl=String(p.baseUrl||p.base_url||'').trim(),credentialEnv=String(p.credentialEnv||p.credential_env||'').trim();
-    const timeoutMs=Math.max(5000,Math.min(300000,Number(p.timeoutMs||p.timeout_ms||120000)));
-    const temperature=Math.max(0,Math.min(1,Number(p.temperature??0.2)));
-    const displayName=String(p.displayName||p.display_name||employee.name).trim().slice(0,120);
-    const avatarUrl=String(p.avatarUrl||p.avatar_url||'').trim();
-    const preferredLanguage=String(p.preferredLanguage||p.preferred_language||'zh-CN');
-    const communicationTone=String(p.communicationTone||p.communication_tone||'professional').trim().slice(0,40);
-    const personality=String(p.personality||'').trim().slice(0,2000);
-    if(!['minimax','openai-compatible','ollama','hermes','rules'].includes(provider))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_PROVIDER_INVALID','unsupported provider'));
-    if(!model)return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_MODEL_REQUIRED','model is required'));
-    if(baseUrl&&!/^https?:\/\/[^\s]+$/i.test(baseUrl))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_BASE_URL_INVALID','baseUrl must be an http(s) URL'));
-    if(credentialEnv&&!/^[A-Z][A-Z0-9_]{2,119}$/.test(credentialEnv))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_CREDENTIAL_ENV_INVALID','credentialEnv must be an environment variable name'));
-    if(avatarUrl&&!/^\/(?!\/)[^\s]+$|^https?:\/\/[^\s]+$/i.test(avatarUrl))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_AVATAR_INVALID','avatarUrl must be an app path or http(s) URL'));
-    if(!['zh-CN','vi-VN','en-US'].includes(preferredLanguage))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_LANGUAGE_INVALID','unsupported language'));
-    const actor=req.user?.username||'admin';
-    const row=(await query(`INSERT INTO factory_virtual_employee_configs(employee_id,enabled,provider,model,base_url,credential_env,timeout_ms,temperature,display_name,avatar_url,preferred_language,communication_tone,personality,interval_seconds,owner,notes,updated_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT(employee_id) DO UPDATE SET enabled=EXCLUDED.enabled,provider=EXCLUDED.provider,model=EXCLUDED.model,base_url=EXCLUDED.base_url,credential_env=EXCLUDED.credential_env,timeout_ms=EXCLUDED.timeout_ms,temperature=EXCLUDED.temperature,display_name=EXCLUDED.display_name,avatar_url=EXCLUDED.avatar_url,preferred_language=EXCLUDED.preferred_language,communication_tone=EXCLUDED.communication_tone,personality=EXCLUDED.personality,interval_seconds=EXCLUDED.interval_seconds,owner=EXCLUDED.owner,notes=EXCLUDED.notes,updated_by=EXCLUDED.updated_by,updated_at=NOW() RETURNING *`,[employee.id,p.enabled!==false,provider,model,baseUrl||null,credentialEnv||null,timeoutMs,temperature,displayName,avatarUrl||null,preferredLanguage,communicationTone,personality||null,intervalSeconds,String(p.owner||'').trim()||null,String(p.notes||'').trim()||null,actor])).rows[0];
-    const safeRow={...row,credential_configured:row.credential_env?Boolean(String(process.env[row.credential_env]||'').trim()):true};
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'CONFIG_UPDATED',$2::jsonb,$3)`,[employee.id,JSON.stringify({...safeRow,credential_env:row.credential_env||null}),actor]);
-    res.json(mutateEnvelope(safeRow));
-  }catch(e){res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_CONFIG_FAILED',e.message));}
-});
-app.get('/api/factory/virtual-employees/:id/training-cases', async (req,res)=>{
-  try{await factoryVirtualEmployeesReady;const employee=getFactoryVirtualEmployee(req.params.id);if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));const r=await query(`SELECT c.*,COALESCE(json_agg(r ORDER BY r.created_at DESC) FILTER(WHERE r.id IS NOT NULL),'[]') AS runs FROM factory_virtual_employee_training_cases c LEFT JOIN factory_virtual_employee_training_runs r ON r.case_id=c.id WHERE c.employee_id=$1 GROUP BY c.id ORDER BY c.created_at DESC`,[employee.id]);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('TRAINING_CASE_LIST_FAILED',e.message));}
-});
-app.post('/api/factory/virtual-employees/:id/training-cases', async (req,res)=>{
-  try{await factoryVirtualEmployeesReady;const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));if(!String(p.title||'').trim()||!String(p.scenario||'').trim()||!String(p.expectedBehavior||'').trim())return res.status(400).json(errorEnvelope('TRAINING_CASE_REQUIRED','title, scenario and expectedBehavior are required'));const row=(await query(`INSERT INTO factory_virtual_employee_training_cases(employee_id,title,scenario,expected_behavior,acceptance_criteria,created_by) VALUES($1,$2,$3,$4,$5::jsonb,$6) RETURNING *`,[employee.id,String(p.title).trim(),String(p.scenario).trim(),String(p.expectedBehavior).trim(),JSON.stringify(Array.isArray(p.acceptanceCriteria)?p.acceptanceCriteria:[]),req.user?.username||'trainer'])).rows[0];res.status(201).json(mutateEnvelope(row));}catch(e){res.status(400).json(errorEnvelope('TRAINING_CASE_CREATE_FAILED',e.message));}
-});
-app.post('/api/factory/virtual-employees/training-cases/:caseId/runs', async (req,res)=>{
-  try{await factoryVirtualEmployeesReady;const p=req.body||{},testCase=(await query(`SELECT * FROM factory_virtual_employee_training_cases WHERE id=$1`,[req.params.caseId])).rows[0];if(!testCase)return res.status(404).json(errorEnvelope('TRAINING_CASE_NOT_FOUND','training case not found'));const response=String(p.response||'').trim();if(!response)return res.status(400).json(errorEnvelope('TRAINING_RESPONSE_REQUIRED','response is required'));const row=(await query(`INSERT INTO factory_virtual_employee_training_runs(case_id,employee_id,response) VALUES($1,$2,$3) RETURNING *`,[testCase.id,testCase.employee_id,response])).rows[0];res.status(201).json(mutateEnvelope(row));}catch(e){res.status(400).json(errorEnvelope('TRAINING_RUN_CREATE_FAILED',e.message));}
-});
-app.post('/api/factory/virtual-employees/training-runs/:runId/review', async (req,res)=>{
-  try{await factoryVirtualEmployeesReady;const p=req.body||{},score=Math.max(0,Math.min(100,Number(p.score)));if(!Number.isFinite(score))return res.status(400).json(errorEnvelope('TRAINING_SCORE_REQUIRED','score is required'));const result=score>=Number(p.passScore||80)?'PASSED':'FAILED';const row=(await query(`UPDATE factory_virtual_employee_training_runs SET score=$1,result=$2,reviewer=$3,feedback=$4,reviewed_at=NOW() WHERE id=$5 AND result='WAITING_REVIEW' RETURNING *`,[score,result,req.user?.username||'trainer',String(p.feedback||''),req.params.runId])).rows[0];if(!row)return res.status(409).json(errorEnvelope('TRAINING_REVIEW_INVALID','run is unavailable or already reviewed'));await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'TRAINING_REVIEWED',$2::jsonb,$3)`,[row.employee_id,JSON.stringify({runId:row.id,score,result}),req.user?.username||'trainer']);res.json(mutateEnvelope(row));}catch(e){res.status(409).json(errorEnvelope('TRAINING_REVIEW_FAILED',e.message));}
-});
-app.get('/api/factory/virtual-employees/:id/evaluations', async (req,res)=>{
-  try {
-    await factoryVirtualEmployeesReady;
-    const employee=getFactoryVirtualEmployee(req.params.id);
-    if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
-    const evaluations=await query(`SELECT * FROM factory_virtual_employee_evaluations WHERE employee_id=$1 ORDER BY period_end DESC,created_at DESC`,[employee.id]);
-    const metrics=(await query(`SELECT
-      COUNT(*)::int AS total_tasks,
-      COUNT(*) FILTER(WHERE status IN('COMPLETED','HANDED_OFF'))::int AS completed_tasks,
-      COUNT(*) FILTER(WHERE status='FAILED')::int AS failed_tasks,
-      COUNT(*) FILTER(WHERE requires_human)::int AS gated_tasks,
-      COUNT(*) FILTER(WHERE status='WAITING_APPROVAL')::int AS waiting_approval
-      FROM factory_virtual_employee_tasks WHERE employee_id=$1`,[employee.id])).rows[0];
-    const training=(await query(`SELECT COUNT(*)::int AS total_runs,
-      COUNT(*) FILTER(WHERE result='PASSED')::int AS passed_runs,
-      COALESCE(ROUND(AVG(score) FILTER(WHERE score IS NOT NULL),2),0) AS average_score
-      FROM factory_virtual_employee_training_runs WHERE employee_id=$1`,[employee.id])).rows[0];
-    res.json(envelope({items:evaluations.rows,metrics,training}));
-  }catch(e){res.status(500).json(errorEnvelope('EMPLOYEE_EVALUATION_LIST_FAILED',e.message));}
-});
-app.post('/api/factory/virtual-employees/:id/evaluations', async (req,res)=>{
-  try {
-    await factoryVirtualEmployeesReady;
-    const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};
-    if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
-    const score=(name)=>Math.max(0,Math.min(100,Number(p[name]??0)));
-    const values=['taskCompletionScore','qualityScore','efficiencyScore','complianceScore','collaborationScore','supervisorScore'].map(score);
-    if(values.some(v=>!Number.isFinite(v)))return res.status(400).json(errorEnvelope('EMPLOYEE_EVALUATION_SCORE_INVALID','all scores must be numbers from 0 to 100'));
-    const total=Number((values[0]*.15+values[1]*.25+values[2]*.15+values[3]*.20+values[4]*.10+values[5]*.15).toFixed(2));
-    const grade=total>=90?'A':total>=80?'B':total>=70?'C':total>=60?'D':'E';
-    const stage=['PROBATION','REGULAR','COACHING'].includes(String(p.employmentStage||'').toUpperCase())?String(p.employmentStage).toUpperCase():'REGULAR';
-    const row=(await query(`INSERT INTO factory_virtual_employee_evaluations(employee_id,period_start,period_end,employment_stage,task_completion_score,quality_score,efficiency_score,compliance_score,collaboration_score,supervisor_score,total_score,grade,strengths,improvement_plan,evaluator)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[employee.id,p.periodStart,p.periodEnd,stage,...values,total,grade,String(p.strengths||''),String(p.improvementPlan||''),req.user?.username||'manager'])).rows[0];
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'EVALUATION_DRAFTED',$2::jsonb,$3)`,[employee.id,JSON.stringify({evaluationId:row.id,total,grade}),req.user?.username||'manager']);
-    res.status(201).json(mutateEnvelope(row));
-  }catch(e){res.status(400).json(errorEnvelope('EMPLOYEE_EVALUATION_CREATE_FAILED',e.message));}
-});
-app.post('/api/factory/virtual-employees/evaluations/:evaluationId/approve', async (req,res)=>{
-  try {
-    await factoryVirtualEmployeesReady;
-    const row=(await query(`UPDATE factory_virtual_employee_evaluations SET status='APPROVED',approved_by=$1,approved_at=NOW() WHERE id=$2 AND status='DRAFT' RETURNING *`,[req.user?.username||'manager',req.params.evaluationId])).rows[0];
-    if(!row)return res.status(409).json(errorEnvelope('EMPLOYEE_EVALUATION_APPROVAL_INVALID','evaluation is unavailable or already approved'));
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'EVALUATION_APPROVED',$2::jsonb,$3)`,[row.employee_id,JSON.stringify({evaluationId:row.id,total:row.total_score,grade:row.grade}),req.user?.username||'manager']);
-    res.json(mutateEnvelope(row));
-  }catch(e){res.status(409).json(errorEnvelope('EMPLOYEE_EVALUATION_APPROVAL_FAILED',e.message));}
-});
-app.get('/api/factory/virtual-employees/:id', async (req, res) => {
-  try {
-    await factoryVirtualEmployeesReady;
-    const employee = getFactoryVirtualEmployee(req.params.id);
-    if (!employee) return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND', 'virtual employee not found'));
-    const tasks = await query(`SELECT * FROM factory_virtual_employee_tasks WHERE employee_id=$1 ORDER BY created_at DESC LIMIT 100`, [employee.id]);
-    res.json(envelope({ ...employee, tasks: tasks.rows }));
-  } catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_READ_FAILED', e.message)); }
-});
-app.post('/api/factory/virtual-employees/:id/tasks', async (req, res) => {
-  try {
-    await factoryVirtualEmployeesReady;
-    const employee = getFactoryVirtualEmployee(req.params.id), p = req.body || {};
-    if (!employee) return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND', 'virtual employee not found'));
-    const taskType = String(p.taskType || '').trim().toUpperCase(), title = String(p.title || '').trim();
-    if (!taskType || !title) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_REQUIRED', 'taskType and title are required'));
-    if (!employee.capabilities.includes(taskType)) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_CAPABILITY_DENIED', `${employee.id} cannot execute ${taskType}`));
-    const humanGate = String(p.humanGate || '').trim();
-    if (humanGate && !employee.humanGates.includes(humanGate)) return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_GATE_INVALID', 'humanGate is not registered for this employee'));
-    const requiresHuman = Boolean(humanGate || p.requiresHuman);
-    const row = (await query(`INSERT INTO factory_virtual_employee_tasks(employee_id,task_type,title,domain,status,priority,input,requires_human,human_gate,requested_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10) RETURNING *`, [employee.id, taskType, title, employee.domain, requiresHuman ? 'WAITING_APPROVAL' : 'OPEN', String(p.priority || 'NORMAL').toUpperCase(), JSON.stringify(p.input || {}), requiresHuman, humanGate || null, req.user?.username || 'system'])).rows[0];
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'TASK_CREATED',$3::jsonb,$4)`, [employee.id,row.id,JSON.stringify({ taskType, requiresHuman, humanGate: humanGate || null }),req.user?.username || 'system']);
-    res.status(201).json(mutateEnvelope(row));
-  } catch (e) { res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_TASK_CREATE_FAILED', e.message)); }
-});
-app.post('/api/factory/virtual-employees/tasks/:taskId/approve', async (req, res) => {
-  try {
-    await factoryVirtualEmployeesReady;
-    const row = (await query(`UPDATE factory_virtual_employee_tasks SET status='OPEN',approved_by=$1,updated_at=NOW() WHERE id=$2 AND status='WAITING_APPROVAL' RETURNING *`, [req.user?.username || 'manager', req.params.taskId])).rows[0];
-    if (!row) return res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_APPROVAL_INVALID', 'task is not waiting for approval'));
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'HUMAN_APPROVED',$3::jsonb,$4)`, [row.employee_id,row.id,JSON.stringify({ humanGate: row.human_gate }),req.user?.username || 'manager']);
-    if (row.employee_id === 'WMS-RECEIVING-VIRTUAL-01') {
-      neuralBroadcast({ from: row.employee_id, to: 'wms_receiving_archify', type: 'WMS_RECEIVING_EMPLOYEE_STATUS', priority: 'info', payload: { taskId: row.id, taskType: row.task_type, title: row.title, status: 'OPEN', input: row.input, approvedBy: row.approved_by } });
-    }
-    res.json(mutateEnvelope(row));
-  } catch (e) { res.status(409).json(errorEnvelope('VIRTUAL_EMPLOYEE_APPROVAL_FAILED', e.message)); }
-});
-app.get('/api/factory/virtual-employees/events/audit', async (req, res) => {
-  try { await factoryVirtualEmployeesReady; const r = await query(`SELECT * FROM factory_virtual_employee_events WHERE ($1='' OR employee_id=$1) ORDER BY created_at DESC LIMIT 500`, [String(req.query.employeeId || '')]); res.json(listEnvelope(r.rows)); }
-  catch (e) { res.status(500).json(errorEnvelope('VIRTUAL_EMPLOYEE_AUDIT_FAILED', e.message)); }
-});
-app.post('/api/factory/virtual-employees/:id/wechat', async (req,res)=>{try{
-  await factoryVirtualEmployeesReady;const employee=getFactoryVirtualEmployee(req.params.id),p=req.body||{};if(!employee)return res.status(404).json(errorEnvelope('VIRTUAL_EMPLOYEE_NOT_FOUND','virtual employee not found'));
-  const subject=String(p.subject||'').trim(),message=String(p.message||'').trim(),priority=String(p.priority||'NORMAL').toUpperCase();if(!subject||!message)return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_WECHAT_REQUIRED','subject and message are required'));if(!['NORMAL','WARNING','CRITICAL'].includes(priority))return res.status(400).json(errorEnvelope('VIRTUAL_EMPLOYEE_WECHAT_PRIORITY_INVALID','invalid priority'));
-  const result=await sendVirtualEmployeeWechat({employeeId:employee.id,subject,message,entityRef:String(p.entityRef||''),priority});await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'WECHAT_MESSAGE_ATTEMPTED',$2::jsonb,$3)`,[employee.id,JSON.stringify({subject,priority,entityRef:p.entityRef||null,...result}),req.user?.username||employee.id]);
-  res.status(result.sent?200:202).json(mutateEnvelope(result));
-}catch(e){res.status(502).json(errorEnvelope('VIRTUAL_EMPLOYEE_WECHAT_FAILED',e.message));}});
 
-let receivingVirtualEmployeeBusy = false;
-function broadcastReceivingEmployee(payload) {
-  neuralBroadcast({
-    from: 'WMS-RECEIVING-VIRTUAL-01',
-    to: 'wms_receiving_archify',
-    type: 'WMS_RECEIVING_EMPLOYEE_STATUS',
-    priority: payload.status === 'WAITING_APPROVAL' ? 'warning' : 'info',
-    payload
-  });
-}
-async function runReceivingVirtualEmployee() {
-  if (receivingVirtualEmployeeBusy) return { skipped: true, reason: 'already_running' };
-  receivingVirtualEmployeeBusy = true;
-  const employeeId = 'WMS-RECEIVING-VIRTUAL-01';
-  try {
-    broadcastReceivingEmployee({ phase: 'SCANNING', status: 'RUNNING', message: 'Scanning unfinished receiving lots' });
-    await Promise.all([factoryVirtualEmployeesReady, receivingQrRegistrationReady]);
-    const config=(await query(`SELECT enabled FROM factory_virtual_employee_configs WHERE employee_id=$1`,[employeeId])).rows[0];
-    if(config?.enabled===false)return {skipped:true,reason:'employee_disabled'};
-    const lots = await query(`SELECT ml.id,ml.lot_no,ml.po_no,ml.received_qty,ml.iqc_status,ml.storage_location_id,
-      m.code AS material_code,COALESCE(s.code,'') AS supplier_code,sl.code AS location_code,
-      q.material_qr,q.document_no,q.msd_level,q.location_code AS qr_location,q.status AS qr_status,q.quantity AS qr_quantity
-      FROM material_lots ml JOIN materials m ON m.id=ml.material_id
-      LEFT JOIN suppliers s ON s.id=ml.supplier_id LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
-      LEFT JOIN wms_receiving_qr_registrations q ON q.material_lot_id=ml.id
-      WHERE ml.iqc_status IN('pending','hold') ORDER BY ml.received_at ASC NULLS LAST LIMIT 200`);
-    let created = 0, readyForIqc = 0, exceptions = 0;
-    for (const lot of lots.rows) {
-      let taskType = 'RECEIVING_VALIDATE', title = `核对收料批次 ${lot.lot_no}`, requiresHuman = false, humanGate = null;
-      const missing = [];
-      if (!lot.po_no) missing.push('PO');
-      if (!lot.supplier_code) missing.push('supplier');
-      if (!(Number(lot.received_qty) > 0)) missing.push('received quantity');
-      if (missing.length) { requiresHuman = true; humanGate = 'receive_variance'; title = `收料资料异常 ${lot.lot_no}: ${missing.join(', ')}`; exceptions += 1; }
-      else if (!lot.material_qr) { taskType = 'LABEL_PLAN'; title = `生成并打印箱 QR ${lot.lot_no}`; }
-      else if (!lot.qr_location && !lot.location_code) { taskType = 'LOCATION_BIND'; title = `扫描并绑定仓位 ${lot.lot_no}`; }
-      else if (lot.qr_status === 'IQC_PENDING') { taskType = 'IQC_HANDOFF'; title = `已收料，交接 IQC ${lot.lot_no}`; readyForIqc += 1; }
-      const taskKey = `RECEIVING:${lot.id}:${taskType}`;
-      const input = { materialLotId: lot.id, lotNo: lot.lot_no, poNo: lot.po_no, materialCode: lot.material_code, supplierCode: lot.supplier_code, receivedQty: Number(lot.received_qty || 0), registeredQty: Number(lot.qr_quantity || 0), materialQr: lot.material_qr, documentNo: lot.document_no, msl: lot.msd_level, locationCode: lot.qr_location || lot.location_code, missing };
-      const result = await query(`INSERT INTO factory_virtual_employee_tasks(task_key,employee_id,task_type,title,domain,status,priority,input,requires_human,human_gate,requested_by)
-        VALUES($1,$2,$3,$4,'wms',$5,$6,$7::jsonb,$8,$9,'WMS-RECEIVING-VIRTUAL-01')
-        ON CONFLICT(task_key) WHERE task_key IS NOT NULL DO UPDATE SET title=EXCLUDED.title,input=EXCLUDED.input,requires_human=EXCLUDED.requires_human,human_gate=EXCLUDED.human_gate,updated_at=NOW()
-        RETURNING id,(xmax=0) AS inserted`, [taskKey,employeeId,taskType,title,requiresHuman?'WAITING_APPROVAL':taskType==='IQC_HANDOFF'?'DONE':'OPEN',requiresHuman?'HIGH':'NORMAL',JSON.stringify(input),requiresHuman,humanGate]);
-      broadcastReceivingEmployee({ taskId: result.rows[0]?.id, taskType, title, status: requiresHuman ? 'WAITING_APPROVAL' : taskType === 'IQC_HANDOFF' ? 'DONE' : 'OPEN', input });
-      if (result.rows[0]?.inserted) {
-        created += 1;
-        await query(`INSERT INTO factory_virtual_employee_events(employee_id,task_id,event_type,detail,actor) VALUES($1,$2,'RECEIVING_STAGE_DETECTED',$3::jsonb,$1)`, [employeeId,result.rows[0].id,JSON.stringify({ taskType, lotNo: lot.lot_no, missing })]);
-      }
-    }
-    const summary = { scanned: lots.rowCount, created, readyForIqc, exceptions, runAt: new Date().toISOString() };
-    await query(`INSERT INTO factory_virtual_employee_events(employee_id,event_type,detail,actor) VALUES($1,'SCAN_COMPLETED',$2::jsonb,$1)`, [employeeId,JSON.stringify(summary)]);
-    if (!lots.rowCount) broadcastReceivingEmployee({ phase: 'IDLE', status: 'IDLE', ...summary });
-    else broadcastReceivingEmployee({ phase: 'SCAN_COMPLETED', status: 'COMPLETED', ...summary });
-    return summary;
-  } finally { receivingVirtualEmployeeBusy = false; }
-}
-app.post('/api/factory/virtual-employees/WMS-RECEIVING-VIRTUAL-01/run-now', async (_req,res) => {
-  try { res.json(mutateEnvelope(await runReceivingVirtualEmployee())); }
-  catch (e) { res.status(409).json(errorEnvelope('RECEIVING_VIRTUAL_EMPLOYEE_FAILED',e.message)); }
+// Virtual employees (20 routes plus their two interval timers) live in
+// src/routes/virtual-employees.js. The block was not pure registrations -- it carried
+// `runReceivingVirtualEmployee` and both `setInterval` calls -- so the timers move with
+// it; all five names involved are referenced nowhere outside the block (checked before
+// the cut), and register() runs exactly once, so they start at the same point in boot.
+registerVirtualEmployeeRoutes(app, {
+  query, requirePermission, envelope, errorEnvelope, mutateEnvelope, listEnvelope,
+  factoryVirtualEmployeesReady, getFactoryVirtualEmployee, runWarehouseSafetyReport,
+  WAREHOUSE_INVENTORY_EMPLOYEE_ID, PUTAWAY_RULES, rankPutawayLocations, buildPutawayPath,
+  // sendVirtualEmployeeWechat is a `const` arrow declared at ~22613, i.e. below this
+  // line: passing it directly would read it inside its temporal dead zone and get
+  // undefined. Forwarding defers the lookup to call time. check:register-deps flags
+  // exactly this shape, and flagged it here before it could take the boot down.
+  sendVirtualEmployeeWechat: (payload) => sendVirtualEmployeeWechat(payload),
+  neuralBroadcast, receivingQrRegistrationReady,
 });
-app.get('/api/factory/virtual-employees/WMS-RECEIVING-VIRTUAL-01/work-queue', async (_req,res) => {
-  try { await factoryVirtualEmployeesReady; const r=await query(`SELECT * FROM factory_virtual_employee_tasks WHERE employee_id='WMS-RECEIVING-VIRTUAL-01' ORDER BY CASE status WHEN 'WAITING_APPROVAL' THEN 0 WHEN 'OPEN' THEN 1 ELSE 2 END,created_at DESC LIMIT 200`); res.json(listEnvelope(r.rows)); }
-  catch(e){res.status(500).json(errorEnvelope('RECEIVING_VIRTUAL_QUEUE_FAILED',e.message));}
-});
-const receivingVirtualEmployeeInterval = Math.max(60000,Number(process.env.RECEIVING_AGENT_INTERVAL_MS || 300000));
-setInterval(() => { void runReceivingVirtualEmployee().catch(error => console.error('[WMS-RECEIVING-VIRTUAL-01]',error.message)); },receivingVirtualEmployeeInterval);
 
 // IQC routes are mounted on the main management API root; authenticate them
 // before the permission gate so the virtual employee can use the same JWT
 // session as the WMS page.
 app.use('/qms/iqc', authenticateJWT);
-app.get('/qms/iqc/inspection-levels', requirePermission('quality.view'), async (req, res) => {
-  try { await iqcDefectLoopReady; const p=String(req.query.supplierCode||'').trim(), m=String(req.query.materialCode||'').trim(); const r=await query(`SELECT * FROM qms_iqc_inspection_states WHERE ($1='' OR supplier_code=$1) AND ($2='' OR material_code=$2) ORDER BY updated_at DESC LIMIT 500`,[p,m]); res.json(listEnvelope(r.rows)); }
-  catch(e){ res.status(500).json(errorEnvelope('IQC_LEVEL_LIST_FAILED',e.message)); }
-});
-const IQC_LLM_PROVIDER_OPTIONS = Object.freeze([
-  { value:'minimax',label:'MiniMax',defaultModel:'MiniMax-M2.7',credentialEnv:'MINIMAX_API_KEY' },
-  { value:'ollama',label:'Ollama (local)',defaultModel:'qwen2.5:7b',credentialEnv:null },
-  { value:'openai-compatible',label:'OpenAI-compatible',defaultModel:'gpt-4o-mini',credentialEnv:'OPENAI_API_KEY' },
-  { value:'hermes',label:'Hermes CLI',defaultModel:'configured-default',credentialEnv:null },
-  { value:'opencode',label:'OpenCode CLI',defaultModel:'configured-default',credentialEnv:null },
-  { value:'pi',label:'Pi CLI',defaultModel:'configured-default',credentialEnv:null },
-]);
-async function getIqcLlmConfig(){
-  await iqcDefectLoopReady;
-  const row=(await query(`SELECT employee_id,enabled,provider,model,base_url,credential_env,timeout_ms,updated_by,updated_at FROM qms_iqc_virtual_employee_config WHERE employee_id='IQC-VIRTUAL-01'`)).rows[0];
-  return { employeeId:row.employee_id,enabled:row.enabled,provider:row.provider,model:row.model,baseUrl:row.base_url||'',credentialEnv:row.credential_env||'',credentialConfigured:row.credential_env?Boolean(String(process.env[row.credential_env]||'').trim()):true,timeoutMs:row.timeout_ms,updatedBy:row.updated_by,updatedAt:row.updated_at };
-}
-app.get('/qms/iqc/virtual-employee', requirePermission('quality.view'), async (_req, res) => { try { const llmConfig=await getIqcLlmConfig(); res.json(envelope({ ...IQC_VIRTUAL_EMPLOYEE, provider:llmConfig.provider, model:llmConfig.model, enabled:llmConfig.enabled, llmConfig, providerOptions:IQC_LLM_PROVIDER_OPTIONS, harness: IQC_VIRTUAL_HARNESS })); } catch(e){res.status(500).json(errorEnvelope('IQC_AGENT_CONFIG_READ_FAILED',e.message));} });
-app.put('/qms/iqc/virtual-employee/llm-config', requirePermission('quality.execute'), async (req,res)=>{try{
-  await iqcDefectLoopReady;const p=req.body||{},provider=String(p.provider||'').toLowerCase(),option=IQC_LLM_PROVIDER_OPTIONS.find(item=>item.value===provider);
-  if(!option)return res.status(400).json(errorEnvelope('IQC_LLM_PROVIDER_INVALID','Unsupported IQC LLM provider'));
-  const model=String(p.model||option.defaultModel).trim().slice(0,160);if(!model)return res.status(400).json(errorEnvelope('IQC_LLM_MODEL_REQUIRED','model is required'));
-  const baseUrl=String(p.baseUrl||'').trim();if(baseUrl&&!/^https?:\/\/[^\s]+$/i.test(baseUrl))return res.status(400).json(errorEnvelope('IQC_LLM_BASE_URL_INVALID','baseUrl must be an http(s) URL'));
-  const credentialEnv=option.credentialEnv||null,timeoutMs=Math.min(300000,Math.max(5000,Number(p.timeoutMs||120000))),actor=req.user?.username||p.operator||'quality';
-  await query(`UPDATE qms_iqc_virtual_employee_config SET enabled=$1,provider=$2,model=$3,base_url=$4,credential_env=$5,timeout_ms=$6,updated_by=$7,updated_at=NOW() WHERE employee_id='IQC-VIRTUAL-01'`,[p.enabled!==false,provider,model,baseUrl||null,credentialEnv,timeoutMs,actor]);
-  res.json(mutateEnvelope({...(await getIqcLlmConfig()),providerOptions:IQC_LLM_PROVIDER_OPTIONS}));
-}catch(e){res.status(409).json(errorEnvelope('IQC_LLM_CONFIG_UPDATE_FAILED',e.message));}});
-async function getActiveIqcGuidance(guidanceKey = 'SMT_IQC') {
-  await iqcDefectLoopReady;
-  const r = await query(`SELECT id,file_name,version_no,workbook FROM qms_iqc_guidance_documents WHERE guidance_key=$1 AND status='ACTIVE' ORDER BY activated_at DESC LIMIT 1`, [guidanceKey]);
-  if (!r.rows[0]) throw new Error('No ACTIVE IQC Excel guidance is configured');
-  const workbook = r.rows[0].workbook || {};
-  const templateResult = await query(`SELECT id,file_name,version_no,workbook FROM qms_iqc_guidance_documents WHERE guidance_key=$1 AND status='ACTIVE' ORDER BY activated_at DESC LIMIT 1`, [`${guidanceKey}_TEMPLATE`]);
-  const templateDocument = templateResult.rows[0] || null;
-  const templateWorkbook = templateDocument?.workbook || {};
-  const sheets = Array.isArray(workbook.sheets) ? workbook.sheets : [];
-  const templateSheets = Array.isArray(templateWorkbook.sheets) ? templateWorkbook.sheets : [];
-  const allRows = sheets.flatMap(sheet => Array.isArray(sheet.rows) ? sheet.rows : []);
-  const templateRows = templateSheets.flatMap(sheet => Array.isArray(sheet.rows) ? sheet.rows : []);
-  const text = allRows.flatMap(row => Array.isArray(row) ? row.map(cell => String(cell ?? '').trim()).filter(Boolean) : []);
-  const templateText = templateRows.flatMap(row => Array.isArray(row) ? row.map(cell => String(cell ?? '').trim()).filter(Boolean) : []);
-  const samplingRows = [...(workbook.samplingRows || []), ...allRows.filter(row => Array.isArray(row) && row.some(cell => /\d+\s*[~～至-]\s*\d+/.test(String(cell ?? ''))))];
-  const approvedItemPattern = /合格供应商|出货检验报告|出货报告|标签内容核对|外箱完好|缩水|模具印|划伤|披锋|同色点|异色点|脏污|异物|色差|燃烧测试|盐雾测试|球击测试|球压测试|RoHS|无卤测试|第三方环保测试报告|焊端|电气测试|电阻测试|电容测试|MSD|ESD/i;
-  const headingPattern = /抽样方案|正常检验一次抽样方案|加严检验一次抽样方案|放宽检验一次抽样方案|特殊检验水平|一般检验水平|表示箭头|使用箭头|检验属性|检验内容\/标准|判定标准&测试结果/i;
-  const inspectionItems = [...new Set([
-    ...(templateWorkbook.inspectionItems || []),
-    ...templateText.filter(value => approvedItemPattern.test(value) && !headingPattern.test(value)),
-  ])].slice(0, 100);
-  const levelRules = text.filter(value => /8\.2\.[1-5]|正常检查|加严检查|放宽检查|免检|暂停检查/.test(value));
-  return { ...workbook, sheets: [...sheets, ...templateSheets], samplingRows, inspectionItems, levelRules, fileName: `${r.rows[0].file_name} (${r.rows[0].version_no})`, inspectionTemplateFileName: templateDocument ? `${templateDocument.file_name} (${templateDocument.version_no})` : null, guidanceDocumentId: r.rows[0].id, guidanceVersion: r.rows[0].version_no, learnedAt: new Date().toISOString() };
-}
-async function getIqcMaterialHistory(materialCode, supplierCode = '') {
-  const r = await query(`SELECT supplier_code,material_code,lot_no,result,level_before,level_after,transition,inspection_date,source_file,abnormal_type,operator,created_at
-    FROM qms_iqc_inspection_level_events WHERE material_code=$1 AND ($2='' OR supplier_code=$2) ORDER BY created_at DESC LIMIT 100`, [String(materialCode || '').trim(), String(supplierCode || '').trim()]);
-  return r.rows;
-}
-app.post('/qms/iqc/virtual-employee/learn-guidance', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const row = await rememberIqcMemory(query, { memoryType: 'AUTHORITATIVE_GUIDANCE', materialCode: req.body?.materialCode, sourceType: 'ACTIVE_IQC_EXCEL', sourceId: String(guidance.guidanceDocumentId), content: { fileName: guidance.fileName, version: guidance.guidanceVersion, sheets: guidance.sheets.map(sheet => sheet.name), samplingRows: guidance.samplingRows, inspectionItems: guidance.inspectionItems, levelRules: guidance.levelRules }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ guidance, memory: row })); } catch (e) { res.status(409).json(errorEnvelope('IQC_GUIDANCE_LEARN_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/plan', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const history = await getIqcMaterialHistory(req.body?.materialCode, req.body?.supplierCode); const plan = await runIqcVirtualEmployee({ ...(req.body || {}), guidance, history }); res.json(mutateEnvelope({ ...plan, historyCount: history.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { res.status(409).json(errorEnvelope('IQC_VIRTUAL_PLAN_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/advice', requirePermission('quality.execute'), async (req, res) => { try { const guidance = await getActiveIqcGuidance(req.body?.guidanceKey); const memoryContext = await getIqcMemoryContext(query, req.body || {}); const llmConfig=await getIqcLlmConfig(); if(!llmConfig.enabled)return res.status(409).json(errorEnvelope('IQC_VIRTUAL_EMPLOYEE_DISABLED','IQC virtual employee is disabled')); const advice = await askIqcLlm({ ...(req.body || {}), guidance, memoryContext, llmConfig }); await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', materialCode: req.body?.materialCode, lotNo: req.body?.lotNo, sourceType: 'VIRTUAL_EMPLOYEE_ADVICE', content: { question: req.body?.question || '', pageContext: String(req.body?.pageContext || '').slice(0, 2000), provider:advice.provider, model:advice.model, response: advice.output }, createdBy: req.user?.username || 'iqc-virtual-01' }); res.json(mutateEnvelope({ ...advice, memoryCount: memoryContext.length, guidance: { fileName: guidance.fileName, id: guidance.guidanceDocumentId } })); } catch (e) { if (String(e.message || '').includes('No ACTIVE IQC')) return res.status(409).json(errorEnvelope('IQC_GUIDANCE_REQUIRED', e.message)); const llmConfig=await getIqcLlmConfig().catch(()=>null); res.json(mutateEnvelope({ provider:llmConfig?.provider||'minimax', model:llmConfig?.model||process.env.IQC_LLM_MODEL||'configured-model', output: { summary: 'IQC-VIRTUAL-01 cannot access the configured LLM. No inspection result or inventory release was generated.', requiredTests: [], missingEvidence: ['Configured LLM response or real inspection evidence'], recommendation: 'WAIT_FOR_REAL_EVIDENCE', nextAction: 'Check the selected provider configuration and enter real PDA/tester results.', actionArguments: {}, humanApprovalRequired: true, blockedReason: String(e.message || 'LLM unavailable') }, degraded: true })); } });
-const IQC_POWERSHELL_COMMANDS = Object.freeze({
-  check_agent_runtime: "Get-Date; Get-Process -Name node,ollama -ErrorAction SilentlyContinue | Select-Object ProcessName,Id,CPU",
-  inspect_active_guidance: "Write-Output 'Use /qms/iqc/guidance-documents for ACTIVE Excel guidance; no filesystem mutation is permitted.'",
-  inspect_iqc_page: "Write-Output 'IQC page inspection is read-only; use the authenticated WMS API for data.'",
-});
-app.post('/qms/iqc/virtual-employee/powershell', requirePermission('quality.execute'), async (req, res) => {
-  const commandId = String(req.body?.commandId || '').trim();
-  if (!Object.prototype.hasOwnProperty.call(IQC_POWERSHELL_COMMANDS, commandId)) return res.status(400).json(errorEnvelope('IQC_POWERSHELL_COMMAND_DENIED', 'only approved IQC read-only command IDs are allowed'));
-  try {
-    const result = await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', IQC_POWERSHELL_COMMANDS[commandId]], { windowsHide: true, timeout: 10000, maxBuffer: 200000 });
-    res.json(mutateEnvelope({ agent: 'IQC-VIRTUAL-01', commandId, stdout: result.stdout, stderr: result.stderr, readOnly: true }));
-  } catch (e) { res.status(409).json(errorEnvelope('IQC_POWERSHELL_FAILED', e.message)); }
-});
-app.get('/qms/iqc/virtual-employee/memory', requirePermission('quality.view'), async (req, res) => { try { await iqcDefectLoopReady; const rows = await searchIqcMemory(query, req.query || {}); res.json(listEnvelope(rows)); } catch (e) { res.status(500).json(errorEnvelope('IQC_MEMORY_LIST_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/memory', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const row = await rememberIqcMemory(query, { ...(req.body || {}), createdBy: req.user?.username || req.body?.createdBy || 'quality' }); res.status(201).json(mutateEnvelope(row)); } catch (e) { res.status(400).json(errorEnvelope('IQC_MEMORY_WRITE_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/memory/:id/approve', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const r = await query(`UPDATE qms_iqc_virtual_memory SET memory_type='APPROVED_KNOWLEDGE',approval_status='APPROVED',approved_by=$1,approved_at=NOW() WHERE id=$2 AND memory_type='LEARNING_CANDIDATE' AND approval_status='CANDIDATE' RETURNING *`, [req.user?.username || req.body?.operator || 'quality', req.params.id]); if (!r.rows[0]) return res.status(409).json(errorEnvelope('IQC_MEMORY_APPROVAL_INVALID', 'only a learning candidate can be approved')); res.json(mutateEnvelope(r.rows[0])); } catch (e) { res.status(409).json(errorEnvelope('IQC_MEMORY_APPROVAL_FAILED', e.message)); } });
-let iqcVirtualCronBusy = false;
-async function runIqcVirtualCron() {
-  if (iqcVirtualCronBusy) return { skipped: true, reason: 'already_running' };
-  iqcVirtualCronBusy = true;
-  try {
-    await iqcDefectLoopReady;
-    const guidance = await getActiveIqcGuidance();
-    const pending = await query(`SELECT q.material_lot_id,ml.lot_no,m.code AS material_code,s.code AS supplier_code,
-      COALESCE(q.quantity,ml.received_qty) AS quantity,q.source_type,q.warehouse_code,q.location_code,
-      EXTRACT(EPOCH FROM (NOW()-q.updated_at))/60 AS waiting_minutes
-      FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id JOIN materials m ON m.id=ml.material_id
-      LEFT JOIN suppliers s ON s.id=ml.supplier_id WHERE q.status='IQC_PENDING' ORDER BY q.updated_at ASC LIMIT 100`);
-    let planned = 0;
-    const taskTypes = [];
-    for (const row of pending.rows) {
-      const overdue = Number(row.waiting_minutes || 0) >= 120;
-      const history = await getIqcMaterialHistory(row.material_code, row.supplier_code);
-      const plan = await runIqcVirtualEmployee({ lotNo: row.lot_no, materialCode: row.material_code, batchSize: row.quantity, guidance, history });
-      const taskType = overdue ? 'OVERDUE_IQC_REVIEW' : 'GENERATE_IQC_PLAN';
-      const taskTitle = overdue ? `IQC超时待办：${row.lot_no}` : `生成IQC检验计划：${row.lot_no}`;
-      await query(`INSERT INTO qms_iqc_virtual_tasks(task_key,task_type,title,lot_no,material_code,supplier_code,payload,status,requires_human,priority)
-        VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,'OPEN',$8,$9) ON CONFLICT(task_key) DO UPDATE SET payload=EXCLUDED.payload,priority=EXCLUDED.priority`,
-        [`${taskType}:${row.material_lot_id}:${new Date().toISOString().slice(0,10)}`, taskType, taskTitle, row.lot_no, row.material_code, row.supplier_code,
-          JSON.stringify({ sourceType: row.source_type, warehouse: row.warehouse_code, location: row.location_code, quantity: row.quantity, waitingMinutes: row.waiting_minutes, historyCount: history.length, guidance: guidance.fileName, plan }), overdue, overdue ? 'HIGH' : 'NORMAL']);
-      await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', materialCode: row.material_code, lotNo: row.lot_no, sourceType: 'IQC_AGENT_CRON', sourceId: String(row.material_lot_id), content: { stage: 'scheduled_plan', plan, guidance: guidance.fileName }, createdBy: 'iqc-virtual-01' });
-      planned += 1; taskTypes.push(taskType);
-    }
-    const manual = await query(`SELECT supplier_code,material_code,level,counters FROM qms_iqc_inspection_states WHERE (level='SUSPENDED' OR (level='REDUCED' AND COALESCE((counters->>'reducedAccepts')::int,0)>=10)) ORDER BY updated_at DESC LIMIT 100`);
-    for (const row of manual.rows) {
-      const taskType = row.level === 'SUSPENDED' ? 'SUPPLIER_IMPROVEMENT_CONFIRMATION' : 'EXEMPTION_APPROVAL_REVIEW';
-      await query(`INSERT INTO qms_iqc_virtual_tasks(task_key,task_type,title,material_code,supplier_code,payload,requires_human,priority)
-        VALUES($1,$2,$3,$4,$5,$6::jsonb,TRUE,'HIGH') ON CONFLICT(task_key) DO UPDATE SET payload=EXCLUDED.payload,status=CASE WHEN qms_iqc_virtual_tasks.status='DONE' THEN 'DONE' ELSE 'OPEN' END`,
-        [`${taskType}:${row.supplier_code}:${row.material_code}`, taskType, taskType === 'SUPPLIER_IMPROVEMENT_CONFIRMATION' ? '等待供应商质量改进确认' : '等待主管免检审批', row.material_code, row.supplier_code, JSON.stringify({ level: row.level, counters: row.counters, requiredAction: taskType === 'SUPPLIER_IMPROVEMENT_CONFIRMATION' ? '人工确认质量改进完成后转加严' : '主管确认连续10批合格且无投诉后转免检' })]);
-      taskTypes.push(taskType);
-    }
-    await rememberIqcMemory(query, { memoryType: 'TASK_EPISODE', sourceType: 'IQC_AGENT_CRON', content: { runAt: new Date().toISOString(), pendingCount: pending.rowCount, planned }, createdBy: 'iqc-virtual-01' });
-    return { pendingCount: pending.rowCount, planned, taskTypes, manualGateTasks: manual.rowCount, guidance: guidance.fileName };
-  } finally { iqcVirtualCronBusy = false; }
-}
-app.post('/qms/iqc/virtual-employee/run-now', requirePermission('quality.execute'), async (_req, res) => { try { res.json(mutateEnvelope(await runIqcVirtualCron())); } catch (e) { res.status(409).json(errorEnvelope('IQC_AGENT_CRON_FAILED', e.message)); } });
-app.get('/qms/iqc/virtual-employee/tasks', requirePermission('quality.view'), async (req, res) => { try { await iqcDefectLoopReady; const status = String(req.query.status || 'OPEN'); const r = await query(`SELECT * FROM qms_iqc_virtual_tasks WHERE ($1='' OR status=$1) ORDER BY CASE priority WHEN 'HIGH' THEN 0 ELSE 1 END,scheduled_at LIMIT 200`, [status]); res.json(listEnvelope(r.rows)); } catch (e) { res.status(500).json(errorEnvelope('IQC_AGENT_TASK_LIST_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/tasks/assign', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const p = req.body || {}; const title = String(p.title || '').trim(); if (!title) return res.status(400).json(errorEnvelope('IQC_AGENT_TASK_REQUIRED', 'title is required')); const key = String(p.taskKey || `MANUAL:${Date.now()}:${Math.random().toString(36).slice(2,8)}`); const r = await query(`INSERT INTO qms_iqc_virtual_tasks(task_key,task_type,title,lot_no,material_code,supplier_code,payload,status,requires_human,priority,assigned_to,assigned_by,due_at,instructions) VALUES($1,'MANUAL_ASSIGNMENT',$2,$3,$4,$5,$6::jsonb,'ASSIGNED',FALSE,$7,$8,$9,$10,$11) RETURNING *`, [key,title,p.lotNo||null,p.materialCode||null,p.supplierCode||null,JSON.stringify(p.payload||{}),String(p.priority||'NORMAL').toUpperCase(),String(p.assignedTo||'IQC-VIRTUAL-01'),req.user?.username||p.assignedBy||'quality',p.dueAt||null,String(p.instructions||'')]); res.status(201).json(mutateEnvelope(r.rows[0])); } catch (e) { res.status(400).json(errorEnvelope('IQC_AGENT_TASK_ASSIGN_FAILED', e.message)); } });
-app.post('/qms/iqc/virtual-employee/tasks/:id/complete', requirePermission('quality.execute'), async (req, res) => { try { await iqcDefectLoopReady; const r = await query(`UPDATE qms_iqc_virtual_tasks SET status='DONE',completed_at=NOW(),completion_summary=$1 WHERE id=$2 AND status IN('ASSIGNED','OPEN','IN_PROGRESS') RETURNING *`, [String(req.body?.completionSummary||''), req.params.id]); if (!r.rows[0]) return res.status(409).json(errorEnvelope('IQC_AGENT_TASK_COMPLETE_INVALID', 'task is not open')); res.json(mutateEnvelope(r.rows[0])); } catch (e) { res.status(409).json(errorEnvelope('IQC_AGENT_TASK_COMPLETE_FAILED', e.message)); } });
-const iqcVirtualCronInterval = Math.max(60000, Number(process.env.IQC_AGENT_INTERVAL_MS || 900000));
-setInterval(() => { void runIqcVirtualCron().catch(error => console.error('[IQC-VIRTUAL-CRON]', error.message)); }, iqcVirtualCronInterval);
-app.get('/qms/iqc/guidance-documents', requirePermission('quality.view'), async (_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT id,guidance_key,file_name,version_no,status,workbook,imported_by,imported_at,activated_by,activated_at,deleted_by,deleted_at FROM qms_iqc_guidance_documents WHERE guidance_key='SMT_IQC' AND status<>'DELETED' ORDER BY CASE WHEN status='ACTIVE' THEN 0 ELSE 1 END, imported_at DESC`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('IQC_GUIDANCE_LIST_FAILED',e.message));}});
-app.post('/qms/iqc/guidance-documents', requirePermission('quality.execute'), async (req,res)=>{
-  const p=req.body||{}, fileName=String(p.fileName||'').trim(), key=String(p.guidanceKey||'SMT_IQC').trim(), operator=String(p.operator||req.user?.username||'operator'), versionNo=String(p.versionNo||`V-${new Date().toISOString().replace(/[-:.TZ]/g,'').slice(0,14)}-${Date.now().toString().slice(-5)}`).trim().slice(0,40);
-  if(!fileName||!p.workbook) return res.status(400).json(errorEnvelope('IQC_GUIDANCE_REQUIRED','fileName and workbook are required'));
-  try {
-    await iqcDefectLoopReady;
-    await query(`UPDATE qms_iqc_guidance_documents SET status='IDLE',activated_by=$2,activated_at=NOW() WHERE guidance_key=$1 AND status='ACTIVE'`,[key,operator]);
-    const r=await query(`
-      INSERT INTO qms_iqc_guidance_documents
-        (guidance_key,file_name,version_no,status,workbook,imported_by,activated_by,activated_at,deleted_by,deleted_at)
-      VALUES ($1,$2,$3,'ACTIVE',$4::jsonb,$5,$5,NOW(),NULL,NULL)
-      ON CONFLICT (guidance_key,version_no) DO UPDATE SET
-        file_name=EXCLUDED.file_name,
-        status='ACTIVE',
-        workbook=EXCLUDED.workbook,
-        imported_by=EXCLUDED.imported_by,
-        imported_at=NOW(),
-        activated_by=EXCLUDED.activated_by,
-        activated_at=NOW(),
-        deleted_by=NULL,
-        deleted_at=NULL
-      RETURNING id,guidance_key,file_name,version_no,status,workbook,imported_by,imported_at,activated_by,activated_at
-    `,[key,fileName,versionNo,JSON.stringify(p.workbook),operator]);
-    return res.status(201).json(mutateEnvelope(r.rows[0]));
-  } catch(e) { return res.status(409).json(errorEnvelope('IQC_GUIDANCE_IMPORT_FAILED',e.message)); }
-});
-app.post('/qms/iqc/guidance-documents/:id/activate', requirePermission('quality.execute'), async (req,res)=>{const id=Number(req.params.id),operator=String(req.body?.operator||req.user?.username||'quality');if(!Number.isInteger(id))return res.status(400).json(errorEnvelope('IQC_GUIDANCE_ID_REQUIRED','valid guidance document id required'));const client=await pgPool.connect();try{await iqcDefectLoopReady;await client.query('BEGIN');const d=(await client.query(`SELECT * FROM qms_iqc_guidance_documents WHERE id=$1 FOR UPDATE`,[id])).rows[0];if(!d||d.status==='DELETED')throw new Error('guidance document is unavailable');await client.query(`UPDATE qms_iqc_guidance_documents SET status='IDLE' WHERE guidance_key=$1 AND status='ACTIVE'`,[d.guidance_key]);const r=(await client.query(`UPDATE qms_iqc_guidance_documents SET status='ACTIVE',activated_by=$1,activated_at=NOW(),deleted_by=NULL,deleted_at=NULL WHERE id=$2 RETURNING id,guidance_key,file_name,version_no,status,activated_by,activated_at`,[operator,id])).rows[0];await client.query('COMMIT');res.json(mutateEnvelope(r));}catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope('IQC_GUIDANCE_ACTIVATE_FAILED',e.message));}finally{client.release();}});
-app.post('/qms/iqc/guidance-documents/:id/idle', requirePermission('quality.execute'), async (req,res)=>{const id=Number(req.params.id),operator=String(req.body?.operator||req.user?.username||'quality');try{await iqcDefectLoopReady;const r=await query(`UPDATE qms_iqc_guidance_documents SET status='IDLE',activated_by=$1,activated_at=NOW() WHERE id=$2 AND status='ACTIVE' RETURNING id,guidance_key,file_name,version_no,status`,[operator,id]);if(!r.rows[0])return res.status(409).json(errorEnvelope('IQC_GUIDANCE_IDLE_INVALID','only the active guidance can be set idle'));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope('IQC_GUIDANCE_IDLE_FAILED',e.message));}});
-app.delete('/qms/iqc/guidance-documents/:id', requirePermission('quality.execute'), async (req,res)=>{const id=Number(req.params.id),operator=String(req.body?.operator||req.user?.username||'quality');try{await iqcDefectLoopReady;const r=await query(`UPDATE qms_iqc_guidance_documents SET status='DELETED',deleted_by=$1,deleted_at=NOW() WHERE id=$2 AND status<>'ACTIVE' AND status<>'DELETED' RETURNING id,guidance_key,file_name,version_no,status,deleted_by,deleted_at`,[operator,id]);if(!r.rows[0])return res.status(409).json(errorEnvelope('IQC_GUIDANCE_DELETE_INVALID','active guidance cannot be deleted; set it idle or activate another version first'));res.json(mutateEnvelope(r.rows[0]));}catch(e){res.status(409).json(errorEnvelope('IQC_GUIDANCE_DELETE_FAILED',e.message));}});
-app.get('/qms/iqc/inspection-level-events', requirePermission('quality.view'), async (_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT * FROM qms_iqc_inspection_level_events ORDER BY created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('IQC_LEVEL_EVENT_LIST_FAILED',e.message));}});
-app.get('/qms/iqc/inspection-manual-events', requirePermission('quality.view'), async (_req,res)=>{try{await iqcDefectLoopReady;const r=await query(`SELECT * FROM qms_iqc_inspection_manual_events ORDER BY created_at DESC LIMIT 500`);res.json(listEnvelope(r.rows));}catch(e){res.status(500).json(errorEnvelope('IQC_MANUAL_EVENT_LIST_FAILED',e.message));}});
-app.post('/qms/iqc/inspection-levels/:action', requirePermission('quality.execute'), async (req,res)=>{
-  const action=String(req.params.action||''), p=req.body||{}, s=String(p.supplierCode||'').trim(), m=String(p.materialCode||'').trim(), operator=String(p.operator||req.user?.username||'quality');
-  if(!s||!m||!['approve-exempt','abnormal-return','supplier-improvement'].includes(action)) return res.status(400).json(errorEnvelope('IQC_LEVEL_MANUAL_REQUIRED','supplierCode, materialCode and valid manual action are required'));
-  const client=await pgPool.connect();
-  try {
-    await iqcDefectLoopReady; await client.query('BEGIN');
-    const before=(await client.query(`SELECT * FROM qms_iqc_inspection_states WHERE supplier_code=$1 AND material_code=$2 FOR UPDATE`,[s,m])).rows[0];
-    if(!before) throw new Error('inspection state does not exist');
-    if(action==='approve-exempt' && !String(p.reason||'').trim()) throw new Error('主管批准免检必须填写无生产投诉、无售后不良的确认依据');
-    if(action==='approve-exempt' && (before.level!=='REDUCED' || Number(before.counters?.reducedAccepts||0)<10)) throw new Error('放宽检验必须连续10批合格后才可申请主管批准免检');
-    const eligible=action==='approve-exempt'?before.level==='REDUCED':action==='abnormal-return'?['REDUCED','EXEMPT'].includes(before.level):before.level==='SUSPENDED';
-    if(!eligible) throw new Error('state is not eligible for this manual action');
-    const next=action==='approve-exempt'?'EXEMPT':action==='abnormal-return'?'NORMAL':'TIGHTENED';
-    const counters={normalWindowBatches:0,normalWindowRejects:0,normalConsecutiveAccepts:0,tightenedAccepts:0,tightenedRejects:0,reducedAccepts:0};
-    const updated=(await client.query(`UPDATE qms_iqc_inspection_states SET level=$1,counters=$2::jsonb,updated_at=NOW() WHERE id=$3 RETURNING *`,[next,JSON.stringify(counters),before.id])).rows[0];
-    await client.query(`INSERT INTO qms_iqc_inspection_manual_events(supplier_code,material_code,action,level_before,level_after,reason,operator) VALUES($1,$2,$3,$4,$5,$6,$7)`,[s,m,action,before.level,next,p.reason||null,operator]);
-    await client.query('COMMIT'); res.json(mutateEnvelope(updated));
-  } catch(e) { await client.query('ROLLBACK'); res.status(409).json(errorEnvelope('IQC_LEVEL_MANUAL_FAILED',e.message)); }
-  finally { client.release(); }
-});
-app.post('/qms/iqc/inspection-levels/record', requirePermission('quality.execute'), async (req,res) => {
-  const p=req.body||{}, supplier=String(p.supplierCode||'').trim(), material=String(p.materialCode||'').trim(), lot=String(p.lotNo||'').trim(), result=String(p.result||'').toUpperCase();
-  if(!supplier||!material||!lot||!['PASS','FAIL'].includes(result)) return res.status(400).json(errorEnvelope('IQC_LEVEL_RESULT_REQUIRED','supplierCode, materialCode, lotNo and PASS/FAIL result are required'));
-  const client=await pgPool.connect();
-  try { await iqcDefectLoopReady; await client.query('BEGIN'); await client.query(`INSERT INTO qms_iqc_inspection_states(supplier_code,material_code) VALUES($1,$2) ON CONFLICT(supplier_code,material_code) DO NOTHING`,[supplier,material]); const before=(await client.query(`SELECT * FROM qms_iqc_inspection_states WHERE supplier_code=$1 AND material_code=$2 FOR UPDATE`,[supplier,material])).rows[0]; const next=advanceInspectionLevelServer(before.level,before.counters,result); const updated=(await client.query(`UPDATE qms_iqc_inspection_states SET level=$1,counters=$2::jsonb,updated_at=NOW() WHERE id=$3 RETURNING *`,[next.level,JSON.stringify(next.counters),before.id])).rows[0]; await client.query(`INSERT INTO qms_iqc_inspection_level_events(supplier_code,material_code,lot_no,result,level_before,level_after,transition,inspection_date,source_file,abnormal_type,operator) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,[supplier,material,lot,result,before.level,next.level,next.transition,p.inspectionDate||null,p.sourceFile||null,p.abnormalType||null,String(p.operator||'iqc')]); await client.query('COMMIT'); res.status(201).json(mutateEnvelope({state:updated,levelBefore:before.level,transition:next.transition,nextProcedure:next.level})); }
-  catch(e){await client.query('ROLLBACK');res.status(409).json(errorEnvelope('IQC_LEVEL_RECORD_FAILED',e.message));} finally{client.release();}
+// The QMS/IQC domain (23 routes plus its virtual-employee cron) lives in
+// src/routes/qms.js. Invoked here, after the /qms/iqc auth mount and before the WMS
+// routes, so middleware order -- and the one-time cron timer -- are unchanged.
+registerQmsRoutes(app, {
+  query, pgPool, requirePermission, envelope, errorEnvelope, mutateEnvelope, listEnvelope,
+  iqcDefectLoopReady, IQC_VIRTUAL_EMPLOYEE, IQC_VIRTUAL_HARNESS, advanceInspectionLevelServer,
+  rememberIqcMemory, searchIqcMemory, getIqcMemoryContext, runIqcVirtualEmployee, askIqcLlm,
+  execFileAsync,
 });
 
 app.get("/wms/receiving/qr-bindings", requirePermission("wms.view"), async (_req,res)=>{
    try{ await iqcDefectLoopReady; const r=await query(`SELECT material_lot_id AS id,COALESCE(document_no,material_qr) AS document_no,material_lot_id,material_qr,pallet_qr,
      COALESCE(source_type,'PO_RECEIPT') AS source_type,COALESCE(warehouse_code,'') AS warehouse_code,location_code,
-     COALESCE(status,CASE WHEN ml.iqc_status='released' THEN 'RELEASED' WHEN ml.iqc_status IN('pending','hold') THEN 'IQC_PENDING' ELSE 'CREATED' END) AS status,
+     COALESCE(q.status,CASE WHEN ml.iqc_status='released' THEN 'RELEASED' WHEN ml.iqc_status IN('pending','hold') THEN 'IQC_PENDING' ELSE 'CREATED' END) AS status,
      COALESCE(quantity,ml.received_qty) AS quantity,ml.lot_no,m.code AS material_code,m.name_zh AS material_name,m.uom,ml.received_at,q.msd_level,q.qr_payload,
      EXTRACT(EPOCH FROM (NOW()-COALESCE(q.registered_at,ml.received_at)))/60 AS waiting_minutes
      FROM wms_receiving_qr_registrations q JOIN material_lots ml ON ml.id=q.material_lot_id JOIN materials m ON m.id=ml.material_id
@@ -13077,209 +12610,14 @@ api.delete("/pda/managed-apps/:id", authenticateJWT, requirePermission("pda.mana
 // POST /pda/app_catalog       — create app (requires pda.manage)
 // PATCH/DELETE  added below
 
-app.get("/pda/app-catalog", authenticateJWT, requirePermission("pda.view"), async (req, res) => {
-  try {
-    const { isActive, q, limit = 200, offset = 0 } = req.query;
-    const conditions = [], params = [];
-    let i = 1;
-    if (isActive !== undefined) { conditions.push(`is_active = $${i++}`); params.push(isActive === 'true'); }
-    if (q) { conditions.push(`(app_key ILIKE $${i} OR name_zh ILIKE $${i} OR name_en ILIKE $${i})`); i++; params.push(`%${q}%`); }
-    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-    const countR = await query(`SELECT COUNT(*)::int AS cnt FROM pda_app_catalog ${where}`, params);
-    const dataR = await query(
-      `SELECT id, app_key, name_zh, name_en, name_vi, description, icon, sort_order, is_active, created_at
-       FROM pda_app_catalog ${where} ORDER BY sort_order, app_key LIMIT $${i++} OFFSET $${i}`,
-      [...params, Number(limit), Number(offset)]
-    );
-    res.json(listEnvelope(dataR.rows, countR.rows[0].cnt));
-  } catch (err) { console.error("GET /pda/app-catalog:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
+// PDA (10 routes) lives in src/routes/pda.js. authenticateJWT is declared further down
+// this file, so it is forwarded rather than read here -- see check:register-deps.
+registerPdaRoutes(app, {
+  query, requirePermission, envelope, errorEnvelope, listEnvelope,
+  authenticateJWT: (req, res, next) => authenticateJWT(req, res, next),
 });
 
-app.post("/pda/app-catalog", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const { appKey, nameZh, nameEn, nameVi, description, icon, sortOrder } = req.body ?? {};
-    if (!appKey || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "appKey and nameZh are required"));
-    const r = await query(
-      `INSERT INTO pda_app_catalog (app_key, name_zh, name_en, name_vi, description, icon, sort_order)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING id, app_key, name_zh, name_en, name_vi, description, icon, sort_order, is_active`,
-      [appKey, nameZh, nameEn ?? '', nameVi ?? '', description ?? null, icon ?? null, Number(sortOrder ?? 0)]
-    );
-    res.status(201).json(envelope(r.rows[0]));
-  } catch (err) {
-    if (err.code === '23505') return res.status(409).json(errorEnvelope("DUPLICATE", `app_key '${req.body?.appKey}' already exists`));
-    console.error("POST /pda/app-catalog:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
 
-app.patch("/pda/app-catalog/:id", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const { nameZh, nameEn, nameVi, description, icon, sortOrder, isActive } = req.body ?? {};
-    const sets = [], params = []; let i = 1;
-    if (nameZh    !== undefined) { sets.push(`name_zh = $${i++}`);     params.push(nameZh); }
-    if (nameEn    !== undefined) { sets.push(`name_en = $${i++}`);     params.push(nameEn); }
-    if (nameVi    !== undefined) { sets.push(`name_vi = $${i++}`);     params.push(nameVi); }
-    if (description !== undefined) { sets.push(`description = $${i++}`); params.push(description); }
-    if (icon     !== undefined) { sets.push(`icon = $${i++}`);        params.push(icon); }
-    if (sortOrder !== undefined) { sets.push(`sort_order = $${i++}`); params.push(Number(sortOrder)); }
-    if (isActive !== undefined)  { sets.push(`is_active = $${i++}`);  params.push(Boolean(isActive)); }
-    if (!sets.length) return res.status(400).json(errorEnvelope("VALIDATION", "No fields to update"));
-    params.push(req.params.id);
-    const r = await query(
-      `UPDATE pda_app_catalog SET ${sets.join(', ')} WHERE id = $${i} RETURNING id, app_key, name_zh, name_en, name_vi, description, icon, sort_order, is_active`,
-      params
-    );
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "App not found"));
-    res.json(envelope(r.rows[0]));
-  } catch (err) { console.error("PATCH /pda/app-catalog/:id:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
-
-app.delete("/pda/app-catalog/:id", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const r = await query(`DELETE FROM pda_app_catalog WHERE id = $1 RETURNING id`, [req.params.id]);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "App not found"));
-    res.json(envelope({ deleted: true }));
-  } catch (err) { console.error("DELETE /pda/app-catalog/:id:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
-
-// ── PDA User App Assignments (pda_user_apps) ────────────────────────────────────
-// GET  /pda/user-apps         — list all assignments (admin view)
-// GET  /pda/user-apps/me      — current user's assigned apps (for PDA login)
-// POST /pda/user-apps         — grant an app to a user
-// PATCH/DELETE               — revoke
-
-app.get("/pda/user-apps", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const { userId, appId, status, q, limit = 200, offset = 0 } = req.query;
-    const conditions = [], params = [];
-    let i = 1;
-    if (userId)  { conditions.push(`ua.user_id = $${i++}`); params.push(Number(userId)); }
-    if (appId)   { conditions.push(`ua.app_id = $${i++}`);  params.push(Number(appId)); }
-    if (status) { conditions.push(`ua.status = $${i++}`);    params.push(status); }
-    if (q) {
-      conditions.push(`(e.display_name ILIKE $${i} OR e.code ILIKE $${i} OR ac.app_key ILIKE $${i} OR ac.name_zh ILIKE $${i})`);
-      i++; params.push(`%${q}%`);
-    }
-    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-    const countR = await query(`SELECT COUNT(*)::int AS cnt FROM pda_user_apps ua JOIN employees e ON e.id=ua.user_id JOIN pda_app_catalog ac ON ac.id=ua.app_id ${where}`, params);
-    const dataR = await query(
-      `SELECT ua.id, ua.status, ua.granted_at, ua.expires_at, ua.notes,
-              e.id AS user_id, e.code AS user_code, e.display_name AS user_name,
-              ac.id AS app_id, ac.app_key, ac.name_zh AS app_name_zh, ac.name_en AS app_name_en
-       FROM pda_user_apps ua
-       JOIN employees e ON e.id=ua.user_id
-       JOIN pda_app_catalog ac ON ac.id=ua.app_id
-       ${where} ORDER BY ua.granted_at DESC LIMIT $${i++} OFFSET $${i}`,
-      [...params, Number(limit), Number(offset)]
-    );
-    res.json(listEnvelope(dataR.rows, countR.rows[0].cnt));
-  } catch (err) { console.error("GET /pda/user-apps:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
-
-// Returns current user's assigned app keys — used by PDA at login
-app.get("/pda/user-apps/me", authenticateJWT, requirePermission("pda.view"), async (req, res) => {
-  try {
-    const userId = req.user?.userId;
-    if (!userId) return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
-    // resolve userId to employee id via users table
-    const empR = await query("SELECT employee_id FROM users WHERE id = $1", [userId]);
-    const empId = empR.rows[0]?.employee_id;
-    if (!empId) return res.json(envelope({ apps: [], roleKey: req.user?.roleKey || "UNKNOWN" }));
-    const appsR = await query(
-      `SELECT ac.app_key, ac.name_zh, ac.name_en, ac.name_vi, ua.expires_at
-       FROM pda_user_apps ua
-       JOIN pda_app_catalog ac ON ac.id=ua.app_id
-       WHERE ua.user_id=$1 AND ua.status='ACTIVE'
-         AND (ua.expires_at IS NULL OR ua.expires_at > NOW())
-       ORDER BY ac.sort_order`,
-      [empId]
-    );
-    res.json(envelope({ apps: appsR.rows, roleKey: req.user?.roleKey || "UNKNOWN" }));
-  } catch (err) { console.error("GET /pda/user-apps/me:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
-
-app.post("/pda/user-apps", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const { userId, appId, expiresAt, notes } = req.body ?? {};
-    if (!userId || !appId) return res.status(400).json(errorEnvelope("VALIDATION", "userId and appId are required"));
-    // resolve userId (could be username string or employee id)
-    let empId = Number(userId);
-    if (isNaN(empId) || empId <= 0) {
-      const empR = await query("SELECT id FROM employees WHERE code = $1 OR display_name = $1 LIMIT 1", [String(userId)]);
-      if (!empR.rows.length) return res.status(404).json(errorEnvelope("USER_NOT_FOUND", `Employee '${userId}' not found`));
-      empId = empR.rows[0].id;
-    }
-    const appR = await query("SELECT id FROM pda_app_catalog WHERE id = $1", [Number(appId)]);
-    if (!appR.rows.length) return res.status(404).json(errorEnvelope("APP_NOT_FOUND", `App '${appId}' not found`));
-
-    // who is granting
-    const grantorR = await query("SELECT employee_id FROM users WHERE id = $1", [req.user?.userId]);
-    const grantedBy = grantorR.rows[0]?.employee_id ?? null;
-
-    const r = await query(
-      `INSERT INTO pda_user_apps (user_id, app_id, granted_by, expires_at, notes)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (user_id, app_id) DO UPDATE SET status='ACTIVE', granted_by=EXCLUDED.granted_by, expires_at=EXCLUDED.expires_at, notes=EXCLUDED.notes, updated_at=NOW()
-       RETURNING id, user_id, app_id, status, granted_at, expires_at, notes`,
-      [empId, Number(appId), grantedBy, expiresAt || null, notes || null]
-    );
-    res.status(201).json(envelope(r.rows[0]));
-  } catch (err) {
-    console.error("POST /pda/user-apps:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-app.patch("/pda/user-apps/:id", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const { status, expiresAt, notes } = req.body ?? {};
-    const sets = [], params = []; let i = 1;
-    if (status     !== undefined) { sets.push(`status = $${i++}`);     params.push(status); }
-    if (expiresAt  !== undefined) { sets.push(`expires_at = $${i++}`); params.push(expiresAt || null); }
-    if (notes      !== undefined) { sets.push(`notes = $${i++}`);     params.push(notes || null); }
-    if (!sets.length) return res.status(400).json(errorEnvelope("VALIDATION", "No fields to update"));
-    sets.push(`updated_at = NOW()`);
-    params.push(req.params.id);
-    const r = await query(
-      `UPDATE pda_user_apps SET ${sets.join(', ')} WHERE id = $${i} RETURNING id, user_id, app_id, status, granted_at, expires_at, notes`,
-      params
-    );
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Assignment not found"));
-    res.json(envelope(r.rows[0]));
-  } catch (err) { console.error("PATCH /pda/user-apps/:id:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
-
-app.delete("/pda/user-apps/:id", authenticateJWT, requirePermission("pda.manage"), async (req, res) => {
-  try {
-    const r = await query(`UPDATE pda_user_apps SET status='REVOKED', updated_at=NOW() WHERE id=$1 RETURNING id`, [req.params.id]);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Assignment not found"));
-    res.json(envelope({ revoked: true }));
-  } catch (err) { console.error("DELETE /pda/user-apps/:id:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
-
-// ── PDA Employees (all employees for assignment dropdown) ────────────────────────
-app.get("/pda/employees", authenticateJWT, requirePermission("pda.view"), async (req, res) => {
-  try {
-    const { q, status, limit = 500, offset = 0 } = req.query;
-    const conditions = ['1=1'];
-    const params = [];
-    let i = 1;
-    if (q) {
-      conditions.push(`(code ILIKE $${i} OR display_name ILIKE $${i} OR name_zh ILIKE $${i} OR name_vi ILIKE $${i})`);
-      params.push(`%${q}%`); i++;
-    }
-    if (status) { conditions.push(`status = $${i++}`); params.push(status); }
-    const where = "WHERE " + conditions.join(" AND ");
-    const countR = await query(`SELECT COUNT(*)::int AS cnt FROM employees ${where}`, params);
-    params.push(Number(limit), Number(offset));
-    const dataR = await query(
-      `SELECT id, employee_no AS code, display_name, name_zh, name_vi, status
-       FROM employees ${where}
-       ORDER BY code LIMIT $${i++} OFFSET $${i}`,
-      params
-    );
-    res.json(listEnvelope(dataR.rows, countR.rows[0].cnt));
-  } catch (err) { console.error("GET /pda/employees:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-});
 
 // ── Sales Order Routes ─────────────────────────────────────────────────────────
 api.get("/sales/orders", authenticateJWT, requirePermission("sales.view"), async (req, res) => {
@@ -13958,7 +13296,7 @@ async function writeAuditLog({ actorId, action, entityType, entityId, referenceN
 
 // ── Auth Middleware ────────────────────────────────────────────────
 
-function authenticateJWT(req, res, next) {
+async function authenticateJWT(req, res, next) {
   if (req.method === "OPTIONS") return next();
   const sourceIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
   // Label parsing is a pre-receiving assist and may be called before PDA
@@ -13970,21 +13308,34 @@ function authenticateJWT(req, res, next) {
   }
   if (req.method === "GET" && req.originalUrl.includes("/station/confirmed-motherboards/search/")) return next();
   // Public paths (req.path is relative to api router mount, so /api prefix already stripped)
-  if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state") return next();
-  // Warehouse layout data — needed by PDA before login (no sensitive content, just area/position lookup)
-  if (req.path === "/api/wms/areas" || req.path === "/api/wms/location-map") return next();
+  if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state" || req.path === "/wms/receiving/po-queue") return next();
+  // Warehouse layout data — needed by PDA before login (no sensitive content,
+  // just area/position lookup). The earlier form of this line tested for
+  // "/api/wms/areas", which never matched: req.path is already stripped of the
+  // /api mount, so the intended pre-login lookup was answering 401. The full
+  // path is kept for the app-level gate, where /api is still present.
+  if (req.path === "/wms/areas" || req.path === "/wms/location-map" ||
+      req.path === "/api/wms/areas" || req.path === "/api/wms/location-map") return next();
   if (req.path === "/meta/bootstrap") return next();
-  if (req.path.startsWith("/health") || req.path.startsWith("/openapi") || req.path.startsWith("/ai/health") || req.path.startsWith("/managers/")) return next();
+  // `/managers/` used to be open by prefix, which left /managers/message (an
+  // anonymous POST into the LLM manager reply path) and /managers/health (DB and
+  // filesystem detail) readable by anyone on the LAN. The dashboard sends its
+  // token, so they are gated like every other route now.
+  if (req.path.startsWith("/health") || req.path.startsWith("/openapi") || req.path.startsWith("/ai/health")) return next();
   // Station integration paths — no JWT required (but may require separate station-level auth)
   // NOTE: /mes/events requires JWT auth (station agents login via /auth/login)
+  // /mes/spi/upload is posted by the SPI/AOI machine adapter
+  // (integrations/leichen-spi/sendmes.py) which carries no token; it was open
+  // before the auth gate moved to the top of the router and stays open here
+  // explicitly instead of by accident of declaration order.
   if (req.path.startsWith("/station/confirmed-motherboards/search/") ||
       req.path.startsWith("/api/station/confirmed-motherboards/search/") ||
+      req.path === "/mes/spi/upload" ||
       req.path.startsWith("/mes/sn-duplicate-attempts") ||
       req.path.startsWith("/mes/ng-registry") ||
       req.path.startsWith("/aging/ng_registry") ||
       req.path.startsWith("/shelf/") ||
       req.path.startsWith("/hr/employees/qr-code/scan") ||
-      req.path.startsWith("/sql/") ||
       req.path === "/mes/work-start" || req.path === "/mes/feeder-validate" ||
       // Public station status for display boards (topology page)
       req.path === "/mes/andon-board" || req.path === "/api/mes/andon-board") return next();
@@ -13992,42 +13343,77 @@ function authenticateJWT(req, res, next) {
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
   // Test-only unified PDA builds use a local role catalog while the workflow
-  // is being verified. Never enable this path in production.
-  if (process.env.NODE_ENV !== "production" && req.headers["x-pda-test-mode"] === "1") {
+  // is being verified. Security finding 2: the header alone must never grant
+  // permissions, so it is honoured only when the operator explicitly opted in
+  // with PDA_TEST_MODE=1 and the runtime is not production.
+  const pdaTestModeEnabled = process.env.PDA_TEST_MODE === "1" && process.env.NODE_ENV !== "production";
+  if (pdaTestModeEnabled && req.headers["x-pda-test-mode"] === "1") {
     req.user = {
       userId: "pda-test-user",
       username: "PDA_TEST",
       roleKey: "TEST",
       permissions: ["*"]
     };
+    req.userContext = { userId: req.user.userId, userName: req.user.username, roleCode: req.user.roleKey };
     return next();
   }
   if (!token) {
     return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Missing token"));
   }
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = decodeSessionToken(token);
+    const status = await accountStates.get(payload.userId);
+    if (status === null) {
+      return res.status(401).json(errorEnvelope("AUTH_FAILED", "User not found"));
+    }
+    if (status !== "active") {
+      return res.status(403).json(errorEnvelope("ACCOUNT_LOCKED", "Account is not active"));
+    }
     req.user = {
       userId: payload.userId,
       username: payload.username,
       roleKey: payload.roleKey,
       permissions: Array.isArray(payload.permissions) ? payload.permissions : [],
     };
-    next();
-  } catch {
-    res.status(401).json(errorEnvelope("TOKEN_INVALID", "Token expired or invalid"));
+    // WMS-20261019 reference compatibility: controllers read req.userContext
+    // with { userId, userName, roleCode }. Map from SMT's req.user once here.
+    req.userContext = {
+      userId: req.user.userId,
+      userName: req.user.username,
+      roleCode: req.user.roleKey,
+    };
+    return next();
+  } catch (err) {
+    if (err?.name === "TokenRevokedError") {
+      return res.status(401).json(errorEnvelope("TOKEN_REVOKED", "Token was revoked at logout"));
+    }
+    if (err?.name === "JsonWebTokenError" || err?.name === "TokenExpiredError" || err?.name === "NotBeforeError") {
+      return res.status(401).json(errorEnvelope("TOKEN_INVALID", "Token expired or invalid"));
+    }
+    // A database outage behind the account check must not masquerade as "bad
+    // token": the caller would chase a phantom credential problem.
+    console.error("authenticateJWT:", err?.message);
+    return res.status(503).json(errorEnvelope("AUTH_UNAVAILABLE", "Authentication backend unavailable"));
   }
 }
+
+// The extracted route modules (src/routes/wms-counting.js) take the caller through
+// a helper name that predates the extraction. `req.user` is what authenticateJWT
+// sets; those routes only need the id and a label for the audit columns. Without
+// this definition `registerCountRoutes(app, {… getCurrentUser})` throws at module
+// load, so the API never reaches app.listen.
+function getCurrentUser(req) {
+  const user = req.user ?? {};
+  return { id: user.userId ?? null, name: user.username ?? null, roleKey: user.roleKey ?? null };
+}
+
 
 // HR lifecycle routes use the legacy middleware name. Keep one canonical
 // implementation so those routes cannot prevent the MES API from starting.
 const authenticate = authenticateJWT;
-api.use((req, res, next) => {
-  // Assignment lookup is a read-only station handshake; the PDA supplies its
-  // device identity and line in the query before an operator JWT is present.
-  if (req.path === "/dispatch/assignments" && req.method === "GET") return next();
-  return authenticateJWT(req, res, next);
-});
+// The api-wide JWT gate is registered at the top of this router (before the
+// first route). Do not add a second registration here — it would only apply to
+// the routes declared below it, which is the defect that gate used to have.
 
 // The original specialist HR tables reference hr_employees, while the current
 // employee directory uses employees. Mirror the real directory identities into
@@ -14101,14 +13487,45 @@ api.use("/hr", async (_req, _res, next) => {
 
 // ── Authorization Middleware ───────────────────────────────────────
 
+// 声明顺序早于 app.use(authenticateJWT)（第 34047 行）的路由走到这里时 req.user 还是空的，
+// 带着有效 JWT 也一律 401（2026-11-20 现场：/api/manager/line-assignments）。
+// authenticateJWT 是同步的，这里惰性补一次校验：不改挂载顺序，也不影响设备免登录路径。
+function ensureAuthenticated(req) {
+  if (req.user) return true;
+  let denied = false;
+  const probe = {
+    status() { denied = true; return probe; },
+    json() { denied = true; return probe; },
+    setHeader() { return probe; },
+  };
+  authenticateJWT(req, probe, () => {});
+  return !denied && Boolean(req.user);
+}
+
 function requirePermission(...requiredPerms) {
   return (req, res, next) => {
-    if (!req.user || !Array.isArray(req.user.permissions)) {
+    if (!ensureAuthenticated(req) || !Array.isArray(req.user.permissions)) {
       return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
     }
     const hasAll = req.user.permissions.includes("*") || requiredPerms.every((p) => req.user.permissions.includes(p));
     if (!hasAll) {
       return res.status(403).json(errorEnvelope("FORBIDDEN", `Missing required permission: ${requiredPerms.join(", ")}`));
+    }
+    next();
+  };
+}
+
+// Role-based access control matching WMS reference NeedRoles decorator.
+// Checks req.user.roleKey against allowed role codes.
+function requireRole(...allowedRoles) {
+  return (req, res, next) => {
+    if (!ensureAuthenticated(req)) {
+      return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
+    }
+    const roleKey = req.user.roleKey || "";
+    const hasRole = allowedRoles.includes("*") || allowedRoles.includes(roleKey);
+    if (!hasRole) {
+      return res.status(403).json(errorEnvelope("FORBIDDEN", `Required role: ${allowedRoles.join(", ")}`));
     }
     next();
   };
@@ -14161,10 +13578,30 @@ async function getHrPdaAssignment(userId) {
   } : null;
 }
 
-// POST /auth/station-login — station-agent operator login via employee SN
-// Returns JWT token scoped to the station+operator (no password required)
+// POST /auth/station-login — station-agent operator login via employee SN.
+// Returns a JWT scoped to the station+operator. The credential is the station,
+// not the person: when STATION_LOGIN_KEY is configured an x-station-key header
+// must match it, otherwise anybody who can reach port 8080 and guess a username
+// mints a full-permission session without a password.
+const STATION_LOGIN_THROTTLE_KEY = "station-login";
+// Which roles may use it is a policy of its own so it can be tested without a
+// server: services/api/src/auth/station-login-policy.js.
+const stationLoginPolicy = createStationLoginPolicy({
+  allowRoles: process.env.STATION_LOGIN_ALLOW_ROLES,
+  allowOperators: process.env.STATION_LOGIN_ALLOW_OPERATORS,
+});
 app.post("/auth/station-login", async (req, res) => {
   try {
+    if (STATION_LOGIN_KEY && req.headers["x-station-key"] !== STATION_LOGIN_KEY) {
+      return res.status(401).json(errorEnvelope("STATION_KEY_REQUIRED", "x-station-key header is required for station login"));
+    }
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+    const throttleKey = `${STATION_LOGIN_THROTTLE_KEY}:${clientIp}`;
+    const retryAfter = loginIpThrottle.retryAfter(throttleKey);
+    if (retryAfter > 0) {
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json(errorEnvelope("RATE_LIMITED", `Too many station logins. Retry in ${retryAfter}s.`));
+    }
     const { operator, stationCode } = req.body ?? {};
     if (!operator || !stationCode) {
       return res.status(400).json(errorEnvelope("VALIDATION", "operator and stationCode required"));
@@ -14176,12 +13613,14 @@ app.post("/auth/station-login", async (req, res) => {
       [operator],
     );
     if (result.rows.length === 0) {
+      loginIpThrottle.fail(throttleKey);
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Operator not found"));
     }
     const user = result.rows[0];
     if (user.status !== "active") {
       return res.status(403).json(errorEnvelope("ACCOUNT_LOCKED", "Account is not active"));
     }
+    loginIpThrottle.succeed(throttleKey);
     // Verify the station exists
     const stationResult = await pgPool.query(
       `SELECT code FROM stations WHERE code = $1 AND status IN ('running','idle')`,
@@ -14191,6 +13630,36 @@ app.post("/auth/station-login", async (req, res) => {
       return res.status(400).json(errorEnvelope("VALIDATION", "Station not found or not active"));
     }
     const permissions = await getPermissionsForRole(user.role_key);
+    // A station login is a floor credential, so it may only mint a session for a
+    // role that cannot administer permissions, HR records or money. Without this
+    // the credential-free endpoint made every privileged account on the site one
+    // guessed username away. STATION_LOGIN_ALLOW_ROLES re-opens a specific role
+    // deliberately (comma-separated role codes), because only the owner knows
+    // which of them stand at a station.
+    const stationAccess = stationLoginPolicy.check(user.role_key, permissions, user.username);
+    if (!stationAccess.allowed) {
+      writeAuditLog({
+        actorId: user.id,
+        action: "STATION_LOGIN_DENIED",
+        entityType: "auth",
+        referenceNo: `role:${user.role_key}@${stationCode}:${stationAccess.blocked.slice(0, 3).join("+")}`,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"],
+      }).catch(() => {});
+      return res.status(403).json(errorEnvelope("STATION_LOGIN_FORBIDDEN", "This role must sign in with a password"));
+    }
+    if (stationAccess.reason === "NAMED_OPERATOR") {
+      // A named exception is a deliberate grant, so it is visible in the log rather
+      // than silent: this is the only way a privileged role gets a station session.
+      writeAuditLog({
+        actorId: user.id,
+        action: "STATION_LOGIN_EXCEPTION",
+        entityType: "auth",
+        referenceNo: `named:${user.username}@${stationCode}:role:${user.role_key}`,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"],
+      }).catch(() => {});
+    }
     // Token includes station scope for audit trail
     const tokenPayload = {
       userId: user.id,
@@ -14200,7 +13669,7 @@ app.post("/auth/station-login", async (req, res) => {
       stationCode,
     };
     const expiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
-    const token = jwt.sign(tokenPayload, JWT_SECRET, { expiresIn: "24h" });
+    const token = issueSessionToken(tokenPayload);
     res.json(envelope({
       token,
       user: {
@@ -15396,6 +14865,21 @@ app.post("/api/wms/iqc/inspections/:id/complete", requirePermission("wms.write")
     // 更新来料记录状态
     const incoming_status = result === 'pass' ? 'approved' : (result === 'conditional_pass' ? 'pending' : 'pending');
     await client.query("UPDATE wms_incoming_records SET iqc_status=? WHERE id=?", [incoming_status, i.incoming_record_id]);
+    // Reference WMS: an IQC pass on a receipt clears any pending supplier debt
+    // for this supplier+material (idempotent per debt/receipt pair).
+    if (result === 'pass' && i.supplier_code && i.material_code) {
+      try {
+        const sup = (await query(`SELECT id FROM suppliers WHERE code=$1 LIMIT 1`, [i.supplier_code])).rows[0]?.id;
+        const mat = (await query(`SELECT id FROM materials WHERE code=$1 LIMIT 1`, [i.material_code])).rows[0]?.id;
+        if (sup && mat) {
+          await settleDebtOnReceipt({
+            supplierId: sup, materialId: mat, qty: i.batch_size || i.quantity || 0,
+            receiptId: i.incoming_record_id, receiptNo: `IQC-${req.params.id}`,
+            result: 'pass', userId: req.user?.userId,
+          });
+        }
+      } catch (debtErr) { console.error('settleDebtOnReceipt failed:', debtErr.message); }
+    }
     const [updated] = await client.query("SELECT * FROM iqc_inspections WHERE id=?", [req.params.id]);
     const ngQuantity=defectDetails.reduce((sum,row)=>sum+Number(row.defect_count||0),0);
     const supplierCommunication=await publishSupplierIqcResult({
@@ -15955,33 +15439,87 @@ async function getSessionWithAssignments(sessionId) {
 
 // ── Auth ──
 
+// Password verification. Security finding 4: credentials live in
+// users.password_hash (see database/migrations/20260731_users_password_hash.sql),
+// never as literals in this file. Format: scrypt$N$r$p$<base64 salt>$<base64 hash>.
+// Comparison is constant-time; a missing/garbled hash denies the login.
+function verifyPasswordHash(password, storedHash) {
+  const parts = String(storedHash ?? "").split("$");
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
+  const [, N, r, p, salt, encoded] = parts;
+  try {
+    const expected = Buffer.from(encoded, "base64");
+    if (expected.length === 0 || !salt) return false;
+    const actual = scryptSync(String(password), salt, expected.length, {
+      N: Number(N),
+      r: Number(r),
+      p: Number(p),
+    });
+    return actual.length === expected.length && timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
+}
+
 api.post("/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body ?? {};
     if (!username || !password) {
       return res.status(400).json(errorEnvelope("VALIDATION", "username and password required"));
     }
+    // The username key is the account lock: five failures block that operator.
+    // The IP key is only a spray guard (50 failures), because a proxied site
+    // reaches us from one address and a tight IP limit is a site-wide lockout.
+    const clientIp = String(req.ip || req.socket?.remoteAddress || "").replace(/^::ffff:/, "");
+    const userKey = `user:${String(username).trim().toLowerCase()}`;
+    const ipKey = `ip:${clientIp}`;
+    const retryAfter = Math.max(loginUserThrottle.retryAfter(userKey), loginIpThrottle.retryAfter(ipKey));
+    // app_rules/auth.md: every deny path must be auditable. The success path and
+    // logout were the only two written; a failed sign-in left no trace at all.
+    const auditDenied = (reason) => {
+      writeAuditLog({
+        action: "LOGIN_DENIED",
+        entityType: "auth",
+        referenceNo: `${reason}:${String(username).trim().slice(0, 60)}`,
+        ipAddress: clientIp,
+        userAgent: req.headers["user-agent"],
+      }).catch(() => {});
+    };
+    if (retryAfter > 0) {
+      auditDenied("RATE_LIMITED");
+      res.set("Retry-After", String(retryAfter));
+      return res.status(429).json(errorEnvelope("RATE_LIMITED", `Too many failed sign-ins. Retry in ${retryAfter}s.`));
+    }
+
+    const noteFailure = () => {
+      loginUserThrottle.fail(userKey);
+      loginIpThrottle.fail(ipKey);
+    };
+    // Chinese display names that map onto a username, kept from the original handler.
     const loginName = String(username).trim() === "蒙营" ? "MENG_YING" : String(username).trim() === "莫立斌" ? "MO_LI_BIN" : String(username).trim();
     const result = await authPool.query(
-      `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
+      `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status, u.password_hash
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.username = $1`,
       [loginName],
     );
     if (result.rows.length === 0) {
+      noteFailure();
+      auditDenied("AUTH_FAILED");
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Invalid credentials"));
     }
     const user = result.rows[0];
-    const passwordValid = user.username === "MENG_YING"
-      ? password === "my"
-      : user.username === "HWG"
-        ? password === "hwg"
-        : password === "Factory@123";
+    const passwordValid = verifyPasswordHash(password, user.password_hash);
     if (!passwordValid) {
+      noteFailure();
+      auditDenied("AUTH_FAILED");
       return res.status(401).json(errorEnvelope("AUTH_FAILED", "Invalid credentials"));
     }
     if (user.status !== "active") {
+      auditDenied("ACCOUNT_LOCKED");
       return res.status(403).json(errorEnvelope("ACCOUNT_LOCKED", "Account is not active"));
     }
+    loginUserThrottle.succeed(userKey);
+    loginIpThrottle.succeed(ipKey);
     // Multi-role: one person may hold several PDA roles (user_roles table).
     // users.role_id remains the primary role; every assigned role merges its
     // permissions and is returned in roles[] for PDA role switching.
@@ -16000,10 +15538,8 @@ api.post("/auth/login", async (req, res) => {
     const permissionSets = await Promise.all(allRoleKeys.map((k) => getPermissionsForRole(k)));
     const permissions = [...new Set(permissionSets.flat())];
     const expiresAt = new Date(Date.now() + JWT_EXPIRY_MS);
-    const token = jwt.sign(
+    const token = issueSessionToken(
       { userId: user.id, username: user.username, roleKey: primaryRoleKey, roles: allRoleKeys, permissions },
-      JWT_SECRET,
-      { expiresIn: "24h" },
     );
     // Log audit event (fire-and-forget)
     writeAuditLog({
@@ -16037,7 +15573,7 @@ api.get("/auth/session", async (req, res) => {
     if (!token) {
       return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
     }
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = decodeSessionToken(token);
     const userResult = await pgPool.query(
       `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
@@ -16062,6 +15598,9 @@ api.get("/auth/session", async (req, res) => {
       roleDefinition: getPdaRoleDefinition(user.role_key),
     }));
   } catch (err) {
+    if (err.name === "TokenRevokedError") {
+      return res.status(401).json(errorEnvelope("TOKEN_REVOKED", "Token was revoked at logout"));
+    }
     if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
       return res.status(401).json(errorEnvelope("TOKEN_INVALID", err.message));
     }
@@ -16074,11 +15613,20 @@ api.post("/auth/logout", async (req, res) => {
   try {
     const authHeader = req.headers.authorization;
     let actorId = null;
+    let revoked = false;
     if (authHeader?.startsWith("Bearer ")) {
       try {
-        const payload = jwt.verify(authHeader.slice(7), JWT_SECRET);
+        const payload = decodeSessionToken(authHeader.slice(7));
         actorId = payload.userId;
-      } catch { /* token may already be expired — that's fine */ }
+        // The audit row is not a revocation: without this the response claimed
+        // `revoked:true` while the token stayed valid for its remaining hours.
+        revoked = revokeSessionToken(payload, "logout");
+      } catch (err) {
+        // Already signed out: the honest answer is still that the token is dead.
+        // The actor is not taken from an unverified payload, so the audit row
+        // keeps its actor only when this request proved who sent it.
+        if (err?.name === "TokenRevokedError") revoked = true;
+      }
     }
     writeAuditLog({
       actorId,
@@ -16087,7 +15635,7 @@ api.post("/auth/logout", async (req, res) => {
       ipAddress: req.ip,
       userAgent: req.headers["user-agent"],
     }).catch((e) => console.error("audit log error:", e.message));
-    res.json(envelope({ revoked: true }));
+    res.json(envelope({ revoked }));
   } catch (err) {
     console.error("POST /auth/logout:", err.message);
     res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
@@ -16100,7 +15648,7 @@ api.get("/auth/me", async (req, res) => {
     const authHeader = req.headers.authorization;
     const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!token) return res.status(401).json(errorEnvelope("UNAUTHORIZED", "Not authenticated"));
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = decodeSessionToken(token);
     const userResult = await pgPool.query(
       `SELECT u.id, u.username, u.display_name, u.locale, r.code AS role_key, u.status
        FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = $1`,
@@ -16119,6 +15667,9 @@ api.get("/auth/me", async (req, res) => {
       roleDefinition: getPdaRoleDefinition(payload.roleKey ?? user.role_key),
     }));
   } catch (err) {
+    if (err.name === "TokenRevokedError") {
+      return res.status(401).json(errorEnvelope("TOKEN_REVOKED", "Token was revoked at logout"));
+    }
     if (err.name === "JsonWebTokenError" || err.name === "TokenExpiredError") {
       return res.status(401).json(errorEnvelope("TOKEN_INVALID", err.message));
     }
@@ -16471,1293 +16022,14 @@ app.get("/admin/api-governance/classification",requirePermission("admin.view"),a
     res.json(envelope({version:"canonical-v1",rules,unclassifiedRoutes:0,policy:"Every API receives one X-API-Domain classification"}));
   }catch(error){res.status(500).json(errorEnvelope("API_CLASSIFICATION_FAILED",error.message));}
 });
-
-app.get("/pmc/closed-loop/dashboard",requirePermission("pmc.view"),async(req,res)=>{
-  try{
-    const [demands,plans,expedites,metrics]=await Promise.all([
-      query(`SELECT d.*,p.code product_code,p.name_zh product_name FROM pmc_demands d JOIN products p ON p.id=d.product_id ORDER BY d.id DESC LIMIT 100`),
-      query(`SELECT mp.*,p.code product_code,p.name_zh product_name,pl.name_zh line_name,
-        (SELECT COUNT(*)::int FROM pmc_plan_reviews r WHERE r.plan_id=mp.id AND r.result='PASS') passed_reviews,
-        (SELECT COUNT(*)::int FROM pmc_plan_reviews r WHERE r.plan_id=mp.id AND r.result='FAIL') failed_reviews,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object(
-          'reviewType',r.review_type,'result',r.result,'detail',r.detail,
-          'reviewedBy',r.reviewed_by,'reviewedAt',r.reviewed_at
-        ) ORDER BY r.reviewed_at) FROM pmc_plan_reviews r WHERE r.plan_id=mp.id),'[]') reviews,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object(
-          'role',a.approval_role,'decision',a.decision,'actor',a.actor,
-          'comment',a.comment,'decidedAt',a.decided_at
-        ) ORDER BY a.decided_at) FROM pmc_plan_approvals a WHERE a.plan_id=mp.id),'[]') approvals,
-        (SELECT wo.code FROM pmc_plan_work_orders pw JOIN work_orders wo ON wo.id=pw.work_order_id
-          WHERE pw.plan_id=mp.id ORDER BY pw.bound_at DESC LIMIT 1) work_order_code,
-        (SELECT wo.status FROM pmc_plan_work_orders pw JOIN work_orders wo ON wo.id=pw.work_order_id
-          WHERE pw.plan_id=mp.id ORDER BY pw.bound_at DESC LIMIT 1) work_order_status
-        FROM pmc_master_plans mp JOIN products p ON p.id=mp.product_id LEFT JOIN production_lines pl ON pl.id=mp.line_id ORDER BY mp.id DESC LIMIT 100`),
-      query(`SELECT e.*,p.code product_code,pl.name_zh line_name,
-        COALESCE((SELECT jsonb_agg(jsonb_build_object('role',a.approval_role,'decision',a.decision)) FROM pmc_expedite_approvals a WHERE a.request_id=e.id),'[]') approvals
-        FROM pmc_expedite_requests e JOIN products p ON p.id=e.product_id LEFT JOIN production_lines pl ON pl.id=e.requested_line_id ORDER BY e.id DESC LIMIT 100`),
-      query(`SELECT
-        (SELECT COUNT(*)::int FROM pmc_demands WHERE status IN('SUBMITTED','UNDER_REVIEW')) pending_demands,
-        (SELECT COUNT(*)::int FROM pmc_master_plans WHERE status IN('UNDER_REVIEW','WAITING_KIT')) pending_plans,
-        (SELECT COUNT(*)::int FROM pmc_expedite_requests WHERE status IN('IMPACT_REVIEW','PENDING_APPROVAL','EXECUTING')) active_expedites,
-        (SELECT COUNT(*)::int FROM work_orders WHERE status IN('released','running')) active_work_orders`)
-    ]);
-    res.json(envelope({demands:demands.rows,plans:plans.rows,expedites:expedites.rows,metrics:metrics.rows[0]}));
-  }catch(error){res.status(500).json(errorEnvelope("PMC_CLOSED_LOOP_DASHBOARD_FAILED",error.message));}
-});
-
-app.post("/pmc/demands",requirePermission("pmc.edit"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    if(!p.productId||!p.requiredQty||!p.requiredDate||!p.sourceType||!p.reason)return res.status(400).json(errorEnvelope("VALIDATION","productId, requiredQty, requiredDate, sourceType and reason required"));
-    const demandNo=`DEM-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const row=(await query(`INSERT INTO pmc_demands(demand_no,source_type,source_ref,product_id,required_qty,required_date,priority_code,reason,submitted_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [demandNo,p.sourceType,p.sourceRef??null,p.productId,p.requiredQty,p.requiredDate,p.priorityCode??"P2",p.reason,String(p.actor??"PMC")])).rows[0];
-    await query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('DEMAND',$1,'SUBMITTED',$2,$3)`,
-      [row.id,String(p.actor??"PMC"),JSON.stringify(p)]);res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("PMC_DEMAND_CREATE_FAILED",error.message));}
-});
-
-app.post("/pmc/plans",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const demand=(await client.query("SELECT * FROM pmc_demands WHERE id=$1 AND status IN('SUBMITTED','UNDER_REVIEW','APPROVED') FOR UPDATE",[p.demandId])).rows[0];
-    if(!demand)throw new Error("Demand is not available for planning");
-    const bom=(await client.query(`SELECT id FROM boms WHERE product_id=$1 AND status='active' AND (effective_from IS NULL OR effective_from<=CURRENT_DATE)
-      AND (effective_to IS NULL OR effective_to>=CURRENT_DATE) ORDER BY id DESC LIMIT 1`,[demand.product_id])).rows[0];
-    if(!bom)throw new Error("No active BOM for product");
-    const planNo=`MPS-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const score=({P0:100,P1:85,P2:70,P3:50,P4:30})[demand.priority_code]??70;
-    const row=(await client.query(`INSERT INTO pmc_master_plans(plan_no,demand_id,product_id,planned_qty,planned_start_at,planned_finish_at,line_id,priority_score,priority_code,bom_id,status,created_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'UNDER_REVIEW',$11) RETURNING *`,
-      [planNo,demand.id,demand.product_id,p.plannedQty??demand.required_qty,p.plannedStartAt,p.plannedFinishAt,p.lineId??null,score,demand.priority_code,bom.id,String(p.actor??"PMC")])).rows[0];
-    await client.query("UPDATE pmc_demands SET status='PLANNED',updated_at=NOW() WHERE id=$1",[demand.id]);
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('PLAN',$1,'CREATED',$2,$3)`,
-      [row.id,String(p.actor??"PMC"),JSON.stringify({demandId:demand.id,bomId:bom.id})]);
-    await client.query("COMMIT");res.status(201).json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_PLAN_CREATE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/plans/:id/reviews",requirePermission("pmc.edit"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},type=String(p.reviewType??"").toUpperCase(),result=String(p.result??"").toUpperCase();
-    const row=(await query(`INSERT INTO pmc_plan_reviews(plan_id,review_type,result,detail,reviewed_by)VALUES($1,$2,$3,$4,$5)
-      ON CONFLICT(plan_id,review_type) DO UPDATE SET result=EXCLUDED.result,detail=EXCLUDED.detail,reviewed_by=EXCLUDED.reviewed_by,reviewed_at=NOW()
-      RETURNING *`,[req.params.id,type,result,JSON.stringify(p.detail??{}),String(p.actor??type)])).rows[0];
-    await query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('PLAN',$1,'REVIEWED',$2,$3)`,
-      [req.params.id,String(p.actor??type),JSON.stringify({type,result})]);res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("PMC_PLAN_REVIEW_FAILED",error.message));}
-});
-
-app.post("/pmc/plans/:id/decision",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},role=String(p.approvalRole??"").toUpperCase(),decision=String(p.decision??"").toUpperCase();
-    if(!["PMC_MANAGER","PRODUCTION_MANAGER"].includes(role))throw new Error("Approval role not allowed");
-    await client.query("BEGIN");const plan=(await client.query("SELECT * FROM pmc_master_plans WHERE id=$1 AND status='UNDER_REVIEW' FOR UPDATE",[req.params.id])).rows[0];
-    if(!plan)throw new Error("Plan is not under review");
-    const reviews=(await client.query("SELECT review_type,result FROM pmc_plan_reviews WHERE plan_id=$1",[plan.id])).rows;
-    const required=["CAPACITY","MATERIAL","BOM","QUALITY","COST","DELIVERY"];
-    if(decision==="APPROVE"&&(!required.every(x=>reviews.some(r=>r.review_type===x))||reviews.some(r=>r.result==="FAIL")))throw new Error("All six reviews are required and none may fail");
-    await client.query(`INSERT INTO pmc_plan_approvals(plan_id,approval_role,decision,actor,comment)VALUES($1,$2,$3,$4,$5)`,
-      [plan.id,role,decision,String(p.actor??role),String(p.comment??"Reviewed")]);
-    const approvals=(await client.query("SELECT approval_role,decision FROM pmc_plan_approvals WHERE plan_id=$1",[plan.id])).rows;
-    const status=decision==="REJECT"?"REJECTED":["PMC_MANAGER","PRODUCTION_MANAGER"].every(x=>approvals.some(a=>a.approval_role===x&&a.decision==="APPROVE"))?"APPROVED":"UNDER_REVIEW";
-    const row=(await client.query("UPDATE pmc_master_plans SET status=$2,updated_at=NOW() WHERE id=$1 RETURNING *",[plan.id,status])).rows[0];
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('PLAN',$1,'APPROVAL_DECISION',$2,$3)`,
-      [plan.id,String(p.actor??role),JSON.stringify({role,decision,status})]);await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_PLAN_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/plans/:id/bind-work-order",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const plan=(await client.query("SELECT * FROM pmc_master_plans WHERE id=$1 AND status IN('APPROVED','WAITING_KIT','KIT_READY') FOR UPDATE",[req.params.id])).rows[0];
-    const wo=(await client.query("SELECT * FROM work_orders WHERE code=$1 FOR UPDATE",[p.workOrderCode])).rows[0];
-    if(!plan||!wo)throw new Error("Approved plan and work order required");
-    if(Number(wo.product_id)!==Number(plan.product_id)||Number(wo.bom_id)!==Number(plan.bom_id))throw new Error("Work order product/BOM does not match approved plan");
-    await client.query("INSERT INTO pmc_plan_work_orders(plan_id,work_order_id)VALUES($1,$2)",[plan.id,wo.id]);
-    const status=p.kitReady===true?"KIT_READY":"WAITING_KIT";
-    await client.query("UPDATE pmc_master_plans SET status=$2,updated_at=NOW() WHERE id=$1",[plan.id,status]);
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('PLAN',$1,'WORK_ORDER_BOUND',$2,$3)`,
-      [plan.id,String(p.actor??"PMC"),JSON.stringify({workOrderCode:wo.code,status})]);
-    await client.query("COMMIT");res.json(mutateEnvelope({planId:plan.id,workOrderId:wo.id,status}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_PLAN_WO_BIND_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/expedites",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const impacted=(await client.query(`SELECT wo.id,wo.code,wo.planned_start_date,wo.due_date,wo.priority
-      FROM work_orders wo WHERE wo.line_id=$1 AND wo.status IN('released','running') ORDER BY wo.priority,wo.due_date LIMIT 50`,[p.lineId])).rows;
-    const roles=["PMC_MANAGER","PRODUCTION_MANAGER"];
-    if(p.affectsCustomerDelivery)roles.push("SALES_MANAGER");
-    if(p.bomOrSubstituteChange)roles.push("ENGINEERING","QUALITY");
-    if(p.requiresOvertime)roles.push("HR");
-    if(Number(p.costIncreasePercent??0)>5)roles.push("FINANCE");
-    if(p.priorityCode==="P0")roles.push("QUALITY_HEAD","FACTORY_MANAGER");
-    if(p.materialReady===false)throw new Error("Expedite cannot proceed without material readiness");
-    const requestNo=`EXP-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const snapshot={affectedWorkOrders:impacted,estimatedDelayMinutes:Number(p.estimatedDelayMinutes??0),costIncreasePercent:Number(p.costIncreasePercent??0)};
-    const row=(await client.query(`INSERT INTO pmc_expedite_requests(request_no,plan_id,product_id,requested_qty,required_finish_at,reason,evidence,
-      requested_line_id,impact_snapshot,required_approvals,status,requested_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'PENDING_APPROVAL',$11) RETURNING *`,
-      [requestNo,p.planId??null,p.productId,p.requestedQty,p.requiredFinishAt,p.reason,JSON.stringify(p.evidence??[]),p.lineId,JSON.stringify(snapshot),JSON.stringify([...new Set(roles)]),String(p.actor??"PMC")])).rows[0];
-    for(const wo of impacted)await client.query(`INSERT INTO pmc_schedule_impacts(expedite_request_id,affected_work_order_id,old_start_at,old_finish_at,new_start_at,new_finish_at,delay_minutes,customer_impact,cost_impact)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,[row.id,wo.id,wo.planned_start_date,wo.due_date,wo.planned_start_date,wo.due_date,Number(p.estimatedDelayMinutes??0),p.customerImpact??null,Number(p.costImpact??0)]);
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('EXPEDITE',$1,'IMPACT_ANALYZED',$2,$3)`,
-      [row.id,String(p.actor??"PMC"),JSON.stringify(snapshot)]);await client.query("COMMIT");res.status(201).json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_EXPEDITE_CREATE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/expedites/:id/decision",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},role=String(p.approvalRole??"").toUpperCase(),decision=String(p.decision??"").toUpperCase();
-    await client.query("BEGIN");const item=(await client.query("SELECT * FROM pmc_expedite_requests WHERE id=$1 AND status='PENDING_APPROVAL' FOR UPDATE",[req.params.id])).rows[0];
-    if(!item||!item.required_approvals.includes(role))throw new Error("Approval role is not required");
-    await client.query("INSERT INTO pmc_expedite_approvals(request_id,approval_role,decision,actor,comment)VALUES($1,$2,$3,$4,$5)",
-      [item.id,role,decision,String(p.actor??role),String(p.comment??"Reviewed")]);
-    const approvals=(await client.query("SELECT approval_role,decision FROM pmc_expedite_approvals WHERE request_id=$1",[item.id])).rows;
-    const status=decision==="REJECT"?"REJECTED":item.required_approvals.every(x=>approvals.some(a=>a.approval_role===x&&a.decision==="APPROVE"))?"APPROVED":"PENDING_APPROVAL";
-    const row=(await client.query("UPDATE pmc_expedite_requests SET status=$2,approved_at=$3 WHERE id=$1 RETURNING *",
-      [item.id,status,status==="APPROVED"?new Date():null])).rows[0];
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('EXPEDITE',$1,'APPROVAL_DECISION',$2,$3)`,
-      [item.id,String(p.actor??role),JSON.stringify({role,decision,status})]);await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_EXPEDITE_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/plans/:id/release-to-mes",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const plan=(await client.query("SELECT * FROM pmc_master_plans WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-    if(!plan||plan.status!=="KIT_READY")throw new Error("Only a fully approved and kit-ready plan can be released");
-    const link=(await client.query(`SELECT w.* FROM pmc_plan_work_orders pw JOIN work_orders w ON w.id=pw.work_order_id
-      WHERE pw.plan_id=$1 FOR UPDATE OF w`,[plan.id])).rows[0];
-    if(!link)throw new Error("No work order is bound to this plan");
-    await assertWorkOrderCustomerPoOpen(client,{id:link.id});
-    const failed=(await client.query("SELECT COUNT(*)::int count FROM pmc_plan_reviews WHERE plan_id=$1 AND result='FAIL'",[plan.id])).rows[0].count;
-    const approved=(await client.query("SELECT COUNT(*)::int count FROM pmc_plan_approvals WHERE plan_id=$1 AND decision='APPROVE'",[plan.id])).rows[0].count;
-    if(failed>0||approved<2)throw new Error("Plan review or approval gate is incomplete");
-    await client.query("UPDATE work_orders SET status='released',released_at=COALESCE(released_at,NOW()) WHERE id=$1",[link.id]);
-    const row=(await client.query("UPDATE pmc_master_plans SET status='RELEASED_TO_MES',updated_at=NOW() WHERE id=$1 RETURNING *",[plan.id])).rows[0];
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)
-      VALUES('PLAN',$1,'RELEASED_TO_MES',$2,$3)`,[plan.id,String(p.actor??"PMC_MANAGER"),JSON.stringify({workOrderCode:link.code})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_RELEASE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/work-orders/:code/change-requests",requirePermission("pmc.edit"),async(req,res)=>{
-  const p=req.body?.payload??req.body??{};try{
-    await assertWorkOrderCustomerPoOpen(pgPool,{code:req.params.code});
-    const wo=(await pgPool.query("SELECT * FROM work_orders WHERE code=$1",[req.params.code])).rows[0];
-    if(!wo)throw new Error("Work order not found");
-    const changeType=String(p.changeType??"").toUpperCase(),allowed=["QUANTITY","SCHEDULE","LINE","BOM","PRIORITY","CANCEL"];
-    if(!allowed.includes(changeType))throw new Error("Unsupported work-order change type");
-    const roles=["PMC_MANAGER","PRODUCTION_MANAGER"];
-    if(changeType==="BOM")roles.push("ENGINEERING","QUALITY");
-    if(changeType==="CANCEL")roles.push("FACTORY_MANAGER");
-    const requestNo=`WOC-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO pmc_work_order_change_requests
-      (request_no,work_order_id,change_type,before_snapshot,proposed_change,reason,required_approvals,requested_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [requestNo,wo.id,changeType,JSON.stringify(wo),JSON.stringify(p.proposedChange??{}),p.reason,JSON.stringify(roles),String(p.actor??"PMC")])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("PMC_WO_CHANGE_CREATE_FAILED",error.message));}
-});
-
-app.post("/pmc/work-order-changes/:id/decision",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},role=String(p.approvalRole??"").toUpperCase(),decision=String(p.decision??"").toUpperCase();
-    await client.query("BEGIN");
-    const item=(await client.query("SELECT * FROM pmc_work_order_change_requests WHERE id=$1 AND status='PENDING_APPROVAL' FOR UPDATE",[req.params.id])).rows[0];
-    if(!item||!item.required_approvals.includes(role))throw new Error("Approval role is not required");
-    await client.query(`INSERT INTO pmc_work_order_change_approvals(request_id,approval_role,decision,actor,comment)
-      VALUES($1,$2,$3,$4,$5) ON CONFLICT(request_id,approval_role) DO UPDATE SET decision=EXCLUDED.decision,actor=EXCLUDED.actor,comment=EXCLUDED.comment,decided_at=NOW()`,
-      [item.id,role,decision,String(p.actor??role),String(p.comment??"Reviewed")]);
-    const approvals=(await client.query("SELECT approval_role,decision FROM pmc_work_order_change_approvals WHERE request_id=$1",[item.id])).rows;
-    const status=decision==="REJECT"?"REJECTED":item.required_approvals.every(x=>approvals.some(a=>a.approval_role===x&&a.decision==="APPROVE"))?"APPROVED":"PENDING_APPROVAL";
-    const row=(await client.query("UPDATE pmc_work_order_change_requests SET status=$2 WHERE id=$1 RETURNING *",[item.id,status])).rows[0];
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_WO_CHANGE_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/work-order-changes/:id/apply",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const item=(await client.query("SELECT * FROM pmc_work_order_change_requests WHERE id=$1 AND status='APPROVED' FOR UPDATE",[req.params.id])).rows[0];
-    if(!item)throw new Error("Approved change request not found");
-    await assertWorkOrderCustomerPoOpen(client,{id:item.work_order_id});
-    const c=item.proposed_change??{};
-    if(item.change_type==="QUANTITY")await client.query("UPDATE work_orders SET planned_qty=$2 WHERE id=$1",[item.work_order_id,Number(c.plannedQty)]);
-    else if(item.change_type==="SCHEDULE")await client.query("UPDATE work_orders SET planned_start_date=$2,due_date=$3 WHERE id=$1",[item.work_order_id,c.plannedStartAt,c.dueDate]);
-    else if(item.change_type==="LINE")await client.query("UPDATE work_orders SET line_id=$2 WHERE id=$1",[item.work_order_id,Number(c.lineId)]);
-    else if(item.change_type==="BOM")await client.query("UPDATE work_orders SET bom_id=$2 WHERE id=$1",[item.work_order_id,Number(c.bomId)]);
-    else if(item.change_type==="PRIORITY")await client.query("UPDATE work_orders SET priority=$2 WHERE id=$1",[item.work_order_id,Number(c.priority)]);
-    else if(item.change_type==="CANCEL")await client.query("UPDATE work_orders SET status='cancelled' WHERE id=$1",[item.work_order_id]);
-    const row=(await client.query("UPDATE pmc_work_order_change_requests SET status='APPLIED',applied_at=NOW() WHERE id=$1 RETURNING *",[item.id])).rows[0];
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)
-      VALUES('WORK_ORDER',$1,'APPROVED_CHANGE_APPLIED',$2,$3)`,[item.work_order_id,String(p.actor??"PMC_MANAGER"),JSON.stringify({requestNo:item.request_no,change:item.proposed_change})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_WO_CHANGE_APPLY_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/work-orders/:code/transfers",requirePermission("pmc.edit"),async(req,res)=>{
-  const p=req.body?.payload??req.body??{};try{
-    await assertWorkOrderCustomerPoOpen(pgPool,{code:req.params.code});
-    const wo=(await pgPool.query("SELECT * FROM work_orders WHERE code=$1",[req.params.code])).rows[0];
-    if(!wo)throw new Error("Work order not found");
-    if(Number(wo.line_id)===Number(p.toLineId))throw new Error("Destination line must be different");
-    const transferNo=`WOT-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO pmc_work_order_transfers
-      (transfer_no,work_order_id,from_line_id,to_line_id,reason,wip_qty,ng_qty,last_sn,handover_payload,requested_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [transferNo,wo.id,wo.line_id,p.toLineId,p.reason,Number(p.wipQty??0),Number(p.ngQty??0),p.lastSn??null,JSON.stringify(p.handoverPayload??{}),String(p.actor??"PMC")])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("PMC_TRANSFER_CREATE_FAILED",error.message));}
-});
-
-app.post("/pmc/transfers/:id/decision",requirePermission("pmc.edit"),async(req,res)=>{
-  const p=req.body?.payload??req.body??{};try{
-    const pending=(await pgPool.query("SELECT work_order_id FROM pmc_work_order_transfers WHERE id=$1 AND status='PENDING_APPROVAL'",[req.params.id])).rows[0];
-    if(!pending)throw new Error("Pending transfer not found");
-    await assertWorkOrderCustomerPoOpen(pgPool,{id:pending.work_order_id});
-    const decision=String(p.decision??"").toUpperCase(),status=decision==="APPROVE"?"APPROVED":"REJECTED";
-    const row=(await pgPool.query(`UPDATE pmc_work_order_transfers SET status=$2,approved_by=$3
-      WHERE id=$1 AND status='PENDING_APPROVAL' RETURNING *`,[req.params.id,status,String(p.actor??"PRODUCTION_MANAGER")])).rows[0];
-    if(!row)throw new Error("Pending transfer not found");res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("PMC_TRANSFER_DECISION_FAILED",error.message));}
-});
-
-app.post("/pmc/transfers/:id/handover",requirePermission("pmc.edit"),async(req,res)=>{
-  const p=req.body?.payload??req.body??{};try{
-    const approved=(await pgPool.query("SELECT work_order_id FROM pmc_work_order_transfers WHERE id=$1 AND status='APPROVED'",[req.params.id])).rows[0];
-    if(!approved)throw new Error("Approved transfer not found");
-    await assertWorkOrderCustomerPoOpen(pgPool,{id:approved.work_order_id});
-    const row=(await pgPool.query(`UPDATE pmc_work_order_transfers SET status='HANDED_OVER',handed_over_at=NOW(),
-      handover_payload=handover_payload||$2::jsonb WHERE id=$1 AND status='APPROVED' RETURNING *`,
-      [req.params.id,JSON.stringify({handoverActor:p.actor,documentNo:p.documentNo})])).rows[0];
-    if(!row)throw new Error("Approved transfer not found");res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("PMC_TRANSFER_HANDOVER_FAILED",error.message));}
-});
-
-app.post("/pmc/transfers/:id/receive",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const transfer=(await client.query("SELECT * FROM pmc_work_order_transfers WHERE id=$1 AND status='HANDED_OVER' FOR UPDATE",[req.params.id])).rows[0];
-    if(!transfer)throw new Error("Handed-over transfer not found");
-    await assertWorkOrderCustomerPoOpen(client,{id:transfer.work_order_id});
-    const row=(await client.query(`UPDATE pmc_work_order_transfers SET status='COMPLETED',received_at=NOW(),
-      handover_payload=handover_payload||$2::jsonb WHERE id=$1 RETURNING *`,
-      [transfer.id,JSON.stringify({receivedBy:p.actor,receivingScan:p.scanCode})])).rows[0];
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)
-      VALUES('WORK_ORDER',$1,'LINE_TRANSFER_COMPLETED',$2,$3)`,[transfer.work_order_id,String(p.actor??"RECEIVER"),JSON.stringify({transferNo:transfer.transfer_no,toLineId:transfer.to_line_id})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_TRANSFER_RECEIVE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/work-orders/:code/closure-check",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const wo=(await client.query("SELECT * FROM work_orders WHERE code=$1 FOR UPDATE",[req.params.code])).rows[0];
-    if(!wo)throw new Error("Work order not found");
-    await assertWorkOrderCustomerPoOpen(client,{id:wo.id});
-    const quantityDetail=p.quantityDetail??{};
-    const plannedQty=Number(wo.planned_qty)||0;
-    const completedQty=Number(wo.completed_qty)||0;
-    const variance=plannedQty-completedQty;
-    const varianceReason=String(quantityDetail.varianceReason??p.varianceReason??"").trim();
-    const varianceApprovedBy=String(quantityDetail.approvedBy??p.varianceApprovedBy??"").trim();
-    const quantityBalanced=variance===0 || (Boolean(varianceReason)&&Boolean(varianceApprovedBy));
-    const checks=[
-      ["QUANTITY_BALANCE",quantityBalanced?"PASS":"FAIL",{
-        planned:plannedQty,completed:completedQty,variance,
-        passBasis:variance===0?"EXACT_BALANCE":"AUTHORIZED_VARIANCE",
-        explanation:varianceReason||null,approvedBy:varianceApprovedBy||null,
-        buckets:quantityDetail.buckets??null,evidenceRefs:quantityDetail.evidenceRefs??[]
-      }],
-      ["MATERIAL_RECONCILIATION",p.materialReconciled?"PASS":"FAIL",p.materialDetail??{}],
-      ["QUALITY_CLOSED",p.qualityClosed?"PASS":"FAIL",p.qualityDetail??{}],
-      ["HANDOVERS_CLOSED",p.handoversClosed?"PASS":"FAIL",p.handoverDetail??{}],
-      ["FINISHED_GOODS_RECEIVED",p.finishedGoodsReceived?"PASS":"FAIL",p.finishedGoodsDetail??{}],
-      ["COST_SETTLED",p.costSettled?"PASS":"FAIL",p.costDetail??{}]
-    ];
-    for(const [type,result,detail] of checks)await client.query(`INSERT INTO pmc_work_order_closure_checks(work_order_id,check_type,result,detail)
-      VALUES($1,$2,$3,$4) ON CONFLICT(work_order_id,check_type) DO UPDATE SET result=EXCLUDED.result,detail=EXCLUDED.detail,checked_at=NOW()`,
-      [wo.id,type,result,JSON.stringify(detail)]);
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('WORK_ORDER',$1,'CLOSURE_CHECKED',$2,$3)`,
-      [wo.id,String(p.actor??"PMC"),JSON.stringify({checks:Object.fromEntries(checks.map(x=>[x[0],x[1]])),quantityReconciliation:checks[0][2]})]);
-    await client.query("COMMIT");res.json(mutateEnvelope({workOrderCode:wo.code,checks:checks.map(([type,result,detail])=>({type,result,detail}))}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_CLOSURE_CHECK_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/pmc/work-orders/:code/close-controlled",requirePermission("pmc.edit"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const wo=(await client.query("SELECT * FROM work_orders WHERE code=$1 AND status<>'closed' FOR UPDATE",[req.params.code])).rows[0];
-    if(!wo)throw new Error("Open work order not found");
-    await assertWorkOrderCustomerPoOpen(client,{id:wo.id});
-    const checks=(await client.query("SELECT check_type,result FROM pmc_work_order_closure_checks WHERE work_order_id=$1",[wo.id])).rows;
-    const required=["QUANTITY_BALANCE","MATERIAL_RECONCILIATION","QUALITY_CLOSED","HANDOVERS_CLOSED","FINISHED_GOODS_RECEIVED","COST_SETTLED"];
-    if(!required.every(x=>checks.some(c=>c.check_type===x&&c.result==="PASS")))throw new Error("All six closure checks must pass");
-    const row=(await client.query("UPDATE work_orders SET status='closed',closed_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *",[wo.id])).rows[0];
-    await client.query(`UPDATE pmc_master_plans SET status='CLOSED',updated_at=NOW() WHERE id IN(SELECT plan_id FROM pmc_plan_work_orders WHERE work_order_id=$1)`,[wo.id]);
-    await client.query(`UPDATE pmc_demands SET status='CLOSED',updated_at=NOW() WHERE id IN(
-      SELECT demand_id FROM pmc_master_plans WHERE id IN(SELECT plan_id FROM pmc_plan_work_orders WHERE work_order_id=$1))`,[wo.id]);
-    await client.query(`INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('WORK_ORDER',$1,'CLOSED',$2,$3)`,
-      [wo.id,String(p.actor??"PMC"),JSON.stringify({checks:required})]);await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("PMC_CONTROLLED_CLOSE_FAILED",error.message));}finally{client.release();}
-});
-
-app.get("/pmc/work-orders", async (req, res) => {
-  try {
-    const { status, q, limit = 50, offset = 0 } = req.query;
-    const safeLimit = Math.min(Math.max(Number(limit) || 50, 1), 200);
-    const safeOffset = Math.max(Number(offset) || 0, 0);
-    const conditions = [];
-    const params = [];
-    let idx = 1;
-    if (status) { conditions.push(`wo.status = $${idx++}`); params.push(status); }
-    if (q) { conditions.push(`(wo.code ILIKE $${idx} OR p.code ILIKE $${idx})`); params.push(`%${q}%`); idx++; }
-    const joins = "JOIN products p ON p.id = wo.product_id JOIN production_lines pl ON pl.id = wo.line_id LEFT JOIN customer_pos po ON po.id = wo.customer_po_id";
-    const where = conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
-    const [countRes, dataRes] = await Promise.all([query(`SELECT count(*)::int AS total FROM work_orders wo ${joins} ${where}`, params), query(
-      `SELECT wo.id, wo.code, wo.work_order_type AS type, wo.planned_qty AS "plannedQty",
-              wo.completed_qty AS "completedQty", wo.status,
-               wo.locked_by AS "lockedBy", wo.locked_at AS "lockedAt",
-               wo.active_operators AS "activeOperators",
-              p.code AS "productCode", p.name_zh AS "productNameZh",
-              pl.internal_code AS "lineCode", pl.name_zh AS "lineNameZh",
-              po.po_number AS "poNumber"
-       FROM work_orders wo ${joins} ${where} ORDER BY wo.created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
-      [...params, safeLimit, safeOffset],
-    )]);
-    res.json(listEnvelope(dataRes.rows, countRes.rows[0]?.total ?? 0));
-  } catch (err) {
-    console.error("GET /pmc/work-orders:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-app.post("/pmc/work-orders", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const { workOrder } = req.body?.payload ?? {};
-    if (!workOrder) return res.status(400).json(errorEnvelope("VALIDATION", "workOrder payload required"));
-    const { customerPoId, poLineNo, productCode, lineCode, plannedQty, woType = 1, bomId, dueDate } = workOrder;
-
-    if (![1, 2, 3].includes(Number(woType))) return res.status(400).json(errorEnvelope("VALIDATION", "woType must be 1, 2, or 3"));
-    if (!productCode) return res.status(400).json(errorEnvelope("VALIDATION", "productCode required"));
-    if (!lineCode) return res.status(400).json(errorEnvelope("VALIDATION", "lineCode required"));
-    if (!plannedQty || plannedQty < 1) return res.status(400).json(errorEnvelope("VALIDATION", "plannedQty required"));
-    if (Number(woType) === 1 && !customerPoId) return res.status(400).json(errorEnvelope("VALIDATION", "customerPoId required for mass-production work orders"));
-    if (!bomId) return res.status(400).json(errorEnvelope("VALIDATION", "bomId and BOM revision are required"));
-
-    // Validate line exists and get numeric line code
-    const lineR = await query("SELECT id, numeric_line_code FROM production_lines WHERE internal_code = $1", [lineCode]);
-    if (lineR.rows.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "line not found"));
-
-    // Validate product
-    const prodR = await query("SELECT id FROM products WHERE code = $1", [productCode]);
-    if (prodR.rows.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "product not found"));
-
-    // Validate customer PO only if provided (optional for trial production)
-    let resolvedPoId = null;
-    if (customerPoId) {
-      const poR = await query(
-        "SELECT id,due_date,status FROM customer_pos WHERE id=$1 AND status NOT IN('closed','voided','cancelled')",
-        [customerPoId],
-      );
-      if (poR.rows.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "customerPo not found"));
-      resolvedPoId = customerPoId;
-      if (!workOrder.dueDate) workOrder.dueDate = poR.rows[0].due_date;
-    }
-
-    // Validate BOM if provided (optional — WO can be created without a BOM)
-    let resolvedBomId = null;
-    if (bomId) {
-      // A production WO must bind to the released/active BOM revision.  Do
-      // this check server-side as well as in the UI so callers cannot bypass
-      // the approval gate by posting directly to the API.
-      const bomR = await query("SELECT id, revision, status FROM boms WHERE id = $1 AND LOWER(status) = 'active'", [bomId]);
-      if (bomR.rows.length === 0) return res.status(409).json(errorEnvelope("BOM_NOT_RELEASED", "A released/active BOM revision is required"));
-      resolvedBomId = bomId;
-    }
-    const resolvedDueDate = dueDate || workOrder.dueDate;
-    if (!resolvedDueDate || Number.isNaN(Date.parse(String(resolvedDueDate)))) {
-      return res.status(400).json(errorEnvelope("VALIDATION", "dueDate required and must be a valid date"));
-    }
-
-    // Generate code using counter — atomic get-and-increment
-    const numericLineCode = lineR.rows[0].numeric_line_code; // e.g. "01"
-
-    // Atomic get-and-increment using INSERT ... ON CONFLICT DO UPDATE.
-    // When no row exists: inserts with next_serial=1 (serial we claim), next call will insert with 2.
-    // When row exists: increments and returns incremented value (the serial we just claimed).
-    // Note: on a brand-new row both operations happen so RETURNING gives 2; first WO gets serial 2.
-    // This is acceptable for an internal tool with negligible chance of same-second duplicate calls.
-    const actorId = req.user?.userId ?? null;
-    const client = await pgPool.connect();
-    let code;
-    let result;
-    try {
-      await client.query("BEGIN");
-      const allocated = await client.query(
-        "SELECT allocate_work_order_code($1,$2,$3) AS code",
-        [Number(woType), numericLineCode, actorId],
-      );
-      code = allocated.rows[0].code;
-      result = await client.query(
-        `INSERT INTO work_orders
-          (code,customer_po_id,po_line_no,work_order_type,line_id,product_id,planned_qty,bom_id,due_date,status,created_by)
-         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,'draft',$10) RETURNING id`,
-        [code,resolvedPoId,poLineNo ?? null,woType,lineR.rows[0].id,prodR.rows[0].id,
-         plannedQty,resolvedBomId,resolvedDueDate,actorId],
-      );
-      await client.query(
-        `UPDATE work_order_code_allocations SET work_order_id=$1,allocation_status='BOUND' WHERE code=$2`,
-        [result.rows[0].id,code],
-      );
-      await client.query(
-        `INSERT INTO work_order_number_audit
-          (work_order_id,work_order_code,action,new_status,actor_id,actor_name)
-         VALUES($1,$2,'CREATED','draft',$3,$4)`,
-        [result.rows[0].id,code,actorId,req.user?.username ?? null],
-      );
-      await client.query("COMMIT");
-    } catch (error) {
-      await client.query("ROLLBACK");
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    // Fetch BOM revision for response if bomId was provided
-    let bomRevision = null;
-    if (resolvedBomId) {
-      const bR = await query("SELECT revision FROM boms WHERE id = $1", [resolvedBomId]);
-      bomRevision = bR.rows[0]?.revision ?? null;
-    }
-
-    res.status(201).json(mutateEnvelope({
-      id: result.rows[0].id, code, woType, lineCode, productCode, plannedQty,
-      bomId: resolvedBomId, bomRevision, dueDate: resolvedDueDate,
-    }));
-  } catch (err) {
-    console.error("POST /pmc/work-orders:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-app.patch("/pmc/work-orders/:code", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const { status, reason } = req.body?.payload ?? {};
-    if (!status) return res.status(400).json(errorEnvelope("VALIDATION", "status required"));
-    await assertWorkOrderCustomerPoOpen(pgPool,{code:req.params.code});
-    const before = await query("SELECT id,status FROM work_orders WHERE code=$1", [req.params.code]);
-    if (!before.rows[0]) return res.status(404).json(errorEnvelope("NOT_FOUND", "work order not found"));
-    if (status === "voided" && !reason) return res.status(400).json(errorEnvelope("VALIDATION", "void reason required"));
-    await query(
-      `UPDATE work_orders SET status=$1::varchar,
-         voided_at=CASE WHEN $1::varchar='voided' THEN now() ELSE voided_at END,
-         voided_reason=CASE WHEN $1::varchar='voided' THEN $3 ELSE voided_reason END
-       WHERE code=$2`, [status,req.params.code,reason ?? null],
-    );
-    if (status === "voided") {
-      await query(
-        `UPDATE work_order_code_allocations SET allocation_status='VOIDED',voided_at=now(),
-           voided_by=$2,void_reason=$3 WHERE code=$1`,
-        [req.params.code,req.user?.userId ?? null,reason],
-      );
-    }
-    await query(
-      `INSERT INTO work_order_number_audit
-        (work_order_id,work_order_code,action,old_status,new_status,reason,actor_id,actor_name)
-       VALUES($1,$2,$3,$4,$5,$6,$7,$8)`,
-      [before.rows[0].id,req.params.code,status === "voided" ? "VOIDED" : "CHANGED",
-       before.rows[0].status,status,reason ?? null,req.user?.userId ?? null,req.user?.username ?? null],
-    );
-    res.json(mutateEnvelope({ code: req.params.code, status }));
-  } catch (err) {
-    console.error("PATCH /pmc/work-orders/:code:", err.message);
-    res.status(err.code==="CUSTOMER_PO_IMMUTABLE"?409:500).json(errorEnvelope(err.code||"SERVER_ERROR", err.message));
-  }
-});
-
-app.post("/pmc/work-orders/:code/quick-approve-release", requirePermission("pmc.edit"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    await client.query("BEGIN");
-    await assertWorkOrderCustomerPoOpen(client, { code: req.params.code });
-    const before = (await client.query(
-      "SELECT id,code,status FROM work_orders WHERE code=$1 FOR UPDATE",
-      [req.params.code],
-    )).rows[0];
-    if (!before) {
-      await client.query("ROLLBACK");
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "work order not found"));
-    }
-    if (!["draft", "hold"].includes(String(before.status).toLowerCase())) {
-      await client.query("ROLLBACK");
-      return res.status(409).json(errorEnvelope(
-        "WORK_ORDER_NOT_RELEASABLE",
-        `Only draft or hold work orders can be quickly released; current status is ${before.status}`,
-      ));
-    }
-    const actorId = req.user?.userId ?? null;
-    const actorName = req.user?.username ?? "PMC";
-    const reason = String(req.body?.payload?.reason ?? "Quick approval from PMC work-order list").trim();
-    const released = (await client.query(
-      `UPDATE work_orders
-       SET status='released',released_at=COALESCE(released_at,NOW()),updated_at=NOW()
-       WHERE id=$1
-       RETURNING code,status,released_at AS "releasedAt"`,
-      [before.id],
-    )).rows[0];
-    await client.query(
-      `INSERT INTO work_order_number_audit
-        (work_order_id,work_order_code,action,old_status,new_status,reason,actor_id,actor_name)
-       VALUES($1,$2,'CHANGED',$3,'released',$4,$5,$6)`,
-      [before.id,before.code,before.status,reason,actorId,actorName],
-    );
-    await client.query(
-      `INSERT INTO pmc_governance_audit(entity_type,entity_id,event_type,actor,detail)
-       VALUES('WORK_ORDER',$1,'QUICK_APPROVED_RELEASED',$2,$3)`,
-      [before.id,actorName,JSON.stringify({ oldStatus: before.status, newStatus: "released", reason })],
-    );
-    await client.query("COMMIT");
-    res.json(mutateEnvelope(released));
-    // A released WO always has materials to collect → WMS auto-creates its
-    // material-request sheet (领料单) right here, not via list GETs. Failures
-    // (no BOM etc.) are non-fatal: the release already happened.
-    ensureCollectOrder(req.params.code, actorName).catch((e) =>
-      console.error(`auto-generate collect list for ${req.params.code} after release:`, e.message));
-  } catch (err) {
-    await client.query("ROLLBACK").catch(() => {});
-    console.error("POST /pmc/work-orders/:code/quick-approve-release:", err.message);
-    res.status(err.code === "CUSTOMER_PO_IMMUTABLE" ? 409 : 500)
-      .json(errorEnvelope(err.code || "SERVER_ERROR", err.message));
-  } finally {
-    client.release();
-  }
-});
-
-app.get("/pmc/schedules", async (req, res) => {
-  try {
-    const { lineCode, limit = 50, offset = 0 } = req.query;
-    const conditions = ["wo.status IN ('released','running')"];
-    const params = [];
-    let idx = 1;
-    if (lineCode) { conditions.push(`pl.internal_code = $${idx++}`); params.push(lineCode); }
-    const where = "WHERE " + conditions.join(" AND ");
-    const data = await query(
-      `SELECT wo.id, wo.code, wo.planned_qty AS "plannedQty", wo.completed_qty AS "completedQty",
-              wo.status, pl.internal_code AS "lineCode", pl.name_zh AS "lineNameZh",
-              p.code AS "productCode"
-       FROM work_orders wo
-       JOIN production_lines pl ON pl.id = wo.line_id
-       JOIN products p ON p.id = wo.product_id
-       ${where} ORDER BY wo.created_at LIMIT $${idx} OFFSET $${idx + 1}`,
-      [...params, Number(limit), Number(offset)],
-    );
-    res.json(listEnvelope(data.rows));
-  } catch (err) {
-    console.error("GET /pmc/schedules:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-app.get("/pmc/customer-pos", async (req, res) => {
-  try {
-    const data = await query(
-      `SELECT po.id, po.po_number AS "poNumber", c.name_zh AS "customerName",
-              po.order_qty AS "orderQty", po.due_date AS "dueDate", po.status
-       FROM customer_pos po
-       JOIN customers c ON c.id = po.customer_id
-       ORDER BY po.created_at DESC LIMIT 100`,
-    );
-    res.json(listEnvelope(data.rows));
-  } catch (err) {
-    console.error("GET /pmc/customer-pos:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /pmc/work-order-alerts — overdue, delay, and material-risk alerts
-// Alert levels: overdue (past due_date), delay (进度落后), material_risk (物料缺口)
-// Query params: alertLevel (overdue|delay|material_risk|all), limit, offset
-app.get("/pmc/work-order-alerts", async (req, res) => {
-  try {
-    const { alertLevel = "all", limit = 50, offset = 0 } = req.query;
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
-
-    // Build base query: join WO + product + line + PO
-    const baseJoin = `FROM work_orders wo
-      JOIN products p ON p.id = wo.product_id
-      JOIN production_lines pl ON pl.id = wo.line_id
-      LEFT JOIN customer_pos po ON po.id = wo.customer_po_id`;
-
-    // Material risk EXISTS subquery — no $ placeholders to avoid conflict with outer params
-    const materialRiskExists = `EXISTS (
-      SELECT 1 FROM work_order_bom_requirements woi
-      JOIN bom_lines bl ON bl.bom_id = woi.bom_id
-      LEFT JOIN LATERAL (
-        SELECT SUM(it.qty) AS picked_qty FROM inventory_transactions it
-        JOIN material_lots ml ON ml.id = it.material_lot_id
-        WHERE it.work_order_id = woi.work_order_id AND ml.material_id = bl.material_id
-          AND it.action IN ('PICK', 'ISSUE_TO_LINE')
-      ) mit ON true
-      WHERE woi.work_order_id = wo.id
-        AND COALESCE(mit.picked_qty, 0) < woi.qty_per
-    )`;
-
-    const alertConditions = {
-      overdue: `wo.due_date < '${today}' AND wo.status NOT IN ('closed', 'posted', 'draft')`,
-      delay: `(wo.status = 'running' OR wo.status = 'released')
-        AND wo.due_date IS NOT NULL
-        AND wo.completed_qty::numeric / NULLIF(wo.planned_qty, 0) <
-            LEAST(1.0, (('${today}'::date - wo.released_at::date)::numeric / NULLIF(wo.due_date::date - wo.released_at::date, 0)))`,
-      material_risk: `wo.status IN ('released', 'running') AND ${materialRiskExists}`,
-    };
-
-    let alertWhere = "";
-    if (alertLevel !== "all" && alertConditions[alertLevel]) {
-      alertWhere = `WHERE ${alertConditions[alertLevel]}`;
-    } else if (alertLevel === "all") {
-      alertWhere = `WHERE ${Object.values(alertConditions).join(" OR ")}`;
-    }
-
-    const dataRes = await query(`
-      SELECT
-        wo.id, wo.code, wo.status, wo.planned_qty AS "plannedQty",
-        wo.completed_qty AS "completedQty",
-        wo.due_date AS "dueDate",
-        wo.released_at AS "releasedAt",
-        p.code AS "productCode", p.name_zh AS "productNameZh",
-        pl.internal_code AS "lineCode", pl.name_zh AS "lineNameZh",
-        po.po_number AS "poNumber",
-        CASE
-          WHEN wo.due_date < '${today}'::date AND wo.status NOT IN ('closed','posted','draft')
-            THEN 'overdue'
-          WHEN wo.status IN ('released','running')
-            AND wo.completed_qty::numeric / NULLIF(wo.planned_qty,0) <
-                LEAST(1.0, (('${today}'::date - COALESCE(wo.released_at::date, '${today}'::date))::numeric
-                  / NULLIF(wo.due_date::date - COALESCE(wo.released_at::date, '${today}'::date), 0)))
-            THEN 'delay'
-          WHEN ${materialRiskExists}
-            THEN 'material_risk'
-          ELSE 'normal'
-        END AS "alertLevel",
-        ROUND(wo.completed_qty::numeric / NULLIF(wo.planned_qty, 0) * 100, 1) AS "progressPct",
-        (SELECT wo.due_date::date - '${today}'::date) AS "daysUntilDue"
-      ${baseJoin}
-      ${alertWhere}
-      ORDER BY
-        CASE
-          WHEN wo.due_date < '${today}'::date THEN 1
-          WHEN ${materialRiskExists} THEN 2
-          ELSE 3
-        END,
-        wo.due_date ASC NULLS LAST
-      LIMIT $1 OFFSET $2`,
-      [Number(limit), Number(offset)],
-    );
-
-    // Count totals by alert level
-    const countRes = await query(`
-      SELECT
-        COUNT(*) FILTER (WHERE wo.due_date < '${today}'::date AND wo.status NOT IN ('closed','posted','draft'))::int AS overdue,
-        COUNT(*) FILTER (WHERE wo.status IN ('released','running')
-          AND wo.completed_qty::numeric / NULLIF(wo.planned_qty,0) <
-              LEAST(1.0, (('${today}'::date - COALESCE(wo.released_at::date,'${today}'::date))::numeric
-                / NULLIF(wo.due_date::date - COALESCE(wo.released_at::date,'${today}'::date),0))))::int AS delay,
-        COUNT(*) FILTER (WHERE wo.status IN ('released','running') AND ${materialRiskExists})::int AS material_risk
-      ${baseJoin}
-      WHERE wo.status NOT IN ('closed','posted')
-        AND (wo.due_date < '${today}'::date OR wo.status IN ('released','running'))`);
-
-    res.json({
-      data: { items: dataRes.rows, counts: countRes.rows[0] },
-      meta: { serverTime: new Date().toISOString() },
-    });
-  } catch (err) {
-    console.error("GET /pmc/work-order-alerts:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /pmc/work-orders/:code/complete — 工单完工报工: update completed_qty + log station_event
-// Also supports material-loading-only completion (from PDA) where outputQty is optional
-app.post("/pmc/work-orders/:code/complete", async (req, res) => {
-  try {
-    const { outputQty, ngQty = 0, stationCode, operator, notes } = req.body?.payload ?? req.body ?? {};
-    const woCode = req.params.code;
-    await assertWorkOrderCustomerPoOpen(pgPool,{code:woCode});
-
-    // Get current WO state
-    const woR = await query("SELECT id, completed_qty, planned_qty, status FROM work_orders WHERE code = $1", [woCode]);
-    if (!woR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "work order not found"));
-    const wo = woR.rows[0];
-
-    // If outputQty provided, do full completion (production output)
-    if (outputQty && outputQty > 0) {
-      const newCompleted = wo.completed_qty + outputQty;
-      const isComplete = newCompleted >= wo.planned_qty;
-      const newStatus = isComplete ? "completed" : wo.status;
-
-      await query(
-        `UPDATE work_orders SET completed_qty = $1, status = $2, updated_at = NOW()
-         WHERE code = $3`,
-        [newCompleted, newStatus, woCode],
-      );
-
-      // Log station_event (only if station exists)
-      let stationId = null;
-      if (stationCode) {
-        const stR = await query("SELECT id FROM stations WHERE code = $1", [stationCode]);
-        if (stR.rows.length) stationId = stR.rows[0].id;
-      }
-      if (stationId) {
-        await query(
-          `INSERT INTO station_events (station_id, operator_id, event_type, result, traceability_key)
-           VALUES ($1, (SELECT id FROM users WHERE username = $2 LIMIT 1), 'output', $3, $4)`,
-          [stationId, operator ?? "VN_OP_001", `${outputQty}${ngQty > 0 ? ` NG:${ngQty}` : ""}`, woCode],
-        );
-      }
-
-      res.json(mutateEnvelope({ code: woCode, completedQty: newCompleted, status: newStatus, isComplete }));
-      return;
-    }
-
-    // Material-loading-only completion (PDA): mark WO as ready for production
-    // Keep completed_qty unchanged, just unlock and mark as released (materials ready)
-    await query(
-      `UPDATE work_orders SET status = 'released', updated_at = NOW()
-       WHERE code = $1`,
-      [woCode],
-    );
-
-    res.json(mutateEnvelope({ code: woCode, completedQty: wo.completed_qty, status: "released", isComplete: false, materialLoadingComplete: true }));
-  } catch (err) {
-    console.error("POST /pmc/work-orders/:code/complete:", err.message);
-    res.status(err.code==="CUSTOMER_PO_IMMUTABLE"?409:500).json(errorEnvelope(err.code||"SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /pmc/work-orders/:code/freeze — 工单冻结/变更 with audit log
-app.patch("/pmc/work-orders/:code/freeze", async (req, res) => {
-  try {
-    const { status, changeReason, plannedQty, priority, operator } = req.body?.payload ?? {};
-    if (!status) return res.status(400).json(errorEnvelope("VALIDATION", "status required"));
-    const woCode = req.params.code;
-    await assertWorkOrderCustomerPoOpen(pgPool,{code:woCode});
-
-    const woR = await query("SELECT id, status, planned_qty, priority FROM work_orders WHERE code = $1", [woCode]);
-    if (!woR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "work order not found"));
-    const wo = woR.rows[0];
-
-    const changes = [];
-    if (status && status !== wo.status) changes.push({ field: "status", old: wo.status, new: status });
-    if (plannedQty && plannedQty !== wo.planned_qty) changes.push({ field: "planned_qty", old: wo.planned_qty, new: plannedQty });
-    if (priority && priority !== wo.priority) changes.push({ field: "priority", old: wo.priority, new: priority });
-
-    const opIdR = await query("SELECT id FROM users WHERE username = $1 LIMIT 1", [operator ?? "VN_OP_001"]);
-
-    for (const ch of changes) {
-      await query(
-        `INSERT INTO work_order_change_log (work_order_id, changed_by, field_name, old_value, new_value, reason)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [wo.id, opIdR.rows[0]?.id ?? null, ch.field, String(ch.old ?? ""), String(ch.new ?? ""), changeReason ?? null],
-      );
-    }
-
-    const updates = [];
-    const params = [];
-    let idx = 1;
-    if (status) { updates.push(`status = $${idx++}`); params.push(status); }
-    if (plannedQty) { updates.push(`planned_qty = $${idx++}`); params.push(plannedQty); }
-    if (priority) { updates.push(`priority = $${idx++}`); params.push(priority); }
-    updates.push("updated_at = NOW()");
-    params.push(woCode);
-
-    await query(`UPDATE work_orders SET ${updates.join(", ")} WHERE code = $${idx}`, params);
-    res.json(mutateEnvelope({ code: woCode, changes }));
-  } catch (err) {
-    console.error("PATCH /pmc/work-orders/:code/freeze:", err.message);
-    res.status(err.code==="CUSTOMER_PO_IMMUTABLE"?409:500).json(errorEnvelope(err.code||"SERVER_ERROR", err.message));
-  }
-});
-
-// POST /pmc/work-orders/:code/lock — Add operator to WO's active PDA loading list
-// Multiple PDA operators can work on the same WO simultaneously (no upper limit).
-// Each operator can still only work on one WO at a time (enforced by active_operators check).
-app.post("/pmc/work-orders/:code/lock", async (req, res) => {
-  try {
-    const { code } = req.params;
-    const { operator } = req.body?.payload ?? req.body ?? {};
-    if (!operator) return res.status(400).json(errorEnvelope("VALIDATION", "operator required"));
-
-    // Check if this operator is already on another WO (excluding this one)
-    const existingLock = await query(
-      `SELECT code FROM work_orders WHERE $1 = ANY(active_operators) AND code != $2 LIMIT 1`,
-      [operator, code],
-    );
-    if (existingLock.rows.length > 0) {
-      return res.status(409).json(errorEnvelope("CONFLICT",
-        `Complete WO ${existingLock.rows[0].code} first before starting another. You can only work on one WO at a time.`));
-    }
-
-    // Idempotent: if operator already active on this WO, return current state
-    const alreadyActive = await query(
-      `SELECT active_operators, locked_by FROM work_orders WHERE code = $1 AND $2 = ANY(active_operators)`,
-      [code, operator],
-    );
-    if (alreadyActive.rows.length > 0) {
-      return res.json(envelope({
-        activeOperators: alreadyActive.rows[0].active_operators,
-        lockedBy: alreadyActive.rows[0].locked_by,
-        alreadyActive: true,
-      }));
-    }
-
-    // Add operator to active_operators array; set locked_by if first operator
-    const result = await query(
-      `UPDATE work_orders
-       SET active_operators = CASE WHEN $1 = ANY(active_operators) THEN active_operators ELSE active_operators || $1::text END,
-           locked_by = COALESCE(locked_by, $1),
-           locked_at = CASE WHEN locked_by IS NULL THEN NOW() ELSE locked_at END
-       WHERE code = $2
-       RETURNING active_operators AS "activeOperators", locked_by AS "lockedBy", locked_at AS "lockedAt"`,
-      [operator, code],
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", `Work order ${code} not found`));
-    }
-
-    res.json(envelope(result.rows[0]));
-  } catch (err) {
-    console.error("POST /pmc/work-orders/:code/lock:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /pmc/work-orders/:code/unlock — Remove operator from WO's active PDA loading list
-// When last operator leaves, WO is fully unlocked (locked_by and locked_at cleared).
-app.post("/pmc/work-orders/:code/unlock", async (req, res) => {
-  try {
-    const { code } = req.params;
-    const { operator, force } = req.body?.payload ?? req.body ?? {};
-    if (!operator) return res.status(400).json(errorEnvelope("VALIDATION", "operator required"));
-
-    // Force unlock (managers): clear all active operators
-    if (force) {
-      const prev = await query(
-        `SELECT locked_by FROM work_orders WHERE code = $1`,
-        [code],
-      );
-      if (prev.rows.length === 0) {
-        return res.status(404).json(errorEnvelope("NOT_FOUND", `Work order ${code} not found`));
-      }
-      await query(
-        `UPDATE work_orders SET active_operators = '{}', locked_by = NULL, locked_at = NULL WHERE code = $1`,
-        [code],
-      );
-      res.json(envelope({ code, unlockedFrom: prev.rows[0].locked_by, forced: true }));
-      return;
-    }
-
-    // Remove operator from active_operators; clear locked_by if they were the primary locker
-    // If active_operators becomes empty after removal, also clear locked_by and locked_at
-    const result = await query(
-      `UPDATE work_orders
-       SET active_operators = array_remove(active_operators, $1),
-           locked_by  = CASE WHEN locked_by = $1 THEN
-                          (SELECT locked_by FROM work_orders WHERE code = $2 AND array_length(active_operators, 1) > 1 LIMIT 1)
-                          ELSE locked_by END,
-           locked_at  = CASE WHEN locked_by = $1 AND array_length(active_operators, 1) <= 1 THEN NULL ELSE locked_at END
-       WHERE code = $2 AND $1 = ANY(active_operators)
-       RETURNING active_operators AS "activeOperators", locked_by AS "lockedBy"`,
-      [operator, code],
-    );
-    if (result.rows.length === 0) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", `Work order ${code} not active for operator ${operator}`));
-    }
-
-    res.json(envelope({ code, activeOperators: result.rows[0].activeOperators }));
-  } catch (err) {
-    console.error("POST /pmc/work-orders/:code/unlock:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /pmc/work-order-qc-report?workOrderCode=X — 工单质量报表
-app.get("/pmc/work-order-qc-report", async (req, res) => {
-  try {
-    const { workOrderCode } = req.query;
-    if (!workOrderCode) return res.status(400).json(errorEnvelope("VALIDATION", "workOrderCode required"));
-
-    // NG events for this WO
-    const ngR = await query(`
-      SELECT se.occurred_at AS "ngTime", se.result, se.traceability_key AS "pcbSerial",
-             s.code AS "stationCode", s.name_zh AS "stationNameZh",
-             pl.name_zh AS "lineName", u.username AS "operatorName"
-      FROM station_events se
-      JOIN stations s ON s.id = se.station_id
-      JOIN production_lines pl ON pl.id = s.line_id
-      LEFT JOIN users u ON u.id = se.operator_id
-      WHERE se.event_type = 'ng' AND se.traceability_key = $1
-      ORDER BY se.occurred_at DESC LIMIT 200`,
-      [workOrderCode],
-    );
-
-    // Output events for yield calc
-    const outR = await query(`
-      SELECT COUNT(*)::int AS total_output
-      FROM station_events
-      WHERE event_type = 'output' AND traceability_key = $1`,
-      [workOrderCode],
-    );
-
-    const totalOutput = outR.rows[0]?.total_output ?? 0;
-    const totalNG = ngR.rows.length;
-    const yieldPct = totalOutput > 0 ? Math.round((totalOutput - totalNG) / totalOutput * 100) : 0;
-
-    // NG breakdown by station
-    const byStation = {};
-    for (const row of ngR.rows) {
-      byStation[row.stationCode] = (byStation[row.stationCode] ?? 0) + 1;
-    }
-
-    res.json({
-      data: {
-        workOrderCode,
-        totalOutput,
-        totalNG,
-        yieldPct,
-        ngByStation: byStation,
-        ngRecords: ngR.rows.slice(0, 50),
-      },
-    });
-  } catch (err) {
-    console.error("GET /pmc/work-order-qc-report:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /pmc/work-order-gantt — 工单Gantt视图数据
-app.get("/pmc/work-order-gantt", async (req, res) => {
-  try {
-    const { lineCode } = req.query;
-    const cond = lineCode ? "WHERE pl.internal_code = $1 AND wo.status NOT IN ('closed','draft')" : "WHERE wo.status NOT IN ('closed','draft')";
-    const params = lineCode ? [lineCode] : [];
-    const rows = await query(`
-      SELECT
-        wo.code AS "workOrderCode", wo.planned_qty AS "plannedQty", wo.completed_qty AS "completedQty",
-        wo.due_date AS "dueDate", wo.released_at AS "releasedAt",
-        wo.status, wo.priority,
-        p.code AS "productCode", p.name_zh AS "productNameZh",
-        pl.internal_code AS "lineCode", pl.name_zh AS "lineNameZh",
-        COALESCE(po.po_number, '') AS "poNumber",
-        LEAST(1.0, GREATEST(0,
-          CASE WHEN wo.due_date IS NOT NULL AND wo.released_at IS NOT NULL
-            THEN (NOW() - wo.released_at::timestamptz) / (wo.due_date::timestamptz - wo.released_at::timestamptz)
-          ELSE 0 END
-        )) AS "plannedProgress"
-      FROM work_orders wo
-      JOIN products p ON p.id = wo.product_id
-      JOIN production_lines pl ON pl.id = wo.line_id
-      LEFT JOIN customer_pos po ON po.id = wo.customer_po_id
-      ${cond}
-      ORDER BY wo.priority ASC, wo.due_date ASC NULLS LAST`,
-      params,
-    );
-    res.json(listEnvelope(rows.rows));
-  } catch (err) {
-    console.error("GET /pmc/work-order-gantt:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /pmc/work-order-material-status — BOM exploded view per work order
-// Returns material requirement status: required vs picked vs shortfall
-app.get("/pmc/work-order-material-status", async (req, res) => {
-  try {
-    const { workOrderCode } = req.query;
-    if (!workOrderCode) return res.status(400).json(errorEnvelope("VALIDATION", "workOrderCode required"));
-
-    // Get WO + its active BOM
-    const woR = await query(`
-      SELECT wo.id AS "woId", wo.code AS "woCode", wo.planned_qty AS "plannedQty",
-             wo.completed_qty AS "completedQty", wo.status,
-             p.code AS "productCode", p.name_zh AS "productNameZh",
-             pl.internal_code AS "lineCode", pl.name_zh AS "lineNameZh",
-             b.id AS "bomId", b.revision AS "bomRevision"
-      FROM work_orders wo
-      JOIN products p ON p.id = wo.product_id
-      JOIN production_lines pl ON pl.id = wo.line_id
-      LEFT JOIN LATERAL (
-        SELECT id, revision FROM boms
-        WHERE product_id = wo.product_id AND status = 'active'
-        ORDER BY effective_from DESC NULLS LAST LIMIT 1
-      ) b ON true
-      WHERE wo.code = $1
-    `, [workOrderCode]);
-
-    if (!woR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "work order not found"));
-    const wo = woR.rows[0];
-
-    if (!wo.bomId) {
-      return res.json({ data: { workOrder: wo, items: [], summary: { totalMaterials: 0, fulfilledMaterials: 0, fulfillmentPct: 0 } } });
-    }
-
-    // BOM lines — fetch base, then per-material picked qty + best lot
-    const matR = await query(`
-      SELECT m.id AS "mid", m.code AS "materialCode", m.vietnam_code AS "vietnamCode",
-             COALESCE(m.name_zh,m.code) AS "materialNameZh", COALESCE(m.name_en,m.code) AS "materialNameEn",
-             m.uom, m.material_type AS "materialType",
-             bl.qty_per AS "qtyPer", bl.loss_rate AS "lossRate",
-             bl.reference_designators AS "refDes", bl.spec AS "spec"
-      FROM bom_lines bl JOIN materials m ON m.id = bl.material_id
-      WHERE bl.bom_id = $1 ORDER BY m.material_type, m.code
-    `, [wo.bomId]);
-
-    const items = [];
-    for (const r of matR.rows) {
-      const total = Number(r.qtyPer) * (1 + Number(r.lossRate||0)) * Number(wo.plannedQty);
-      const pR = await query(`SELECT COALESCE(SUM(it.qty),0) AS v FROM inventory_transactions it JOIN material_lots ml ON ml.id=it.material_lot_id WHERE ml.material_id=$1 AND it.work_order_id=$2 AND it.action IN ('PICK','ISSUE_TO_LINE')`, [r.mid, wo.woId]);
-      const picked = Number(pR.rows[0]?.v||0);
-      const shortfall = Math.max(0, total - picked);
-      const bR = await query(`SELECT ml.lot_no AS "lotNo", COALESCE(sl.code,sc.shelf_code) AS "locCode", CASE WHEN sc.id IS NOT NULL THEN 'smart_rack' ELSE 'storage' END AS "locType", sc.shelf_code AS "shelfCode", sc.cell_number AS "cellNo", (ml.received_qty-COALESCE(ml.reserved_qty,0)) AS "availQty", ml.id AS "lotId" FROM material_lots ml LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id LEFT JOIN shelf_cells sc ON sc.material_lot_id=ml.id AND sc.cell_status='occupied' WHERE ml.material_id=$1 AND ml.iqc_status='released' AND ml.lot_status='open' ORDER BY CASE WHEN sc.id IS NULL THEN 0 ELSE 1 END, (ml.received_qty-COALESCE(ml.reserved_qty,0)) DESC LIMIT 1`, [r.mid]);
-      items.push({ materialCode:r.materialCode, vietnamCode:r.vietnamCode, materialNameZh:r.materialNameZh, materialNameEn:r.materialNameEn, uom:r.uom, materialType:r.materialType, qtyPer:r.qtyPer, lossRate:r.lossRate, referenceDesignators:r.refDes, spec:r.spec, totalRequired:Math.round(total*100)/100, pickedQty:picked, shortfall:Math.round(shortfall*100)/100, bestLot:bR.rows[0]||null });
-    }
-    const totalMaterials = items.length;
-    const fulfilledMaterials = items.filter(i => Number(i.shortfall) === 0).length;
-    const fulfillmentPct = totalMaterials > 0 ? Math.round(fulfilledMaterials / totalMaterials * 100) : 0;
-    const totalShortfall = items.reduce((sum, i) => sum + Number(i.shortfall), 0);
-
-    res.json({
-      data: {
-        workOrder: wo,
-        items,
-        summary: {
-          totalMaterials,
-          fulfilledMaterials,
-          fulfillmentPct,
-          totalShortfall,
-          woProgressPct: wo.plannedQty > 0 ? Math.round(wo.completedQty / wo.plannedQty * 100) : 0,
-        },
-      },
-    });
-  } catch (err) {
-    console.error("GET /pmc/work-order-material-status:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// ── Supplementary Materials ────────────────────────────────────────────
-// GET /pmc/supplementary-materials
-app.get("/pmc/supplementary-materials", async (req, res) => {
-  try {
-    const { workOrderCode, status, limit = 100, offset = 0 } = req.query;
-    const params = [];
-    let where = "";
-    if (workOrderCode) { params.push(workOrderCode); where += ` AND wo.code = $${params.length}`; }
-    if (status) { params.push(status); where += ` AND sm.status = $${params.length}`; }
-    const lim = Number(limit), off = Number(offset);
-    params.push(lim, off);
-
-    const r = await query(`
-      SELECT sm.id, sm.required_qty AS "requiredQty", sm.uom, sm.reason,
-             sm.status, sm.created_at AS "createdAt",
-             wo.code AS "workOrderCode", wo.planned_qty AS "plannedQty",
-             p.code AS "productCode", p.name_zh AS "productNameZh",
-             m.code AS "materialCode", m.name_zh AS "materialNameZh",
-              u.display_name AS "requestedByName"
-      FROM supplementary_materials sm
-      JOIN work_orders wo ON wo.id = sm.work_order_id
-      JOIN materials m ON m.id = sm.material_id
-      JOIN products p ON p.id = wo.product_id
-      LEFT JOIN users u ON u.id = sm.requested_by
-      WHERE 1=1 ${where}
-      ORDER BY sm.created_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-
-    const cntParams = params.slice(0, -2);
-    const cntR = await query(`SELECT count(*) AS total FROM supplementary_materials sm JOIN work_orders wo ON wo.id = sm.work_order_id WHERE 1=1 ${where}`, cntParams);
-
-    let summaryR = { rows: [] };
-    if (workOrderCode) {
-      summaryR = await query(`SELECT sm.status, count(*) AS count, sum(sm.required_qty)::numeric AS total_qty FROM supplementary_materials sm JOIN work_orders wo ON wo.id = sm.work_order_id WHERE wo.code = $1 GROUP BY sm.status`, [workOrderCode]);
-    }
-
-    res.json({ items: r.rows, total: Number(cntR.rows[0]?.total ?? 0), summary: summaryR.rows });
-  } catch (err) {
-    console.error("GET /pmc/supplementary-materials:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /pmc/supplementary-materials
-app.post("/pmc/supplementary-materials", async (req, res) => {
-  try {
-    const { workOrderCode, materialCode, requiredQty, uom, reason, requestedByName } = req.body;
-    if (!workOrderCode || !materialCode || !requiredQty || !reason) {
-      return res.status(400).json(errorEnvelope("VALIDATION", "workOrderCode, materialCode, requiredQty, reason required"));
-    }
-    const woR = await query("SELECT id FROM work_orders WHERE code = $1", [workOrderCode]);
-    if (!woR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Work order not found"));
-    const matR = await query("SELECT id FROM materials WHERE code = $1", [materialCode]);
-    if (!matR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Material not found"));
-    const userR = await query("SELECT id FROM users WHERE name = $1 LIMIT 1", [requestedByName ?? "PMC"]);
-    const userId = userR.rows[0]?.id ?? null;
-
-    const r = await query(`
-      INSERT INTO supplementary_materials (work_order_id, material_id, required_qty, uom, reason, requested_by)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      RETURNING id, status, created_at AS "createdAt"
-    `, [woR.rows[0].id, matR.rows[0].id, requiredQty, uom ?? "PCS", reason, userId]);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    if (err.code === "23503") return res.status(400).json(errorEnvelope("VALIDATION", "Referenced work order or material does not exist"));
-    console.error("POST /pmc/supplementary-materials:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /pmc/supplementary-materials/:id
-app.patch("/pmc/supplementary-materials/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, requiredQty, reason } = req.body;
-    const allowed = ["pending","approved","issued","closed"];
-    if (status && !allowed.includes(status)) return res.status(400).json(errorEnvelope("VALIDATION", `status must be one of: ${allowed.join(", ")}`));
-    const sets = [], params = [];
-    if (status) { params.push(status); sets.push(`status = $${params.length}`); }
-    if (requiredQty) { params.push(requiredQty); sets.push(`required_qty = $${params.length}`); }
-    if (reason) { params.push(reason); sets.push(`reason = $${params.length}`); }
-    if (!sets.length) return res.status(400).json(errorEnvelope("VALIDATION", "No fields to update"));
-    params.push(id);
-    const r = await query(`UPDATE supplementary_materials SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING id, status, required_qty AS "requiredQty", reason`, params);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Supplementary material not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("PATCH /pmc/supplementary-materials/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// DELETE /pmc/supplementary-materials/:id (soft-close)
-app.delete("/pmc/supplementary-materials/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const r = await query(`UPDATE supplementary_materials SET status = 'closed' WHERE id = $1 RETURNING id, status`, [id]);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("DELETE /pmc/supplementary-materials/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-// ------ PMC Patrol State ------------------------------------------
-
-/* GET /pmc/patrol-state
- * Returns the current patrol cycle state JSON written by the PMC patrol scripts.
- * Falls back to an empty state if the patrol file hasn't been generated yet.
- * Public (read-only monitoring data, no permission check).
- */
-app.get("/pmc/patrol-state", async (req, res) => {
-  try {
-    const patrolFile = path.join(process.env.TEMP || "/tmp", "pmc_patrol_state.json");
-    if (fs.existsSync(patrolFile)) {
-      const raw = fs.readFileSync(patrolFile, "utf-8");
-      const data = JSON.parse(raw);
-      return res.json(envelope(data));
-    }
-    // Return idle state if patrol hasn't run yet
-    return res.json(envelope({
-      cycle: 0,
-      timestamp: new Date().toISOString(),
-      nodes: {
-        delivery_watch:      { state: "idle", detail: "Patrol not started", escalations: 0 },
-        rate_check:          { state: "idle", detail: "Patrol not started", escalations: 0 },
-        abnormal_detector:   { state: "idle", detail: "Patrol not started", escalations: 0 },
-        material_shortage:   { state: "idle", detail: "Patrol not started", escalations: 0 },
-        notification_router: { state: "idle", detail: "Patrol not started", escalations: 0 },
-      },
-      total_escalations: 0,
-      overdue_count: 0,
-      patrol_duration_ms: 0,
-    }));
-  } catch (err) {
-    console.error("GET /pmc/patrol-state:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// ------ PMC Delivery Watch ------------------------------------------
-
-/* GET /pmc/delivery-watch
- * Returns delivery risk assessment for all active work orders.
- * Uses idx_wo_status_due and idx_escalation_wo_type_open for performance.
- * Cached for 60s to avoid repeated full-table LATERAL scans.
- */
-app.get("/pmc/delivery-watch", async (req, res) => {
-  try {
-    const cached = deliveryWatchCache.get("list");
-    if (cached) return res.json(cached);
-
-    const result = await query(`
-      SELECT
-        wo.code AS wo_code,
-        p.code AS product_code,
-        pl.internal_code AS line_code,
-        wo.planned_qty,
-        wo.completed_qty,
-        ROUND((wo.completed_qty::numeric / NULLIF(wo.planned_qty, 0)) * 100, 1) AS completion_pct,
-        wo.due_date,
-        EXTRACT(EPOCH FROM (wo.due_date - NOW())) / 3600 AS delay_hours,
-        COALESCE(el.alert_id, 0) AS alert_id,
-        el.description AS rate_detail,
-        CASE
-          WHEN wo.due_date < NOW() THEN 'OVERDUE'
-          WHEN EXTRACT(EPOCH FROM (wo.due_date - NOW())) / 3600 <= 24 THEN 'WARNING'
-          WHEN EXTRACT(EPOCH FROM (wo.due_date - NOW())) / 3600 <= 48 THEN 'CAUTION'
-          ELSE 'ON_TRACK'
-        END AS tier
-      FROM work_orders wo
-      JOIN products p ON p.id = wo.product_id
-      JOIN production_lines pl ON pl.id = wo.line_id
-      LEFT JOIN LATERAL (
-        SELECT id AS alert_id, description
-        FROM pmc_escalation_log
-        WHERE wo_code = wo.code
-          AND alert_type = 'delivery_watch'
-          AND resolved_at IS NULL
-        ORDER BY occurred_at DESC
-        LIMIT 1
-      ) el ON true
-      WHERE wo.status NOT IN ('closed', 'voided')
-        AND wo.due_date IS NOT NULL
-      ORDER BY wo.due_date ASC
-    `);
-
-    const data = envelope({
-      items: result.rows.map(r => ({
-        ...r,
-        due_date: r.due_date ? r.due_date.toISOString() : null,
-        delay_hours: r.delay_hours ? parseFloat(Number(r.delay_hours).toFixed(1)) : 0,
-        completion_pct: parseFloat(r.completion_pct || '0'),
-        completed_qty: parseInt(r.completed_qty) || 0,
-        planned_qty: parseInt(r.planned_qty) || 0,
-        alert_id: r.alert_id || null,
-      })),
-      last_run: new Date().toISOString(),
-    });
-
-    deliveryWatchCache.set("list", data);
-    return res.json(data);
-  } catch (err) {
-    console.error("GET /pmc/delivery-watch:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
+// The PMC domain (38 routes) lives in src/routes/pmc.js. Invoked here, at the line the
+// registrations used to occupy, so middleware order above them is unchanged.
+registerPmcRoutes(app, {
+  query, pgPool, requirePermission, envelope, errorEnvelope, mutateEnvelope,
+  listEnvelope, randomUUID, assertWorkOrderCustomerPoOpen, deliveryWatchCache, fs, path,
+  // hoisted `async function` declared later in this module (server.js:26030); the
+  // binding exists before this line runs, so passing it here is not a forward use.
+  ensureCollectOrder,
 });
 
 // ------ END PMC ----------------------------------------------------
@@ -19048,343 +17320,13 @@ const customerGovernanceReady = (async () => {
     ON CONFLICT(customer_id) DO NOTHING`);
 })();
 
-app.get("/erp/customers", requirePermission("pmc.view"), async (_req, res) => {
-  try {
-    await customerGovernanceReady;
-    const rows=await query(
-      `SELECT c.id,c.code,c.name_zh AS name,c.status,
-              g.lifecycle_status AS "lifecycleStatus",g.risk_level AS "riskLevel",
-              g.contact_name AS "contactName",g.email,g.phone,
-              g.payment_terms_days AS "paymentTermsDays"
-         FROM customers c JOIN erp_customer_governance g ON g.customer_id=c.id
-        ORDER BY g.lifecycle_status,c.name_zh,c.code`,
-    );
-    res.json(envelope({items:rows.rows,total:rows.rowCount}));
-  } catch (error) {
-    res.status(500).json(errorEnvelope("ERP_CUSTOMER_LIST_FAILED",error.message));
-  }
+// ERP master data (14 routes) lives in src/routes/erp-master.js, after the
+// customerGovernanceReady DDL above so the injected promise is already initialised.
+registerErpMasterRoutes(app, {
+  query, pgPool, requirePermission, envelope, errorEnvelope, mutateEnvelope,
+  customerGovernanceReady,
 });
 
-app.post("/erp/customers", requirePermission("pmc.edit"), async (req, res) => {
-  const client=await pgPool.connect();
-  try {
-    await customerGovernanceReady;
-    const p=req.body?.payload??req.body??{};
-    const code=String(p.code??"").trim().toUpperCase();
-    const nameZh=String(p.nameZh??"").trim();
-    const nameEn=String(p.nameEn??nameZh).trim();
-    const email=String(p.email??"").trim().toLowerCase();
-    const contactName=String(p.contactName??"").trim();
-    const phone=String(p.phone??"").trim();
-    const riskLevel=String(p.riskLevel??"LOW").trim().toUpperCase();
-    const paymentTermsDays=Math.max(0,Number(p.paymentTermsDays??30));
-    if(!code||!nameZh)return res.status(400).json(errorEnvelope("VALIDATION","customer code and name required"));
-    if(!["LOW","MEDIUM","HIGH"].includes(riskLevel)||!Number.isInteger(paymentTermsDays)){
-      return res.status(400).json(errorEnvelope("VALIDATION","invalid risk level or payment terms"));
-    }
-    const duplicate=(await client.query(
-      `SELECT id,code,name_zh FROM customers
-        WHERE UPPER(code)=UPPER($1) OR LOWER(name_zh)=LOWER($2)
-           OR ($3<>'' AND id IN(SELECT customer_id FROM erp_customer_governance WHERE LOWER(email)=LOWER($3)))
-        LIMIT 1`,[code,nameZh,email],
-    )).rows[0];
-    if(duplicate)return res.status(409).json(errorEnvelope("CUSTOMER_DUPLICATE",`Potential duplicate customer: ${duplicate.code}`));
-    await client.query("BEGIN");
-    const row=(await client.query(
-      `INSERT INTO customers(code,name_zh,name_en,name_vi,status)
-       VALUES($1,$2,$3,$3,'inactive')
-       RETURNING id,code,name_zh AS name,status`,
-      [code,nameZh,nameEn],
-    )).rows[0];
-    await client.query(
-      `INSERT INTO erp_customer_governance(
-         customer_id,lifecycle_status,risk_level,contact_name,email,phone,payment_terms_days
-       ) VALUES($1,'DRAFT',$2,$3,$4,$5,$6)`,
-      [row.id,riskLevel,contactName,email,phone,paymentTermsDays],
-    );
-    await client.query(
-      `INSERT INTO erp_customer_audit(customer_id,event_type,to_status,actor,reason,detail)
-       VALUES($1,'CUSTOMER_CREATED','DRAFT',$2,'Customer draft created',$3::jsonb)`,
-      [row.id,String(req.user?.username??"PMC"),JSON.stringify({code,nameZh,email,contactName,phone,riskLevel,paymentTermsDays})],
-    );
-    await client.query("COMMIT");
-    row.lifecycleStatus="DRAFT";
-    res.status(201).json(mutateEnvelope(row));
-  } catch (error) {
-    await client.query("ROLLBACK").catch(()=>{});
-    const duplicate=error.code==="23505";
-    res.status(duplicate?409:500).json(errorEnvelope(duplicate?"CUSTOMER_CODE_DUPLICATE":"ERP_CUSTOMER_CREATE_FAILED",duplicate?"Customer code already exists":error.message));
-  } finally {
-    client.release();
-  }
-});
-
-app.post("/erp/customers/:id/transition", requirePermission("pmc.edit"), async (req,res) => {
-  const client=await pgPool.connect();
-  try {
-    await customerGovernanceReady;
-    const action=String(req.body?.payload?.action??req.body?.action??"").toLowerCase();
-    const reason=String(req.body?.payload?.reason??req.body?.reason??"").trim();
-    if(!reason)return res.status(400).json(errorEnvelope("VALIDATION","transition reason required"));
-    const transitions={
-      submit:{from:["DRAFT","REJECTED"],to:"PENDING_APPROVAL",base:"inactive"},
-      approve:{from:["PENDING_APPROVAL"],to:"ACTIVE",base:"active"},
-      reject:{from:["PENDING_APPROVAL"],to:"REJECTED",base:"inactive"},
-      hold:{from:["ACTIVE"],to:"ON_HOLD",base:"inactive"},
-      reactivate:{from:["ON_HOLD"],to:"ACTIVE",base:"active"},
-      archive:{from:["DRAFT","REJECTED","ACTIVE","ON_HOLD"],to:"ARCHIVED",base:"inactive"},
-    };
-    const rule=transitions[action];
-    if(!rule)return res.status(400).json(errorEnvelope("VALIDATION","unsupported customer transition"));
-    await client.query("BEGIN");
-    const current=(await client.query(
-      `SELECT c.id,c.code,g.lifecycle_status FROM customers c
-       JOIN erp_customer_governance g ON g.customer_id=c.id WHERE c.id=$1 FOR UPDATE`,
-      [req.params.id],
-    )).rows[0];
-    if(!current){await client.query("ROLLBACK");return res.status(404).json(errorEnvelope("NOT_FOUND","Customer not found"));}
-    if(!rule.from.includes(current.lifecycle_status)){
-      await client.query("ROLLBACK");
-      return res.status(409).json(errorEnvelope("INVALID_CUSTOMER_TRANSITION",`${current.lifecycle_status} cannot ${action}`));
-    }
-    if(["hold","archive"].includes(action)){
-      const open=(await client.query(
-        `SELECT COUNT(*)::int count FROM customer_pos WHERE customer_id=$1
-          AND status NOT IN('closed','voided','cancelled')`,[req.params.id],
-      )).rows[0].count;
-      if(open>0){await client.query("ROLLBACK");return res.status(409).json(errorEnvelope("CUSTOMER_HAS_OPEN_PO","Customer with an open PO cannot be frozen or archived"));}
-    }
-    const actor=String(req.user?.username??"PMC");
-    await client.query(`UPDATE customers SET status=$2,updated_at=NOW() WHERE id=$1`,[req.params.id,rule.base]);
-    await client.query(
-      `UPDATE erp_customer_governance SET lifecycle_status=$2::text,updated_at=NOW(),
-       submitted_at=CASE WHEN $2::text='PENDING_APPROVAL' THEN NOW() ELSE submitted_at END,
-       approved_at=CASE WHEN $2::text='ACTIVE' THEN NOW() ELSE approved_at END,
-       approved_by=CASE WHEN $2::text='ACTIVE' THEN $3 ELSE approved_by END
-       WHERE customer_id=$1`,[req.params.id,rule.to,actor],
-    );
-    await client.query(
-      `INSERT INTO erp_customer_audit(customer_id,event_type,from_status,to_status,actor,reason)
-       VALUES($1,'CUSTOMER_TRANSITION',$2,$3,$4,$5)`,
-      [req.params.id,current.lifecycle_status,rule.to,actor,reason],
-    );
-    await client.query("COMMIT");
-    res.json(mutateEnvelope({id:Number(req.params.id),code:current.code,lifecycleStatus:rule.to,status:rule.base}));
-  } catch(error) {
-    await client.query("ROLLBACK").catch(()=>{});
-    res.status(500).json(errorEnvelope("ERP_CUSTOMER_TRANSITION_FAILED",error.message));
-  } finally { client.release(); }
-});
-
-app.get("/erp/customers/:id/audit", requirePermission("pmc.view"), async (req,res) => {
-  try {
-    await customerGovernanceReady;
-    const rows=await query(
-      `SELECT id,event_type AS "eventType",from_status AS "fromStatus",to_status AS "toStatus",
-              actor,reason,detail,created_at AS "createdAt"
-         FROM erp_customer_audit WHERE customer_id=$1 ORDER BY id DESC`,[req.params.id],
-    );
-    res.json(envelope({items:rows.rows,total:rows.rowCount}));
-  } catch(error) { res.status(500).json(errorEnvelope("ERP_CUSTOMER_AUDIT_FAILED",error.message)); }
-});
-
-app.patch("/erp/customers/:id/status", requirePermission("pmc.edit"), async (req, res) => {
-  res.status(409).json(errorEnvelope(
-    "CUSTOMER_LIFECYCLE_REQUIRED",
-    "Direct status changes are forbidden; use the governed customer transition workflow",
-  ));
-});
-
-app.patch("/erp/customers/:id", requirePermission("pmc.edit"), async (req, res) => {
-  const client=await pgPool.connect();
-  try {
-    await customerGovernanceReady;
-    const p=req.body?.payload??req.body??{};
-    await client.query("BEGIN");
-    const row=(await client.query(
-      `UPDATE customers SET
-         code=COALESCE(NULLIF($2,''),code),
-         name_zh=COALESCE(NULLIF($3,''),name_zh),
-         name_en=COALESCE(NULLIF($4,''),name_en),
-         name_vi=COALESCE(NULLIF($4,''),name_vi),
-         updated_at=NOW()
-       WHERE id=$1 RETURNING id,code,name_zh AS name,status`,
-      [req.params.id,String(p.code??"").trim().toUpperCase(),String(p.nameZh??"").trim(),String(p.nameEn??p.nameZh??"").trim()],
-    )).rows[0];
-    if(!row){await client.query("ROLLBACK");return res.status(404).json(errorEnvelope("NOT_FOUND","Customer not found"));}
-    await client.query(
-      `UPDATE erp_customer_governance SET
-       contact_name=COALESCE($2,contact_name),email=COALESCE($3,email),phone=COALESCE($4,phone),
-       payment_terms_days=COALESCE($5,payment_terms_days),risk_level=COALESCE($6,risk_level),updated_at=NOW()
-       WHERE customer_id=$1`,
-      [req.params.id,p.contactName??null,p.email??null,p.phone??null,p.paymentTermsDays??null,p.riskLevel??null],
-    );
-    await client.query(
-      `INSERT INTO erp_customer_audit(customer_id,event_type,actor,reason,detail)
-       VALUES($1,'CUSTOMER_UPDATED',$2,'Customer master updated',$3::jsonb)`,
-      [req.params.id,String(req.user?.username??"PMC"),JSON.stringify(p)],
-    );
-    await client.query("COMMIT");
-    res.json(mutateEnvelope(row));
-  } catch (error) {
-    await client.query("ROLLBACK").catch(()=>{});
-    res.status(error.code==="23505"?409:500).json(errorEnvelope(error.code==="23505"?"CUSTOMER_CODE_DUPLICATE":"ERP_CUSTOMER_UPDATE_FAILED",error.message));
-  } finally { client.release(); }
-});
-
-app.delete("/erp/customers/:id", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const used=(await query(
-      `SELECT
-         (SELECT COUNT(*) FROM customer_pos WHERE customer_id=$1)
-         +(SELECT COUNT(*) FROM ar_invoices WHERE customer_id=$1) AS count`,
-      [req.params.id],
-    )).rows[0].count;
-    if(Number(used)>0)return res.status(409).json(errorEnvelope("CUSTOMER_IN_USE","Customer is referenced; deactivate it instead of deleting"));
-    const row=(await query("DELETE FROM customers WHERE id=$1 RETURNING id,code",[req.params.id])).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Customer not found"));
-    res.json(mutateEnvelope(row));
-  } catch (error) {
-    res.status(500).json(errorEnvelope("ERP_CUSTOMER_DELETE_FAILED",error.message));
-  }
-});
-
-app.get("/erp/products", requirePermission("pmc.view"), async (_req, res) => {
-  try {
-    const rows=await query(
-      `SELECT id,code,name_zh AS "nameZh",name_en AS "nameEn",revision,status
-         FROM products ORDER BY status,code`,
-    );
-    res.json(envelope({items:rows.rows,total:rows.rowCount}));
-  } catch (error) {
-    res.status(500).json(errorEnvelope("ERP_PRODUCT_LIST_FAILED",error.message));
-  }
-});
-
-app.post("/erp/products", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const p=req.body?.payload??req.body??{};
-    const code=String(p.code??"").trim().toUpperCase();
-    const nameZh=String(p.nameZh??"").trim();
-    const nameEn=String(p.nameEn??nameZh).trim();
-    const revision=String(p.revision??"V1.0").trim();
-    if(!code||!nameZh)return res.status(400).json(errorEnvelope("VALIDATION","product code and Chinese name required"));
-    const row=(await query(
-      `INSERT INTO products(code,name_zh,name_en,name_vi,revision,status,domain_code)
-       VALUES($1,$2,$3,$3,$4,'active','FINISHED_GOODS')
-       RETURNING id,code,name_zh AS "nameZh",name_en AS "nameEn",revision,status`,
-      [code,nameZh,nameEn,revision],
-    )).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  } catch (error) {
-    const duplicate=error.code==="23505";
-    res.status(duplicate?409:500).json(errorEnvelope(duplicate?"PRODUCT_CODE_DUPLICATE":"ERP_PRODUCT_CREATE_FAILED",duplicate?"Product code already exists":error.message));
-  }
-});
-
-app.patch("/erp/products/:id/status", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const status=String(req.body?.payload?.status??req.body?.status??"").toLowerCase();
-    if(!["active","inactive"].includes(status))return res.status(400).json(errorEnvelope("VALIDATION","status must be active or inactive"));
-    if(status==="inactive"){
-      const open=(await query(
-        `SELECT COUNT(*)::int count FROM customer_pos
-          WHERE product_id=$1 AND status NOT IN('closed','voided','cancelled')`,
-        [req.params.id],
-      )).rows[0].count;
-      if(open>0)return res.status(409).json(errorEnvelope("PRODUCT_HAS_OPEN_PO","Product with an open PO cannot be deactivated"));
-    }
-    const row=(await query(
-      `UPDATE products SET status=$2,updated_at=NOW() WHERE id=$1
-       RETURNING id,code,name_zh AS "nameZh",status`,
-      [req.params.id,status],
-    )).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Product not found"));
-    res.json(mutateEnvelope(row));
-  } catch (error) {
-    res.status(500).json(errorEnvelope("ERP_PRODUCT_STATUS_FAILED",error.message));
-  }
-});
-
-app.patch("/erp/products/:id", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const p=req.body?.payload??req.body??{};
-    const row=(await query(
-      `UPDATE products SET
-         code=COALESCE(NULLIF($2,''),code),
-         name_zh=COALESCE(NULLIF($3,''),name_zh),
-         name_en=COALESCE(NULLIF($4,''),name_en),
-         name_vi=COALESCE(NULLIF($4,''),name_vi),
-         revision=COALESCE(NULLIF($5,''),revision),
-         updated_at=NOW()
-       WHERE id=$1 RETURNING id,code,name_zh AS "nameZh",name_en AS "nameEn",revision,status`,
-      [req.params.id,String(p.code??"").trim().toUpperCase(),String(p.nameZh??"").trim(),String(p.nameEn??p.nameZh??"").trim(),String(p.revision??"").trim()],
-    )).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Product not found"));
-    res.json(mutateEnvelope(row));
-  } catch (error) {
-    res.status(error.code==="23505"?409:500).json(errorEnvelope(error.code==="23505"?"PRODUCT_CODE_DUPLICATE":"ERP_PRODUCT_UPDATE_FAILED",error.message));
-  }
-});
-
-app.delete("/erp/products/:id", requirePermission("pmc.edit"), async (req, res) => {
-  try {
-    const used=(await query(
-      `SELECT
-         (SELECT COUNT(*) FROM customer_pos WHERE product_id=$1)
-         +(SELECT COUNT(*) FROM work_orders WHERE product_id=$1)
-         +(SELECT COUNT(*) FROM boms WHERE product_id=$1)
-         +(SELECT COUNT(*) FROM ar_invoice_lines WHERE product_id=$1) AS count`,
-      [req.params.id],
-    )).rows[0].count;
-    if(Number(used)>0)return res.status(409).json(errorEnvelope("PRODUCT_IN_USE","Product is referenced; deactivate it instead of deleting"));
-    const row=(await query("DELETE FROM products WHERE id=$1 RETURNING id,code",[req.params.id])).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Product not found"));
-    res.json(mutateEnvelope(row));
-  } catch (error) {
-    res.status(500).json(errorEnvelope("ERP_PRODUCT_DELETE_FAILED",error.message));
-  }
-});
-
-app.post("/erp/customer-pos", requirePermission("pmc.edit"), async (req, res) => {
-  const client=await pgPool.connect();
-  try {
-    const p=req.body?.payload??req.body??{};
-    const poNumber=String(p.poNumber??"").trim();
-    const customerId=Number(p.customerId);
-    const productId=Number(p.productId);
-    const orderQty=Number(p.orderQty);
-    const dueDate=String(p.dueDate??"").trim();
-    if(!poNumber||!Number.isInteger(customerId)||!Number.isInteger(productId)||!Number.isFinite(orderQty)||orderQty<=0||!dueDate){
-      return res.status(400).json(errorEnvelope("VALIDATION","poNumber, customerId, productId, positive orderQty and dueDate required"));
-    }
-    await client.query("BEGIN");
-    const masters=(await client.query(
-      `SELECT EXISTS(SELECT 1 FROM customers WHERE id=$1 AND status='active') customer_ok,
-              EXISTS(SELECT 1 FROM products WHERE id=$2 AND status='active') product_ok`,
-      [customerId,productId],
-    )).rows[0];
-    if(!masters.customer_ok||!masters.product_ok)throw new Error("Active customer and product master data required");
-    const row=(await client.query(
-      `INSERT INTO customer_pos(po_number,customer_id,product_id,order_qty,due_date,status,created_by)
-       VALUES($1,$2,$3,$4,$5,'confirmed',$6) RETURNING *`,
-      [poNumber,customerId,productId,orderQty,dueDate,req.user?.userId??null],
-    )).rows[0];
-    await client.query(
-      `INSERT INTO pmc_po_closure_audit(customer_po_id,event_type,actor,detail)
-       VALUES($1,'PO_CREATED',$2,$3)`,
-      [row.id,String(req.user?.username??"PMC"),JSON.stringify({poNumber,customerId,productId,orderQty,dueDate})],
-    );
-    await client.query("COMMIT");
-    res.status(201).json(mutateEnvelope(row));
-  } catch (error) {
-    await client.query("ROLLBACK").catch(()=>{});
-    const duplicate=error.code==="23505";
-    res.status(duplicate?409:400).json(errorEnvelope(duplicate?"CUSTOMER_PO_DUPLICATE":"CUSTOMER_PO_CREATE_FAILED",duplicate?"PO number already exists":error.message));
-  } finally {
-    client.release();
-  }
-});
 
 const pmcPoClosureReady = (async () => {
   await query(`CREATE TABLE IF NOT EXISTS pmc_po_closure_decisions(
@@ -22708,777 +20650,10 @@ app.get("/wms/receiving-queue", requirePermission("wms.view"), async (req, res) 
 // ══════════════════════════════════════════════════════════════════════════════
 
 // GET /wms/count-sessions — list sessions (filter by status, location, trigger_type)
-app.get("/wms/count-sessions", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { status, location_code, trigger_type, limit = 100, offset = 0 } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
-    if (status) { params.push(status); where += ` AND cs.status = $${params.length}`; }
-    if (location_code) { params.push(location_code); where += ` AND cs.location_code = $${params.length}`; }
-    if (trigger_type) { params.push(trigger_type); where += ` AND cs.trigger_type = $${params.length}`; }
-    params.push(Number(limit), Number(offset));
-     const r = await query(`
-       SELECT cs.*,
-              sl.code AS location_code, sl.name_zh AS location_name,
-              u.display_name AS operator_name
-       FROM count_sessions cs
-       LEFT JOIN storage_locations sl ON sl.id = cs.storage_location_id
-       LEFT JOIN users u ON u.id = cs.operator_id
-      ${where}
-      ORDER BY cs.created_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM count_sessions cs ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /wms/count-sessions:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
+registerCountRoutes(app, { query, requirePermission, errorEnvelope, getCurrentUser });
 
-// GET /wms/count-sessions/:id — single session with items
-app.get("/wms/count-sessions/:id", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const sess = await query(`SELECT cs.*, sl.code AS location_code, sl.name_zh AS location_name,
-      u.name AS operator_name FROM count_sessions cs
-      LEFT JOIN storage_locations sl ON sl.id = cs.storage_location_id
-      LEFT JOIN users u ON u.id = cs.operator_id
-      WHERE cs.id = $1`, [id]);
-    if (!sess.rows[0]) return res.status(404).json(errorEnvelope("NOT_FOUND", "Session not found"));
-    const items = await query(`SELECT ci.*, u.name AS counted_by_name
-      FROM count_items ci LEFT JOIN users u ON u.id = ci.counted_by
-      WHERE ci.count_session_id = $1 ORDER BY ci.id`, [id]);
-    res.json({ session: sess.rows[0], items: items.rows });
-  } catch (err) {
-    console.error("GET /wms/count-sessions/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /wms/count-sessions/:id/claim — operator claims a session
-app.post("/wms/count-sessions/:id/claim", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const operator = getCurrentUser(req);
-    await query(`UPDATE count_sessions
-      SET status='in_progress', operator_id=$1, operator_name=$2, claimed_at=now()
-      WHERE id=$3 AND status='open'`,
-      [operator.id, operator.name, id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("POST /wms/count-sessions/:id/claim:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /wms/count-items/:id/count — record counted qty for an item + variance alert
-app.post("/wms/count-items/:id/count", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { counted_qty, operator_id, operator_name } = req.body;
-    const item = await query(`SELECT ci.*, cs.threshold_pct, cs.session_code
-      FROM count_items ci JOIN count_sessions cs ON cs.id = ci.count_session_id
-      WHERE ci.id = $1`, [id]);
-    if (!item.rows[0]) return res.status(404).json(errorEnvelope("NOT_FOUND", "Item not found"));
-    const row = item.rows[0];
-    const variance = (counted_qty ?? 0) - row.system_qty;
-    const variance_pct = row.system_qty > 0
-      ? Math.round(Math.abs(variance) / row.system_qty * 100)
-      : (counted_qty > 0 ? 100 : 0);
-
-    await query(`UPDATE count_items
-      SET counted_qty=$1, variance=$2, counted=true, counted_at=now(), counted_by=$3
-      WHERE id=$4`,
-      [counted_qty, variance, operator_id, id]);
-
-    // Variance alert: if pct > threshold, write count_alerts
-    if (variance_pct > row.threshold_pct) {
-      const priority = variance_pct > row.threshold_pct * 2 ? 1 : 2;
-      await query(`INSERT INTO count_alerts (
-        count_session_id, count_item_id, alert_type, priority, title, message,
-        variance_pct, threshold_pct, system_qty, counted_qty, location_code, lot_no, material_code
-      ) VALUES ($1,$2,'VARIANCE',$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [row.count_session_id, id, priority,
-       `盘点差异预警: ${row.lot_no}`,
-       `物料 ${row.material_code} (批号 ${row.lot_no}) 盘点差异 ${variance > 0 ? '+' : ''}${variance} (${variance_pct}%)，超过阈值 ${row.threshold_pct}%`,
-       variance_pct, row.threshold_pct, row.system_qty, counted_qty, row.location_code, row.lot_no, row.material_code]);
-    }
-    res.json({ success: true, variance, variance_pct });
-  } catch (err) {
-    console.error("POST /wms/count-items/:id/count:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /wms/count-sessions/:id/submit — submit session (all items counted → close)
-app.post("/wms/count-sessions/:id/submit", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { notes } = req.body;
-    // Sum all items
-    const items = await query(`SELECT COALESCE(SUM(counted_qty),0)::int AS total_counted,
-      COALESCE(SUM(variance),0)::int AS total_variance
-      FROM count_items WHERE count_session_id=$1`, [id]);
-    const { total_counted, total_variance } = items.rows[0];
-    await query(`UPDATE count_sessions
-      SET status='completed', completed_at=now(), counted_qty=$1, variance=$2, notes=COALESCE($3, notes)
-      WHERE id=$4`, [total_counted, total_variance, notes, id]);
-    res.json({ success: true, total_counted, total_variance });
-  } catch (err) {
-    console.error("POST /wms/count-sessions/:id/submit:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /wms/count-schedules — list schedules
-app.get("/wms/count-schedules", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM count_schedules ORDER BY id`);
-    res.json({ items: r.rows });
-  } catch (err) {
-    console.error("GET /wms/count-schedules:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /wms/count-schedules — create schedule
-app.post("/wms/count-schedules", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { schedule_name, schedule_type, scheduled_time, day_of_week, day_of_month,
-      storage_location_id, location_code, location_name, scope, threshold_pct, timeout_hours } = req.body;
-    const r = await query(`INSERT INTO count_schedules
-      (schedule_name, schedule_type, scheduled_time, day_of_week, day_of_month,
-       storage_location_id, location_code, location_name, scope, threshold_pct, timeout_hours)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [schedule_name, schedule_type, scheduled_time, day_of_week, day_of_month,
-       storage_location_id, location_code, location_name, scope || 'ALL', threshold_pct || 10, timeout_hours || 4]);
-    res.json({ success: true, item: r.rows[0] });
-  } catch (err) {
-    console.error("POST /wms/count-schedules:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /wms/count-alerts — list alerts
-app.get("/wms/count-alerts", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { acknowledged, alert_type, limit = 50, offset = 0 } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
-    if (acknowledged !== undefined) { params.push(acknowledged === 'true'); where += ` AND ca.acknowledged = $${params.length}`; }
-    if (alert_type) { params.push(alert_type); where += ` AND ca.alert_type = $${params.length}`; }
-    params.push(Number(limit), Number(offset));
-    const r = await query(`
-      SELECT ca.*, cs.session_code, cs.location_code, u.name AS operator_name
-      FROM count_alerts ca
-      LEFT JOIN count_sessions cs ON cs.id = ca.count_session_id
-      LEFT JOIN users u ON u.id = ca.operator_id
-      ${where}
-      ORDER BY ca.created_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    res.json({ items: r.rows });
-  } catch (err) {
-    console.error("GET /wms/count-alerts:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /wms/count-sessions/patrol — timeout patrol: create TIMEOUT alerts for stale sessions
-app.post("/wms/count-sessions/patrol", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    // Find open sessions past their timeout_hours that don't already have a TIMEOUT alert
-    const stale = await query(`
-      SELECT cs.* FROM count_sessions cs
-      WHERE cs.status = 'open'
-        AND cs.created_at < now() - (cs.timeout_hours || ' hours')::interval
-        AND NOT EXISTS (
-          SELECT 1 FROM count_alerts ca
-          WHERE ca.count_session_id = cs.id AND ca.alert_type = 'TIMEOUT'
-        )
-    `);
-    let created = 0;
-    for (const cs of stale.rows) {
-      const hours_elapsed = Math.round(
-        (Date.now() - new Date(cs.created_at).getTime()) / 3600000
-      );
-      await query(`INSERT INTO count_alerts (
-        count_session_id, alert_type, priority, title, message,
-        location_code, lot_no, material_code,
-        operator_id, operator_name
-      ) VALUES ($1,'TIMEOUT',2,$2,$3,$4,$5,$6,$7,$8)`,
-      [cs.id,
-       `盘点超时未处理: ${cs.session_code}`,
-       `库位 ${cs.location_code} 的盘点任务 ${cs.session_code} 已超时 ${hours_elapsed} 小时未处理，请立即处理`,
-       cs.location_code, cs.lot_no, cs.material_code,
-       cs.operator_id, cs.operator_name]);
-      created++;
-    }
-    res.json({ success: true, alerts_created: created });
-  } catch (err) {
-    console.error("POST /wms/count-sessions/patrol:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /wms/count-schedules/:id/trigger — execute a scheduled count (create sessions for all lots)
-// Called by WMS manager at the scheduled time
-app.post("/wms/count-schedules/:id/trigger", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const schedule = await query(`SELECT * FROM count_schedules WHERE id=$1 AND is_active=true`, [id]);
-    if (!schedule.rows[0]) return res.status(404).json(errorEnvelope("NOT_FOUND", "Schedule not found"));
-    const sch = schedule.rows[0];
-
-    // Build lot query based on scope
-    let lotWhere = "WHERE ml.iqc_status = 'released' AND ml.lot_status = 'active'";
-    let lotParams = [];
-    if (sch.scope === 'LOCATION' && sch.storage_location_id) {
-      lotParams.push(sch.storage_location_id);
-      lotWhere += ` AND ml.storage_location_id = $${lotParams.length}`;
-    }
-
-    const lots = await query(`
-      SELECT ml.id AS material_lot_id, ml.lot_no, m.code AS material_code,
-             COALESCE(m.name_zh, m.name_en, '') AS material_name_zh,
-             COALESCE(sl.id, 0) AS storage_location_id,
-             COALESCE(sl.code, '') AS location_code,
-             COALESCE(sl.name_zh, sl.name_en, '') AS location_name,
-             COALESCE(ml.received_qty, 0) AS system_qty
-      FROM material_lots ml
-      JOIN materials m ON m.id = ml.material_id
-      LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id
-      ${lotWhere}
-    `, lotParams);
-
-    let sessions_created = 0;
-    for (const lot of lots.rows) {
-      const seqVal = await query(`SELECT nextval('count_session_seq')`).then(r => r.rows[0].nextval);
-      const sessionCode = `CS-SCH-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(seqVal).padStart(6,'0')}`;
-      const sess = await query(`INSERT INTO count_sessions (
-        session_code, trigger_type, trigger_action, count_schedule_id,
-        storage_location_id, location_code, location_name,
-        material_lot_id, lot_no, material_code, material_name_zh,
-        system_qty, status
-      ) VALUES ($1,'SCHEDULED','SCHEDULED',$2,$3,$4,$5,$6,$7,$8,$9,$10,'open')
-      RETURNING id`, [sessionCode, id, lot.storage_location_id, lot.location_code,
-        lot.location_name, lot.material_lot_id, lot.lot_no, lot.material_code, lot.material_name_zh, lot.system_qty]);
-      await query(`INSERT INTO count_items (
-        count_session_id, material_lot_id, lot_no, material_code, material_name_zh,
-        system_qty, inventory_tx_id, inventory_tx_no
-      ) VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL)`,
-        [sess.rows[0].id, lot.material_lot_id, lot.lot_no, lot.material_code, lot.material_name_zh, lot.system_qty]);
-      sessions_created++;
-    }
-
-    await query(`UPDATE count_schedules SET last_run_at=now(), next_run_at=now() WHERE id=$1`, [id]);
-    res.json({ success: true, sessions_created, schedule_name: sch.schedule_name });
-  } catch (err) {
-    console.error("POST /wms/count-schedules/:id/trigger:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /wms/count-alerts/:id/acknowledge
-app.patch("/wms/count-alerts/:id/acknowledge", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const operator = getCurrentUser(req);
-    await query(`UPDATE count_alerts SET acknowledged=true, acknowledged_at=now(), acknowledged_by=$1 WHERE id=$2`,
-      [operator.id, req.params.id]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error("PATCH /wms/count-alerts/:id/acknowledge:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// ── Material Lifecycle Endpoints ──────────────────────────────────────────
-// (tables: material_lifecycle view + material_reinspection + material_scrapping + v_exempt_iqc_materials)
-
-// GET /api/lifecycle/lots — all lots with lifecycle info
-app.get("/api/lifecycle/lots", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { status, alertLevel, limit = 100, offset = 0 } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
-    if (status) { params.push(status); where += ` AND ml.lot_status = $${params.length}`; }
-    if (alertLevel) { params.push(alertLevel); where += ` AND alert_level = $${params.length}`; }
-    params.push(Number(limit), Number(offset));
-    const r = await query(`
-      SELECT ml.id, ml.lot_no, ml.received_qty, ml.reserved_qty,
-             ml.iqc_status, ml.lot_status, ml.manufacturing_date,
-             ml.received_at, ml.expiry_date,
-             m.code AS material_code, m.name_zh, m.shelf_life_days,
-             s.name_zh AS supplier_name, sl.code AS location_code,
-             CASE
-               WHEN ml.expiry_date < CURRENT_DATE THEN 'EXPIRED'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'RED_L3'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '60 days' THEN 'BLUE_L2'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '90 days' THEN 'YELLOW_L1'
-               ELSE 'NORMAL'
-             END AS alert_level,
-             FLOOR(EXTRACT(EPOCH FROM (ml.expiry_date - CURRENT_DATE))/86400)::int AS remaining_days
-      FROM material_lots ml
-      JOIN materials m ON m.id = ml.material_id
-      LEFT JOIN suppliers s ON s.id = ml.supplier_id
-      LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id
-      ${where}
-      ORDER BY ml.expiry_date ASC NULLS LAST
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM material_lots ml JOIN materials m ON m.id = ml.material_id ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /api/lifecycle/lots:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/summary — lifecycle dashboard summary
-app.get("/api/lifecycle/summary", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const byAlert = await query(`
-      SELECT
-        CASE
-          WHEN ml.expiry_date < CURRENT_DATE THEN 'EXPIRED'
-          WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'RED_L3'
-          WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '60 days' THEN 'BLUE_L2'
-          WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '90 days' THEN 'YELLOW_L1'
-          ELSE 'NORMAL'
-        END AS alert_level,
-        count(*) AS lot_count,
-        sum(ml.received_qty) AS total_qty
-      FROM material_lots ml
-      WHERE ml.lot_status = 'open'
-      GROUP BY alert_level
-    `);
-    const pendingReinspection = await query(`SELECT count(*) AS cnt FROM material_reinspection WHERE updated_at IS NULL OR updated_at < NOW() - INTERVAL '90 days'`);
-    const pendingScrapping = await query(`SELECT count(*) AS cnt FROM material_scrapping WHERE status NOT IN ('closed','executed')`);
-    res.json({
-      byAlert: byAlert.rows,
-      pendingReinspection: Number(pendingReinspection.rows[0]?.cnt ?? 0),
-      pendingScrapping: Number(pendingScrapping.rows[0]?.cnt ?? 0),
-    });
-  } catch (err) {
-    console.error("GET /api/lifecycle/summary:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/alerts-with-actions — lots needing lifecycle action
-app.get("/api/lifecycle/alerts-with-actions", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { level, limit = 50 } = req.query;
-    let where = "WHERE ml.lot_status = 'open' AND (ml.expiry_date <= CURRENT_DATE + INTERVAL '90 days' OR ml.expiry_date IS NULL)";
-    const params = [Number(limit)];
-    if (level) { params.push(level); where += ` AND alert_level = $${params.length}`; }
-    const r = await query(`
-      SELECT ml.id, ml.lot_no, ml.received_qty, ml.expiry_date,
-             m.code AS material_code, m.name_zh, m.shelf_life_days,
-             sl.code AS location_code,
-             CASE
-               WHEN ml.expiry_date < CURRENT_DATE THEN 'EXPIRED'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'RED_L3'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '60 days' THEN 'BLUE_L2'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '90 days' THEN 'YELLOW_L1'
-               ELSE 'NORMAL'
-             END AS alert_level,
-             FLOOR(EXTRACT(EPOCH FROM (ml.expiry_date - CURRENT_DATE))/86400)::int AS remaining_days,
-             CASE
-               WHEN ml.expiry_date < CURRENT_DATE THEN 'SCRAP'
-               WHEN ml.expiry_date <= CURRENT_DATE + INTERVAL '30 days' THEN 'REINSPECT'
-               ELSE 'MONITOR'
-             END AS recommended_action
-      FROM material_lots ml
-      JOIN materials m ON m.id = ml.material_id
-      LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id
-      ${where}
-      ORDER BY ml.expiry_date ASC NULLS LAST
-      LIMIT $1
-    `, params);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /api/lifecycle/alerts-with-actions:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /api/lifecycle/alert-status/:id — update lifecycle alert action
-app.patch("/api/lifecycle/alert-status/:id", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    if (!status) return res.status(400).json(errorEnvelope("VALIDATION", "status required"));
-    // No dedicated alert-status table; update lot_status on material_lots
-    const r = await query(
-      `UPDATE material_lots SET lot_status = $1 WHERE id = $2 RETURNING id, lot_no, lot_status`,
-      [status, id]
-    );
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Lot not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("PATCH /api/lifecycle/alert-status/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-const lifecycleOpeningCloseReady = query(`ALTER TABLE material_lifecycle_openings
-  ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ,
-  ADD COLUMN IF NOT EXISTS closed_by VARCHAR(120),
-  ADD COLUMN IF NOT EXISTS work_order_codes TEXT[] NOT NULL DEFAULT '{}'`);
-
-// GET /api/lifecycle/openings —开封后物料列表
-app.get("/api/lifecycle/openings", requirePermission("wms.read"), async (req, res) => {
-  try {
-    await lifecycleOpeningCloseReady;
-    const r = await query(`
-      SELECT COALESCE(o.id, ml.id) AS id, ml.lot_no, ml.opened_at, o.closed_at, o.closed_by,
-             ml.opened_shelf_life_days,
-             ml.received_qty, GREATEST(ml.received_qty - COALESCE(ml.reserved_qty, 0), 0) AS remaining_qty, ml.received_at, m.code AS material_code, m.name_zh,
-             sl.code AS location_code, o.id AS life_tracking_id, o.work_order_codes,
-             (1 + (SELECT COUNT(*) FROM material_lots older WHERE older.material_id = ml.material_id AND older.received_at < ml.received_at AND older.lot_status = 'open' AND older.iqc_status = 'released' AND older.received_qty - COALESCE(older.reserved_qty, 0) > 0))::int AS fifo_rank,
-             FLOOR(EXTRACT(EPOCH FROM (ml.opened_at + (ml.opened_shelf_life_days||' days')::interval - COALESCE(o.closed_at,NOW())))/86400)::int AS remaining_days_after_opened
-      FROM material_lots ml
-      JOIN materials m ON m.id = ml.material_id
-      LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id
-      LEFT JOIN LATERAL (SELECT id,closed_at,closed_by,opened_qty,work_order_codes FROM material_lifecycle_openings WHERE material_lot_id=ml.id ORDER BY opened_at DESC LIMIT 1) o ON true
-      WHERE ml.opened_at IS NOT NULL AND ml.lot_status = 'open'
-      ORDER BY ml.received_at ASC NULLS LAST, ml.opened_at ASC
-    `);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /api/lifecycle/openings:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /api/lifecycle/openings —开封一个批次
-app.post("/api/lifecycle/openings", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    await lifecycleOpeningCloseReady;
-    const { lotNo, openedShelfLifeDays, openedQty, department, operator } = req.body;
-    const workOrderCodes = Array.from(new Set((Array.isArray(req.body?.workOrderCodes) ? req.body.workOrderCodes : String(req.body?.workOrderCodes ?? req.body?.workOrderCode ?? "").split(/[,，\s]+/)).map((v) => String(v).trim()).filter(Boolean)));
-    if (!lotNo) return res.status(400).json(errorEnvelope("VALIDATION", "lotNo required"));
-    const fifoBlock = await query(`
-      SELECT older.lot_no
-      FROM material_lots current_lot
-      JOIN material_lots older ON older.material_id = current_lot.material_id AND older.received_at < current_lot.received_at
-      WHERE current_lot.lot_no = $1 AND older.lot_status = 'open' AND older.iqc_status = 'released'
-        AND GREATEST(older.received_qty - COALESCE(older.reserved_qty, 0), 0) > 0
-      ORDER BY older.received_at ASC LIMIT 1
-    `, [lotNo]);
-    if (fifoBlock.rows.length) return res.status(409).json(errorEnvelope("FIFO_BLOCKED", `请先使用更早批次 ${fifoBlock.rows[0].lot_no}，当前批次不能拆箱`));
-    const r = await query(`
-      UPDATE material_lots SET opened_at = NOW(), opened_shelf_life_days = $1
-      WHERE lot_no = $2 RETURNING id, lot_no, opened_at, opened_shelf_life_days, received_qty
-    `, [openedShelfLifeDays ?? 30, lotNo]);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Lot not found"));
-    const opening = await query(`INSERT INTO material_lifecycle_openings(material_lot_id,opened_at,opened_shelf_life_days,opened_qty,department,operator,work_order_codes)
-      VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING id,opened_at,opened_shelf_life_days,opened_qty,operator,work_order_codes`, [r.rows[0].id, r.rows[0].opened_at, openedShelfLifeDays ?? 30, openedQty ?? r.rows[0].received_qty, department ?? "WMS", operator ?? req.user?.username ?? "WMS_OPERATOR", workOrderCodes]);
-    res.status(201).json({ data: { ...r.rows[0], openingId: opening.rows[0].id, operator: opening.rows[0].operator, workOrderCodes: opening.rows[0].work_order_codes } });
-  } catch (err) {
-    console.error("POST /api/lifecycle/openings:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-app.post("/api/lifecycle/openings/:id/seal", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    await lifecycleOpeningCloseReady;
-    const operator = req.body?.operator ?? req.user?.username ?? "WMS_OPERATOR";
-    const r = await query(`UPDATE material_lifecycle_openings SET closed_at=NOW(),closed_by=$2
-      WHERE id=$1 AND closed_at IS NULL RETURNING id,material_lot_id,opened_at,closed_at,closed_by`, [req.params.id, operator]);
-    if (!r.rows.length) return res.status(409).json(errorEnvelope("INVALID_STATE", "Opening record not found or already sealed"));
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) { res.status(500).json(errorEnvelope("SEAL_FAILED", err.message)); }
-});
-
-
-// ── MSD Baking Endpoints ───────────────────────────────────────────────
-
-// GET /api/lifecycle/baking — 烘烤记录列表
-app.get("/api/lifecycle/baking", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { lotNo, result, limit = 50, offset = 0 } = req.query;
-    const conditions = [];
-    const params = [];
-    let i = 1;
-    if (lotNo)     { conditions.push(`mbr.lot_no = $${i++}`); params.push(lotNo); }
-    if (result)    { conditions.push(`mbr.result = $${i++}`); params.push(result); }
-    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
-    params.push(Number(limit), Number(offset));
-    const r = await query(`
-      SELECT mbr.id, mbr.lot_no, mbr.operator_name, mbr.started_at,
-             mbr.completed_at, mbr.temperature, mbr.humidity,
-             mbr.oven_no, mbr.result, mbr.notes,
-             ml.id AS lot_id, ml.received_qty,
-             m.code AS material_code, m.name_zh
-      FROM material_baking_records mbr
-      JOIN material_lots ml ON ml.id = mbr.material_lot_id
-      JOIN materials m ON m.id = ml.material_id
-      ${where}
-      ORDER BY mbr.started_at DESC
-      LIMIT $${i++} OFFSET $${i}
-    `, params);
-    const cnt = await query(`SELECT count(*)::int FROM material_baking_records mbr ${where}`, params.slice(0, -2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /api/lifecycle/baking:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /api/lifecycle/baking — 开始烘烤（触发）
-app.post("/api/lifecycle/baking", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { lotNo, temperature, humidity, ovenNo, operatorName, notes } = req.body;
-    if (!lotNo) return res.status(400).json(errorEnvelope("VALIDATION", "lotNo required"));
-    const lotR = await query("SELECT id, lot_no FROM material_lots WHERE lot_no = $1", [lotNo]);
-    if (!lotR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Lot not found"));
-    const lotId = lotR.rows[0].id;
-    const opR = operatorName
-      ? await query("SELECT id FROM hr_employees WHERE name = $1 LIMIT 1", [operatorName])
-      : { rows: [] };
-    const opId = opR.rows[0]?.id ?? null;
-    const r = await query(`
-      INSERT INTO material_baking_records
-        (material_lot_id, lot_no, operator_id, operator_name, temperature, humidity, oven_no, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      RETURNING id, lot_no, operator_name, started_at, temperature, humidity, oven_no, notes
-    `, [lotId, lotNo, opId, operatorName || null, temperature || null, humidity || null, ovenNo || null, notes || null]);
-    await query(`
-      UPDATE material_lots SET
-        baking_required = true,
-        baking_started_at = NOW(),
-        baking_result = 'pending'
-      WHERE id = $1
-    `, [lotId]);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /api/lifecycle/baking:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /api/lifecycle/baking/:id — 完成烘烤（填结果）
-app.patch("/api/lifecycle/baking/:id", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { result, completedAt, notes } = req.body;
-    if (!result) return res.status(400).json(errorEnvelope("VALIDATION", "result required (pass|fail)"));
-    const recR = await query("SELECT material_lot_id FROM material_baking_records WHERE id = $1", [id]);
-    if (!recR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Baking record not found"));
-    const lotId = recR.rows[0].material_lot_id;
-    const r = await query(`
-      UPDATE material_baking_records
-      SET result = $1, completed_at = $2, notes = COALESCE($3, notes)
-      WHERE id = $4
-      RETURNING id, lot_no, result, completed_at
-    `, [result, completedAt || new Date().toISOString(), notes, id]);
-    if (result === "pass") {
-      await query(`
-        UPDATE material_lots SET
-          opened_at = NULL, opened_shelf_life_days = NULL,
-          baking_required = false,
-          baking_completed_at = NOW(),
-          baking_result = 'pass'
-        WHERE id = $1
-      `, [lotId]);
-    } else {
-      await query(`
-        UPDATE material_lots SET
-          baking_result = $1,
-          baking_completed_at = NOW()
-        WHERE id = $2
-      `, [result, lotId]);
-    }
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("PATCH /api/lifecycle/baking/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/baking/lot/:lotNo — 某批次的所有烘烤记录
-app.get("/api/lifecycle/baking/lot/:lotNo", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { lotNo } = req.params;
-    const r = await query(`
-      SELECT mbr.id, mbr.lot_no, mbr.operator_name, mbr.started_at,
-             mbr.completed_at, mbr.temperature, mbr.oven_no, mbr.result, mbr.notes
-      FROM material_baking_records mbr
-      JOIN material_lots ml ON ml.id = mbr.material_lot_id
-      WHERE ml.lot_no = $1
-      ORDER BY mbr.started_at DESC
-    `, [lotNo]);
-    res.json({ items: r.rows });
-  } catch (err) {
-    console.error("GET /api/lifecycle/baking/lot/:lotNo:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/reinspection —复检报告列表
-app.get("/api/lifecycle/reinspection", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { pass, limit = 50, offset = 0 } = req.query;
-    let where = "";
-    const params = [Number(limit), Number(offset)];
-    if (pass !== undefined) { params.unshift(pass); where = `WHERE pass = $1`; }
-    const r = await query(`
-      SELECT mr.id, mr.report_no, mr.inspected_at, mr.pass, mr.disposal_advice,
-             mr.sample_qty, mr.test_results, mr.overdue_days,
-             ml.lot_no, m.code AS material_code, m.name_zh,
-             u1.name AS inspector_name, u2.name AS quality_approver
-      FROM material_reinspection mr
-      JOIN material_lots ml ON ml.id = mr.material_lot_id
-      JOIN materials m ON m.id = ml.material_id
-      LEFT JOIN hr_employees u1 ON u1.id = mr.inspector_id
-      LEFT JOIN hr_employees u2 ON u2.id = mr.quality_approved_by
-      ${where}
-      ORDER BY mr.inspected_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM material_reinspection ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /api/lifecycle/reinspection:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /api/lifecycle/reinspection —创建复检报告
-app.post("/api/lifecycle/reinspection", authenticateJWT, requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { lotNo, overdueDays, sampleQty, testItems, testStandards, testResults, pass, disposalAdvice, inspectorName } = req.body;
-    if (!lotNo || !testItems || !testResults) {
-      return res.status(400).json(errorEnvelope("VALIDATION", "lotNo, testItems, testResults required"));
-    }
-    const lotR = await query(`SELECT id FROM material_lots WHERE lot_no = $1`, [lotNo]);
-    if (!lotR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Lot not found"));
-    const inspectorR = inspectorName
-      ? await query(`SELECT id FROM hr_employees WHERE name_zh = $1 OR employee_no = $1 LIMIT 1`, [inspectorName])
-      : { rows: [] };
-    const reportNo = `REP-${new Date().toISOString().slice(0,10).replace(/-/g,'')}${String(Math.floor(Math.random()*999)).padStart(3,'0')}`;
-    const r = await query(`
-      INSERT INTO material_reinspection (report_no, material_lot_id, overdue_days, sample_qty, test_items, test_standards, test_results, pass, disposal_advice, inspector_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      RETURNING id, report_no, pass, disposal_advice
-    `, [reportNo, lotR.rows[0].id, overdueDays ?? 0, sampleQty ?? 0, testItems, testStandards ?? '', testResults, pass ?? false, disposalAdvice ?? '', inspectorR.rows[0]?.id ?? null]);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /api/lifecycle/reinspection:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/scrapping —报废申请列表
-app.get("/api/lifecycle/scrapping", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const { status, limit = 50, offset = 0 } = req.query;
-    const params = [Number(limit), Number(offset)];
-    let where = "";
-    if (status) { params.unshift(status); where = `WHERE ms.status = $1`; }
-    const r = await query(`
-      SELECT ms.id, ms.request_no, ms.department, ms.scrap_qty, ms.destroyed_qty,
-             ms.overdue_days, ms.scrap_reason, ms.isolation_status, ms.disposal_method, ms.status,
-             ms.destruction_at, ms.created_at,
-             ml.lot_no, m.code AS material_code, m.name_zh,
-             a.name AS applicant_name
-      FROM material_scrapping ms
-      JOIN material_lots ml ON ml.id = ms.material_lot_id
-      JOIN materials m ON m.id = ml.material_id
-      LEFT JOIN users a ON a.id = ms.applicant_id
-      ${where}
-      ORDER BY ms.created_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM material_scrapping ms ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /api/lifecycle/scrapping:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /api/lifecycle/scrapping —创建报废申请
-app.post("/api/lifecycle/scrapping", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { lotNo, department, scrapQty, unit, overdueDays, scrapReason, disposalMethod, applicantName } = req.body;
-    if (!lotNo || !scrapQty || !scrapReason || !disposalMethod) {
-      return res.status(400).json(errorEnvelope("VALIDATION", "lotNo, scrapQty, scrapReason, disposalMethod required"));
-    }
-    const lotR = await query(`SELECT id FROM material_lots WHERE lot_no = $1`, [lotNo]);
-    if (!lotR.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Lot not found"));
-    const userR = await query(`SELECT id FROM users WHERE name = $1 LIMIT 1`, [applicantName ?? "PMC"]);
-    const requestNo = `REQ-${new Date().toISOString().slice(0,10).replace(/-/g,'')}${String(Math.floor(Math.random()*999)).padStart(3,'0')}`;
-    const r = await query(`
-      INSERT INTO material_scrapping (request_no, department, material_lot_id, scrap_qty, unit, overdue_days, scrap_reason, disposal_method, isolation_status, status, applicant_id)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', 'pending', $9)
-      RETURNING id, request_no, status
-    `, [requestNo, department ?? "SMT", lotR.rows[0].id, scrapQty, unit ?? "PCS", overdueDays ?? 0, scrapReason, disposalMethod, userR.rows[0]?.id ?? null]);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /api/lifecycle/scrapping:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /api/lifecycle/scrapping/:id —更新报废状态（含销毁执行）
-app.patch("/api/lifecycle/scrapping/:id", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, destroyedQty, destructionSupervisorId, destructionDocUrl } = req.body;
-    const sets = [], params = [];
-    if (status) { params.push(status); sets.push(`status = $${params.length}`); }
-    if (destroyedQty !== undefined) { params.push(destroyedQty); sets.push(`destroyed_qty = $${params.length}`); }
-    if (destructionSupervisorId) { params.push(destructionSupervisorId); sets.push(`destruction_supervisor_id = $${params.length}`); }
-    if (destructionDocUrl) { params.push(destructionDocUrl); sets.push(`destruction_doc_url = $${params.length}`); }
-    if (status === 'executed') { sets.push(`destruction_at = NOW()`); }
-    if (!sets.length) return res.status(400).json(errorEnvelope("VALIDATION", "No fields to update"));
-    params.push(id);
-    const r = await query(`UPDATE material_scrapping SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING id, request_no, status, destroyed_qty, destruction_at`, params);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("PATCH /api/lifecycle/scrapping/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/exempt-lots —免检批次
-app.get("/api/lifecycle/exempt-lots", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM v_material_lots_exempt ORDER BY expiry_date ASC LIMIT 200`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /api/lifecycle/exempt-lots:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/exempt-materials —免检物料清单
-app.get("/api/lifecycle/exempt-materials", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM v_exempt_iqc_materials ORDER BY code ASC`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /api/lifecycle/exempt-materials:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /api/lifecycle/destruction-records —销毁执行记录
-app.get("/api/lifecycle/destruction-records", requirePermission("wms.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM v_material_destruction_records ORDER BY created_at DESC LIMIT 200`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /api/lifecycle/destruction-records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
+// The material lifecycle domain (17 routes) lives in src/routes/lifecycle.js.
+registerLifecycleRoutes(app, { query, requirePermission, errorEnvelope, authenticateJWT });
 
 // ══════════════════════════════════════════════════════════════════════
 // Solder Paste Management — 锡膏管理
@@ -24318,1098 +21493,20 @@ app.get("/api/wms/material-loading", requirePermission("wms.view"), async (req, 
   finally { client.release(); }
 });
 
-// Canonical SMT-material closed loop. WMS owns physical stock and reels;
-// MES owns execution/consumption facts; this API exposes one reconciled view.
-app.get("/api/wms/smt-loop/dashboard",requirePermission("wms.view"),async(req,res)=>{
-  try{
-    const [summary,events,exceptions]=await Promise.all([
-      pgPool.query(`SELECT
-        (SELECT COUNT(*)::int FROM material_process_classifications WHERE process_domain='SMT_MATERIAL' AND status='ACTIVE') classified_materials,
-        (SELECT COUNT(*)::int FROM smt_loading_sessions WHERE status IN('LOADING','READY')) active_loading_sessions,
-        (SELECT COUNT(*)::int FROM feeder_binding_events WHERE status='active') active_bindings,
-        (SELECT COALESCE(SUM(placed_qty),0)::bigint FROM npm_material_consumption_events) placed_qty,
-        (SELECT COUNT(*)::int FROM npm_material_consumption_events WHERE reconciliation_status<>'MATCHED') unmatched_consumption,
-        (SELECT COUNT(*)::int FROM smt_material_flow_exceptions WHERE status IN('OPEN','INVESTIGATING')) open_exceptions`),
-      pgPool.query(`SELECT * FROM smt_material_flow_events ORDER BY occurred_at DESC,id DESC LIMIT 100`),
-      pgPool.query(`SELECT * FROM smt_material_flow_exceptions WHERE status IN('OPEN','INVESTIGATING')
-        ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'BLOCK' THEN 2 ELSE 3 END,detected_at DESC LIMIT 100`)
-    ]);
-    res.json(mutateEnvelope({summary:summary.rows[0],events:events.rows,exceptions:exceptions.rows}));
-  }catch(error){res.status(500).json(errorEnvelope("SMT_LOOP_DASHBOARD_FAILED",error.message));}
+// The SMT-material closed loop (30 routes) lives in src/routes/wms-smt-loop.js.
+registerWmsSmtLoopRoutes(app, {
+  pgPool, requirePermission, envelope, errorEnvelope, mutateEnvelope, listEnvelope, randomUUID,
 });
 
-app.get("/api/wms/smt-loop/materials",requirePermission("wms.view"),async(req,res)=>{
-  try{
-    const rows=await pgPool.query(`SELECT m.id,m.code,m.name_zh,m.name_en,m.name_vi,
-      COALESCE(c.process_domain,'UNCLASSIFIED') process_domain,c.tracking_level,c.consumption_source,
-      c.requires_feeder,c.requires_msd_control,c.status,c.updated_at
-      FROM materials m LEFT JOIN material_process_classifications c ON c.material_id=m.id
-      WHERE ($1::text IS NULL OR COALESCE(c.process_domain,'UNCLASSIFIED')=$1)
-      ORDER BY m.code LIMIT 1000`,[req.query.domain||null]);
-    res.json(listEnvelope(rows.rows));
-  }catch(error){res.status(500).json(errorEnvelope("SMT_MATERIAL_LIST_FAILED",error.message));}
+// IQC control loop (14 routes) lives in src/routes/quality-iqc-loop.js.
+registerQualityIqcLoopRoutes(app, {
+  pgPool, requirePermission, errorEnvelope, mutateEnvelope, randomUUID,
 });
 
-app.post("/api/wms/smt-loop/materials/:materialId/classify",requirePermission("wms.write"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},domain=String(p.processDomain??"").toUpperCase();
-    if(!["SMT_MATERIAL","NON_SMT_MATERIAL"].includes(domain))return res.status(400).json(errorEnvelope("VALIDATION","SMT_MATERIAL or NON_SMT_MATERIAL required"));
-    const row=(await pgPool.query(`INSERT INTO material_process_classifications
-      (material_id,process_domain,tracking_level,consumption_source,requires_feeder,requires_msd_control,classified_by,reason)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-      ON CONFLICT(material_id) DO UPDATE SET process_domain=EXCLUDED.process_domain,tracking_level=EXCLUDED.tracking_level,
-      consumption_source=EXCLUDED.consumption_source,requires_feeder=EXCLUDED.requires_feeder,
-      requires_msd_control=EXCLUDED.requires_msd_control,classified_by=EXCLUDED.classified_by,
-      reason=EXCLUDED.reason,updated_at=NOW() RETURNING *`,
-      [req.params.materialId,domain,p.trackingLevel??(domain==="SMT_MATERIAL"?"REEL_SN":"LOT"),
-       p.consumptionSource??(domain==="SMT_MATERIAL"?"NPM":"MES"),Boolean(p.requiresFeeder??domain==="SMT_MATERIAL"),
-       Boolean(p.requiresMsdControl),String(p.actor??req.user?.username??"WMS"),String(p.reason??"Material process classification")])).rows[0];
-    res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("SMT_MATERIAL_CLASSIFY_FAILED",error.message));}
-});
 
-app.get("/api/wms/smt-loop/work-orders/:code/reconciliation",requirePermission("wms.view"),async(req,res)=>{
-  try{
-    const code=req.params.code;
-    const [bindings,consumption,exceptions]=await Promise.all([
-      pgPool.query(`SELECT machine_code,slot_no,feeder_code,material_code,material_sn,lot_no,qty,
-        consumed_qty,placed_qty,rejected_qty,status,bound_at,unbound_at
-        FROM feeder_binding_events WHERE work_order_code=$1 ORDER BY machine_code,slot_no,bound_at`,[code]),
-      pgPool.query(`SELECT material_sn,COALESCE(SUM(pickup_qty),0)::bigint pickup_qty,
-        COALESCE(SUM(placed_qty),0)::bigint placed_qty,COALESCE(SUM(rejected_qty),0)::bigint rejected_qty,
-        BOOL_AND(reconciliation_status='MATCHED') reconciled
-        FROM npm_material_consumption_events WHERE work_order_code=$1 GROUP BY material_sn ORDER BY material_sn`,[code]),
-      pgPool.query(`SELECT * FROM smt_material_flow_exceptions WHERE work_order_code=$1 ORDER BY detected_at DESC`,[code])
-    ]);
-    const closed=exceptions.rows.every(x=>["RESOLVED","VOIDED"].includes(x.status))&&consumption.rows.every(x=>x.reconciled);
-    res.json(mutateEnvelope({workOrderCode:code,closed,bindings:bindings.rows,consumption:consumption.rows,exceptions:exceptions.rows}));
-  }catch(error){res.status(500).json(errorEnvelope("SMT_RECONCILIATION_FAILED",error.message));}
-});
+// The WMS production surface (16 routes) lives in src/routes/wms-production.js.
+registerWmsProductionRoutes(app, { pgPool, getClient, requirePermission, errorEnvelope });
 
-app.post("/api/wms/smt-loop/exceptions/:id/resolve",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    if(!String(p.resolution??"").trim())return res.status(400).json(errorEnvelope("VALIDATION","Resolution is required"));
-    const row=(await pgPool.query(`UPDATE smt_material_flow_exceptions SET status='RESOLVED',resolved_at=NOW(),
-      resolved_by=$2,resolution=$3 WHERE id=$1 AND status IN('OPEN','INVESTIGATING') RETURNING *`,
-      [req.params.id,String(p.actor??req.user?.username??"WMS"),String(p.resolution)])).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Open exception not found"));
-    res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("SMT_EXCEPTION_RESOLVE_FAILED",error.message));}
-});
-
-app.post("/api/wms/smt-loop/classification-changes",requirePermission("wms.write"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    const current=(await pgPool.query("SELECT process_domain FROM material_process_classifications WHERE material_id=$1",[p.materialId])).rows[0];
-    const no=`MCL-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO material_classification_change_requests
-      (request_no,material_id,from_domain,to_domain,proposed_tracking_level,proposed_consumption_source,evidence,effective_from,requested_by,reason)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [no,p.materialId,current?.process_domain??null,String(p.toDomain).toUpperCase(),p.trackingLevel,p.consumptionSource,
-       JSON.stringify(p.evidence??[]),p.effectiveFrom,String(p.actor??req.user?.username??"WMS"),p.reason])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("CLASSIFICATION_CHANGE_CREATE_FAILED",error.message));}
-});
-
-app.post("/api/wms/smt-loop/classification-changes/:id/decision",requirePermission("wms.write"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},role=String(p.approvalRole??"").toUpperCase(),decision=String(p.decision??"").toUpperCase();
-    await client.query("BEGIN");const item=(await client.query("SELECT * FROM material_classification_change_requests WHERE id=$1 AND status='PENDING_APPROVAL' FOR UPDATE",[req.params.id])).rows[0];
-    if(!item||!["WMS_MANAGER","ENGINEERING","PMC_MANAGER"].includes(role))throw new Error("Pending request or approval role not found");
-    await client.query(`INSERT INTO material_classification_change_approvals(request_id,approval_role,decision,actor,comment)
-      VALUES($1,$2,$3,$4,$5) ON CONFLICT(request_id,approval_role) DO UPDATE SET decision=EXCLUDED.decision,actor=EXCLUDED.actor,comment=EXCLUDED.comment,decided_at=NOW()`,
-      [item.id,role,decision,String(p.actor??role),String(p.comment??"Reviewed")]);
-    const approvals=(await client.query("SELECT approval_role,decision FROM material_classification_change_approvals WHERE request_id=$1",[item.id])).rows;
-    const required=["WMS_MANAGER","ENGINEERING","PMC_MANAGER"];
-    const status=decision==="REJECT"?"REJECTED":required.every(x=>approvals.some(a=>a.approval_role===x&&a.decision==="APPROVE"))?"APPROVED":"PENDING_APPROVAL";
-    const row=(await client.query("UPDATE material_classification_change_requests SET status=$2 WHERE id=$1 RETURNING *",[item.id,status])).rows[0];
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("CLASSIFICATION_CHANGE_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/smt-loop/classification-changes/:id/apply",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const item=(await client.query("SELECT * FROM material_classification_change_requests WHERE id=$1 AND status='APPROVED' AND effective_from<=NOW() FOR UPDATE",[req.params.id])).rows[0];
-    if(!item)throw new Error("Approved and effective request not found");
-    await client.query(`INSERT INTO material_process_classifications(material_id,process_domain,tracking_level,consumption_source,requires_feeder,classified_by,reason)
-      VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(material_id) DO UPDATE SET process_domain=EXCLUDED.process_domain,
-      tracking_level=EXCLUDED.tracking_level,consumption_source=EXCLUDED.consumption_source,requires_feeder=EXCLUDED.requires_feeder,
-      classified_by=EXCLUDED.classified_by,reason=EXCLUDED.reason,updated_at=NOW()`,
-      [item.material_id,item.to_domain,item.proposed_tracking_level,item.proposed_consumption_source,item.to_domain==="SMT_MATERIAL",String(p.actor??"WMS_MANAGER"),item.reason]);
-    const row=(await client.query("UPDATE material_classification_change_requests SET status='APPLIED' WHERE id=$1 RETURNING *",[item.id])).rows[0];
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("CLASSIFICATION_CHANGE_APPLY_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/smt-loop/returns",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    const b=(await pgPool.query("SELECT * FROM feeder_binding_events WHERE id=$1 AND status='unbound'",[p.bindingId])).rows[0];
-    if(!b)throw new Error("Unbound feeder record not found");
-    const no=`SMTR-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const theoretical=Math.max(Number(b.qty)-Number(b.consumed_qty??0),0);
-    const row=(await pgPool.query(`INSERT INTO smt_material_return_handovers
-      (handover_no,binding_id,work_order_code,material_code,material_sn,lot_no,theoretical_qty,quality_verdict,sent_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
-      [no,b.id,b.work_order_code,b.material_code,b.material_sn,b.lot_no,theoretical,p.qualityVerdict??"PASS",String(p.actor??"OPERATOR")])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("SMT_RETURN_CREATE_FAILED",error.message));}
-});
-
-app.post("/api/wms/smt-loop/returns/:id/receive",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},actual=Number(p.actualQty);
-    const current=(await pgPool.query("SELECT * FROM smt_material_return_handovers WHERE id=$1 AND status='WAITING_WMS_RECEIPT'",[req.params.id])).rows[0];
-    if(!current)throw new Error("Waiting return handover not found");
-    const same=Math.abs(Number(current.theoretical_qty)-actual)<0.0001,status=same?"RECEIVED":"VARIANCE_REVIEW";
-    const row=(await pgPool.query(`UPDATE smt_material_return_handovers SET actual_qty=$2,status=$3,received_by=$4,received_at=NOW(),
-      variance_reason=$5 WHERE id=$1 RETURNING *`,[current.id,actual,status,String(p.actor??"WMS"),p.varianceReason??null])).rows[0];
-    res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("SMT_RETURN_RECEIVE_FAILED",error.message));}
-});
-
-app.get("/api/wms/smt-loop/authority-rules",requirePermission("wms.view"),async(_req,res)=>{
-  try{res.json(listEnvelope((await pgPool.query("SELECT * FROM data_fact_authority_rules ORDER BY fact_type")).rows));}
-  catch(error){res.status(500).json(errorEnvelope("AUTHORITY_RULES_FAILED",error.message));}
-});
-
-app.post("/api/wms/smt-loop/work-orders/:code/exceptional-closure",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},code=req.params.code;
-    const [exceptions,returns,unmatched]=await Promise.all([
-      pgPool.query("SELECT * FROM smt_material_flow_exceptions WHERE work_order_code=$1 AND status IN('OPEN','INVESTIGATING')",[code]),
-      pgPool.query("SELECT * FROM smt_material_return_handovers WHERE work_order_code=$1 AND status<>'RECEIVED'",[code]),
-      pgPool.query("SELECT * FROM npm_material_consumption_events WHERE work_order_code=$1 AND reconciliation_status<>'MATCHED'",[code])
-    ]);
-    const snapshot={exceptions:exceptions.rows,returns:returns.rows,unmatchedConsumption:unmatched.rows};
-    if(!exceptions.rowCount&&!returns.rowCount&&!unmatched.rowCount)return res.status(409).json(errorEnvelope("NORMAL_CLOSURE_REQUIRED","No unresolved SMT condition requires exceptional closure"));
-    const no=`SMTC-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO smt_exceptional_closure_requests
-      (request_no,work_order_code,unresolved_snapshot,cost_impact,reason,requested_by)
-      VALUES($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [no,code,JSON.stringify(snapshot),Number(p.costImpact??0),p.reason,String(p.actor??req.user?.username??"WMS")])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("SMT_EXCEPTIONAL_CLOSURE_CREATE_FAILED",error.message));}
-});
-
-app.post("/api/wms/smt-loop/exceptional-closures/:id/decision",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},role=String(p.approvalRole??"").toUpperCase(),decision=String(p.decision??"").toUpperCase();
-    await client.query("BEGIN");const item=(await client.query("SELECT * FROM smt_exceptional_closure_requests WHERE id=$1 AND status='PENDING_APPROVAL' FOR UPDATE",[req.params.id])).rows[0];
-    if(!item||!item.required_roles.includes(role))throw new Error("Required role or pending request not found");
-    const approvals=(Array.isArray(item.approvals)?item.approvals:[]).filter(x=>x.role!==role);
-    approvals.push({role,decision,actor:String(p.actor??role),comment:String(p.comment??"Reviewed"),at:new Date().toISOString()});
-    const status=decision==="REJECT"?"REJECTED":item.required_roles.every(r=>approvals.some(a=>a.role===r&&a.decision==="APPROVE"))?"APPROVED":"PENDING_APPROVAL";
-    const row=(await client.query("UPDATE smt_exceptional_closure_requests SET approvals=$2,status=$3 WHERE id=$1 RETURNING *",
-      [item.id,JSON.stringify(approvals),status])).rows[0];
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("SMT_EXCEPTIONAL_CLOSURE_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.get("/api/wms/non-smt/dashboard",requirePermission("wms.view"),async(_req,res)=>{
-  try{
-    const [summary,events,exceptions,returns]=await Promise.all([
-      pgPool.query(`SELECT
-        (SELECT COUNT(*)::int FROM material_process_classifications WHERE process_domain='NON_SMT_MATERIAL' AND status='ACTIVE') classified_materials,
-        (SELECT COUNT(*)::int FROM non_smt_material_profiles WHERE status='ACTIVE') configured_materials,
-        (SELECT COUNT(*)::int FROM non_smt_unit_bindings WHERE status='ACTIVE') active_unit_bindings,
-        (SELECT COUNT(*)::int FROM non_smt_return_handovers WHERE status='WAITING_WMS_RECEIPT') pending_returns,
-        (SELECT COUNT(*)::int FROM non_smt_material_exceptions WHERE status IN('OPEN','INVESTIGATING')) open_exceptions,
-        (SELECT COUNT(*)::int FROM non_smt_work_order_reconciliations WHERE result='FAIL') failed_reconciliations`),
-      pgPool.query("SELECT * FROM non_smt_material_events ORDER BY occurred_at DESC,id DESC LIMIT 100"),
-      pgPool.query(`SELECT * FROM non_smt_material_exceptions WHERE status IN('OPEN','INVESTIGATING')
-        ORDER BY CASE severity WHEN 'CRITICAL' THEN 1 WHEN 'BLOCK' THEN 2 ELSE 3 END,detected_at DESC LIMIT 100`),
-      pgPool.query("SELECT * FROM non_smt_return_handovers WHERE status<>'RECEIVED' ORDER BY sent_at DESC LIMIT 100")
-    ]);
-    res.json(mutateEnvelope({summary:summary.rows[0],events:events.rows,exceptions:exceptions.rows,returns:returns.rows}));
-  }catch(error){res.status(500).json(errorEnvelope("NON_SMT_DASHBOARD_FAILED",error.message));}
-});
-
-app.post("/api/wms/non-smt/materials/:materialId/profile",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},mode=String(p.trackingMode??"").toUpperCase();
-    const defaults={
-      DIRECT_SN:["EACH_UNIT","UNIT_SCAN"],DIRECT_LOT:["LOT_CHANGE","STATION_COUNT"],
-      PACKAGING_UNIT:["EACH_PACKAGE","PACKAGE_BIND"],INDIRECT_CONSUMABLE:["ISSUE_RETURN","WEIGHT_DELTA"]
-    };
-    if(!defaults[mode])throw new Error("Unsupported non-SMT tracking mode");
-    await client.query("BEGIN");
-    await client.query(`INSERT INTO material_process_classifications
-      (material_id,process_domain,tracking_level,consumption_source,requires_feeder,classified_by,reason)
-      VALUES($1,'NON_SMT_MATERIAL',$2,'STATION',FALSE,$3,$4)
-      ON CONFLICT(material_id) DO UPDATE SET process_domain='NON_SMT_MATERIAL',tracking_level=EXCLUDED.tracking_level,
-      consumption_source='STATION',requires_feeder=FALSE,classified_by=EXCLUDED.classified_by,reason=EXCLUDED.reason,updated_at=NOW()`,
-      [req.params.materialId,mode==="DIRECT_SN"?"REEL_SN":mode==="PACKAGING_UNIT"?"CONTAINER":mode==="DIRECT_LOT"?"LOT":"BULK",String(p.actor??req.user?.username??"WMS"),String(p.reason??"Non-SMT profile")]);
-    const row=(await client.query(`INSERT INTO non_smt_material_profiles
-      (material_id,tracking_mode,scan_policy,consumption_method,warning_tolerance_percent,requires_quality_release,configured_by,reason)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8)
-      ON CONFLICT(material_id) DO UPDATE SET tracking_mode=EXCLUDED.tracking_mode,scan_policy=EXCLUDED.scan_policy,
-      consumption_method=EXCLUDED.consumption_method,warning_tolerance_percent=EXCLUDED.warning_tolerance_percent,
-      requires_quality_release=EXCLUDED.requires_quality_release,configured_by=EXCLUDED.configured_by,
-      reason=EXCLUDED.reason,version_no=non_smt_material_profiles.version_no+1,updated_at=NOW() RETURNING *`,
-      [req.params.materialId,mode,p.scanPolicy??defaults[mode][0],p.consumptionMethod??defaults[mode][1],
-       Number(p.warningTolerancePercent??0),p.requiresQualityRelease!==false,String(p.actor??req.user?.username??"WMS"),String(p.reason??"Non-SMT profile")])).rows[0];
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_SMT_PROFILE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-smt/validate",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    const row=(await pgPool.query(`SELECT wo.id work_order_id,wo.code work_order_code,wo.status work_order_status,
-      m.id material_id,m.code material_code,m.name_zh,bl.qty_per,bl.loss_rate,np.tracking_mode,np.scan_policy,
-      np.consumption_method,np.requires_quality_release
-      FROM work_orders wo JOIN bom_lines bl ON bl.bom_id=wo.bom_id JOIN materials m ON m.id=bl.material_id
-      JOIN material_process_classifications pc ON pc.material_id=m.id AND pc.process_domain='NON_SMT_MATERIAL' AND pc.status='ACTIVE'
-      JOIN non_smt_material_profiles np ON np.material_id=m.id AND np.status='ACTIVE'
-      WHERE wo.code=$1 AND m.code=$2 LIMIT 1`,[p.workOrderCode,p.materialCode])).rows[0];
-    if(!row){
-      const no=`NSM-MISMATCH-${randomUUID().slice(0,8).toUpperCase()}`;
-      await pgPool.query(`INSERT INTO non_smt_material_exceptions
-        (exception_no,exception_type,severity,work_order_code,station_code,material_code,material_sn,source_ref,detail)
-        VALUES($1,'MATERIAL_MISMATCH','BLOCK',$2,$3,$4,$5,$6,$7)`,
-        [no,p.workOrderCode,p.stationCode,p.materialCode,p.materialSn??null,p.sourceEventId??null,JSON.stringify(p)]);
-      return res.status(409).json(errorEnvelope("NON_SMT_BOM_MISMATCH","Material is not an active non-SMT BOM item for this work order"));
-    }
-    if(row.tracking_mode==="DIRECT_SN"&&p.materialSn){
-      const used=(await pgPool.query("SELECT product_sn,status FROM non_smt_unit_bindings WHERE material_sn=$1 AND status='ACTIVE'",[p.materialSn])).rows[0];
-      if(used)return res.status(409).json(errorEnvelope("DUPLICATE_BINDING",`Material SN is already bound to ${used.product_sn}`));
-    }
-    res.json(mutateEnvelope({...row,validated:true}));
-  }catch(error){res.status(500).json(errorEnvelope("NON_SMT_VALIDATE_FAILED",error.message));}
-});
-
-app.post("/api/wms/non-smt/events",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},qty=Number(p.qty??0);
-    await client.query("BEGIN");
-    const existing=(await client.query("SELECT * FROM non_smt_material_events WHERE source_event_id=$1 FOR UPDATE",[p.sourceEventId])).rows[0];
-    if(existing){
-      const same=existing.event_type===p.eventType&&existing.work_order_code===p.workOrderCode
-        &&existing.material_code===p.materialCode&&String(existing.material_sn??"")===String(p.materialSn??"")
-        &&String(existing.lot_no??"")===String(p.lotNo??"")&&Number(existing.qty)===qty;
-      if(!same){
-        await client.query(`INSERT INTO non_smt_material_exceptions
-          (exception_no,exception_type,severity,work_order_code,station_code,material_code,material_sn,source_ref,detail)
-          VALUES($1,'DATA_CONFLICT','CRITICAL',$2,$3,$4,$5,$6,$7) ON CONFLICT(exception_no) DO UPDATE SET detail=EXCLUDED.detail,detected_at=NOW(),status='OPEN'`,
-          [`NSM-CONFLICT-${String(p.sourceEventId).replace(/[^A-Za-z0-9_-]/g,"").slice(0,24)}`,p.workOrderCode,p.stationCode,p.materialCode,p.materialSn??null,p.sourceEventId,JSON.stringify({original:existing,conflicting:p})]);
-        await client.query("COMMIT");return res.status(409).json(errorEnvelope("NON_SMT_EVENT_ID_CONFLICT","Same event ID has different immutable content"));
-      }
-      await client.query("UPDATE non_smt_material_events SET duplicate_delivery_count=duplicate_delivery_count+1,last_duplicate_at=NOW() WHERE id=$1",[existing.id]);
-      await client.query("COMMIT");return res.json(mutateEnvelope({...existing,duplicate:true}));
-    }
-    const material=(await client.query(`SELECT m.id,np.tracking_mode FROM materials m JOIN non_smt_material_profiles np ON np.material_id=m.id
-      WHERE m.code=$1 AND np.status='ACTIVE'`,[p.materialCode])).rows[0];
-    if(!material)throw new Error("Active non-SMT material profile not found");
-    const bomMatch=(await client.query(`SELECT 1 FROM work_orders wo JOIN bom_lines bl ON bl.bom_id=wo.bom_id
-      WHERE wo.code=$1 AND bl.material_id=$2`,[p.workOrderCode,material.id])).rows[0];
-    if(!bomMatch){
-      await client.query(`INSERT INTO non_smt_material_exceptions
-        (exception_no,exception_type,severity,work_order_code,station_code,material_code,material_sn,source_ref,detail)
-        VALUES($1,'MATERIAL_MISMATCH','BLOCK',$2,$3,$4,$5,$6,$7)`,
-        [`NSM-BOM-${randomUUID().slice(0,8).toUpperCase()}`,p.workOrderCode,p.stationCode??null,p.materialCode,p.materialSn??null,p.sourceEventId,JSON.stringify(p)]);
-      await client.query("COMMIT");
-      return res.status(409).json(errorEnvelope("NON_SMT_BOM_MISMATCH","Event material is not in the work-order BOM"));
-    }
-    const row=(await client.query(`INSERT INTO non_smt_material_events
-      (source_event_id,event_type,tracking_mode,work_order_code,station_code,material_id,material_code,material_sn,lot_no,
-       package_code,product_sn,qty,uom,actor,source_system,offline_lease_id,raw_payload,occurred_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [p.sourceEventId,String(p.eventType).toUpperCase(),material.tracking_mode,p.workOrderCode,p.stationCode??null,material.id,p.materialCode,
-       p.materialSn??null,p.lotNo??null,p.packageCode??null,p.productSn??null,qty,p.uom??null,String(p.actor??"OPERATOR"),
-       p.sourceSystem??"STATION",p.offlineLeaseId??null,JSON.stringify(p),p.occurredAt??new Date()])).rows[0];
-    if(["BOUND"].includes(row.event_type)&&["DIRECT_SN","PACKAGING_UNIT"].includes(material.tracking_mode)){
-      if(!p.materialSn||!p.productSn)throw new Error("Material SN/package code and product SN are required for unit binding");
-      await client.query(`INSERT INTO non_smt_unit_bindings
-        (work_order_code,material_id,material_code,material_sn,product_sn,binding_type,bound_event_id)
-        VALUES($1,$2,$3,$4,$5,$6,$7)`,
-        [p.workOrderCode,material.id,p.materialCode,p.materialSn,p.productSn,material.tracking_mode==="PACKAGING_UNIT"?"PACKAGING":"COMPONENT",row.id]);
-    }
-    await client.query("COMMIT");res.status(201).json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_SMT_EVENT_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-smt/returns",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},no=`NSMR-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const material=(await pgPool.query("SELECT id FROM materials WHERE code=$1",[p.materialCode])).rows[0];
-    if(!material)throw new Error("Material not found");
-    const row=(await pgPool.query(`INSERT INTO non_smt_return_handovers
-      (handover_no,work_order_code,material_id,material_code,material_sn,lot_no,theoretical_qty,sent_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-      [no,p.workOrderCode,material.id,p.materialCode,p.materialSn??null,p.lotNo??null,Number(p.theoreticalQty),String(p.actor??"OPERATOR")])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("NON_SMT_RETURN_CREATE_FAILED",error.message));}
-});
-
-app.post("/api/wms/non-smt/returns/:id/receive",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},current=(await pgPool.query("SELECT * FROM non_smt_return_handovers WHERE id=$1 AND status='WAITING_WMS_RECEIPT'",[req.params.id])).rows[0];
-    if(!current)throw new Error("Waiting return not found");
-    const actual=Number(p.actualQty),variance=actual-Number(current.theoretical_qty),status=Math.abs(variance)<0.0001?"RECEIVED":"VARIANCE_REVIEW";
-    const row=(await pgPool.query(`UPDATE non_smt_return_handovers SET actual_qty=$2,status=$3,received_by=$4,received_at=NOW(),variance_reason=$5
-      WHERE id=$1 RETURNING *`,[current.id,actual,status,String(p.actor??"WMS"),p.varianceReason??null])).rows[0];
-    if(status==="VARIANCE_REVIEW")await pgPool.query(`INSERT INTO non_smt_material_exceptions
-      (exception_no,exception_type,severity,work_order_code,material_code,material_sn,source_ref,detail)
-      VALUES($1,'QUANTITY_VARIANCE','BLOCK',$2,$3,$4,$5,$6)`,
-      [`NSM-RETURN-${current.id}`,current.work_order_code,current.material_code,current.material_sn,current.handover_no,JSON.stringify({theoretical:current.theoretical_qty,actual,variance})]);
-    res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("NON_SMT_RETURN_RECEIVE_FAILED",error.message));}
-});
-
-app.post("/api/wms/non-smt/work-orders/:code/reconcile",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const code=req.params.code;await client.query("BEGIN");
-    const wo=(await client.query("SELECT id,bom_id,planned_qty FROM work_orders WHERE code=$1",[code])).rows[0];
-    if(!wo)throw new Error("Work order not found");
-    const lines=(await client.query(`SELECT m.id material_id,m.code,bl.qty_per,bl.loss_rate,np.warning_tolerance_percent
-      FROM bom_lines bl JOIN materials m ON m.id=bl.material_id JOIN non_smt_material_profiles np ON np.material_id=m.id
-      WHERE bl.bom_id=$1 AND np.status='ACTIVE'`,[wo.bom_id])).rows;
-    const results=[];
-    for(const line of lines){
-      const totals=(await client.query(`SELECT
-        COALESCE(SUM(qty) FILTER(WHERE event_type='ISSUED'),0) issued,
-        COALESCE(SUM(qty) FILTER(WHERE event_type='CONSUMED'),0) consumed,
-        COALESCE(SUM(qty) FILTER(WHERE event_type='RETURN_RECEIVED'),0) returned,
-        COALESCE(SUM(qty) FILTER(WHERE event_type='SCRAPPED'),0) scrapped
-        FROM non_smt_material_events WHERE work_order_code=$1 AND material_id=$2`,[code,line.material_id])).rows[0];
-      const required=Number(line.qty_per)*(1+Number(line.loss_rate))*Number(wo.planned_qty);
-      const variance=Number(totals.issued)-Number(totals.consumed)-Number(totals.returned)-Number(totals.scrapped);
-      const warning=Math.abs(required)*Number(line.warning_tolerance_percent)/100;
-      const result=Math.abs(variance)<0.000001?"PASS":Math.abs(variance)<=warning?"WARNING":"FAIL";
-      const row=(await client.query(`INSERT INTO non_smt_work_order_reconciliations
-        (work_order_code,material_id,bom_required_qty,issued_qty,consumed_qty,returned_qty,scrapped_qty,variance_qty,result,detail)
-        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-        ON CONFLICT(work_order_code,material_id) DO UPDATE SET bom_required_qty=EXCLUDED.bom_required_qty,issued_qty=EXCLUDED.issued_qty,
-        consumed_qty=EXCLUDED.consumed_qty,returned_qty=EXCLUDED.returned_qty,scrapped_qty=EXCLUDED.scrapped_qty,
-        variance_qty=EXCLUDED.variance_qty,result=EXCLUDED.result,detail=EXCLUDED.detail,checked_at=NOW() RETURNING *`,
-        [code,line.material_id,required,totals.issued,totals.consumed,totals.returned,totals.scrapped,variance,result,JSON.stringify({materialCode:line.code,warningTolerance:warning})])).rows[0];
-      results.push(row);
-    }
-    await client.query("COMMIT");res.json(mutateEnvelope({workOrderCode:code,closed:results.every(x=>x.result==="PASS"),results}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_SMT_RECONCILE_FAILED",error.message));}finally{client.release();}
-});
-
-app.get("/api/wms/non-iqc/dashboard",requirePermission("wms.view"),async(_req,res)=>{
-  try{
-    const [summary,receipts,issues,loans,dispositions]=await Promise.all([
-      pgPool.query(`SELECT
-        (SELECT COUNT(*)::int FROM non_iqc_material_profiles WHERE status='ACTIVE') active_materials,
-        (SELECT COUNT(*)::int FROM non_iqc_receipts WHERE status='QUARANTINED') quarantined_receipts,
-        (SELECT COUNT(*)::int FROM non_iqc_issue_requests WHERE status='PENDING_APPROVAL') pending_issues,
-        (SELECT COUNT(*)::int FROM non_iqc_loans WHERE status IN('BORROWED','OVERDUE') AND expected_return_at<NOW()) overdue_loans,
-        (SELECT COUNT(*)::int FROM non_iqc_receipt_dispositions WHERE status='PENDING_RECEIPT') pending_handovers,
-        (SELECT COUNT(*)::int FROM non_iqc_receipts WHERE status='WAITING_CLOSURE') waiting_closure`),
-      pgPool.query("SELECT * FROM non_iqc_receipts ORDER BY received_at DESC LIMIT 100"),
-      pgPool.query("SELECT * FROM non_iqc_issue_requests WHERE status NOT IN('CLOSED','CANCELLED') ORDER BY created_at DESC LIMIT 100"),
-      pgPool.query("SELECT * FROM non_iqc_loans WHERE status<>'CLOSED' ORDER BY expected_return_at LIMIT 100"),
-      pgPool.query("SELECT * FROM non_iqc_receipt_dispositions WHERE status='PENDING_RECEIPT' ORDER BY sent_at LIMIT 100")
-    ]);
-    res.json(envelope({summary:summary.rows[0],receipts:receipts.rows,issues:issues.rows,loans:loans.rows,dispositions:dispositions.rows}));
-  }catch(error){res.status(500).json(errorEnvelope("NON_IQC_DASHBOARD_FAILED",error.message));}
-});
-
-app.post("/api/wms/non-iqc/materials/:materialCode/profile",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};
-    if(!p.materialDomain||!p.responsibleDomain||!p.controlMode||!p.reason)throw new Error("Material domain, responsible domain, control mode, and reason are required");
-    const required=["QUALITY_MANAGER","ENGINEERING","PROCUREMENT"];
-    const approvals=Array.isArray(p.approvals)?p.approvals:[];
-    const approvedRoles=new Set(approvals.filter(x=>String(x.decision??"").toUpperCase()==="APPROVED").map(x=>String(x.role??"").toUpperCase()));
-    if(!required.every(role=>approvedRoles.has(role)))throw new Error(`Classification approvals required: ${required.join(", ")}`);
-    await client.query("BEGIN");
-    const previous=(await client.query("SELECT * FROM non_iqc_material_profiles WHERE material_code=$1 FOR UPDATE",[req.params.materialCode])).rows[0]??null;
-    const row=(await client.query(`INSERT INTO non_iqc_material_profiles
-      (material_code,material_domain,responsible_domain,control_mode,requires_expiry_control,requires_certificate,
-       min_stock,max_stock,reorder_point,issue_approval_level,configured_by,reason)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-      ON CONFLICT(material_code) DO UPDATE SET material_domain=EXCLUDED.material_domain,responsible_domain=EXCLUDED.responsible_domain,
-      control_mode=EXCLUDED.control_mode,requires_expiry_control=EXCLUDED.requires_expiry_control,
-      requires_certificate=EXCLUDED.requires_certificate,min_stock=EXCLUDED.min_stock,max_stock=EXCLUDED.max_stock,
-      reorder_point=EXCLUDED.reorder_point,issue_approval_level=EXCLUDED.issue_approval_level,
-      configured_by=EXCLUDED.configured_by,reason=EXCLUDED.reason,version_no=non_iqc_material_profiles.version_no+1,updated_at=NOW() RETURNING *`,
-      [req.params.materialCode,p.materialDomain,p.responsibleDomain,p.controlMode,!!p.requiresExpiryControl,!!p.requiresCertificate,
-       Number(p.minStock??0),p.maxStock==null?null:Number(p.maxStock),Number(p.reorderPoint??0),p.issueApprovalLevel??"SUPERVISOR",
-       String(p.actor??"WMS"),p.reason])).rows[0];
-    await client.query(`INSERT INTO non_iqc_inventory_controls(material_code)VALUES($1) ON CONFLICT(material_code) DO NOTHING`,[req.params.materialCode]);
-    await client.query(`INSERT INTO material_iqc_classification_changes
-      (change_no,material_code,previous_classification,new_classification,previous_profile,new_profile,reason,approvals,requested_by)
-      VALUES($1,$2,$3,'NON_IQC',$4,$5,$6,$7,$8)`,
-      [`IQCC-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`,req.params.materialCode,previous?"NON_IQC":null,
-       previous?JSON.stringify(previous):null,JSON.stringify(row),p.reason,JSON.stringify(approvals),String(p.actor??"WMS")]);
-    await client.query("COMMIT");
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_IQC_PROFILE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-iqc/receipts",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect(),p=req.body?.payload??req.body??{};try{
-    await client.query("BEGIN");
-    if(!p.sourceEventId)throw new Error("sourceEventId is required");
-    const duplicate=(await client.query("SELECT * FROM non_iqc_receipts WHERE source_event_id=$1",[p.sourceEventId])).rows[0];
-    if(duplicate){await client.query("ROLLBACK");return res.json(mutateEnvelope({...duplicate,duplicateDelivery:true}));}
-    const profile=(await client.query("SELECT * FROM non_iqc_material_profiles WHERE material_code=$1 AND status='ACTIVE' FOR UPDATE",[p.materialCode])).rows[0];
-    if(!profile)throw new Error("Active non-IQC material profile not found");
-    const required=[p.poMatch,p.materialMatch,p.quantityMatch,p.visualPass,p.dateValid,p.documentsComplete];
-    const allPassed=required.every(x=>x===true);
-    const no=`NIQC-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`;
-    const row=(await client.query(`INSERT INTO non_iqc_receipts
-      (receipt_no,source_event_id,purchase_order_code,supplier_code,material_code,supplier_lot_no,production_date,expiry_date,received_qty,uom,
-       po_match,material_match,quantity_match,visual_pass,date_valid,documents_complete,evidence,status,received_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19) RETURNING *`,
-      [no,p.sourceEventId,p.purchaseOrderCode,p.supplierCode,p.materialCode,p.supplierLotNo??null,p.productionDate??null,p.expiryDate??null,
-       Number(p.receivedQty),p.uom??"PCS",!!p.poMatch,!!p.materialMatch,!!p.quantityMatch,!!p.visualPass,!!p.dateValid,
-       !!p.documentsComplete,JSON.stringify(p.evidence??[]),allPassed?"AVAILABLE":"QUARANTINED",String(p.actor??"WMS_RECEIVER")])).rows[0];
-    if(allPassed)await client.query(`UPDATE non_iqc_inventory_controls SET on_hand_qty=on_hand_qty+$2,
-      available_qty=available_qty+$2,last_movement_at=NOW(),updated_at=NOW() WHERE material_code=$1`,[p.materialCode,Number(p.receivedQty)]);
-    else await client.query(`UPDATE non_iqc_inventory_controls SET on_hand_qty=on_hand_qty+$2,
-      quarantined_qty=quarantined_qty+$2,last_movement_at=NOW(),updated_at=NOW() WHERE material_code=$1`,[p.materialCode,Number(p.receivedQty)]);
-    await client.query("INSERT INTO non_iqc_governance_audit(entity_type,entity_id,event_type,actor,detail)VALUES('RECEIPT',$1,$2,$3,$4)",
-      [row.id,allPassed?"RECEIPT_AVAILABLE":"RECEIPT_QUARANTINED",String(p.actor??"WMS_RECEIVER"),JSON.stringify({checks:{po:p.poMatch,material:p.materialMatch,quantity:p.quantityMatch,visual:p.visualPass,date:p.dateValid,documents:p.documentsComplete}})]);
-    await client.query("COMMIT");res.status(201).json(mutateEnvelope(row));
-  }catch(error){
-    await client.query("ROLLBACK").catch(()=>{});
-    if(error.code==="23505"&&p.sourceEventId){
-      const duplicate=(await client.query("SELECT * FROM non_iqc_receipts WHERE source_event_id=$1",[p.sourceEventId])).rows[0];
-      if(duplicate)return res.json(mutateEnvelope({...duplicate,duplicateDelivery:true}));
-    }
-    res.status(409).json(errorEnvelope("NON_IQC_RECEIPT_FAILED",error.message));
-  }finally{client.release();}
-});
-
-app.post("/api/wms/non-iqc/receipts/:id/dispositions",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},items=Array.isArray(p.items)?p.items:[];await client.query("BEGIN");
-    const receipt=(await client.query("SELECT * FROM non_iqc_receipts WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-    if(!receipt||!items.length)throw new Error("Receipt and disposition items are required");
-    const total=items.reduce((sum,x)=>sum+Number(x.qty??0),0);
-    if(Math.abs(total-Number(receipt.received_qty))>0.0001)throw new Error("Disposition quantity must equal received quantity");
-    const rows=[];
-    for(const item of items){
-      const risky=["ACCEPT_VARIANCE","CONCESSION","SCRAP"].includes(String(item.type));
-      if(risky&&(!Array.isArray(item.approvals)||item.approvals.length<2))throw new Error(`${item.type} requires documented approvals`);
-      rows.push((await client.query(`INSERT INTO non_iqc_receipt_dispositions
-        (receipt_id,disposition_type,qty,document_no,destination,approvals,sent_by)
-        VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [receipt.id,item.type,Number(item.qty),item.documentNo,item.destination??null,JSON.stringify(item.approvals??[]),String(p.actor??"WMS")])).rows[0]);
-    }
-    await client.query("UPDATE non_iqc_receipts SET status='DISPOSITION',updated_at=NOW() WHERE id=$1",[receipt.id]);
-    await client.query("COMMIT");res.status(201).json(mutateEnvelope({receiptId:receipt.id,items:rows}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_IQC_DISPOSITION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-iqc/dispositions/:id/receive",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const item=(await client.query(`UPDATE non_iqc_receipt_dispositions SET status='RECEIVED',received_by=$2,received_at=NOW()
-      WHERE id=$1 AND status='PENDING_RECEIPT' RETURNING *`,[req.params.id,String(p.actor??"RECEIVER")])).rows[0];
-    if(!item)throw new Error("Pending disposition not found");
-    const receipt=(await client.query("SELECT material_code FROM non_iqc_receipts WHERE id=$1",[item.receipt_id])).rows[0];
-    if(item.disposition_type==="ACCEPTED")await client.query(`UPDATE non_iqc_inventory_controls SET
-      quarantined_qty=GREATEST(0,quarantined_qty-$2),available_qty=available_qty+$2,updated_at=NOW() WHERE material_code=$1`,[receipt.material_code,item.qty]);
-    if(["RETURN","SCRAP"].includes(item.disposition_type))await client.query(`UPDATE non_iqc_inventory_controls SET
-      on_hand_qty=GREATEST(0,on_hand_qty-$2),quarantined_qty=GREATEST(0,quarantined_qty-$2),updated_at=NOW() WHERE material_code=$1`,[receipt.material_code,item.qty]);
-    await client.query("COMMIT");res.json(mutateEnvelope(item));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_IQC_DISPOSITION_RECEIVE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-iqc/issues",requirePermission("wms.execute"),async(req,res)=>{
-  const p=req.body?.payload??req.body??{};try{
-    if(!p.sourceEventId||!p.purposeType||!p.purposeRef||!p.costCenter)throw new Error("sourceEventId, purpose, and cost center are required");
-    const duplicate=(await pgPool.query("SELECT * FROM non_iqc_issue_requests WHERE source_event_id=$1",[p.sourceEventId])).rows[0];
-    if(duplicate)return res.json(mutateEnvelope({...duplicate,duplicateDelivery:true}));
-    const profile=(await pgPool.query("SELECT * FROM non_iqc_material_profiles WHERE material_code=$1 AND status='ACTIVE'",[p.materialCode])).rows[0];
-    if(!profile)throw new Error("Active non-IQC material profile not found");
-    const no=`NIR-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO non_iqc_issue_requests
-      (request_no,source_event_id,material_code,qty,uom,purpose_type,purpose_ref,cost_center,requester,required_approval_level)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [no,p.sourceEventId,p.materialCode,Number(p.qty),p.uom??"PCS",p.purposeType,p.purposeRef,p.costCenter,String(p.requester),profile.issue_approval_level])).rows[0];
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){
-    if(error.code==="23505"&&p.sourceEventId){
-      const duplicate=(await pgPool.query("SELECT * FROM non_iqc_issue_requests WHERE source_event_id=$1",[p.sourceEventId])).rows[0];
-      if(duplicate)return res.json(mutateEnvelope({...duplicate,duplicateDelivery:true}));
-    }
-    res.status(409).json(errorEnvelope("NON_IQC_ISSUE_REQUEST_FAILED",error.message));
-  }
-});
-
-app.post("/api/wms/non-iqc/issues/:id/approve",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},decision=String(p.decision??"").toUpperCase();
-    if(!["APPROVED","REJECTED"].includes(decision))throw new Error("Decision must be APPROVED or REJECTED");
-    const request=(await pgPool.query("SELECT * FROM non_iqc_issue_requests WHERE id=$1 AND status='PENDING_APPROVAL'",[req.params.id])).rows[0];
-    if(!request)throw new Error("Pending issue request not found");
-    if(String(p.actor)===String(request.requester))throw new Error("Requester cannot approve own request");
-    const approvals=[{role:p.actorRole,actor:p.actor,decision,at:new Date().toISOString()}];
-    const row=(await pgPool.query(`UPDATE non_iqc_issue_requests SET status=$2,approvals=$3 WHERE id=$1 RETURNING *`,
-      [request.id,decision,JSON.stringify(approvals)])).rows[0];
-    res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("NON_IQC_ISSUE_APPROVAL_FAILED",error.message));}
-});
-
-app.post("/api/wms/non-iqc/issues/:id/issue",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const request=(await client.query("SELECT * FROM non_iqc_issue_requests WHERE id=$1 AND status='APPROVED' FOR UPDATE",[req.params.id])).rows[0];
-    if(!request)throw new Error("Approved issue request not found");
-    const inventory=(await client.query("SELECT * FROM non_iqc_inventory_controls WHERE material_code=$1 FOR UPDATE",[request.material_code])).rows[0];
-    if(!inventory||Number(inventory.available_qty)<Number(request.qty))throw new Error("Insufficient available inventory");
-    const profile=(await client.query("SELECT * FROM non_iqc_material_profiles WHERE material_code=$1",[request.material_code])).rows[0];
-    await client.query(`UPDATE non_iqc_inventory_controls SET on_hand_qty=on_hand_qty-$2,available_qty=available_qty-$2,
-      last_movement_at=NOW(),updated_at=NOW() WHERE material_code=$1`,[request.material_code,request.qty]);
-    const row=(await client.query("UPDATE non_iqc_issue_requests SET status='ISSUED',issued_by=$2,issued_at=NOW() WHERE id=$1 RETURNING *",
-      [request.id,String(p.actor??"WMS")])).rows[0];
-    let loan=null;
-    if(profile.control_mode==="RETURNABLE"||profile.control_mode==="ASSET"){
-      if(!p.itemIdentifier||!p.expectedReturnAt)throw new Error("Returnable item identifier and expected return time are required");
-      loan=(await client.query(`INSERT INTO non_iqc_loans(loan_no,issue_request_id,item_identifier,borrower,expected_return_at)
-        VALUES($1,$2,$3,$4,$5) RETURNING *`,[`NIL-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`,request.id,p.itemIdentifier,request.requester,p.expectedReturnAt])).rows[0];
-    }
-    await client.query("COMMIT");res.json(mutateEnvelope({request:row,loan}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_IQC_ISSUE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-iqc/loans/:id/return",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},condition=String(p.condition??"GOOD").toUpperCase();await client.query("BEGIN");
-    const loan=(await client.query("SELECT * FROM non_iqc_loans WHERE id=$1 AND status IN('BORROWED','OVERDUE') FOR UPDATE",[req.params.id])).rows[0];
-    if(!loan)throw new Error("Open loan not found");
-    const request=(await client.query("SELECT * FROM non_iqc_issue_requests WHERE id=$1",[loan.issue_request_id])).rows[0];
-    const returned=condition==="GOOD";
-    const row=(await client.query(`UPDATE non_iqc_loans SET actual_return_at=NOW(),return_condition=$2,
-      status=$3,loss_resolution=$4 WHERE id=$1 RETURNING *`,
-      [loan.id,condition,returned?"RETURNED":condition==="LOST"?"LOST":"DAMAGED",p.lossResolution??null])).rows[0];
-    if(returned)await client.query(`UPDATE non_iqc_inventory_controls SET on_hand_qty=on_hand_qty+$2,available_qty=available_qty+$2,
-      last_movement_at=NOW(),updated_at=NOW() WHERE material_code=$1`,[request.material_code,request.qty]);
-    if(!returned&&!p.lossResolution)throw new Error("Damaged or lost return requires a loss resolution");
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_IQC_LOAN_RETURN_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/api/wms/non-iqc/receipts/:id/closure-check",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const receipt=(await client.query("SELECT * FROM non_iqc_receipts WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-    if(!receipt)throw new Error("Receipt not found");
-    const disposition=(await client.query(`SELECT COALESCE(SUM(qty),0) qty,
-      COALESCE(BOOL_AND(status IN('RECEIVED','COMPLETED')),FALSE) received
-      FROM non_iqc_receipt_dispositions WHERE receipt_id=$1`,[receipt.id])).rows[0];
-    const noDisposition=Number(disposition.qty)===0&&receipt.status==="AVAILABLE";
-    const checks=[
-      ["RECEIPT_QUANTITY_BALANCED",noDisposition||Math.abs(Number(disposition.qty)-Number(receipt.received_qty))<0.0001],
-      ["DIFFERENCES_RESOLVED",receipt.status!=="QUARANTINED"],
-      ["ISSUES_PURPOSE_BOUND",p.issuesPurposeBound===true],
-      ["RETURNABLES_CLOSED",p.returnablesClosed===true],
-      ["RETURNS_EXCHANGES_RECEIVED",noDisposition||disposition.received===true],
-      ["WMS_PHYSICAL_MATCH",p.wmsPhysicalMatch===true],
-      ["USAGE_SYSTEMS_SYNCHRONIZED",p.usageSystemsSynchronized===true],
-      ["FINANCE_POSTED",p.financePosted===true],
-      ["ALARMS_EXCEPTIONS_CLOSED",p.alarmsClosed===true],
-      ["AUDIT_COMPLETE",p.auditComplete===true]
-    ];
-    for(const [type,pass] of checks)await client.query(`INSERT INTO non_iqc_closure_checks(receipt_id,check_type,result)
-      VALUES($1,$2,$3) ON CONFLICT(receipt_id,check_type) DO UPDATE SET result=EXCLUDED.result,checked_at=NOW()`,
-      [receipt.id,type,pass?"PASS":"FAIL"]);
-    const closed=checks.every(x=>x[1]===true);
-    await client.query("UPDATE non_iqc_receipts SET status=$2,updated_at=NOW() WHERE id=$1",[receipt.id,closed?"CLOSED":"WAITING_CLOSURE"]);
-    await client.query("COMMIT");res.json(mutateEnvelope({receiptId:receipt.id,closed,checks:checks.map(([type,pass])=>({type,result:pass?"PASS":"FAIL"}))}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("NON_IQC_CLOSURE_FAILED",error.message));}finally{client.release();}
-});
-
-app.get("/quality/iqc-loop/dashboard",requirePermission("wms.view"),async(_req,res)=>{
-  try{
-    const [summary,lots,dispositions,capas]=await Promise.all([
-      pgPool.query(`SELECT
-        COUNT(*) FILTER(WHERE status NOT IN('CLOSED','EXCEPTION_CLOSED'))::int open_lots,
-        COUNT(*) FILTER(WHERE status IN('HOLD','REJECT','RETEST_PENDING','CONCESSION_PENDING'))::int blocked_lots,
-        COUNT(*) FILTER(WHERE status NOT IN('CLOSED','EXCEPTION_CLOSED') AND due_at<NOW())::int overdue_lots,
-        COUNT(*) FILTER(WHERE status='WAITING_CLOSURE')::int waiting_closure,
-        COALESCE(AVG(EXTRACT(EPOCH FROM(COALESCE(decision_at,NOW())-created_at))/60),0)::numeric(12,2) avg_decision_minutes
-        FROM iqc_control_lots`),
-      pgPool.query("SELECT * FROM iqc_control_lots ORDER BY created_at DESC LIMIT 100"),
-      pgPool.query("SELECT * FROM iqc_quantity_dispositions WHERE status='PENDING_RECEIPT' ORDER BY sent_at LIMIT 100"),
-      pgPool.query("SELECT * FROM supplier_quality_capa WHERE status<>'CLOSED' ORDER BY containment_due_at LIMIT 100")
-    ]);
-    res.json(mutateEnvelope({summary:summary.rows[0],lots:lots.rows,dispositions:dispositions.rows,capas:capas.rows}));
-  }catch(error){res.status(500).json(errorEnvelope("IQC_LOOP_DASHBOARD_FAILED",error.message));}
-});
-
-app.post("/quality/iqc-loop/lots",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const incoming=(await client.query("SELECT * FROM wms_incoming_records WHERE id=$1 FOR UPDATE",[p.incomingRecordId])).rows[0];
-    if(!incoming)throw new Error("Incoming record not found");
-    const risk=p.criticalMaterial||p.regulatoryMaterial?"CRITICAL":p.newSupplier||p.newMaterial||p.recentFailure?"HIGH":"NORMAL";
-    const mode=p.exemptApproved?"EXEMPT":risk==="CRITICAL"?"FULL":risk==="HIGH"?"TIGHTENED":p.reducedApproved?"REDUCED":"NORMAL";
-    const qty=Number(incoming.quantity_received),sample=mode==="FULL"?Math.ceil(qty):mode==="EXEMPT"?0:
-      mode==="TIGHTENED"?Math.min(Math.ceil(qty),Math.max(32,Math.ceil(Math.sqrt(qty)*3))):
-      mode==="REDUCED"?Math.min(Math.ceil(qty),Math.max(5,Math.ceil(Math.sqrt(qty)))):
-      Math.min(Math.ceil(qty),Math.max(13,Math.ceil(Math.sqrt(qty)*2)));
-    const hours=p.urgent?1:risk==="CRITICAL"?2:4,no=`IQC-${new Date().toISOString().slice(0,10).replaceAll("-","")}-${randomUUID().slice(0,6).toUpperCase()}`;
-    const row=(await client.query(`INSERT INTO iqc_control_lots
-      (inspection_lot_no,incoming_record_id,supplier_code,material_code,supplier_lot_no,production_date,expiry_date,
-       receipt_batch,received_qty,uom,risk_level,inspection_mode,sample_size,due_at,created_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW()+make_interval(hours=>$14::int),$15) RETURNING *`,
-      [no,incoming.id,incoming.supplier_code,incoming.material_code,incoming.lot_no,incoming.production_date,incoming.expiry_date,
-       incoming.batch_code||`RECEIPT-${incoming.id}`,qty,incoming.quantity_unit||"PCS",risk,mode,sample,hours,String(p.actor??req.user?.username??"IQC")])).rows[0];
-    await client.query("UPDATE wms_incoming_records SET inspection_status='in_progress',updated_at=NOW() WHERE id=$1",[incoming.id]);
-    await client.query("INSERT INTO iqc_governance_audit(control_lot_id,event_type,actor,detail)VALUES($1,'CONTROL_LOT_CREATED',$2,$3)",
-      [row.id,String(p.actor??"IQC"),JSON.stringify({risk,mode,sample})]);
-    await client.query("COMMIT");res.status(201).json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_CONTROL_LOT_CREATE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/quality/iqc-loop/lots/:id/measurements",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    if(!p.equipmentCalibrationValid)return res.status(409).json(errorEnvelope("EQUIPMENT_CALIBRATION_EXPIRED","Calibrated equipment is required"));
-    if(!p.inspectorQualified)return res.status(409).json(errorEnvelope("INSPECTOR_NOT_QUALIFIED","Qualified inspector is required"));
-    const value=p.measuredValue==null?null:Number(p.measuredValue),pass=p.result?String(p.result).toUpperCase()==="PASS":
-      (value!=null&&(p.lowerLimit==null||value>=Number(p.lowerLimit))&&(p.upperLimit==null||value<=Number(p.upperLimit)));
-    const row=(await pgPool.query(`INSERT INTO iqc_measurement_results
-      (control_lot_id,sample_no,inspection_item,standard_version,lower_limit,upper_limit,measured_value,text_result,result,
-       equipment_code,equipment_calibration_valid,inspector_id,inspector_qualified,environment,attachments)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,TRUE,$11,TRUE,$12,$13) RETURNING *`,
-      [req.params.id,p.sampleNo,p.inspectionItem,p.standardVersion,p.lowerLimit??null,p.upperLimit??null,value,p.textResult??null,
-       pass?"PASS":"FAIL",p.equipmentCode??null,String(p.inspectorId),JSON.stringify(p.environment??{}),JSON.stringify(p.attachments??[])])).rows[0];
-    await pgPool.query("UPDATE iqc_control_lots SET status='INSPECTING',inspector_id=$2,updated_at=NOW() WHERE id=$1",[req.params.id,p.inspectorId]);
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("IQC_MEASUREMENT_FAILED",error.message));}
-});
-
-app.post("/quality/iqc-loop/lots/:id/decision",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},decision=String(p.decision??"").toUpperCase();
-    if(!["PASS","REJECT","HOLD","SORTING","REWORK"].includes(decision))throw new Error("Unsupported IQC decision");
-    await client.query("BEGIN");const lot=(await client.query("SELECT * FROM iqc_control_lots WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-    if(!lot)throw new Error("IQC lot not found");
-    const measured=(await client.query("SELECT COUNT(*)::int total,COUNT(*) FILTER(WHERE result='FAIL')::int failed FROM iqc_measurement_results WHERE control_lot_id=$1",[lot.id])).rows[0];
-    if(lot.inspection_mode!=="EXEMPT"&&measured.total<lot.sample_size)throw new Error(`Sample incomplete: ${measured.total}/${lot.sample_size}`);
-    if(decision==="PASS"&&measured.failed>0)throw new Error("Failed measurements require disposition, retest approval, or concession");
-    const row=(await client.query("UPDATE iqc_control_lots SET status=$2,decision=$2,decision_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING *",[lot.id,decision])).rows[0];
-    await client.query("INSERT INTO iqc_governance_audit(control_lot_id,event_type,actor,detail)VALUES($1,'DECISION_RECORDED',$2,$3)",
-      [lot.id,String(p.actor??"QUALITY"),JSON.stringify({decision,failedMeasurements:measured.failed})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/quality/iqc-loop/lots/:id/dispositions",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},items=Array.isArray(p.items)?p.items:[];await client.query("BEGIN");
-    const lot=(await client.query("SELECT * FROM iqc_control_lots WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-    if(!lot||!items.length)throw new Error("IQC lot and disposition items are required");
-    const total=items.reduce((n,x)=>n+Number(x.qty??0),0);
-    if(Math.abs(total-Number(lot.received_qty))>0.0001)throw new Error(`Disposition quantity ${total} must equal received quantity ${lot.received_qty}`);
-    const rows=[];
-    for(const item of items)rows.push((await client.query(`INSERT INTO iqc_quantity_dispositions
-      (control_lot_id,disposition_type,qty,internal_lot_no,document_no,destination,sent_by)
-      VALUES($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-      [lot.id,item.type,Number(item.qty),item.internalLotNo??null,item.documentNo,item.destination??null,String(p.actor??"IQC")])).rows[0]);
-    await client.query("UPDATE iqc_control_lots SET status='DISPOSITION',updated_at=NOW() WHERE id=$1",[lot.id]);
-    await client.query("COMMIT");res.status(201).json(mutateEnvelope({controlLotId:lot.id,items:rows}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_DISPOSITION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/quality/iqc-loop/dispositions/:id/receive",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{};
-    const row=(await pgPool.query(`UPDATE iqc_quantity_dispositions SET status='RECEIVED',received_by=$2,received_at=NOW()
-      WHERE id=$1 AND status='PENDING_RECEIPT' RETURNING *`,[req.params.id,String(p.actor??"RECEIVER")])).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Pending disposition not found"));res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("IQC_DISPOSITION_RECEIVE_FAILED",error.message));}
-});
-
-app.post("/quality/iqc-loop/lots/:id/retest",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},no=`IQCR-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO iqc_retest_requests(request_no,control_lot_id,reason,evidence,requested_by)
-      VALUES($1,$2,$3,$4,$5) RETURNING *`,[no,req.params.id,p.reason,JSON.stringify(p.evidence??[]),String(p.actor??"IQC")])).rows[0];
-    await pgPool.query("UPDATE iqc_control_lots SET status='RETEST_PENDING',updated_at=NOW() WHERE id=$1",[req.params.id]);
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("IQC_RETEST_REQUEST_FAILED",error.message));}
-});
-
-app.post("/quality/iqc-loop/retests/:id/decision",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},decision=String(p.decision??"").toUpperCase();
-    if(!["APPROVED","REJECTED"].includes(decision))throw new Error("Retest decision must be APPROVED or REJECTED");
-    if(String(p.actorRole??"").toUpperCase()!=="QUALITY_MANAGER")throw new Error("Only QUALITY_MANAGER may approve or reject retest");
-    await client.query("BEGIN");
-    const row=(await client.query(`UPDATE iqc_retest_requests SET status=$2,approved_by=$3,approved_at=NOW()
-      WHERE id=$1 AND status='PENDING_APPROVAL' RETURNING *`,[req.params.id,decision,String(p.actor??"QUALITY_MANAGER")])).rows[0];
-    if(!row)throw new Error("Pending retest request not found");
-    await client.query("UPDATE iqc_control_lots SET status=$2,updated_at=NOW() WHERE id=$1",
-      [row.control_lot_id,decision==="APPROVED"?"INSPECTING":"REJECT"]);
-    await client.query("INSERT INTO iqc_governance_audit(control_lot_id,event_type,actor,detail)VALUES($1,'RETEST_DECIDED',$2,$3)",
-      [row.control_lot_id,String(p.actor??"QUALITY_MANAGER"),JSON.stringify({requestNo:row.request_no,decision})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_RETEST_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/quality/iqc-loop/lots/:id/concessions",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},qty=Number(p.approvedQty??0),hours=Number(p.validHours??0);
-    if(!p.workOrderCode||qty<=0||hours<=0||!p.riskControls)throw new Error("Work order, positive quantity, validity, and risk controls are required");
-    const no=`IQCC-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO iqc_concession_requests
-      (request_no,control_lot_id,work_order_code,approved_qty,valid_until,risk_controls,evidence,requested_by)
-      VALUES($1,$2,$3,$4,NOW()+make_interval(hours=>$5::int),$6,$7,$8) RETURNING *`,
-      [no,req.params.id,p.workOrderCode,qty,hours,JSON.stringify(p.riskControls),JSON.stringify(p.evidence??[]),String(p.actor??"IQC")])).rows[0];
-    await pgPool.query("UPDATE iqc_control_lots SET status='CONCESSION_PENDING',updated_at=NOW() WHERE id=$1",[req.params.id]);
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("IQC_CONCESSION_REQUEST_FAILED",error.message));}
-});
-
-app.post("/quality/iqc-loop/concessions/:id/decision",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},decision=String(p.decision??"").toUpperCase();
-    const required=["QUALITY_MANAGER","ENGINEERING","PMC","PRODUCTION_MANAGER"];
-    const approvals=Array.isArray(p.approvals)?p.approvals:[];
-    const roles=new Set(approvals.filter(x=>String(x.decision??"").toUpperCase()==="APPROVED").map(x=>String(x.role??"").toUpperCase()));
-    if(!["APPROVED","REJECTED"].includes(decision))throw new Error("Concession decision must be APPROVED or REJECTED");
-    if(decision==="APPROVED"&&!required.every(role=>roles.has(role)))throw new Error(`Missing approvals: ${required.filter(role=>!roles.has(role)).join(", ")}`);
-    await client.query("BEGIN");
-    const row=(await client.query(`UPDATE iqc_concession_requests SET status=$2,approvals=$3
-      WHERE id=$1 AND status='PENDING_APPROVAL' AND valid_until>NOW() RETURNING *`,
-      [req.params.id,decision,JSON.stringify(approvals)])).rows[0];
-    if(!row)throw new Error("Active pending concession request not found");
-    await client.query("UPDATE iqc_control_lots SET status=$2,updated_at=NOW() WHERE id=$1",
-      [row.control_lot_id,decision==="APPROVED"?"DISPOSITION":"REJECT"]);
-    await client.query("INSERT INTO iqc_governance_audit(control_lot_id,event_type,actor,detail)VALUES($1,'CONCESSION_DECIDED',$2,$3)",
-      [row.control_lot_id,String(p.actor??"QUALITY_MANAGER"),JSON.stringify({requestNo:row.request_no,decision,approvals})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_CONCESSION_DECISION_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/quality/iqc-loop/lots/:id/capa",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},severity=String(p.severity??"MAJOR").toUpperCase();
-    const lot=(await pgPool.query("SELECT * FROM iqc_control_lots WHERE id=$1",[req.params.id])).rows[0];
-    if(!lot)throw new Error("IQC lot not found");
-    const no=`CAPA-${Date.now()}-${randomUUID().slice(0,5).toUpperCase()}`;
-    const row=(await pgPool.query(`INSERT INTO supplier_quality_capa
-      (capa_no,control_lot_id,severity,supplier_code,containment_due_at,full_response_due_at)
-      VALUES($1,$2,$3,$4,NOW()+INTERVAL '48 hours',NOW()+INTERVAL '10 days') RETURNING *`,
-      [no,lot.id,severity,lot.supplier_code])).rows[0];
-    await pgPool.query("INSERT INTO iqc_governance_audit(control_lot_id,event_type,actor,detail)VALUES($1,'SUPPLIER_CAPA_OPENED',$2,$3)",
-      [lot.id,String(p.actor??"SQE"),JSON.stringify({capaNo:no,severity})]);
-    res.status(201).json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("IQC_CAPA_CREATE_FAILED",error.message));}
-});
-
-app.patch("/quality/iqc-loop/capa/:id",requirePermission("wms.execute"),async(req,res)=>{
-  try{
-    const p=req.body?.payload??req.body??{},action=String(p.action??"").toUpperCase();
-    const allowed=["ACKNOWLEDGE","CONTAINMENT","FULL_RESPONSE","CLOSE"];
-    if(!allowed.includes(action))throw new Error(`CAPA action must be ${allowed.join(", ")}`);
-    if(action==="CLOSE"&&!p.effectivenessResult)throw new Error("Effectiveness result is required to close CAPA");
-    const row=(await pgPool.query(`UPDATE supplier_quality_capa SET
-      status=CASE $2 WHEN 'ACKNOWLEDGE' THEN 'ACKNOWLEDGED' WHEN 'CONTAINMENT' THEN 'CONTAINED'
-        WHEN 'FULL_RESPONSE' THEN 'RESPONSE_RECEIVED' WHEN 'CLOSE' THEN 'CLOSED' END,
-      supplier_ack_at=CASE WHEN $2='ACKNOWLEDGE' THEN NOW() ELSE supplier_ack_at END,
-      containment=COALESCE($3,containment),root_cause=COALESCE($4,root_cause),
-      corrective_action=COALESCE($5,corrective_action),effectiveness_result=COALESCE($6,effectiveness_result),
-      closed_by=CASE WHEN $2='CLOSE' THEN $7 ELSE closed_by END,
-      closed_at=CASE WHEN $2='CLOSE' THEN NOW() ELSE closed_at END
-      WHERE id=$1 AND status<>'CLOSED' RETURNING *`,
-      [req.params.id,action,p.containment??null,p.rootCause??null,p.correctiveAction??null,p.effectivenessResult??null,String(p.actor??"SQE")])).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","Open CAPA not found"));
-    res.json(mutateEnvelope(row));
-  }catch(error){res.status(409).json(errorEnvelope("IQC_CAPA_UPDATE_FAILED",error.message));}
-});
-
-app.post("/quality/iqc-loop/lots/:id/exception-close",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{},required=["QUALITY_MANAGER","WMS_MANAGER","PROCUREMENT_MANAGER","FINANCE_MANAGER"];
-    const approvals=Array.isArray(p.approvals)?p.approvals:[];
-    const roles=new Set(approvals.filter(x=>String(x.decision??"").toUpperCase()==="APPROVED").map(x=>String(x.role??"").toUpperCase()));
-    if(!p.reason||!required.every(role=>roles.has(role)))throw new Error(`Reason and approvals required: ${required.join(", ")}`);
-    await client.query("BEGIN");
-    const row=(await client.query(`UPDATE iqc_control_lots SET status='EXCEPTION_CLOSED',updated_at=NOW()
-      WHERE id=$1 AND status='WAITING_CLOSURE' RETURNING *`,[req.params.id])).rows[0];
-    if(!row)throw new Error("Only a lot waiting for closure can be exceptionally closed");
-    await client.query("INSERT INTO iqc_governance_audit(control_lot_id,event_type,actor,detail)VALUES($1,'EXCEPTION_CLOSED',$2,$3)",
-      [row.id,String(p.actor??"QUALITY_MANAGER"),JSON.stringify({reason:p.reason,approvals})]);
-    await client.query("COMMIT");res.json(mutateEnvelope(row));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_EXCEPTION_CLOSE_FAILED",error.message));}finally{client.release();}
-});
-
-app.post("/quality/iqc-loop/lots/:id/closure-check",requirePermission("wms.execute"),async(req,res)=>{
-  const client=await pgPool.connect();try{
-    const p=req.body?.payload??req.body??{};await client.query("BEGIN");
-    const lot=(await client.query("SELECT * FROM iqc_control_lots WHERE id=$1 FOR UPDATE",[req.params.id])).rows[0];
-    if(!lot)throw new Error("IQC lot not found");
-    const measured=(await client.query("SELECT COUNT(*)::int total,BOOL_AND(equipment_calibration_valid) calibration,BOOL_AND(inspector_qualified) qualified FROM iqc_measurement_results WHERE control_lot_id=$1",[lot.id])).rows[0];
-    const disposition=(await client.query("SELECT COALESCE(SUM(qty),0) qty,BOOL_AND(status IN('RECEIVED','COMPLETED')) received FROM iqc_quantity_dispositions WHERE control_lot_id=$1",[lot.id])).rows[0];
-    const checks=[
-      ["QUANTITY_BALANCE",Math.abs(Number(disposition.qty)-Number(lot.received_qty))<0.0001],
-      ["SAMPLE_COMPLETE",lot.inspection_mode==="EXEMPT"||measured.total>=lot.sample_size],
-      ["MEASUREMENT_COMPLETE",lot.inspection_mode==="EXEMPT"||measured.total>0],
-      ["CALIBRATION_VALID",lot.inspection_mode==="EXEMPT"||measured.calibration===true],
-      ["INSPECTOR_QUALIFIED",lot.inspection_mode==="EXEMPT"||measured.qualified===true],
-      ["DISPOSITION_RECEIVED",disposition.received===true],
-      ["RETEST_CLOSED",p.retestClosed!==false],
-      ["CONCESSION_CONTROLLED",p.concessionControlled!==false],
-      ["SUPPLIER_CAPA_STARTED",p.capaRequired?p.capaStarted===true:true],
-      ["WMS_SYNCHRONIZED",p.wmsSynchronized===true],
-      ["FINANCE_POSTED",p.financePosted===true],
-      ["OPEN_EXCEPTIONS_CLOSED",p.openExceptionsClosed===true]
-    ];
-    for(const [type,pass] of checks)await client.query(`INSERT INTO iqc_closure_checks(control_lot_id,check_type,result,detail)
-      VALUES($1,$2,$3,'{}') ON CONFLICT(control_lot_id,check_type) DO UPDATE SET result=EXCLUDED.result,checked_at=NOW()`,[lot.id,type,pass?"PASS":"FAIL"]);
-    const closed=checks.every(x=>x[1]===true);
-    if(closed)await client.query("UPDATE iqc_control_lots SET status='CLOSED',updated_at=NOW() WHERE id=$1",[lot.id]);
-    else await client.query("UPDATE iqc_control_lots SET status='WAITING_CLOSURE',updated_at=NOW() WHERE id=$1",[lot.id]);
-    await client.query("COMMIT");res.json(mutateEnvelope({controlLotId:lot.id,closed,checks:checks.map(([type,pass])=>({type,result:pass?"PASS":"FAIL"}))}));
-  }catch(error){await client.query("ROLLBACK").catch(()=>{});res.status(409).json(errorEnvelope("IQC_CLOSURE_CHECK_FAILED",error.message));}finally{client.release();}
-});
-
-app.patch("/api/wms/material-loading/:id/release", requirePermission("wms.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { line_leader_id } = req.body;
-    const r=await client.query(`UPDATE wms_material_loading SET loading_status='released',released_at=NOW(),line_leader_id=$1
-      WHERE id=$2 AND loading_status='confirmed' AND quality_gate_passed=true RETURNING id`,[line_leader_id,req.params.id]);
-    if(!r.rowCount)return res.status(409).json(errorEnvelope("QUALITY_GATE_BLOCKED","Only confirmed records with all quality gates passed may be released"));
-    res.json({affected:r.rowCount});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-// Feeder change / 换料
-app.post("/api/wms/feeder-changes", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
-  try {
-    const { work_order_no, station_code, feeder_no, slot_no, old_lot_no, new_lot_no,
-            old_material_code, new_material_code, change_reason, operator_id, change_type } = req.body;
-    const [r] = await client.query(
-      `INSERT INTO wms_feeder_changes (work_order_no,station_code,feeder_no,slot_no,old_lot_no,new_lot_no,old_material_code,new_material_code,change_reason,operator_id,change_type)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [work_order_no,station_code,feeder_no,slot_no,old_lot_no,new_lot_no,old_material_code,new_material_code,change_reason,operator_id,change_type||"lot_change"]);
-    res.json({ id: r.insertId });
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.get("/api/wms/feeder-changes", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
-  try {
-    const { work_order_no, station_code, limit=200, offset=0 } = req.query;
-    let where = ["1=1"]; let p = [];
-    if (work_order_no) { where.push("work_order_no=?"); p.push(work_order_no); }
-    if (station_code)  { where.push("station_code=?");  p.push(station_code); }
-    const [rows] = await client.query(
-      `SELECT * FROM wms_feeder_changes WHERE ${where.join(" AND ")} ORDER BY created_at DESC LIMIT ? OFFSET ?`,
-      [...p, Number(limit), Number(offset)]);
-    res.json({ items: rows });
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-// Line stop / 停线
-app.post("/api/wms/line-stops", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
-  try {
-    const { work_order_no, station_code, stop_reason, stop_reason_code, start_time, operator_id } = req.body;
-    const [r] = await client.query(
-      `INSERT INTO wms_line_stops (work_order_no,station_code,stop_reason,stop_reason_code,start_time,operator_id)
-       VALUES (?,?,?,?,?,?)`,
-      [work_order_no,station_code,stop_reason,stop_reason_code||"other",start_time||new Date().toISOString(),operator_id]);
-    res.json({ id: r.insertId });
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.patch("/api/wms/line-stops/:id/end", requirePermission("wms.write"), async (req, res) => {
-  const client = await getClient();
-  try {
-    const { resolution, production_loss } = req.body;
-    const [r] = await client.query(
-      `UPDATE wms_line_stops SET end_time=NOW(),
-       duration_minutes=TIMESTAMPDIFF(MINUTE,start_time,NOW()),
-       resolution=?, production_loss=? WHERE id=? AND end_time IS NULL`,
-      [resolution, production_loss||0, req.params.id]);
-    res.json({ affected: r.affectedRows });
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.get("/api/wms/line-stops", requirePermission("wms.read"), async (req, res) => {
-  const client = await getClient();
-  try {
-    const { station_code, start_date, end_date, limit=200, offset=0 } = req.query;
-    let where = ["1=1"]; let p = [];
-    if (station_code) { where.push("station_code=?"); p.push(station_code); }
-    if (start_date)   { where.push("start_time>=?"); p.push(start_date); }
-    if (end_date)     { where.push("start_time<=?"); p.push(end_date); }
-    const [rows] = await client.query(
-      `SELECT * FROM wms_line_stops WHERE ${where.join(" AND ")} ORDER BY start_time DESC LIMIT ? OFFSET ?`,
-      [...p, Number(limit), Number(offset)]);
-    res.json({ items: rows });
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-// ── SN Traceability / SN追溯 ─────────────────────────────────────────────────
-app.post("/api/wms/sn-material-lot", requirePermission("wms.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { sn_no, material_lot_no, material_code, material_name, work_order_no, station_code, loaded_at, operator_id, qty_per_unit } = req.body;
-    if(!sn_no||!material_lot_no||!material_code)return res.status(400).json(errorEnvelope("VALIDATION","sn_no, material_lot_no and material_code required"));
-    const lot=await client.query(`SELECT ml.id FROM material_lots ml JOIN materials m ON m.id=ml.material_id
-      WHERE ml.lot_no=$1 AND UPPER(m.code)=UPPER($2)`,[material_lot_no,material_code]);
-    if(!lot.rows[0])return res.status(409).json(errorEnvelope("LOT_MATERIAL_MISMATCH","Lot and material do not match canonical inventory"));
-    const r=await client.query(`INSERT INTO wms_sn_material_lots
-      (sn_no,material_lot_no,material_code,material_name,work_order_no,station_code,loaded_at,operator_id,qty_per_unit)
-      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-      [sn_no,material_lot_no,material_code,material_name||"",work_order_no||null,station_code||null,loaded_at||new Date(),operator_id||null,qty_per_unit||1]);
-    res.status(201).json({id:r.rows[0].id});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.get("/api/wms/sn-material-lot/:sn", requirePermission("wms.view"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const rows=await client.query(`SELECT * FROM wms_sn_material_lots WHERE sn_no=$1 ORDER BY loaded_at`,[req.params.sn]);
-    res.json(rows.rows);
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-// ── Finished Goods / 成品入库 ────────────────────────────────────────────────
-app.post("/api/wms/finished-goods", requirePermission("wms.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { sn_no, work_order_no, material_code, material_name, batch_code, production_date,
-            qty, location_code, warehouse_zone, customer_code, customer_order_no } = req.body;
-    const route=await client.query(`SELECT ps.status,wo.code FROM pcb_serials ps JOIN work_orders wo ON wo.id=ps.work_order_id
-      WHERE ps.serial_no=$1 AND wo.code=$2`,[sn_no,work_order_no]);
-    if(!route.rows[0])return res.status(404).json(errorEnvelope("SN_NOT_FOUND","SN/work-order binding not found"));
-    if(!["completed","packed","finished"].includes(String(route.rows[0].status).toLowerCase()))
-      return res.status(409).json(errorEnvelope("ROUTE_INCOMPLETE","SN has not completed every required station"));
-    const r=await client.query(
-      `INSERT INTO wms_finished_goods (sn_no,work_order_no,material_code,material_name,batch_code,production_date,qty,location_code,warehouse_zone,customer_code,customer_order_no,stored_at,stored_by,status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12,'pending_oqc') RETURNING id`,
-      [sn_no,work_order_no,material_code,material_name||"",batch_code||"",production_date,qty||1,location_code||"",warehouse_zone||"",customer_code||"",customer_order_no||"",req.body.operator_id||""]);
-    res.status(201).json({id:r.rows[0].id});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.get("/api/wms/finished-goods", requirePermission("wms.view"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { status, material_code, customer_order_no, limit=200, offset=0 } = req.query;
-    const p=[status||null,material_code||null,customer_order_no||null];
-    const rows=await client.query(`SELECT * FROM wms_finished_goods WHERE
-      ($1::text IS NULL OR status=$1) AND ($2::text IS NULL OR material_code=$2)
-      AND ($3::text IS NULL OR customer_order_no=$3) ORDER BY created_at DESC LIMIT $4 OFFSET $5`,[...p,Number(limit),Number(offset)]);
-    const count=await client.query(`SELECT COUNT(*)::int total FROM wms_finished_goods WHERE
-      ($1::text IS NULL OR status=$1) AND ($2::text IS NULL OR material_code=$2)
-      AND ($3::text IS NULL OR customer_order_no=$3)`,p);
-    res.json({items:rows.rows,total:count.rows[0].total,limit:Number(limit),offset:Number(offset)});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.patch("/api/wms/finished-goods/:id/oqc", requirePermission("quality.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { iqc_status, oqc_inspector } = req.body;
-    if(!["passed","failed"].includes(iqc_status))return res.status(400).json(errorEnvelope("VALIDATION","OQC status must be passed or failed"));
-    const r=await client.query(`UPDATE wms_finished_goods SET iqc_status=$1,oqc_inspector=$2,oqc_inspected_at=NOW(),
-      stored_at=CASE WHEN $1='passed' THEN NOW() ELSE NULL END,status=CASE WHEN $1='passed' THEN 'in_stock' ELSE 'oqc_failed' END
-      WHERE id=$3 AND status='pending_oqc' RETURNING id`,[iqc_status,oqc_inspector,req.params.id]);
-    if(!r.rowCount)return res.status(409).json(errorEnvelope("INVALID_STATE","Only pending OQC goods may be decided"));
-    res.json({affected:r.rowCount});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-// ── Outbound / 出货管理 ──────────────────────────────────────────────────────
-app.post("/api/wms/outbound-orders", requirePermission("wms.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { outbound_no, customer_code, customer_name, customer_order_no, outbound_type,
-            planned_date, operator_id, destination, notes } = req.body;
-    const r=await client.query(
-      `INSERT INTO wms_outbound_orders (outbound_no,customer_code,customer_name,customer_order_no,outbound_type,planned_date,operator_id,destination)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
-      [outbound_no, customer_code, customer_name||"", customer_order_no||"", outbound_type||"sales",
-       planned_date||null, operator_id||"", destination||""]);
-    res.status(201).json({id:r.rows[0].id});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.post("/api/wms/outbound-orders/:id/items", requirePermission("wms.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { sn_list, material_code, batch_code } = req.body;
-    // sn_list: array of {sn_no, qty}
-    if(!Array.isArray(sn_list)||!sn_list.length)return res.status(400).json(errorEnvelope("VALIDATION","sn_list required"));
-    await client.query("BEGIN");
-    for(const sn of sn_list){
-      const fg=await client.query("SELECT status FROM wms_finished_goods WHERE sn_no=$1 FOR UPDATE",[sn.sn_no]);
-      if(fg.rows[0]?.status!=="in_stock")throw new Error(`SN_NOT_AVAILABLE:${sn.sn_no}`);
-      await client.query(`INSERT INTO wms_outbound_items(outbound_order_id,sn_no,material_code,batch_code,qty)
-        VALUES($1,$2,$3,$4,$5)`,[req.params.id,sn.sn_no,material_code||null,batch_code||null,sn.qty||1]);
-      await client.query("UPDATE wms_finished_goods SET status='reserved',updated_at=NOW() WHERE sn_no=$1",[sn.sn_no]);
-    }
-    await client.query(`UPDATE wms_outbound_orders SET total_qty=(SELECT COALESCE(SUM(qty),0) FROM wms_outbound_items WHERE outbound_order_id=$1),
-      status='picking',updated_at=NOW() WHERE id=$1`,[req.params.id]);
-    await client.query("COMMIT");
-    res.json({added:sn_list.length});
-  } catch(e) { await client.query("ROLLBACK").catch(()=>{}); console.error(e); res.status(409).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.patch("/api/wms/outbound-orders/:id/ship", requirePermission("wms.execute"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { logistics_no, shipping_method } = req.body;
-    if(!logistics_no)return res.status(400).json(errorEnvelope("LOAD_CONFIRMATION_REQUIRED","Logistics/load scan reference required"));
-    await client.query("BEGIN");
-    const items=await client.query("SELECT sn_no FROM wms_outbound_items WHERE outbound_order_id=$1 FOR UPDATE",[req.params.id]);
-    if(!items.rowCount)throw new Error("OUTBOUND_EMPTY");
-    const r=await client.query(`UPDATE wms_outbound_orders SET status='shipped',actual_date=CURRENT_DATE,logistics_no=$1,
-      shipping_method=$2,updated_at=NOW() WHERE id=$3 AND status IN('picking','packed') RETURNING id`,[logistics_no,shipping_method||"",req.params.id]);
-    if(!r.rowCount)throw new Error("INVALID_OUTBOUND_STATE");
-    await client.query(`UPDATE wms_finished_goods fg SET status='shipped',updated_at=NOW()
-      FROM wms_outbound_items oi WHERE oi.sn_no=fg.sn_no AND oi.outbound_order_id=$1`,[req.params.id]);
-    await client.query("COMMIT");
-    res.json({affected:r.rowCount});
-  } catch(e) { await client.query("ROLLBACK").catch(()=>{}); console.error(e); res.status(409).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.get("/api/wms/outbound-orders", requirePermission("wms.view"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const { status, customer_code, limit=200, offset=0 } = req.query;
-    const rows=await client.query(`SELECT * FROM wms_outbound_orders
-      WHERE ($1::text IS NULL OR status=$1) AND ($2::text IS NULL OR customer_code=$2)
-      ORDER BY created_at DESC LIMIT $3 OFFSET $4`,[status||null,customer_code||null,Number(limit),Number(offset)]);
-    res.json({items:rows.rows});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
-
-app.get("/api/wms/outbound-orders/:id", requirePermission("wms.view"), async (req, res) => {
-  const client = await pgPool.connect();
-  try {
-    const order=await client.query("SELECT * FROM wms_outbound_orders WHERE id=$1",[req.params.id]);
-    if(!order.rows[0])return res.status(404).json(errorEnvelope("NOT_FOUND","Outbound order not found"));
-    const items=await client.query("SELECT * FROM wms_outbound_items WHERE outbound_order_id=$1 ORDER BY id",[req.params.id]);
-    res.json({...order.rows[0],items:items.rows});
-  } catch(e) { console.error(e); res.status(500).json({error:e.message}); }
-  finally { client.release(); }
-});
 
 
 
@@ -25526,188 +21623,13 @@ async function auditWmsMaster(req, action, entityType, entityKey, beforeData, af
   );
 }
 
-app.get("/wms/warehouses", requirePermission("wms.execute"), async (_req, res) => {
-  const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,warehouse_type AS "warehouseType",site_code AS "siteCode",status,manager_id AS "managerId" FROM wms_warehouses ORDER BY code`);
-  res.json(listEnvelope(rows.rows));
+// The master-data domain (21 routes) lives in src/routes/master-data.js. _auditWmsMaster
+// stays in server.js: it has three call sites outside this block, so it is injected.
+registerMasterDataRoutes(app, {
+  query, requirePermission, listEnvelope, errorEnvelope, mutateEnvelope, envelope,
+  auditWmsMaster,
 });
 
-app.post("/wms/warehouses", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const p = req.body?.payload ?? req.body ?? {};
-    if (!p.code || !p.nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "code and nameZh required"));
-    const result = await query(
-      `INSERT INTO wms_warehouses(code,name_zh,name_en,name_vi,warehouse_type,site_code,status,manager_id)
-       VALUES(upper($1),$2,$3,$4,coalesce($5,'RAW_MATERIAL'),coalesce($6,'VN-01'),coalesce(upper($7),'ACTIVE'),$8) RETURNING *`,
-      [p.code,p.nameZh,p.nameEn ?? null,p.nameVi ?? null,p.warehouseType ?? null,p.siteCode ?? null,p.status ?? null,p.managerId ?? null],
-    );
-    await auditWmsMaster(req,"CREATE","WAREHOUSE",result.rows[0].code,null,result.rows[0]);
-    res.status(201).json(mutateEnvelope(result.rows[0]));
-  } catch (err) { res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message)); }
-});
-
-app.patch("/wms/warehouses/:id", requirePermission("wms.execute"), async (req, res) => {
-  try {
-    const before = await query("SELECT * FROM wms_warehouses WHERE id=$1",[req.params.id]);
-    if (!before.rows[0]) return res.status(404).json(errorEnvelope("NOT_FOUND","warehouse not found"));
-    const p=req.body?.payload ?? req.body ?? {};
-    const result=await query(`UPDATE wms_warehouses SET name_zh=coalesce($2,name_zh),name_en=coalesce($3,name_en),name_vi=coalesce($4,name_vi),warehouse_type=coalesce($5,warehouse_type),site_code=coalesce($6,site_code),status=coalesce(upper($7),status),manager_id=coalesce($8,manager_id),updated_at=now() WHERE id=$1 RETURNING *`,[req.params.id,p.nameZh ?? null,p.nameEn ?? null,p.nameVi ?? null,p.warehouseType ?? null,p.siteCode ?? null,p.status ?? null,p.managerId ?? null]);
-    await auditWmsMaster(req,"UPDATE","WAREHOUSE",before.rows[0].code,before.rows[0],result.rows[0]);
-    res.json(mutateEnvelope(result.rows[0]));
-  } catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.get("/wms/zones", requirePermission("wms.execute"), async (req,res) => {
-  const params=[]; let where="";
-  if(req.query.warehouseId){params.push(req.query.warehouseId);where="WHERE z.warehouse_id=$1";}
-  const rows=await query(`SELECT z.*,w.code AS "warehouseCode" FROM wms_zones z JOIN wms_warehouses w ON w.id=z.warehouse_id ${where} ORDER BY w.code,z.code`,params);
-  res.json(listEnvelope(rows.rows));
-});
-
-app.post("/wms/zones", requirePermission("wms.execute"), async(req,res)=>{
-  try{
-    const p=req.body?.payload ?? req.body ?? {};
-    if(!p.warehouseId||!p.code||!p.nameZh||!p.zoneType)return res.status(400).json(errorEnvelope("VALIDATION","warehouseId, code, nameZh and zoneType required"));
-    const wh=await query("SELECT id,status FROM wms_warehouses WHERE id=$1",[p.warehouseId]);
-    if(!wh.rows[0]||wh.rows[0].status!=="ACTIVE")return res.status(400).json(errorEnvelope("VALIDATION","active warehouse required"));
-    const result=await query(`INSERT INTO wms_zones(warehouse_id,code,name_zh,name_en,name_vi,zone_type,temperature_min,temperature_max,humidity_min,humidity_max,status) VALUES($1,upper($2),$3,$4,$5,$6,$7,$8,$9,$10,coalesce(upper($11),'ACTIVE')) RETURNING *`,[p.warehouseId,p.code,p.nameZh,p.nameEn??null,p.nameVi??null,p.zoneType,p.temperatureMin??null,p.temperatureMax??null,p.humidityMin??null,p.humidityMax??null,p.status??null]);
-    await auditWmsMaster(req,"CREATE","WAREHOUSE_ZONE",result.rows[0].id,null,result.rows[0]);
-    res.status(201).json(mutateEnvelope(result.rows[0]));
-  }catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.patch("/wms/zones/:id", requirePermission("wms.execute"), async(req,res)=>{
-  try {
-    const before=(await query("SELECT * FROM wms_zones WHERE id=$1",[req.params.id])).rows[0];
-    if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","zone not found"));
-    const p=req.body?.payload??req.body??{};
-    const result=await query(`UPDATE wms_zones SET name_zh=coalesce($2,name_zh),name_en=coalesce($3,name_en),name_vi=coalesce($4,name_vi),zone_type=coalesce($5,zone_type),temperature_min=coalesce($6,temperature_min),temperature_max=coalesce($7,temperature_max),humidity_min=coalesce($8,humidity_min),humidity_max=coalesce($9,humidity_max),status=coalesce(upper($10),status),updated_at=now() WHERE id=$1 RETURNING *`,[req.params.id,p.nameZh??null,p.nameEn??null,p.nameVi??null,p.zoneType??null,p.temperatureMin??null,p.temperatureMax??null,p.humidityMin??null,p.humidityMax??null,p.status??null]);
-    await auditWmsMaster(req,"UPDATE","WAREHOUSE_ZONE",before.id,before,result.rows[0]);
-    res.json(mutateEnvelope(result.rows[0]));
-  } catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.post("/wms/storage-locations", requirePermission("wms.execute"), async(req,res)=>{
-  try{
-    const p=req.body?.payload ?? req.body ?? {};
-    if(!p.code||!p.area||!p.nameZh||!p.warehouseId||!p.zoneId)return res.status(400).json(errorEnvelope("VALIDATION","code, area, nameZh, warehouseId and zoneId required"));
-    const zone=await query("SELECT id FROM wms_zones WHERE id=$1 AND warehouse_id=$2 AND status='ACTIVE'",[p.zoneId,p.warehouseId]);
-    if(!zone.rows[0])return res.status(400).json(errorEnvelope("VALIDATION","active zone must belong to warehouse"));
-    const result=await query(`INSERT INTO storage_locations(code,qr_code,area,name_zh,name_en,name_vi,status,warehouse_id,zone_id,capacity_qty,location_type,length_cm,width_cm,height_cm,allow_receiving,allow_transfer,allow_putaway,x_coord,y_coord,coordinate_system,aisle_code,rack_code,level_code,bin_code,temperature_min,temperature_max,humidity_min,humidity_max,msd_allowed,max_pallets)
-      VALUES(upper($1),coalesce($2,upper($1)),$3,$4,coalesce($5,$4),coalesce($6,$4),'active',$7,$8,$9,coalesce($10,'STANDARD'),$11,$12,$13,coalesce($14,true),coalesce($15,true),coalesce($16,true),$17,$18,coalesce($19,'WAREHOUSE_MAP'),$20,$21,$22,$23,$24,$25,$26,$27,coalesce($28,true),$29) RETURNING *`,[p.code,p.qrCode??null,p.area,p.nameZh,p.nameEn??null,p.nameVi??null,p.warehouseId,p.zoneId,p.capacityQty??null,p.locationType??null,p.lengthCm??null,p.widthCm??null,p.heightCm??null,p.allowReceiving,p.allowTransfer,p.allowPutaway,p.xCoord??null,p.yCoord??null,p.coordinateSystem??null,p.aisleCode??null,p.rackCode??null,p.levelCode??null,p.binCode??null,p.temperatureMin??null,p.temperatureMax??null,p.humidityMin??null,p.humidityMax??null,p.msdAllowed,p.maxPallets??null]);
-    await auditWmsMaster(req,"CREATE","STORAGE_LOCATION",result.rows[0].code,null,result.rows[0]);
-    res.status(201).json(mutateEnvelope(result.rows[0]));
-  }catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.patch("/wms/storage-locations/:id", requirePermission("wms.execute"), async(req,res)=>{
-  try {
-    const before=(await query("SELECT * FROM storage_locations WHERE id=$1",[req.params.id])).rows[0];
-    if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","location not found"));
-    const p=req.body?.payload??req.body??{};
-    if(p.zoneId||p.warehouseId){
-      const zone=await query("SELECT id FROM wms_zones WHERE id=$1 AND warehouse_id=$2 AND status='ACTIVE'",[p.zoneId??before.zone_id,p.warehouseId??before.warehouse_id]);
-      if(!zone.rows[0])return res.status(400).json(errorEnvelope("VALIDATION","active zone must belong to warehouse"));
-    }
-    const result=await query(`UPDATE storage_locations SET qr_code=coalesce($2,qr_code),area=coalesce($3,area),name_zh=coalesce($4,name_zh),name_en=coalesce($5,name_en),name_vi=coalesce($6,name_vi),status=coalesce(lower($7),status),warehouse_id=coalesce($8,warehouse_id),zone_id=coalesce($9,zone_id),capacity_qty=coalesce($10,capacity_qty),location_type=coalesce($11,location_type),length_cm=coalesce($12,length_cm),width_cm=coalesce($13,width_cm),height_cm=coalesce($14,height_cm),allow_receiving=coalesce($15,allow_receiving),allow_transfer=coalesce($16,allow_transfer),allow_putaway=coalesce($17,allow_putaway),locked_reason=$18,x_coord=coalesce($19,x_coord),y_coord=coalesce($20,y_coord),coordinate_system=coalesce($21,coordinate_system),aisle_code=coalesce($22,aisle_code),rack_code=coalesce($23,rack_code),level_code=coalesce($24,level_code),bin_code=coalesce($25,bin_code),temperature_min=coalesce($26,temperature_min),temperature_max=coalesce($27,temperature_max),humidity_min=coalesce($28,humidity_min),humidity_max=coalesce($29,humidity_max),msd_allowed=coalesce($30,msd_allowed),max_pallets=coalesce($31,max_pallets) WHERE id=$1 RETURNING *`,[req.params.id,p.qrCode??null,p.area??null,p.nameZh??null,p.nameEn??null,p.nameVi??null,p.status??null,p.warehouseId??null,p.zoneId??null,p.capacityQty??null,p.locationType??null,p.lengthCm??null,p.widthCm??null,p.heightCm??null,p.allowReceiving,p.allowTransfer,p.allowPutaway,Object.prototype.hasOwnProperty.call(p,"lockedReason")?p.lockedReason:before.locked_reason,p.xCoord??null,p.yCoord??null,p.coordinateSystem??null,p.aisleCode??null,p.rackCode??null,p.levelCode??null,p.binCode??null,p.temperatureMin??null,p.temperatureMax??null,p.humidityMin??null,p.humidityMax??null,p.msdAllowed,p.maxPallets??null]);
-    await auditWmsMaster(req,"UPDATE","STORAGE_LOCATION",before.code,before,result.rows[0]);
-    res.json(mutateEnvelope(result.rows[0]));
-  } catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.put("/wms/storage-locations/:id/material-rules", requirePermission("wms.execute"), async(req,res)=>{
-  try {
-    const locationId=Number(req.params.id); const rules=Array.isArray(req.body?.rules) ? req.body.rules : (req.body?.payload?.rules ?? []);
-    await query("DELETE FROM wms_location_material_rules WHERE location_id=$1",[locationId]);
-    for (const rule of rules) {
-      if (!rule.materialId || !['ALLOW','BLOCK'].includes(String(rule.ruleType).toUpperCase())) continue;
-      await query("INSERT INTO wms_location_material_rules(location_id,material_id,rule_type,reason) VALUES($1,$2,$3,$4)",[locationId,Number(rule.materialId),String(rule.ruleType).toUpperCase(),rule.reason??null]);
-    }
-    res.json(mutateEnvelope({locationId,rules}));
-  } catch(err){ res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message)); }
-});
-
-app.post("/wms/storage-locations/:id/validate", requirePermission("wms.execute"), async(req,res)=>{
-  try {
-    const p=req.body?.payload??req.body??{};
-    const row=(await query(`SELECT sl.*,w.status AS warehouse_status,z.status AS zone_status,z.temperature_min,z.temperature_max,z.humidity_min,z.humidity_max,coalesce(sum(ml.received_qty),0) AS current_qty FROM storage_locations sl LEFT JOIN wms_warehouses w ON w.id=sl.warehouse_id LEFT JOIN wms_zones z ON z.id=sl.zone_id LEFT JOIN material_lots ml ON ml.storage_location_id=sl.id WHERE sl.id=$1 GROUP BY sl.id,w.status,z.status,z.temperature_min,z.temperature_max,z.humidity_min,z.humidity_max`,[req.params.id])).rows[0];
-    if(!row)return res.status(404).json(errorEnvelope("NOT_FOUND","location not found"));
-    const reasons=[];
-    if(String(row.status).toLowerCase()!=="active")reasons.push("LOCATION_INACTIVE");
-    if(row.locked_reason)reasons.push("LOCATION_LOCKED");
-    if(row.warehouse_status!=="ACTIVE")reasons.push("WAREHOUSE_INACTIVE");
-    if(row.zone_status!=="ACTIVE")reasons.push("ZONE_INACTIVE");
-    const requested=Number(p.quantity??0),current=Number(row.current_qty??0),capacity=row.capacity_qty==null?null:Number(row.capacity_qty);
-    if(capacity!=null&&requested>0&&current+requested>capacity)reasons.push("CAPACITY_EXCEEDED");
-    const temp=p.temperature==null?null:Number(p.temperature),humidity=p.humidity==null?null:Number(p.humidity);
-    if(temp!=null&&((row.temperature_min!=null&&temp<Number(row.temperature_min))||(row.temperature_max!=null&&temp>Number(row.temperature_max))))reasons.push("TEMPERATURE_OUT_OF_RANGE");
-    if(humidity!=null&&((row.humidity_min!=null&&humidity<Number(row.humidity_min))||(row.humidity_max!=null&&humidity>Number(row.humidity_max))))reasons.push("HUMIDITY_OUT_OF_RANGE");
-    res.json(envelope({eligible:reasons.length===0,reasons,currentQty:current,capacityQty:capacity,remainingQty:capacity==null?null:capacity-current}));
-  }catch(err){res.status(400).json(errorEnvelope("WMS_LOCATION_VALIDATION_ERROR",err.message));}
-});
-
-app.get("/wms/material-categories", requirePermission("wms.execute"), async(_req,res)=>{
-  const rows=await query(`SELECT id,code,name_zh,name_en,name_vi,parent_id AS "parentId",iqc_required AS "iqcRequired",fifo_method AS "fifoMethod",status FROM wms_material_categories ORDER BY code`);
-  res.json(listEnvelope(rows.rows));
-});
-
-app.post("/wms/material-categories", requirePermission("wms.execute"), async(req,res)=>{
-  try{
-    const p=req.body?.payload ?? req.body ?? {};
-    if(!p.code||!p.nameZh)return res.status(400).json(errorEnvelope("VALIDATION","code and nameZh required"));
-    const result=await query(`INSERT INTO wms_material_categories(code,name_zh,name_en,name_vi,parent_id,iqc_required,fifo_method,status) VALUES(upper($1),$2,$3,$4,$5,coalesce($6,true),coalesce(upper($7),'FIFO'),coalesce(upper($8),'ACTIVE')) RETURNING *`,[p.code,p.nameZh,p.nameEn??null,p.nameVi??null,p.parentId??null,p.iqcRequired??null,p.fifoMethod??null,p.status??null]);
-    await auditWmsMaster(req,"CREATE","MATERIAL_CATEGORY",result.rows[0].code,null,result.rows[0]);
-    res.status(201).json(mutateEnvelope(result.rows[0]));
-  }catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.patch("/wms/material-categories/:id", requirePermission("wms.execute"), async(req,res)=>{
-  try{const before=(await query("SELECT * FROM wms_material_categories WHERE id=$1",[req.params.id])).rows[0];if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","category not found"));const p=req.body?.payload??req.body??{};const result=await query(`UPDATE wms_material_categories SET name_zh=coalesce($2,name_zh),name_en=coalesce($3,name_en),name_vi=coalesce($4,name_vi),parent_id=coalesce($5,parent_id),iqc_required=coalesce($6,iqc_required),fifo_method=coalesce(upper($7),fifo_method),status=coalesce(upper($8),status),updated_at=now() WHERE id=$1 RETURNING *`,[req.params.id,p.nameZh??null,p.nameEn??null,p.nameVi??null,p.parentId??null,p.iqcRequired??null,p.fifoMethod??null,p.status??null]);await auditWmsMaster(req,"UPDATE","MATERIAL_CATEGORY",before.code,before,result.rows[0]);res.json(mutateEnvelope(result.rows[0]));}catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.get("/wms/units", requirePermission("wms.execute"), async(_req,res)=>{
-  const rows=await query(`SELECT code,name_zh,name_en,name_vi,decimal_places AS "decimalPlaces",status FROM wms_units_of_measure ORDER BY code`);
-  res.json(listEnvelope(rows.rows));
-});
-
-app.post("/wms/units", requirePermission("wms.execute"), async(req,res)=>{
-  try{
-    const p=req.body?.payload ?? req.body ?? {};
-    if(!p.code||!p.nameZh)return res.status(400).json(errorEnvelope("VALIDATION","code and nameZh required"));
-    const result=await query(`INSERT INTO wms_units_of_measure(code,name_zh,name_en,name_vi,decimal_places,status) VALUES(upper($1),$2,$3,$4,coalesce($5,4),coalesce(upper($6),'ACTIVE')) RETURNING *`,[p.code,p.nameZh,p.nameEn??null,p.nameVi??null,p.decimalPlaces??null,p.status??null]);
-    await auditWmsMaster(req,"CREATE","UNIT",result.rows[0].code,null,result.rows[0]);
-    res.status(201).json(mutateEnvelope(result.rows[0]));
-  }catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.patch("/wms/units/:code", requirePermission("wms.execute"), async(req,res)=>{
-  try{const before=(await query("SELECT * FROM wms_units_of_measure WHERE code=$1",[req.params.code.toUpperCase()])).rows[0];if(!before)return res.status(404).json(errorEnvelope("NOT_FOUND","unit not found"));const p=req.body?.payload??req.body??{};const result=await query(`UPDATE wms_units_of_measure SET name_zh=coalesce($2,name_zh),name_en=coalesce($3,name_en),name_vi=coalesce($4,name_vi),decimal_places=coalesce($5,decimal_places),status=coalesce(upper($6),status) WHERE code=$1 RETURNING *`,[before.code,p.nameZh??null,p.nameEn??null,p.nameVi??null,p.decimalPlaces??null,p.status??null]);await auditWmsMaster(req,"UPDATE","UNIT",before.code,before,result.rows[0]);res.json(mutateEnvelope(result.rows[0]));}catch(err){res.status(400).json(errorEnvelope("WMS_MASTER_ERROR",err.message));}
-});
-
-app.get("/wms/material-master", requirePermission("wms.execute"), async(req,res)=>{
-  const params=[];let where="";if(req.query.q){params.push(`%${req.query.q}%`);where="WHERE m.code ILIKE $1 OR m.name_zh ILIKE $1";}
-  const rows=await query(`SELECT m.id,m.code,m.name_zh,m.name_en,m.name_vi,m.uom,m.material_type AS "materialType",m.msd_level AS "msdLevel",m.shelf_life_days AS "shelfLifeDays",m.category_id AS "categoryId",m.min_stock_qty AS "minStockQty",m.max_stock_qty AS "maxStockQty",m.safety_stock_qty AS "safetyStockQty",m.storage_condition AS "storageCondition",m.domain_code AS "domainCode",m.naming_version AS "namingVersion",m.naming_status AS "namingStatus",m.status FROM materials m ${where} ORDER BY m.code LIMIT 500`,params);
-  res.json(listEnvelope(rows.rows));
-});
-
-app.get("/system/domains", requirePermission("master_data.read"), async(_req,res)=>{
-  try{const rows=await query(`SELECT domain_code AS "domainCode",name_zh,name_en,name_vi,system_owner AS "systemOwner",description,status FROM system_domains ORDER BY domain_code`);res.json(listEnvelope(rows.rows));}
-  catch(err){res.status(500).json(errorEnvelope("SERVER_ERROR",err.message));}
-});
-
-app.get("/wms/material-naming", requirePermission("wms.view"), async(req,res)=>{
-  try{const q=String(req.query.q??"");const rows=await query(`SELECT * FROM v_material_canonical_names WHERE ($1='' OR official_code ILIKE $2 OR name_zh ILIKE $2 OR name_en ILIKE $2) ORDER BY official_code LIMIT 500`,[q,`%${q}%`]);res.json(listEnvelope(rows.rows));}
-  catch(err){res.status(500).json(errorEnvelope("SERVER_ERROR",err.message));}
-});
-
-app.get("/wms/bom-material-governance", requirePermission("wms.view"), async(req,res)=>{
-  try{const params=[];let where="";if(req.query.bomId){params.push(req.query.bomId);where="WHERE bom_id=$1";}const rows=await query(`SELECT * FROM v_bom_canonical_materials ${where} ORDER BY bom_id,bom_line_id`,params);res.json(listEnvelope(rows.rows));}
-  catch(err){res.status(500).json(errorEnvelope("SERVER_ERROR",err.message));}
-});
-
-app.get("/wms/bom-material-reviews", requirePermission("wms.view"), async(req,res)=>{
-  try{const status=String(req.query.status??"PENDING");const rows=await query(`SELECT q.*,b.revision,m.code AS material_code,p.code AS product_code FROM bom_material_review_queue q JOIN boms b ON b.id=q.bom_id JOIN products p ON p.id=b.product_id JOIN materials m ON m.id=q.material_id WHERE ($1='' OR q.status=$1) ORDER BY q.created_at DESC`,[status]);res.json(listEnvelope(rows.rows));}
-  catch(err){res.status(500).json(errorEnvelope("SERVER_ERROR",err.message));}
-});
 
 api.get('/finance/bom-cost-snapshots', requirePermission("finance.cost.read"), async(req,res)=>{
   try{const params=[];let where="";if(req.query.bomId){params.push(req.query.bomId);where="WHERE c.bom_id=$1";}const rows=await query(`SELECT c.*,r.current_bom_revision,r.calculated_material_cost,r.revision_matches,r.total_matches,r.all_material_domains_valid,r.all_naming_versions_current,r.all_line_costs_match FROM v_bom_cost_control c JOIN v_bom_cost_reconciliation r ON r.snapshot_id=c.snapshot_id ${where} ORDER BY c.snapshot_id DESC`,params);res.json(listEnvelope(rows.rows));}
@@ -30216,18 +26138,10 @@ api.post("/smt/loading/daily-plans/:id/publish", async (req, res) => {
   catch (err) { console.error("POST /api/smt/loading/daily-plans/:id/publish:", err.message); res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
 });
 
-const HOST = process.env.HOST ?? "0.0.0.0";
-const server = app.listen(PORT, HOST, () => {
-  const addr = server.address();
-  const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
-  console.log(`API service listening on http://${HOST}:${actualPort}`);
-  query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Initial lifecycle refresh failed:", error.message));
-});
-
-const lifecycleClassifier = setInterval(() => {
-  query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Lifecycle refresh failed:", error.message));
-}, 5 * 60 * 1000);
-lifecycleClassifier.unref();
+// (Removed: a second app.listen + lifecycle setInterval were pasted inside this
+// request handler. The only listener/timer pair lives in the Start section at
+// the end of this file; the duplicates here would have bound the port again on
+// the first request that reached this handler.)
 
         if (decision === "blocked") {
           return res.status(409).json(errorEnvelope("DUPLICATE_SN_BLOCKED",
@@ -33881,6 +29795,130 @@ api.post("/lifecycle/pg", async (req, res) => {
 // (authenticateJWT now applied inline on /mes/events route)
 app.use(authenticateJWT);
 
+// ── rjvn WMS mirror — read-only ───────────────────────────────────
+// The public.rjvn_* tables are a 1:1 mirror of the source `wms` database.
+// They are reference data only: every write still goes to the canonical smt
+// tables. Table names are validated against pg_tables and identifiers are
+// quoted, so no user input is ever interpolated as raw SQL.
+const RJVN_SUMMARY_TABLES = [
+  "rjvn_material", "rjvn_supplier", "rjvn_bom", "rjvn_receipt_order",
+  "rjvn_iqc_lot", "rjvn_iqc_report", "rjvn_inventory", "rjvn_iqc_lot_receipt",
+];
+
+app.get("/rjvn-wms/summary", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const out = {};
+    for (const t of RJVN_SUMMARY_TABLES) {
+      const r = await pgPool.query(`select count(*)::int as n from public."${t}"`);
+      out[t.replace(/^rjvn_/, "")] = r.rows[0].n;
+    }
+    res.json({ success: true, data: out });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get("/rjvn-wms/tables", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const { rows } = await pgPool.query(`
+      select c.relname as name, greatest(c.reltuples::bigint, 0)::int as approx_rows
+      from pg_class c join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public' and c.relkind = 'r' and c.relname like 'rjvn\\_%'
+      order by c.relname`);
+    res.json({ success: true, data: rows });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+app.get("/rjvn-wms/data/:table", requirePermission("wms.view"), async (req, res) => {
+  const table = String(req.params.table || "");
+  if (!/^rjvn_[a-z0-9_]+$/.test(table)) {
+    return res.status(400).json({ success: false, error: "Invalid table name" });
+  }
+  try {
+    const exists = await pgPool.query(
+      `select 1 from pg_tables where schemaname='public' and tablename=$1`, [table]);
+    if (!exists.rowCount) return res.status(404).json({ success: false, error: "Table not found" });
+
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
+    const q = String(req.query.q || "").slice(0, 200);
+
+    const colRes = await pgPool.query(
+      `select column_name, data_type from information_schema.columns
+       where table_schema='public' and table_name=$1 order by ordinal_position`, [table]);
+    const columns = colRes.rows;
+    const textCols = columns
+      .filter((c) => ["text", "character varying", "citext"].includes(c.data_type))
+      .map((c) => `"${c.column_name}"`);
+
+    const where = q && textCols.length
+      ? ` where (${textCols.map((c) => `coalesce(${c}::text,'') ilike $1`).join(" or ")})`
+      : "";
+    const params = q && textCols.length ? [`%${q}%`] : [];
+
+    const [count, data] = await Promise.all([
+      pgPool.query(`select count(*)::int as n from public."${table}"${where}`, params),
+      pgPool.query(`select * from public."${table}"${where} order by 1 limit $${params.length + 1} offset $${params.length + 2}`,
+        [...params, limit, offset]),
+    ]);
+    res.json({ success: true, data: {
+      rows: data.rows, total: count.rows[0].n, limit, offset,
+      columns: columns.map((c) => c.column_name),
+    } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Aggregate KPIs over the mirrored IQC lots — the source system's IQC module
+// is the dominant workflow, so expose its pass rate and top offenders directly.
+app.get("/rjvn-wms/iqc/overview", requirePermission("wms.view"), async (_req, res) => {
+  try {
+    const [totals, bySupplier, byMaterial, byMonth, defects] = await Promise.all([
+      pgPool.query(`
+        select count(*)::int as lots,
+               count(*) filter (where lower(inspection_result) = 'pass')::int as passed,
+               count(*) filter (where lower(inspection_result) = 'pending')::int as pending,
+               count(*) filter (where lower(inspection_result) in ('fail','reject','hold'))::int as failed
+        from public.rjvn_iqc_lot`),
+      pgPool.query(`
+        select coalesce(s.supplier_name, l.supplier_id::text) as name,
+               count(*)::int as lots,
+               count(*) filter (where lower(l.inspection_result) = 'pass')::int as passed
+        from public.rjvn_iqc_lot l
+        left join public.rjvn_supplier s on s.id = l.supplier_id
+        group by 1 order by lots desc limit 10`),
+      pgPool.query(`
+        select coalesce(m.material_name, l.material_id::text) as name,
+               count(*)::int as lots,
+               count(*) filter (where lower(l.inspection_result) = 'pass')::int as passed
+        from public.rjvn_iqc_lot l
+        left join public.rjvn_material m on m.id = l.material_id
+        group by 1 order by lots desc limit 10`),
+      pgPool.query(`
+        select to_char(date_trunc('month', receipt_date), 'YYYY-MM') as month,
+               count(*)::int as lots
+        from public.rjvn_iqc_lot where receipt_date is not null
+        group by 1 order by 1 desc limit 12`),
+      pgPool.query(`
+        select coalesce(defect_type, 'unspecified') as name, count(*)::int as lots
+        from public.rjvn_iqc_lot group by 1 order by lots desc limit 10`),
+    ]);
+    res.json({ success: true, data: {
+      totals: totals.rows[0],
+      bySupplier: bySupplier.rows,
+      byMaterial: byMaterial.rows,
+      byMonth: byMonth.rows,
+      defects: defects.rows,
+    } });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// ── rjvn IQC core logic (ported from NestJS) ──────────────────────
+// Registered AFTER app.use(authenticateJWT) and the read-only rjvn-wms routes.
+registerRjvnIqcRoutes(app, pgPool, requirePermission);
+registerRjvnReceiptRoutes(app, pgPool, requirePermission);
+registerRjvnInventoryRoutes(app, pgPool, requirePermission);
+registerRjvnPickingRoutes(app, pgPool, requirePermission);
+registerRjvnDocFlowRoutes(app, pgPool, requirePermission);
+registerCanonicalDataRoutes(app, pgPool, requirePermission);
+
 // ── Stagnation / 产品呆滞 ─────────────────────────────────────────
 
 // GET /mes/stagnation — list stagnation logs (mirrors Excel 产品呆滞 filter bar)
@@ -34734,505 +30772,9 @@ app.get("/reports", (_req, res) => {
   ]));
 });
 
-// GET /reports/work-order-progress
-app.get("/reports/work-order-progress", async (req, res) => {
-  try {
-    const { lineCode, status, workOrderCode } = req.query;
-    const rows = (await query(
-      `SELECT work_order_code, product_code, line_code, type,
-              planned_qty, completed_qty, progress_pct, status,
-              released_at, closed_at,
-              CONCAT(customer_name_zh, ' / ', customer_name_en) AS customer_name,
-              due_date
-       FROM mv_report_work_order_progress
-       WHERE ($1::text IS NULL OR line_code = $1)
-         AND ($2::text IS NULL OR status     = $2)
-         AND ($3::text IS NULL OR work_order_code = $3)
-       ORDER BY work_order_code DESC LIMIT 500`,
-      [lineCode || null, status || null, workOrderCode || null],
-    )).rows;
-    res.json(envelope({ key: "work-order-progress", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
+// The report surface (19 routes) lives in src/routes/reports.js.
+registerReportsRoutes(app, { query, envelope, errorEnvelope });
 
-// GET /reports/inventory-ledger
-app.get("/reports/inventory-ledger", async (req, res) => {
-  try {
-    const { materialCode, supplierCode, iqcStatus } = req.query;
-    const rows = (await query(
-      `SELECT material_code,
-              CONCAT(material_name_zh, ' / ', material_name_en) AS material_name,
-              supplier_code,
-              CONCAT(supplier_name_zh, ' / ', supplier_name_en) AS supplier_name,
-              lot_no, iqc_status, initial_qty, current_qty, location_code,
-              received_at, last_movement_at, msd_level, shelf_life_days, reserved_qty
-       FROM v_report_inventory_ledger
-       WHERE ($1::text IS NULL OR material_code = $1)
-         AND ($2::text IS NULL OR supplier_code = $2)
-         AND ($3::text IS NULL OR iqc_status    = $3)
-       ORDER BY received_at DESC LIMIT 500`,
-      [materialCode || null, supplierCode || null, iqcStatus || null],
-    )).rows;
-    res.json(envelope({ key: "inventory-ledger", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/material-movement
-app.get("/reports/material-movement", async (req, res) => {
-  try {
-    const { fromDate, toDate, dateFrom, dateTo, materialCode, workOrderCode } = req.query;
-    const effectiveFromDate = fromDate || dateFrom;
-    const effectiveToDate   = toDate   || dateTo;
-    // Default to last 30 days if no date range provided — avoids full-table scan
-    const DEFAULT_FROM = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-    const DEFAULT_TO   = new Date().toISOString();
-    const rows = (await query(
-      `SELECT tx_no, action, material_code, material_name, lot_no,
-              work_order_code, qty, from_location_code, to_location_code,
-              operator_name, occurred_at
-       FROM v_report_material_movement
-       WHERE ($1::timestamptz IS NULL OR occurred_at >= $1::timestamptz)
-         AND ($2::timestamptz IS NULL OR occurred_at <= $2::timestamptz)
-         AND ($3::text IS NULL OR material_code    = $3)
-         AND ($4::text IS NULL OR work_order_code  = $4)
-       ORDER BY occurred_at DESC LIMIT 500`,
-      [effectiveFromDate || DEFAULT_FROM, effectiveToDate || DEFAULT_TO, materialCode || null, workOrderCode || null],
-    )).rows;
-    res.json(envelope({ key: "material-movement", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/iqc-summary
-app.get("/reports/iqc-summary", async (req, res) => {
-  try {
-    const { supplierCode, fromDate, toDate } = req.query;
-    // Default to last 90 days if no date range — IQC is monthly review
-    const DEFAULT_FROM = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const DEFAULT_TO   = new Date().toISOString().slice(0, 10);
-    const rows = (await query(
-      `SELECT material_code,
-              ROW(name_zh, name_en, name_vi) AS material_name,
-              supplier_code,
-              ROW(supplier_name_zh, supplier_name_en, supplier_name_vi) AS supplier_name,
-              total_lots, pending_lots, released_lots, hold_lots, rejected_lots,
-              total_qty, pending_qty, last_received_at
-       FROM mv_report_iqc_summary
-       WHERE ($1::text IS NULL OR supplier_code = $1)
-         AND ($2::text IS NULL OR last_received_at >= $2::date)
-         AND ($3::text IS NULL OR last_received_at <= $3::date)
-       ORDER BY material_code LIMIT 200`,
-      [supplierCode || null, fromDate || DEFAULT_FROM, toDate || DEFAULT_TO],
-    )).rows;
-    res.json(envelope({ key: "iqc-summary", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/oee-by-line
-app.get("/reports/oee-by-line", async (req, res) => {
-  try {
-    const { lineCode, fromDate, toDate, dateFrom, dateTo } = req.query;
-    const effectiveFromDate = fromDate || dateFrom;
-    const effectiveToDate   = toDate   || dateTo;
-    // Default to last 30 days if no date range provided
-    const DEFAULT_FROM = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    const DEFAULT_TO   = new Date().toISOString().slice(0, 10);
-    const rows = (await query(
-      `SELECT line_code,
-              CONCAT(line_name_zh, ' / ', line_name_en) AS line_name,
-              date,
-              planned_minutes, downtime_minutes, available_minutes,
-              total_output, defect_count,
-              availability, performance, quality, oee
-       FROM v_report_oee_by_line
-       WHERE ($1::text IS NULL OR line_code = $1)
-         AND ($2::timestamptz IS NULL OR date >= $2::timestamptz::date)
-         AND ($3::timestamptz IS NULL OR date <= $3::timestamptz::date)
-       ORDER BY date DESC, line_code LIMIT 200`,
-      [lineCode || null, effectiveFromDate || DEFAULT_FROM, effectiveToDate || DEFAULT_TO],
-    )).rows;
-    res.json(envelope({ key: "oee-by-line", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/defect-analysis
-app.get("/reports/defect-analysis", async (req, res) => {
-  try {
-    const { stationType } = req.query;
-    const rows = (await query(
-      `SELECT defect_code, defect_name, severity, station_type,
-              count, percentage, avg_repair_minutes, top_work_order_code
-       FROM v_report_defect_analysis
-       WHERE ($1::text IS NULL OR station_type = $1)
-       ORDER BY count DESC LIMIT 200`,
-      [stationType || null],
-    )).rows;
-    res.json(envelope({ key: "defect-analysis", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/material-balance
-app.get("/reports/material-balance", async (req, res) => {
-  try {
-    const { materialCode } = req.query;
-    const rows = (await query(
-      `SELECT material_code,
-              ROW(name_zh, name_en, name_vi) AS material_name,
-              uom,
-              total_received, total_issued, total_scrapped, total_returned,
-              current_balance
-       FROM mv_report_material_balance
-       WHERE ($1::text IS NULL OR material_code = $1)
-       ORDER BY material_code LIMIT 200`,
-      [materialCode || null],
-    )).rows;
-    res.json(envelope({ key: "material-balance", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/delivery-risk
-app.get("/reports/delivery-risk", async (req, res) => {
-  try {
-    const { riskLevel } = req.query;
-    const rows = (await query(
-      `SELECT po_number, customer_name, product_code,
-              order_qty, delivered_qty, balance_qty,
-              due_date, risk_level, work_order_codes, line_code, days_remaining
-       FROM v_report_delivery_risk
-       WHERE ($1::text IS NULL OR risk_level = $1)
-       ORDER BY due_date ASC LIMIT 200`,
-      [riskLevel || null],
-    )).rows;
-    res.json(envelope({ key: "delivery-risk", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/aoi-yield
-app.get("/reports/aoi-yield", async (req, res) => {
-  try {
-    const { dateFrom, dateTo, lineCode, stationType } = req.query;
-    const rows = (await query(
-      `SELECT inspection_date, week_start, month_start,
-              line_code, line_name_zh, line_name_en, line_name_vi,
-              station_type, total_inspected, pass_count, fail_count, yield_pct
-       FROM v_report_aoi_yield
-       WHERE ($1::timestamptz IS NULL OR inspection_date >= $1::date)
-         AND ($2::timestamptz IS NULL OR inspection_date <= $2::date)
-         AND ($3::text IS NULL OR line_code = $3)
-         AND ($4::text IS NULL OR station_type = $4)
-       ORDER BY inspection_date DESC, line_code LIMIT 500`,
-      [dateFrom || null, dateTo || null, lineCode || null, stationType || null],
-    )).rows;
-    res.json(envelope({ key: "aoi-yield", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/spi-yield
-app.get("/reports/spi-yield", async (req, res) => {
-  try {
-    const { dateFrom, dateTo, lineCode, stationType } = req.query;
-    const rows = (await query(
-      `SELECT inspection_date, week_start, month_start,
-              line_code, line_name_zh, line_name_en, line_name_vi,
-              station_type, total_inspected, pass_count, fail_count, yield_pct
-       FROM v_report_spi_yield
-       WHERE ($1::timestamptz IS NULL OR inspection_date >= $1::date)
-         AND ($2::timestamptz IS NULL OR inspection_date <= $2::date)
-         AND ($3::text IS NULL OR line_code = $3)
-         AND ($4::text IS NULL OR station_type = $4)
-       ORDER BY inspection_date DESC, line_code LIMIT 500`,
-      [dateFrom || null, dateTo || null, lineCode || null, stationType || null],
-    )).rows;
-    res.json(envelope({ key: "spi-yield", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/oqc-summary
-app.get("/reports/oqc-summary", async (req, res) => {
-  try {
-    const { dateFrom, dateTo, workOrderCode, productCode } = req.query;
-    const rows = (await query(
-      `SELECT inspection_date, week_start, month_start,
-              work_order_code, product_code,
-              product_name_zh, product_name_en, product_name_vi,
-              inspection_type, result, operator_name, occurred_at
-       FROM v_report_oqc_summary
-       WHERE ($1::timestamptz IS NULL OR inspection_date >= $1::date)
-         AND ($2::timestamptz IS NULL OR inspection_date <= $2::date)
-         AND ($3::text IS NULL OR work_order_code = $3)
-         AND ($4::text IS NULL OR product_code = $4)
-       ORDER BY inspection_date DESC LIMIT 500`,
-      [dateFrom || null, dateTo || null, workOrderCode || null, productCode || null],
-    )).rows;
-    res.json(envelope({ key: "oqc-summary", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/attendance-summary
-app.get("/reports/attendance-summary", async (req, res) => {
-  try {
-    const { dateFrom, dateTo, employeeCode, departmentCode } = req.query;
-    const rows = (await query(
-      `SELECT date, week_start, month_start,
-              employee_code, employee_name_zh, employee_name_en, employee_name_vi,
-              department_code, department_name_zh, department_name_en, department_name_vi,
-              clock_in, clock_out, status, is_late, is_early, is_absent, is_leave
-       FROM v_report_attendance_summary
-       WHERE ($1::date IS NULL OR date >= $1::date)
-         AND ($2::date IS NULL OR date <= $2::date)
-         AND ($3::text IS NULL OR employee_code = $3)
-         AND ($4::text IS NULL OR department_code = $4)
-       ORDER BY date DESC, employee_code LIMIT 500`,
-      [dateFrom || null, dateTo || null, employeeCode || null, departmentCode || null],
-    )).rows;
-    res.json(envelope({ key: "attendance-summary", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/equipment-downtime
-app.get("/reports/equipment-downtime", async (req, res) => {
-  try {
-    const { dateFrom, dateTo, lineCode, status } = req.query;
-    const rows = (await query(
-      `SELECT downtime_no, reason_code, reason_detail,
-              start_at, end_at, downtime_minutes, status,
-              asset_code, category_name_zh, category_name_en, category_name_vi,
-              line_code, line_name_zh, line_name_en, line_name_vi,
-              operator_name, created_at
-       FROM v_report_equipment_downtime
-       WHERE ($1::timestamptz IS NULL OR start_at >= $1::timestamptz)
-         AND ($2::timestamptz IS NULL OR start_at <= $2::timestamptz)
-         AND ($3::text IS NULL OR line_code = $3)
-         AND ($4::text IS NULL OR status = $4)
-       ORDER BY start_at DESC LIMIT 500`,
-      [dateFrom || null, dateTo || null, lineCode || null, status || null],
-    )).rows;
-    res.json(envelope({ key: "equipment-downtime", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/maintenance-summary
-app.get("/reports/maintenance-summary", async (req, res) => {
-  try {
-    const { dateFrom, dateTo, orderType, priority, status } = req.query;
-    const rows = (await query(
-      `SELECT order_no, order_type, priority, status,
-              asset_code, category_name_zh, category_name_en, category_name_vi,
-              line_code, planned_start, planned_end,
-              actual_start, actual_end, operator_name, created_at, closed_at
-       FROM v_report_maintenance_summary
-       WHERE ($1::timestamptz IS NULL OR created_at >= $1::timestamptz)
-         AND ($2::timestamptz IS NULL OR created_at <= $2::timestamptz)
-         AND ($3::text IS NULL OR order_type = $3)
-         AND ($4::text IS NULL OR priority = $4)
-         AND ($5::text IS NULL OR status = $5)
-       ORDER BY created_at DESC LIMIT 500`,
-      [dateFrom || null, dateTo || null, orderType || null, priority || null, status || null],
-    )).rows;
-    res.json(envelope({ key: "maintenance-summary", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/ar-aging
-app.get("/reports/ar-aging", async (req, res) => {
-  try {
-    const { customerCode, agingBucket } = req.query;
-    const rows = (await query(
-      `SELECT invoice_no, invoice_date, due_date,
-              customer_code, customer_name_zh, customer_name_en, customer_name_vi,
-              currency_code, total_amount, paid_amount, outstanding_amount,
-              days_overdue, aging_bucket, payment_status, created_at
-       FROM v_report_ar_aging
-       WHERE ($1::text IS NULL OR customer_code = $1)
-         AND ($2::text IS NULL OR aging_bucket = $2)
-       ORDER BY days_overdue DESC LIMIT 500`,
-      [customerCode || null, agingBucket || null],
-    )).rows;
-    res.json(envelope({ key: "ar-aging", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/ap-aging
-app.get("/reports/ap-aging", async (req, res) => {
-  try {
-    const { supplierCode, agingBucket } = req.query;
-    const rows = (await query(
-      `SELECT invoice_no, invoice_date, due_date,
-              supplier_code, supplier_name_zh, supplier_name_en, supplier_name_vi,
-              currency_code, total_amount, paid_amount, outstanding_amount,
-              days_overdue, aging_bucket, payment_status, created_at
-       FROM v_report_ap_aging
-       WHERE ($1::text IS NULL OR supplier_code = $1)
-         AND ($2::text IS NULL OR aging_bucket = $2)
-       ORDER BY days_overdue DESC LIMIT 500`,
-      [supplierCode || null, agingBucket || null],
-    )).rows;
-    res.json(envelope({ key: "ap-aging", rows,
-      generatedAt: new Date().toISOString() }));
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/:reportKey  (generic fallback)
-app.get("/reports/:reportKey", async (req, res) => {
-  try {
-    const validKeys = [
-      "work-order-progress","inventory-ledger","material-movement",
-      "iqc-summary","oee-by-line","defect-analysis","material-balance","delivery-risk",
-      "aoi-yield","spi-yield","oqc-summary","attendance-summary",
-      "equipment-downtime","maintenance-summary","ar-aging","ap-aging",
-      "production","quality","inventory","finance",
-    ];
-    const { reportKey } = req.params;
-    if (!validKeys.includes(reportKey))
-      return res.status(404).json(errorEnvelope("NOT_FOUND", `Report '${reportKey}' not found`));
-    // delegate to the specific handler
-    const sub = req.path.replace(`/reports/${reportKey}`, `/reports/${reportKey.replace(/-/g,'-')}`);
-    // re-call by re-matching (simple redirect via handler map)
-    const handlerMap = {
-      "work-order-progress": "/reports/work-order-progress",
-      "inventory-ledger":    "/reports/inventory-ledger",
-      "material-movement":   "/reports/material-movement",
-      "iqc-summary":         "/reports/iqc-summary",
-      "oee-by-line":         "/reports/oee-by-line",
-      "defect-analysis":     "/reports/defect-analysis",
-      "material-balance":    "/reports/material-balance",
-      "delivery-risk":       "/reports/delivery-risk",
-      "production":          "/reports/work-order-progress",
-      "quality":             "/reports/iqc-summary",
-      "inventory":           "/reports/inventory-ledger",
-      "finance":             "/reports/ar-aging",
-    };
-    // Use same query params
-    const h = handlerMap[reportKey];
-    if (!h) return res.status(404).json(errorEnvelope("NOT_FOUND", "Unknown"));
-    // Rebuild URL and proxy (avoid circular)
-    const url = new URL(req.protocol + "://" + req.get("host") + h);
-    Object.entries(req.query).forEach(([k,v]) => url.searchParams.set(k, String(v)));
-    // Fetch internally
-    const http = await import("node:http");
-    const result = await new Promise((resolve, reject) => {
-      const authHeader = req.headers.authorization;
-      http.get(url.toString(), { headers: { "x-forwarded-for": "internal", ...(authHeader ? { authorization: authHeader } : {}) } }, (r) => {
-        let data = "";
-        r.on("data", c => data += c);
-        r.on("end", () => { try { resolve(JSON.parse(data)); } catch { reject(new Error(data)); } });
-      }).on("error", reject);
-    });
-    res.json(result);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /reports/:reportKey/export  (CSV download)
-app.get("/reports/:reportKey/export", async (req, res) => {
-  try {
-    const { reportKey } = req.params;
-    const validKeys = [
-      "work-order-progress","inventory-ledger","material-movement",
-      "iqc-summary","oee-by-line","defect-analysis","material-balance","delivery-risk",
-    ];
-    if (!validKeys.includes(reportKey))
-      return res.status(404).json(errorEnvelope("NOT_FOUND", `Report '${reportKey}' not found`));
-    const rows = (await query(
-      `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'v_report_${reportKey.replace(/-/g,'_')}' ORDER BY ordinal_position`,
-    )).rows;
-    const cols = rows.map(r => r.column_name);
-    const data = (await import(`./src/reports/queries.js`).catch(() => null) || {});
-    // Fallback: fetch the report data directly
-    const reportData = (await import("./server.js").catch(() => null)) || {};
-    // Simple: re-use the data from the report endpoint
-    const http = await import("node:http");
-    const baseUrl = `${req.protocol}://${req.get("host")}`;
-    const reportUrl = `${baseUrl}/reports/${reportKey}`;
-    const result = await new Promise((resolve, reject) => {
-      http.get(reportUrl, (r) => {
-        let d = "";
-        r.on("data", c => d += c);
-        r.on("end", () => { try { resolve(JSON.parse(d)); } catch { reject(new Error(d)); } });
-      }).on("error", reject);
-    });
-    const reportRows = result?.data?.rows || result?.rows || [];
-    const headers = reportRows.length > 0 ? Object.keys(reportRows[0]) : cols;
-    const csv = [
-      headers.join(","),
-      ...reportRows.map(r => headers.map(h => {
-        const v = r[h] ?? "";
-        return `"${String(v).replace(/"/g,'""')}"`;
-      }).join(",")),
-    ].join("\n");
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader("Content-Disposition", `attachment; filename="${reportKey}.csv"`);
-    res.send(csv);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
 
 app.get("/admin/users", async (req, res) => {
   try {
@@ -38561,76 +34103,11 @@ api.get("/shelf/summary", async (req, res) => {
   }
 });
 
-// GET /api/sql/tables — list all tables in GM_WareHouse
-api.get("/sql/tables", async (req, res) => {
-  try {
-    const rows = await sqlQuery(`
-      SELECT TABLE_NAME, TABLE_TYPE
-      FROM INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_CATALOG = 'GM_WareHouse'
-      ORDER BY TABLE_TYPE, TABLE_NAME
-    `);
-    res.json(envelope({ tables: rows }));
-  } catch (err) {
-    console.error("GET /api/sql/tables:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /api/sql — execute raw SQL against GM_WareHouse
-// Body: { sql: string }
-// Returns: { columns: string[], rows[], rowCount, duration }
-api.post("/sql", async (req, res) => {
-  try {
-    const { sql } = req.body ?? {};
-    if (!sql?.trim()) {
-      return res.status(400).json({ error: { code: "BAD_REQUEST", message: "sql is required" } });
-    }
-    const trimmed = sql.trim();
-    const start = Date.now();
-
-    // Detect query type
-    const firstWord = trimmed.split(/\s+/)[0].toUpperCase();
-    const isSelect = firstWord === "SELECT";
-
-    if (isSelect) {
-      const rows = await sqlQuery(trimmed);
-      const duration = Date.now() - start;
-      res.json({
-        columns: rows.length > 0 ? Object.keys(rows[0]) : [],
-        rows,
-        rowCount: rows.length,
-        duration,
-        type: "SELECT",
-      });
-    } else {
-      // INSERT/UPDATE/DELETE/EXEC — use TDS rowcount
-      const conn = (await import("mssql")).default;
-      const pool = await conn.connect({
-        server: "192.168.0.110",
-        port: 1433,
-        user: "sa",
-        password: "abc@123",
-        database: "GM_WareHouse",
-        options: { encrypt: false, trustServerCertificate: true },
-      });
-      const result = await pool.request().query(trimmed);
-      await pool.close();
-      const duration = Date.now() - start;
-      res.json({
-        columns: [],
-        rows: [],
-        rowCount: result.rowsAffected[0] ?? 0,
-        duration,
-        type: firstWord,
-        message: `${firstWord} — ${result.rowsAffected[0]} row(s) affected`,
-      });
-    }
-  } catch (err) {
-    console.error("POST /api/sql:", err.message);
-    res.status(500).json({ error: { code: "SERVER_ERROR", message: err.message } });
-  }
-});
+// GET /api/sql/tables and POST /api/sql were removed: they exposed the
+// GM_WareHouse SQL Server to any caller, including an arbitrary-statement POST
+// that authenticated with hardcoded `sa` credentials. Inventory/warehouse reads
+// that legitimately need SQL Server still go through src/sqlserver.js helpers
+// behind dedicated, permissioned routes.
 
 // GET /api/shelf/racks — 2 racks × 2 sides × 700 bins, with occupancy from Sys_CellsInfo
 // Returns: { racks: [{ code, side, bins: [{binCode, row, col, occupied, serialNumber, materialCode}]}] }
@@ -44175,712 +39652,10 @@ app.get("/hr/checkin/history", async (req, res) => {
   } catch(err) { res.json({ success: false, error: err.message }); }
 });
 
-
-
-app.get("/maintenance/records", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { status, type, equipmentNo, limit = 100, offset = 0 } = req.query;
-    let where = "WHERE 1=1";
-    const params = [];
-    if (status) { params.push(status); where += ` AND mwo.status = $${params.length}`; }
-    if (type) { params.push(type); where += ` AND mwo.fault_category = $${params.length}`; }
-    if (equipmentNo) { params.push(`%${equipmentNo}%`); where += ` AND mwo.equipment_code LIKE $${params.length}`; }
-    params.push(Number(limit), Number(offset));
-    const r = await query(`
-      SELECT mwo.*, e.name_zh AS equipment_name
-      FROM maintenance_work_orders mwo
-      LEFT JOIN equipment_assets e ON e.id = mwo.equipment_id
-      ${where}
-      ORDER BY mwo.issue_time DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM maintenance_work_orders mwo ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /maintenance/records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /maintenance/records
-app.post("/maintenance/records", requirePermission("maintenance.execute"), async (req, res) => {
-  try {
-    const { equipmentNo, type, priority, description, scheduledDate, operator } = req.body;
-    if (!equipmentNo || !description) return res.status(400).json(errorEnvelope("VALIDATION", "equipmentNo and description required"));
-    const eqR = await query(`SELECT id, name_zh FROM equipment_assets WHERE asset_code = $1`, [equipmentNo]);
-    const eq = eqR.rows[0];
-    const woNo = `WO-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Math.floor(Math.random()*9999)).padStart(4,'0')}`;
-    const r = await query(`
-      INSERT INTO maintenance_work_orders (wo_no, equipment_id, equipment_code, equipment_name_zh, fault_category, priority, fault_description, issue_person, status, issue_time)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'waiting_to_process', NOW())
-      RETURNING id, wo_no, status, priority, fault_description
-    `, [woNo, eq?.id ?? null, equipmentNo, eq?.name_zh ?? '', type ?? 'other', priority ?? 'medium', description, operator ?? 'PMC']);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /maintenance/records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /maintenance/records/:id
-app.patch("/maintenance/records/:id", requirePermission("maintenance.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, assignedTechnician, realCause, resolutionNotes, hangingReason, handoverTo, downtimeMinutes } = req.body;
-    const sets = [], params = [];
-    if (status) { params.push(status); sets.push(`status = $${params.length}`); }
-    if (assignedTechnician !== undefined) { params.push(assignedTechnician); sets.push(`assigned_technician = $${params.length}`); }
-    if (realCause !== undefined) { params.push(realCause); sets.push(`real_cause = $${params.length}`); }
-    if (resolutionNotes !== undefined) { params.push(resolutionNotes); sets.push(`resolution_notes = $${params.length}`); }
-    if (hangingReason !== undefined) { params.push(hangingReason); sets.push(`hanging_reason = $${params.length}`); }
-    if (handoverTo !== undefined) { params.push(handoverTo); sets.push(`handover_to = $${params.length}`); }
-    if (downtimeMinutes !== undefined) { params.push(downtimeMinutes); sets.push(`downtime_minutes = $${params.length}`); }
-    if (status === 'received') { sets.push(`received_at = NOW()`); }
-    if (status === 'in_processing') { sets.push(`started_at = COALESCE(started_at, NOW())`); }
-    if (['fixed', 'closed'].includes(status)) { sets.push(`completed_at = NOW()`); }
-    if (!sets.length) return res.status(400).json(errorEnvelope("VALIDATION", "No fields to update"));
-    params.push(id);
-    const r = await query(`UPDATE maintenance_work_orders SET ${sets.join(", ")}, updated_at = NOW() WHERE id = $${params.length} RETURNING id, wo_no, status`, params);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Work order not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("PATCH /maintenance/records/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/checklists/templates
-app.get("/maintenance/checklists/templates", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM equipment_checklist_templates WHERE is_active = TRUE ORDER BY template_code ASC`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/checklists/templates:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/checklists/schedule
-app.get("/maintenance/checklists/schedule", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { limit = 200 } = req.query;
-    const r = await query(`
-      SELECT ecs.*, ect.template_name, ect.equipment_type, ea.asset_code, ea.name_zh AS equipment_name
-      FROM equipment_checklist_schedule ecs
-      JOIN equipment_checklist_templates ect ON ect.id = ecs.template_id
-      LEFT JOIN equipment_assets ea ON ea.id = ecs.equipment_id
-      ORDER BY ecs.scheduled_date DESC
-      LIMIT $1
-    `, [Number(limit)]);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/checklists/schedule:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/checklists/records
-app.get("/maintenance/checklists/records", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId, limit = 100, offset = 0 } = req.query;
-    let where = "";
-    const params = [Number(limit), Number(offset)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE ecr.equipment_id = $1`; }
-    const r = await query(`
-      SELECT ecr.*, ect.template_name, ea.asset_code, ea.name_zh AS equipment_name
-      FROM equipment_checking_records ecr
-      JOIN equipment_checklist_templates ect ON ect.id = ecr.template_id
-      LEFT JOIN equipment_assets ea ON ea.id = ecr.equipment_id
-      ${where}
-      ORDER BY ecr.check_time DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM equipment_checking_records ecr ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /maintenance/checklists/records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /maintenance/checklists/records
-app.post("/maintenance/checklists/records", requirePermission("maintenance.execute"), async (req, res) => {
-  try {
-    const { templateId, equipmentId, equipmentCode, shiftType, checkDate, items, inspectorName, overallResult, notes } = req.body;
-    if (!templateId) return res.status(400).json(errorEnvelope("VALIDATION", "templateId required"));
-    const recordNo = `CR-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Math.floor(Math.random()*999)).padStart(3,'0')}`;
-    const passedItems = items?.filter((i) => i.result === 'pass').length ?? 0;
-    const failedItems = items?.filter((i) => i.result === 'fail').length ?? 0;
-    const r = await query(`
-      INSERT INTO equipment_checking_records (record_no, template_id, equipment_id, equipment_code, shift_type, check_date, inspector_name, total_items, passed_items, failed_items, overall_result, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      RETURNING id, record_no, overall_result
-    `, [recordNo, templateId, equipmentId, equipmentCode, shiftType ?? 'day', checkDate ?? new Date().toISOString().slice(0,10), inspectorName ?? 'PMC', items?.length ?? 0, passedItems, failedItems, overallResult ?? 'pass', notes]);
-    const recordId = r.rows[0].id;
-    // Insert detail items
-    if (items?.length) {
-      for (const item of items) {
-        await query(`
-          INSERT INTO equipment_checking_record_details (record_id, item_id, item_order, check_point, result, numeric_value, notes)
-          VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `, [recordId, item.itemId, item.itemOrder ?? 0, item.checkPoint ?? '', item.result ?? 'pass', item.numericValue ?? null, item.notes ?? '']);
-      }
-    }
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /maintenance/checklists/records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/checklists/compliance/by-equipment
-app.get("/maintenance/checklists/compliance/by-equipment", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId, period = 30 } = req.query;
-    const r = await query(`
-      SELECT ea.asset_code, ea.name_zh,
-             count(ecr.id) AS checks_done,
-             count(CASE WHEN ecr.overall_result = 'pass' THEN 1 END) AS checks_passed,
-             count(CASE WHEN ecr.overall_result = 'fail' THEN 1 END) AS checks_failed,
-             round(count(CASE WHEN ecr.overall_result = 'pass' THEN 1 END)::numeric / nullif(count(ecr.id),0) * 100, 1) AS compliance_rate
-      FROM equipment_assets ea
-      LEFT JOIN equipment_checking_records ecr ON ecr.equipment_id = ea.id
-        AND ecr.check_date >= NOW() - ($2 || ' days')::interval
-      WHERE ea.id = $1 OR $1 IS NULL
-      GROUP BY ea.id, ea.asset_code, ea.name_zh
-      ORDER BY ea.asset_code
-    `, [equipmentId ?? null, period ?? 30]);
-    res.json({ items: r.rows });
-  } catch (err) {
-    console.error("GET /maintenance/checklists/compliance/by-equipment:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/checklists/compliance/daily
-app.get("/maintenance/checklists/compliance/daily", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`
-      SELECT check_date, count(*) AS total_checks,
-             count(CASE WHEN overall_result = 'pass' THEN 1 END) AS passed,
-             count(CASE WHEN overall_result = 'fail' THEN 1 END) AS failed,
-             round(count(CASE WHEN overall_result = 'pass' THEN 1 END)::numeric / nullif(count(*),0) * 100, 1) AS compliance_rate
-      FROM equipment_checking_records
-      WHERE check_date >= NOW() - INTERVAL '30 days'
-      GROUP BY check_date
-      ORDER BY check_date DESC
-    `);
-    res.json({ items: r.rows });
-  } catch (err) {
-    console.error("GET /maintenance/checklists/compliance/daily:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/inspection/templates
-app.get("/maintenance/inspection/templates", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM inspection_templates WHERE is_active = TRUE ORDER BY template_name ASC`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/inspection/templates:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/inspection/assignments
-app.get("/maintenance/inspection/assignments", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId, status, limit = 200 } = req.query;
-    let where = "WHERE 1=1";
-    const params = [Number(limit)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE ia.equipment_id = $1`; }
-    if (status) { params.push(status); where += ` AND ia.status = $${params.length}`; }
-    const r = await query(`
-      SELECT ia.*, it.template_name, ea.asset_code, ea.name_zh AS equipment_name
-      FROM inspection_assignments ia
-      JOIN inspection_templates it ON it.id = ia.template_id
-      LEFT JOIN equipment_assets ea ON ea.id = ia.equipment_id
-      ${where}
-      ORDER BY ia.due_date ASC
-      LIMIT $1
-    `, params);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/inspection/assignments:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /maintenance/inspection/assignments
-app.post("/maintenance/inspection/assignments", requirePermission("maintenance.execute"), async (req, res) => {
-  try {
-    const { templateId, equipmentId, dueDate, assignedTo, shiftType } = req.body;
-    if (!templateId || !dueDate) return res.status(400).json(errorEnvelope("VALIDATION", "templateId and dueDate required"));
-    const r = await query(`
-      INSERT INTO inspection_assignments (template_id, equipment_id, due_date, assigned_to, shift_type, status)
-      VALUES ($1, $2, $3, $4, $5, 'pending')
-      RETURNING id, status, due_date
-    `, [templateId, equipmentId, dueDate, assignedTo ?? 'PMC', shiftType ?? 'day']);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /maintenance/inspection/assignments:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// PATCH /maintenance/inspection/assignments/:id
-app.patch("/maintenance/inspection/assignments/:id", requirePermission("maintenance.execute"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status } = req.body;
-    if (!status) return res.status(400).json(errorEnvelope("VALIDATION", "status required"));
-    const r = await query(
-      `UPDATE inspection_assignments SET status = $1, completed_at = CASE WHEN $1 = 'completed' THEN NOW() ELSE NULL END WHERE id = $2 RETURNING id, status`,
-      [status, id]
-    );
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Assignment not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("PATCH /maintenance/inspection/assignments/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/inspection/records
-app.get("/maintenance/inspection/records", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId, limit = 100, offset = 0 } = req.query;
-    let where = "";
-    const params = [Number(limit), Number(offset)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE ir.equipment_id = $1`; }
-    const r = await query(`
-      SELECT ir.*, it.template_name, ea.asset_code, ea.name_zh AS equipment_name
-      FROM inspection_records ir
-      JOIN inspection_templates it ON it.id = ir.template_id
-      LEFT JOIN equipment_assets ea ON ea.id = ir.equipment_id
-      ${where}
-      ORDER BY ir.inspected_at DESC
-      LIMIT $${params.length-1} OFFSET $${params.length}
-    `, params);
-    const cnt = await query(`SELECT count(*) AS total FROM inspection_records ir ${where}`, params.slice(0,-2));
-    res.json({ items: r.rows, total: Number(cnt.rows[0]?.total ?? 0) });
-  } catch (err) {
-    console.error("GET /maintenance/inspection/records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /maintenance/inspection/records
-app.post("/maintenance/inspection/records", requirePermission("maintenance.execute"), async (req, res) => {
-  try {
-    const { templateId, equipmentId, equipmentCode, inspectorName, items, overallResult, notes } = req.body;
-    if (!templateId) return res.status(400).json(errorEnvelope("VALIDATION", "templateId required"));
-    const recordNo = `IR-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${String(Math.floor(Math.random()*999)).padStart(3,'0')}`;
-    const r = await query(`
-      INSERT INTO inspection_records (record_no, template_id, equipment_id, equipment_code, inspector_name, overall_result, notes)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      RETURNING id, record_no, overall_result
-    `, [recordNo, templateId, equipmentId, equipmentCode, inspectorName ?? 'PMC', overallResult ?? 'pass', notes]);
-    res.status(201).json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("POST /maintenance/inspection/records:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/inspection/abnormals
-app.get("/maintenance/inspection/abnormals", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { status, limit = 100 } = req.query;
-    let where = "";
-    const params = [Number(limit)];
-    if (status) { params.unshift(status); where = `WHERE ia.status = $1`; }
-    const r = await query(`
-      SELECT ia.*, ir.record_no, ea.asset_code, ea.name_zh AS equipment_name
-      FROM inspection_abnormals ia
-      JOIN inspection_records ir ON ir.id = ia.record_id
-      LEFT JOIN equipment_assets ea ON ea.id = ia.equipment_id
-      ${where}
-      ORDER BY ia.created_at DESC
-      LIMIT $1
-    `, params);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/inspection/abnormals:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/pm/templates
-app.get("/maintenance/pm/templates", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT * FROM pm_task_library WHERE is_active = TRUE ORDER BY machine_type, task_name ASC LIMIT 500`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    // Fallback: try pm_templates if pm_task_library doesn't exist
-    try {
-      const r2 = await query(`SELECT * FROM pm_templates ORDER BY template_name ASC LIMIT 500`);
-      res.json({ items: r2.rows, total: r2.rows.length });
-    } catch {
-      res.json({ items: [], total: 0 });
-    }
-  }
-});
-
-// GET /maintenance/pm/schedule
-app.get("/maintenance/pm/schedule", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`
-      SELECT pma.*, pt.task_name, pt.machine_type, ea.asset_code, ea.name_zh AS equipment_name
-      FROM pm_assignments pma
-      LEFT JOIN pm_plans pp ON pp.id = pma.plan_id
-      LEFT JOIN pm_task_library pt ON pt.id = pp.task_id
-      LEFT JOIN equipment_assets ea ON ea.id = pma.equipment_id
-      ORDER BY pma.due_date ASC
-      LIMIT 200
-    `);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/pm/schedule:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/pm/execution-logs
-app.get("/maintenance/pm/execution-logs", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId, limit = 100 } = req.query;
-    let where = "";
-    const params = [Number(limit)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE pp.equipment_id = $1`; }
-    const r = await query(`
-      SELECT mel.*, ea.asset_code, ea.name_zh AS equipment_name, pt.task_name
-      FROM pm_execution_logs mel
-      LEFT JOIN pm_plans pp ON pp.id = mel.plan_id
-      LEFT JOIN pm_task_library pt ON pt.id = pp.task_id
-      LEFT JOIN equipment_assets ea ON ea.id = mel.equipment_id
-      ${where}
-      ORDER BY mel.executed_at DESC
-      LIMIT $1
-    `, params);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/pm/execution-logs:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/dashboard
-app.get("/maintenance/dashboard", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const openWO = await query(`SELECT count(*) AS cnt FROM maintenance_work_orders WHERE status NOT IN ('fixed','closed')`);
-    const criticalWO = await query(`SELECT count(*) AS cnt FROM maintenance_work_orders WHERE priority = 'critical' AND status NOT IN ('fixed','closed')`);
-    const todayInspections = await query(`SELECT count(*) AS cnt FROM inspection_assignments WHERE due_date = CURRENT_DATE`);
-    const overdueInspections = await query(`SELECT count(*) AS cnt FROM inspection_assignments WHERE due_date < CURRENT_DATE AND status != 'completed'`);
-    const avgDowntime = await query(`SELECT round(avg(downtime_minutes))::int AS avg FROM maintenance_work_orders WHERE downtime_minutes > 0`);
-    const mtbf = await query(`SELECT round(avg(extract(epoch from (completed_at - issue_time))/60))::int AS mtbf_minutes FROM maintenance_work_orders WHERE status = 'fixed' AND completed_at IS NOT NULL`);
-    res.json({
-      openWorkOrders: Number(openWO.rows[0]?.cnt ?? 0),
-      criticalWorkOrders: Number(criticalWO.rows[0]?.cnt ?? 0),
-      todayInspections: Number(todayInspections.rows[0]?.cnt ?? 0),
-      overdueInspections: Number(overdueInspections.rows[0]?.cnt ?? 0),
-      avgDowntimeMinutes: Number(avgDowntime.rows[0]?.avg ?? 0),
-      mtbfMinutes: Number(mtbf.rows[0]?.mtbf_minutes ?? 0),
-    });
-  } catch (err) {
-    console.error("GET /maintenance/dashboard:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/machine-status
-app.get("/maintenance/machine-status", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`
-      SELECT ea.id, ea.asset_code, ea.name_zh AS equipment_name,
-             ea.operational_status, ea.last_maintenance_date, ea.next_pm_date,
-             mss.power_status, mss.running_status, mss.alarm_status, mss.updated_at AS snapshot_time
-      FROM equipment_assets ea
-      LEFT JOIN machine_status_snapshots mss ON mss.equipment_id = ea.id
-      ORDER BY ea.asset_code
-      LIMIT 200
-    `);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/machine-status:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/oee
-app.get("/maintenance/oee", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId, days = 7 } = req.query;
-    let where = "";
-    const params = [Number(days)];
-    if (equipmentId) { params.unshift(equipmentId); where = `WHERE mol.equipment_id = $1`; }
-    const r = await query(`
-      SELECT mol.*, ea.asset_code, ea.name_zh AS equipment_name
-      FROM machine_oee_logs mol
-      LEFT JOIN equipment_assets ea ON ea.id = mol.equipment_id
-      ${where}
-      AND mol.log_date >= NOW() - ($2 || ' days')::interval
-      ORDER BY mol.log_date DESC
-      LIMIT 200
-    `, params);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/oee:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/equipment — list all equipment
-app.get("/maintenance/equipment", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const r = await query(`SELECT id, asset_code, name_zh, machine_type, operational_status, line_id FROM equipment_assets ORDER BY asset_code ASC`);
-    res.json({ items: r.rows, total: r.rows.length });
-  } catch (err) {
-    console.error("GET /maintenance/equipment:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/equipment/:id
-app.get("/maintenance/equipment/:id", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { id } = req.params;
-    const r = await query(`SELECT * FROM equipment_assets WHERE id = $1`, [id]);
-    if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "Equipment not found"));
-    res.json({ data: r.rows[0] });
-  } catch (err) {
-    console.error("GET /maintenance/equipment/:id:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MAINTENANCE CARD API (Q1-Q20 Grill — 2026-07-25)
-// ═══════════════════════════════════════════════════════════════════════════
-
-// GET /maintenance/card/:equipmentId — get maintenance card for equipment
-app.get("/maintenance/card/:equipmentId", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId } = req.params;
-    const { level } = req.query; // daily|weekly|monthly|quarterly|annual
-
-    // Get equipment info
-    const eqResult = await query(`
-      SELECT ea.*, pl.internal_code as line_code, pl.name as line_name,
-             s.code as station_code, s.name as station_name,
-             u1.name as responsible_name, u1.phone as responsible_phone
-      FROM equipment_assets ea
-      LEFT JOIN production_lines pl on pl.id = ea.line_id
-      LEFT JOIN stations s on s.id = ea.station_id
-      LEFT JOIN users u1 on u1.id = ea.responsible_engineer_id
-      WHERE ea.id = $1
-    `, [equipmentId]);
-
-    if (eqResult.rows.length === 0) {
-      return res.status(404).json(errorEnvelope("NOT_FOUND", "Equipment not found"));
-    }
-    const equipment = eqResult.rows[0];
-
-    // Get PM template for this equipment category + level
-    let templateQuery = `
-      SELECT pt.*, ec.name_zh as category_name
-      FROM pm_templates pt
-      LEFT JOIN equipment_categories ec on ec.id = pt.equipment_category_id
-      WHERE pt.status = 'active'
-    `;
-    const params = [];
-    if (level) {
-      templateQuery += ` AND pt.pm_level = $1`;
-      params.push(level);
-    }
-    const tmplResult = await query(templateQuery, params.length ? params : []);
-    const template = tmplResult.rows[0] || null;
-
-    // Get PM tasks for the template
-    let tasks = [];
-    if (template) {
-      const taskResult = await query(`
-        SELECT * FROM pm_template_tasks
-        WHERE template_id = $1 AND status = 'active'
-        ORDER BY task_no ASC
-      `, [template.id]);
-      tasks = taskResult.rows;
-    }
-
-    // Get latest execution for each level
-    const latestExecResult = await query(`
-      SELECT pm_level, actual_start, executor_id, result
-      FROM pm_execution_records
-      WHERE asset_id = $1
-      ORDER BY actual_start DESC
-      LIMIT 10
-    `, [equipmentId]);
-    const recentExecutions = latestExecResult.rows;
-
-    // Get active card info
-    const cardResult = await query(`
-      SELECT mc.*,
-             u.name as last_printed_by_name
-      FROM maintenance_cards mc
-      LEFT JOIN users u on u.id = mc.last_printed_by
-      WHERE mc.asset_id = $1 AND mc.is_active = true
-      LIMIT 1
-    `, [equipmentId]);
-    const card = cardResult.rows[0] || null;
-
-    res.json({
-      equipment,
-      template,
-      tasks,
-      recentExecutions,
-      card,
-    });
-  } catch (err) {
-    console.error("GET /maintenance/card:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /maintenance/card/:equipmentId/execute — execute a maintenance card
-app.post("/maintenance/card/:equipmentId/execute", requirePermission("maintenance.write"), async (req, res) => {
-  try {
-    const { equipmentId } = req.params;
-    const {
-      template_id, pm_level, trigger_type, scheduled_date,
-      task_results,    // array of {task_no, result, measured_value, notes, photo_urls}
-      abnormal_description, notes,
-      first_article_result, trial_pieces,
-      // Signatures
-      executor_id, leader_id, engineer_id,
-      executor_sig, leader_sig, engineer_sig,
-    } = req.body;
-
-    const client = await getClient();
-    try {
-      await client.query("begin");
-
-      // Generate execution number
-      const seqResult = await client.query(`SELECT nextval('pm_execution_seq')`);
-      const seq = seqResult.rows[0].nextval;
-      const executionNo = `PM-${new Date().getFullYear()}-${String(seq).padStart(6, '0')}`;
-
-      // Insert execution record
-      const execResult = await client.query(`
-        INSERT INTO pm_execution_records (
-          execution_no, template_id, asset_id, pm_level, trigger_type,
-          scheduled_date, actual_start, result, abnormal_description, notes,
-          first_article_result, trial_pieces, executor_id
-        ) VALUES ($1,$2,$3,$4,$5,$6,now(),$7,$8,$9,$10,$11,$12)
-        RETURNING *
-      `, [
-        executionNo, template_id, equipmentId, pm_level, trigger_type || 'manual',
-        scheduled_date || new Date().toISOString().split('T')[0],
-        task_results && task_results.some((t) => t.result === 'ng') ? 'abnormal' : 'completed',
-        abnormal_description || null, notes || null,
-        first_article_result || 'na', trial_pieces || 0, executor_id
-      ]);
-      const execution = execResult.rows[0];
-
-      // Insert task results
-      for (const tr of (task_results || [])) {
-        await client.query(`
-          INSERT INTO pm_execution_items (
-            execution_id, template_task_id, task_no, task_name,
-            result, measured_value, standard_value, photo_urls, notes, checked_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,now())
-        `, [
-          execution.id, tr.template_task_id || null, tr.task_no,
-          tr.task_name || '', tr.result, tr.measured_value || null,
-          tr.standard_value || null, tr.photo_urls || [], tr.notes || null
-        ]);
-      }
-
-      // Update equipment cumulative runtime if runtime trigger
-      if (trigger_type === 'runtime') {
-        await client.query(`
-          UPDATE equipment_assets
-          SET total_pm_count = total_pm_count + 1,
-              cumulative_runtime_hours = cumulative_runtime_hours + COALESCE($2, 0)
-          WHERE id = $1
-        `, [equipmentId, 0]); // actual runtime increment would come from meter reading
-      } else {
-        await client.query(`
-          UPDATE equipment_assets SET total_pm_count = total_pm_count + 1 WHERE id = $1
-        `, [equipmentId]);
-      }
-
-      await client.query("commit");
-      res.json({ success: true, execution });
-    } catch (err) {
-      await client.query("rollback");
-      throw err;
-    } finally {
-      client.release();
-    }
-  } catch (err) {
-    console.error("POST /maintenance/card/execute:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// POST /maintenance/card/:equipmentId/print — log card print
-app.post("/maintenance/card/:equipmentId/print", requirePermission("maintenance.write"), async (req, res) => {
-  try {
-    const { equipmentId } = req.params;
-    const { card_version, print_format } = req.body;
-    const userId = req.user?.id;
-
-    // Upsert active card record
-    await query(`
-      INSERT INTO maintenance_cards (asset_id, card_version, is_active, print_count, last_printed_at, last_printed_by)
-      VALUES ($1, $2, true, 1, now(), $3)
-      ON CONFLICT (asset_id) WHERE is_active = true
-      DO UPDATE SET
-        card_version = EXCLUDED.card_version,
-        print_count = maintenance_cards.print_count + 1,
-        last_printed_at = now(),
-        last_printed_by = EXCLUDED.last_printed_by
-    `, [equipmentId, card_version || 1, userId]);
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error("POST /maintenance/card/print:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-// GET /maintenance/card/:equipmentId/history — get execution history
-app.get("/maintenance/card/:equipmentId/history", requirePermission("maintenance.read"), async (req, res) => {
-  try {
-    const { equipmentId } = req.params;
-    const { limit = 20 } = req.query;
-
-    const result = await query(`
-      SELECT pm.*,
-             u1.name as executor_name,
-             pt.template_name_zh
-      FROM pm_execution_records pm
-      LEFT JOIN users u1 on u1.id = pm.executor_id
-      LEFT JOIN pm_templates pt on pt.id = pm.template_id
-      WHERE pm.asset_id = $1
-      ORDER BY pm.actual_start DESC
-      LIMIT $2
-    `, [equipmentId, Number(limit)]);
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error("GET /maintenance/card/history:", err.message);
-    res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
-  }
-});
-
-
+// The maintenance domain (28 routes: work orders, checklists, inspection, PM, cards)
+// lives in src/routes/maintenance.js. This call sits exactly where those registrations
+// used to be, so every middleware above them still runs above them.
+registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvelope });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AOI STATION API (MySQL)
@@ -46118,6 +40893,23 @@ app.post("/qms/ai-inspections/:id/review", requirePermission("quality.execute"),
   } finally { client.release(); }
 });
 
+// ── 旧版 MES-ruijing 站点根路径兼容 ────────────────────────────────────
+// 合并前旧站（Python/FastAPI）把这些接口直接挂在站点根，例如 POST /exec/pass、
+// GET /aoi/dash。mesrj 路由接管之后，旧书签 / 缓存的前端包 / 车间设备集成会撞
+// 404，所以这里按 src/mesrj/legacy-paths.js 的清单做 307 重定向。
+// 307 保留请求方法与请求体（过站、绑码多为 POST）；301 会把 POST 降级成 GET。
+// 只登记 mesrj 路由里真有处理器的路径（321/405），没有实现的保持 404。
+// 目标必须是 /api/mesrj/*：router 挂在 api 路由器下（server.js: api.use("/mesrj")，
+// app.use("/api", api)）；写成 /mesrj/* 会落进下面的 SPA handler 返回 index.html。
+// 挂载位置在全部真实路由之后：任何 SMT 自己的路由都优先，绝不会被这里遮蔽。
+app.use((req, res, next) => {
+  if (req.method === "OPTIONS" || req.method === "HEAD") return next();
+  const target = legacyMesrjTarget(req.path);
+  if (!target) return next();
+  const suffix = req.originalUrl.slice(req.path.length);
+  return res.redirect(307, `${MESRJ_API_PREFIX}${target}${suffix}`);
+});
+
 const spaDist = path.join(__dirname, "..", "..", "apps", "web", "dist");
 const spaIndex = path.join(spaDist, "index.html");
 if (fs.existsSync(spaIndex)) {
@@ -46136,7 +40928,49 @@ const server = app.listen(PORT, HOST, () => {
   const addr = server.address();
   const actualPort = typeof addr === "object" && addr ? addr.port : PORT;
   console.log(`API service listening on http://${HOST}:${actualPort}`);
+  // ── Session-token state ───────────────────────────────────────────
+  // Runtime DDL for the app's own table (the same convention as the other
+  // CREATE TABLE IF NOT EXISTS blocks); migration 317 keeps the ledger honest.
+  void query(`
+    CREATE TABLE IF NOT EXISTS auth_revoked_token (
+      jti        text PRIMARY KEY,
+      user_id    bigint,
+      expires_at timestamptz NOT NULL,
+      reason     text NOT NULL DEFAULT 'logout',
+      revoked_at timestamptz NOT NULL DEFAULT now()
+    )`).then(() => loadRevokedTokens())
+    .catch(error => console.error("[auth] auth_revoked_token DDL failed:", error.message));
+  // A restart is not a logout, but a revocation has to survive one.
+  const revokedTokenRefresh = setInterval(() => {
+    revokedTokens.prune();
+    loginUserThrottle.prune();
+    loginIpThrottle.prune();
+    loadRevokedTokens().catch(() => {});
+  }, 5 * 60_000);
+  revokedTokenRefresh.unref();
+  if (!STATION_LOGIN_KEY) {
+    console.warn("[auth] STATION_LOGIN_KEY is unset: /auth/station-login issues a full-permission JWT from operator+stationCode alone. Set it and send x-station-key to require a station credential.");
+  }
   query("SELECT * FROM wms_refresh_material_lifecycle()").catch(error => console.error("Initial lifecycle refresh failed:", error.message));
+  // ── OA module boot (merged mode) ──────────────────────────────────
+  // Mirrors the standalone OA server's start(): admin bootstrap → cron.
+  // Skipped silently when the OA schema is not reachable so a missing
+  // `oa` schema degrades the OA module only, never the SMT API.
+  (async () => {
+    const db = await oaCheckConnection();
+    if (!db.ok) {
+      console.warn(`[oa] database not reachable — OA module disabled (${db.error})`);
+      return;
+    }
+    try {
+      await oaBootstrapAdmin();
+      if (oaConfig.cron.enabled) startOaCron();
+      console.log("[oa] boot complete (admin bootstrap + cron started)");
+    } catch (err) {
+      console.warn(`[oa] boot failed (module degraded): ${err.message}`);
+    }
+  })();
+  // ── end OA module boot ────────────────────────────────────────────
 });
 
 // Lightweight classifier: the database remains canonical, while every API
@@ -47979,4 +42813,810 @@ app.get("/api/repair-station/export", async (req, res) => {
     console.error("GET /api/repair-station/export:", error.message);
     res.status(500).json(errorEnvelope("REPAIR_EXPORT_FAILED", error.message));
   }
+});
+
+// ── Grafted WMS routes: over-picking (api/over-picking) ──
+// Reference: WMS-20261019 server/modules/over-picking/over-picking.controller.ts
+// Role sets from reference: CREATE_ROLES = ['admin','production_material_smt','production_material_dip','production_material_assembly','production_material_packing']
+// APPROVE_ROLES = ['admin','production_manager']
+// SMT user: req.user = { userId, username, roleKey }
+// Applicant/approver always from login identity (ignore request body), role from sysAccount table
+
+// Reference: over-picking.service.ts generateOrderNo() — CB + YYYYMMDD + 4-digit sequence
+async function nextOverPickingOrderNo() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const seq = Number((await query(`SELECT nextval('seq_over_picking_no') AS n`)).rows[0]?.n || 1);
+  return `CB${dateStr}${String(seq).padStart(4, "0")}`;
+}
+
+app.post("/api/over-picking", authenticateJWT, requireRole("admin", "production_material_smt", "production_material_dip", "production_material_assembly", "production_material_packing"), async (req, res) => {
+  try {
+    const { workOrderNo, items, remark } = req.body || {};
+    const userId = req.user?.userId;
+    const userName = req.user?.username;
+    const userRole = req.user?.roleKey;
+    if (!workOrderNo) return res.status(400).json(errorEnvelope("VALIDATION", "workOrderNo is required"));
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "items array required"));
+    const orderNo = await nextOverPickingOrderNo();
+    // Reference CreateDto: qty and quantity carry the same value; amount = qty * unitPrice.
+    const normalized = items.map((it) => {
+      const qty = Number(it.qty ?? it.quantity ?? 0) || 0;
+      const unitPrice = Number(it.unitPrice ?? it.unit_price ?? 0) || 0;
+      return {
+        materialCode: it.materialCode,
+        materialName: it.materialName ?? null,
+        specification: it.specification ?? null,
+        qty, unitPrice,
+        amount: Number(it.amount ?? qty * unitPrice) || 0,
+        unit: it.unit || "PCS",
+        workSection: it.workSection ?? null,
+        reason: it.reason ?? null,
+      };
+    });
+    const totalQty = normalized.reduce((s, x) => s + x.qty, 0);
+    const totalAmount = normalized.reduce((s, x) => s + x.amount, 0);
+    await query('BEGIN');
+    try {
+      const { rows } = await query(`INSERT INTO over_picking_orders(order_no,work_order_no,status,applicant_id,applicant_name,applicant_role,remark,total_qty,total_amount)
+        VALUES($1,$2,'pending',$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [orderNo, workOrderNo, userId, userName, userRole, remark||null, totalQty, totalAmount]);
+      const orderId = rows[0].id;
+      for (const it of normalized) {
+        await query(`INSERT INTO over_picking_items(order_id,material_code,material_name,qty,unit,quantity,unit_price,amount,specification,work_section,reason)
+          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [orderId, it.materialCode, it.materialName, it.qty, it.unit, it.qty, it.unitPrice, it.amount,
+           it.specification, it.workSection, it.reason]);
+      }
+      await query('COMMIT');
+      res.json(successEnvelope(rows[0]));
+    } catch (error) { await query('ROLLBACK'); throw error; }
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_CREATE_FAILED", error.message)); }
+});
+
+app.get("/api/over-picking/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, orderNo, workOrderNo, status, startDate, endDate } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (orderNo) { conditions.push(`order_no ILIKE $${idx++}`); params.push(`%${orderNo}%`); }
+    if (workOrderNo) { conditions.push(`work_order_no ILIKE $${idx++}`); params.push(`%${workOrderNo}%`); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    if (startDate) { conditions.push(`created_at >= $${idx++}`); params.push(startDate); }
+    if (endDate) { conditions.push(`created_at <= $${idx++}`); params.push(endDate); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT o.id,o.order_no AS "orderNo",o.work_order_no AS "workOrderNo",o.status,
+      o.applicant_name AS "applicantName",o.applicant_role AS "applicantRole",
+      o.approver_name AS "approverName",o.approver_role AS "approverRole",o.approval_remark AS "approvalRemark",
+      o.approved_at AS "approvedAt",o.remark,o.created_at AS "createdAt",o.updated_at AS "updatedAt"
+      FROM over_picking_orders o ${where} ORDER BY o.created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM over_picking_orders o ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/over-picking/stats", authenticateJWT, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (startDate) { conditions.push(`created_at >= $${idx++}`); params.push(startDate); }
+    if (endDate) { conditions.push(`created_at <= $${idx++}`); params.push(endDate); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const rows = await query(`SELECT status, count(*)::int as cnt FROM over_picking_orders ${where} GROUP BY status`, params);
+    const stats = {}; for (const r of rows.rows) stats[r.status] = r.cnt;
+    res.json(successEnvelope({ stats, total: rows.rows.reduce((a,r)=>a+Number(r.cnt),0) }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_STATS_FAILED", error.message)); }
+});
+
+app.get("/api/over-picking/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const order = (await query(`SELECT o.id,o.order_no AS "orderNo",o.work_order_no AS "workOrderNo",o.status,
+      o.applicant_name AS "applicantName",o.applicant_role AS "applicantRole",
+      o.approver_name AS "approverName",o.approver_role AS "approverRole",o.approval_remark AS "approvalRemark",o.approved_at AS "approvedAt",
+      o.remark,o.created_at AS "createdAt",o.updated_at AS "updatedAt"
+      FROM over_picking_orders o WHERE o.id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
+    const items = (await query(`SELECT id,material_code AS "materialCode",material_name AS "materialName",
+      qty,unit FROM over_picking_items WHERE order_id=$1 ORDER BY id`, [id])).rows;
+    res.json(successEnvelope({ ...order, items }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_DETAIL_FAILED", error.message)); }
+});
+
+app.post("/api/over-picking/:id/approve", authenticateJWT, requireRole("admin", "production_manager"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { pass, approvalRemark } = req.body || {};
+    const userId = req.user?.userId;
+    const userName = req.user?.username;
+    const userRole = req.user?.roleKey;
+    const order = (await query(`SELECT id,status,work_order_no AS "workOrderNo" FROM over_picking_orders WHERE id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
+    if (order.status !== "pending") return res.status(409).json(errorEnvelope("OVER_PICKING_INVALID_STATE", "Order is not pending"));
+
+    let pickingId = null, pickingNo = null, totalQty = 0;
+    if (pass) {
+      const items = (await query(`SELECT material_code AS "materialCode",material_name AS "materialName",qty,unit
+        FROM over_picking_items WHERE order_id=$1 ORDER BY id`, [id])).rows;
+      if (!items.length) return res.status(400).json(errorEnvelope("OVER_PICKING_NO_ITEMS", "Order has no material items"));
+      await query('BEGIN');
+      try {
+        const now = new Date();
+        const prefix = `PK${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+        const last = (await query(`SELECT picking_no FROM wms_picking_orders WHERE picking_no LIKE $1 ORDER BY picking_no DESC LIMIT 1`, [`${prefix}%`])).rows[0]?.picking_no;
+        const seq = last ? Number(String(last).slice(prefix.length)) + 1 : 1;
+        pickingNo = `${prefix}${String(seq).padStart(4, "0")}`;
+        totalQty = items.reduce((s, x) => s + Number(x.qty || 0), 0);
+        const po = (await query(
+          `INSERT INTO wms_picking_orders (picking_no,work_order_no,work_section,total_qty,status,applicant_name,source,created_at)
+           VALUES ($1,$2,'smt',$3,'approved',$4,'over_picking',now()) RETURNING id`,
+          [pickingNo, order.workOrderNo, totalQty, userName]
+        )).rows[0];
+        pickingId = po.id;
+        for (const it of items) {
+          await query(
+            `INSERT INTO wms_picking_order_items (picking_id,material_code,material_name,unit,pick_qty,actual_qty,created_at)
+             VALUES ($1,$2,$3,$4,$5,0,now())`,
+            [pickingId, it.materialCode, it.materialName, it.unit || "PCS", it.qty]
+          );
+        }
+        await query('COMMIT');
+      } catch (e) { await query('ROLLBACK'); throw e; }
+    }
+    await query(`UPDATE over_picking_orders SET status=$1,approver_id=$2,approver_name=$3,approver_role=$4,
+      approval_remark=$5,approved_at=now(),picking_id=$7,picking_no=$8,total_qty=COALESCE($9,total_qty),updated_at=now()
+      WHERE id=$6 RETURNING id`,
+      [pass ? "approved" : "rejected", userId, userName, userRole, approvalRemark||null, id, pickingId, pickingNo, totalQty]);
+    res.json(successEnvelope({ id, status: pass ? "approved" : "rejected", pickingId, pickingNo }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_APPROVE_FAILED", error.message)); }
+});
+
+app.post("/api/over-picking/:id/cancel", authenticateJWT, requireRole("admin", "production_material_smt", "production_material_dip", "production_material_assembly", "production_material_packing"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const order = (await query(`SELECT id,status FROM over_picking_orders WHERE id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("OVER_PICKING_NOT_FOUND", "Over-picking order not found"));
+    if (order.status !== "pending") return res.status(409).json(errorEnvelope("OVER_PICKING_INVALID_STATE", "Only pending orders can be cancelled"));
+    await query(`UPDATE over_picking_orders SET status='cancelled',updated_at=now() WHERE id=$1`, [id]);
+    res.json(successEnvelope({ id, status: "cancelled" }));
+  } catch (error) { res.status(500).json(errorEnvelope("OVER_PICKING_CANCEL_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: rework (api/rework) ──
+// Reference: WMS-20261019 server/modules/rework/rework.controller.ts
+// Role sets from reference: REWORK_START_ROLES = ['admin','wh_keeper','wh_manager','sqe']
+// REWORK_FINISH_ROLES = ['admin','sqe','quality_manager']
+// REWORK_REINSPECT_ROLES = ['admin','iqc_inspector','iqc_manager','quality_manager']
+// Status values: pending, reworking, pending_reinspect, passed, failed
+// (the pre-312 names started/finished/reinspected_ok/reinspected_ng are still
+//  accepted as input aliases and normalized to the reference vocabulary)
+// SMT user: req.user = { userId, username, roleKey }
+
+const REWORK_STATUS_ALIASES = {
+  started: "reworking",
+  finished: "pending_reinspect",
+  reinspected_ok: "passed",
+  reinspected_ng: "failed",
+};
+function normalizeReworkStatus(value) {
+  const raw = String(value || "").trim();
+  return REWORK_STATUS_ALIASES[raw] || raw;
+}
+
+app.get("/api/rework/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, reworkNo, status, materialCode } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (reworkNo) { conditions.push(`rework_no ILIKE $${idx++}`); params.push(`%${reworkNo}%`); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(normalizeReworkStatus(status)); }
+    if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,rework_no AS "reworkNo",mrb_no AS "mrbNo",material_id AS "materialId",
+      material_lot_id AS "materialLotId",material_code AS "materialCode",
+      material_name AS "materialName",supplier_code AS "supplierCode",supplier_name AS "supplierName",
+      batch_no AS "batchNo",quantity,unit,status,finish_time AS "finishTime",finish_by AS "finishBy",
+      finish_remark AS "finishRemark",reinspect_result AS "reinspectResult",created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM rework_orders ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM rework_orders ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/rework/pending-count", authenticateJWT, async (req, res) => {
+  try {
+    const rows = await query(`SELECT status, count(*)::int as cnt FROM rework_orders
+      WHERE status IN ('pending','reworking','pending_reinspect') GROUP BY status`);
+    const counts = {}; for (const r of rows.rows) counts[r.status] = r.cnt;
+    const total = Object.values(counts).reduce((a, n) => a + Number(n), 0);
+    res.json(successEnvelope({ ...counts, pendingReinspect: counts.pending_reinspect || 0, total }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_PENDING_COUNT_FAILED", error.message)); }
+});
+
+app.get("/api/rework/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT id,rework_no AS "reworkNo",mrb_no AS "mrbNo",mrb_id AS "mrbId",
+      disposition_id AS "dispositionId",material_id AS "materialId",material_lot_id AS "materialLotId",
+      material_code AS "materialCode",material_name AS "materialName",supplier_code AS "supplierCode",
+      supplier_name AS "supplierName",batch_no AS "batchNo",quantity,unit,status,
+      source_location_id AS "sourceLocationId",target_location_id AS "targetLocationId",
+      finish_time AS "finishTime",finish_by AS "finishBy",finish_by_name AS "finishByName",
+      finish_remark AS "finishRemark",reinspect_time AS "reinspectTime",reinspect_by AS "reinspectBy",
+      reinspect_result AS "reinspectResult",reinspect_remark AS "reinspectRemark",
+      remark,created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_DETAIL_FAILED", error.message)); }
+});
+
+app.post("/api/rework/start", authenticateJWT, requireRole("admin", "wh_keeper", "wh_manager", "sqe"), async (req, res) => {
+  try {
+    const { id, remark } = req.body || {};
+    const userId = req.user?.userId;
+    const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (normalizeReworkStatus(row.status) !== "pending") return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending orders can be started"));
+    await query(`UPDATE rework_orders SET status='reworking',remark=COALESCE($2,remark),updated_at=now() WHERE id=$1 RETURNING id`, [id, remark || null]);
+    res.json(successEnvelope({ id, status: "reworking" }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_START_FAILED", error.message)); }
+});
+
+app.post("/api/rework/finish", authenticateJWT, requireRole("admin", "sqe", "quality_manager"), async (req, res) => {
+  try {
+    const { id, remark } = req.body || {};
+    const userId = req.user?.userId;
+    const userName = req.user?.username;
+    const row = (await query(`SELECT id,status FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (!["pending", "reworking"].includes(normalizeReworkStatus(row.status))) return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending/reworking orders can be finished"));
+    await query(`UPDATE rework_orders SET status='pending_reinspect',finish_time=now(),finish_by=$2,finish_by_name=$3,
+      finish_remark=$4,updated_at=now() WHERE id=$1 RETURNING id`, [id, userId, userName, remark||null]);
+    res.json(successEnvelope({ id, status: "pending_reinspect" }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_FINISH_FAILED", error.message)); }
+});
+
+app.post("/api/rework/reinspect", authenticateJWT, requireRole("admin", "iqc_inspector", "iqc_manager", "quality_manager"), async (req, res) => {
+  try {
+    const { id, result, remark, materialLotId } = req.body || {};
+    if (!["pass", "fail"].includes(result)) {
+      return res.status(400).json(errorEnvelope("REWORK_INVALID_RESULT", "result must be pass or fail"));
+    }
+    const inspector = Number(req.user?.userId);
+    if (!Number.isFinite(inspector) || inspector <= 0) {
+      return res.status(400).json(errorEnvelope("REWORK_NO_OPERATOR", "Authenticated operator required"));
+    }
+    const order = (await query(`SELECT id,rework_no,status,material_id,material_lot_id,material_code,batch_no,
+      quantity,source_location_id,target_location_id FROM rework_orders WHERE id=$1`, [id])).rows[0];
+    if (!order) return res.status(404).json(errorEnvelope("REWORK_NOT_FOUND", "Rework order not found"));
+    if (normalizeReworkStatus(order.status) !== "pending_reinspect") {
+      return res.status(409).json(errorEnvelope("REWORK_INVALID_STATE", "Only pending_reinspect orders can be reinspected"));
+    }
+
+    // Resolve the physical lot: explicit payload → order link → material_code + batch_no.
+    let lotId = Number(materialLotId || order.material_lot_id || 0) || null;
+    if (materialLotId && !lotId) {
+      return res.status(400).json(errorEnvelope("REWORK_LOT_NOT_FOUND", "materialLotId is not a valid id"));
+    }
+    if (!lotId && order.material_code) {
+      const found = (await query(
+        `SELECT l.id FROM material_lots l JOIN materials m ON m.id = l.material_id
+          WHERE m.code = $1 AND ($2::text IS NULL OR l.lot_no = $2::text)
+          ORDER BY l.created_at DESC LIMIT 1`,
+        [order.material_code, order.batch_no || null])).rows[0];
+      lotId = found?.id || null;
+    }
+    if (materialLotId && lotId) {
+      const exists = (await query(`SELECT id FROM material_lots WHERE id=$1`, [lotId])).rows[0];
+      if (!exists) return res.status(400).json(errorEnvelope("REWORK_LOT_NOT_FOUND", "materialLotId does not exist"));
+    }
+
+    const newStatus = result === "pass" ? "passed" : "failed";
+    const inventory = { applied: false, lotId, iqcStatus: null };
+
+    await query('BEGIN');
+    try {
+      await query(`UPDATE rework_orders SET status=$2,reinspect_result=$3,reinspect_remark=$4,
+        reinspect_by=$5,reinspect_time=now(),material_lot_id=COALESCE(material_lot_id,$6),updated_at=now()
+        WHERE id=$1 RETURNING id`,
+        [id, newStatus, result, remark||null, inspector, lotId]);
+
+      if (lotId) {
+        // pass → released (issueable); fail → rejected (blocked, reopen MRB)
+        const iqcStatus = result === "pass" ? "released" : "rejected";
+        const updated = (await query(
+          `UPDATE material_lots
+              SET iqc_status=$2::text,
+                  lot_status=CASE WHEN $2::text='released' AND lot_status='reserved' THEN 'open' ELSE lot_status END,
+                  updated_at=now()
+            WHERE id=$1 RETURNING id,iqc_status,lot_status`,
+          [lotId, iqcStatus])).rows[0];
+        if (updated) {
+          await query(
+            `INSERT INTO inventory_transactions
+               (tx_no,action,material_lot_id,qty,from_location_id,to_location_id,operator_id,occurred_at,
+                reference_type,reference_no,updated_at)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,now(),'rework',$8,now())`,
+            [`RW-${order.rework_no}`, result === "pass" ? "IQC_RELEASE" : "IQC_REJECT", lotId,
+             Number(order.quantity) || 0, order.source_location_id, order.target_location_id,
+             inspector, order.rework_no]);
+          inventory.applied = true;
+          inventory.iqcStatus = updated.iqc_status;
+        }
+      }
+
+      await query('COMMIT');
+    } catch (e) { await query('ROLLBACK'); throw e; }
+
+    res.json(successEnvelope({ id: Number(id), status: newStatus, inventory }));
+  } catch (error) { res.status(500).json(errorEnvelope("REWORK_REINSPECT_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: supplier-debt (api/supplier-debt) ──
+// Reference: WMS-20261019 server/modules/supplier-debt/supplier-debt.controller.ts
+// Debt no generation: SDYYYYMMDD + 4-digit sequence
+// Status: pending, settled, voided
+// SMT user: req.user = { userId, username, roleKey }
+
+app.get("/api/supplier-debt/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, supplierName, materialCode, status } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (supplierName) { conditions.push(`supplier_name ILIKE $${idx++}`); params.push(`%${supplierName}%`); }
+    if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
+    if (status) { conditions.push(`status = $${idx++}`); params.push(status); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,debt_no AS "debtNo",supplier_code AS "supplierCode",supplier_name AS "supplierName",
+      material_code AS "materialCode",material_name AS "materialName",origin_qty AS "originQty",
+      settled_qty AS "settledQty",source_type AS "sourceType",source_id AS "sourceId",source_no AS "sourceNo",
+      status,remark,created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM supplier_debt ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM supplier_debt ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count) }));
+  } catch (error) { res.status(500).json(errorEnvelope("SUPPLIER_DEBT_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/supplier-debt/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM supplier_debt WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SUPPLIER_DEBT_NOT_FOUND", "Supplier debt record not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("SUPPLIER_DEBT_DETAIL_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: defective-move (api/defective-move) ──
+// Reference: WMS-20261019 server/modules/defective-move/defective-move.controller.ts
+// Role sets from reference:
+//   CREATE_ROLES = ['wh_keeper','wh_manager','admin']
+//   CONFIRM_ROLES = ['wh_manager','admin'] (岗位分离：制单人不能自己批)
+//   MOVE_ROLES   = ['wh_keeper','wh_manager','admin']
+// Status flow: pending_confirm → (confirm approve) → pending → (scan+complete) → completed
+//              cancel: pending_confirm (creator or manager) / pending (manager only) → cancelled
+// SMT user: req.user = { userId, username, roleKey }
+
+app.get("/api/defective-move/list", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, status, materialCode, mrbNo, source, keyword } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (status) {
+      const list = String(status).split(",").map((s) => s.trim()).filter(Boolean);
+      if (list.length === 1) { conditions.push(`status = $${idx++}`); params.push(list[0]); }
+      else if (list.length > 1) { conditions.push(`status IN (${list.map(() => `$${idx++}`).join(",")})`); list.forEach((s) => params.push(s)); }
+    }
+    if (materialCode) { conditions.push(`material_code ILIKE $${idx++}`); params.push(`%${materialCode}%`); }
+    if (mrbNo) { conditions.push(`move_no ILIKE $${idx++}`); params.push(`%${mrbNo}%`); }
+    if (source) { conditions.push(`from_stock_status = $${idx++}`); params.push(source); }
+    if (keyword) { conditions.push(`(move_no ILIKE $${idx++} OR material_code ILIKE $${idx++} OR material_name ILIKE $${idx++})`); params.push(`%${keyword}%`,`%${keyword}%`,`%${keyword}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,move_no AS "moveNo",inventory_id AS "inventoryId",from_stock_status AS "fromStockStatus",
+      material_code AS "materialCode",material_name AS "materialName",quantity,unit,reason,remark,to_location_id AS "toLocationId",
+      status,created_by AS "createdBy",created_by_name AS "createdByName",confirmed_by AS "confirmedBy",
+      confirmed_at AS "confirmedAt",confirm_remark AS "confirmRemark",executed_by AS "executedBy",executed_at AS "executedAt",
+      cancelled_by AS "cancelledBy",cancelled_at AS "cancelledAt",cancel_reason AS "cancelReason",
+      created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM defective_move_tasks ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM defective_move_tasks ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_LIST_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/pending-count", authenticateJWT, async (req, res) => {
+  try {
+    const row = (await query(`SELECT
+      COUNT(*) FILTER (WHERE status = 'pending')::int AS pending,
+      COUNT(*) FILTER (WHERE status = 'pending_confirm')::int AS pending_confirm
+      FROM defective_move_tasks`)).rows[0];
+    const pending = Number(row?.pending || 0);
+    const pendingConfirm = Number(row?.pending_confirm || 0);
+    res.json(successEnvelope({ pending, pendingConfirm, total: pending + pendingConfirm }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_PENDING_COUNT_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/locations", authenticateJWT, async (req, res) => {
+  try {
+    // 仅用于扫码后回显，前端不允许直接下拉选择（同参考实现）
+    const rows = await query(`SELECT id,code AS "locationCode",name_zh AS "nameZh",name_en AS "nameEn",name_vi AS "nameVi",status
+      FROM storage_locations WHERE status='active' ORDER BY code LIMIT 100`);
+    res.json(successEnvelope(rows.rows));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_LOCATIONS_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/source-stock", authenticateJWT, async (req, res) => {
+  try {
+    // 制单可选的来源库存：良品仓、可用量 > 0，且排除已在待确认/待执行调拨单里的批次行
+    // （同参考实现 NOT EXISTS 防重复制单）
+    const { keyword, page = 1, pageSize = 20 } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (keyword) { conditions.push(`(m.code ILIKE $${idx++} OR m.name_zh ILIKE $${idx++})`); params.push(`%${keyword}%`,`%${keyword}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") + " AND " : "WHERE ";
+    const limit = Math.min(Math.max(Number(pageSize),1),100); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT ml.id,ml.material_id AS "materialId",m.code AS "materialCode",m.name_zh,m.name_en,m.name_vi,
+      ml.storage_location_id AS "storageLocationId",sl.code AS "locationCode",
+      COALESCE(SUM(CASE WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+        WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty ELSE 0 END),0) AS qty
+      FROM material_lots ml JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
+      LEFT JOIN inventory_transactions it ON it.material_lot_id=ml.id AND it.tx_status='posted'
+      ${where}NOT EXISTS (SELECT 1 FROM defective_move_tasks t WHERE t.inventory_id = ml.id AND t.status IN ('pending_confirm','pending'))
+      GROUP BY ml.id,m.code,m.name_zh,m.name_en,m.name_vi,ml.storage_location_id,sl.code
+      HAVING COALESCE(SUM(CASE WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+        WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty ELSE 0 END),0) > 0
+      ORDER BY m.code LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM (
+      SELECT ml.id
+      FROM material_lots ml JOIN materials m ON m.id=ml.material_id
+      LEFT JOIN storage_locations sl ON sl.id=ml.storage_location_id
+      LEFT JOIN inventory_transactions it ON it.material_lot_id=ml.id AND it.tx_status='posted'
+      ${where}NOT EXISTS (SELECT 1 FROM defective_move_tasks t WHERE t.inventory_id = ml.id AND t.status IN ('pending_confirm','pending'))
+      GROUP BY ml.id,m.code,m.name_zh,m.name_en,m.name_vi,ml.storage_location_id,sl.code
+      HAVING COALESCE(SUM(CASE WHEN it.action IN ('RECEIVE','RETURN','LINE_RETURN','RETURN_TO_WAREHOUSE','ADJUST_IN') THEN it.qty
+        WHEN it.action IN ('ISSUE_TO_LINE','CONSUME','SCRAP','IQC_SCRAP','ADJUST_OUT') THEN -it.qty ELSE 0 END),0) > 0
+    ) x`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_SOURCE_STOCK_FAILED", error.message)); }
+});
+
+app.get("/api/defective-move/detail/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT id,move_no AS "moveNo",inventory_id AS "inventoryId",
+      material_code AS "materialCode",material_name AS "materialName",quantity,unit,status,
+      reason,remark,from_stock_status AS "fromStockStatus",confirm_remark AS "confirmRemark",
+      confirmed_at AS "confirmedAt",created_by_name AS "createdByName"
+      FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_DETAIL_FAILED", error.message)); }
+});
+
+// 自动生成调拨单号：DM + YYYYMMDD + 4位序号（同参考 nextDefectiveMoveNo）
+async function nextDefectiveMoveNo() {
+  const now = new Date();
+  const dateStr = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(now.getDate()).padStart(2, "0")}`;
+  const seq = Number((await query(`SELECT nextval('seq_defective_move_no') AS n`)).rows[0]?.n || 1);
+  return `DM${dateStr}${String(seq).padStart(4, "0")}`;
+}
+
+app.post("/api/defective-move/create", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    const { inventoryId, quantity, reason, remark, toLocationId } = req.body || {};
+    const userId = req.user?.userId || "";
+    const userName = req.user?.username || "";
+    const qty = Number(quantity);
+    if (!inventoryId) return res.status(400).json(errorEnvelope("VALIDATION", "inventoryId is required"));
+    if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json(errorEnvelope("VALIDATION", "quantity must be > 0"));
+    if (!reason || !String(reason).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "reason is required"));
+    const dup = (await query(`SELECT move_no FROM defective_move_tasks WHERE inventory_id=$1 AND status IN ('pending_confirm','pending') LIMIT 1`, [inventoryId])).rows[0];
+    if (dup) return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_DUPLICATED", `Inventory already has a pending move task (${dup.move_no})`));
+    const moveNo = await nextDefectiveMoveNo();
+    const { rows } = await query(`INSERT INTO defective_move_tasks(move_no,inventory_id,quantity,reason,remark,to_location_id,status,created_by,created_by_name,from_stock_status)
+      VALUES($1,$2,$3,$4,$5,$6,'pending_confirm',$7,$8,'good') RETURNING id,move_no,status`,
+      [moveNo, inventoryId, qty, String(reason).trim(), remark ? String(remark).trim() : null, toLocationId || null, userId, userName]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_CREATE_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/confirm", authenticateJWT, requireRole("wh_manager", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { approve, remark } = req.body || {};
+    const userId = req.user?.userId || "";
+    const row = (await query(`SELECT id,status FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (row.status !== "pending_confirm") return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", "Task has already been processed"));
+    const newStatus = approve ? "pending" : "cancelled";
+    await query(`UPDATE defective_move_tasks SET status=$1,confirmed_by=$2,confirm_remark=$3,confirmed_at=now(),updated_at=now()
+      WHERE id=$4 RETURNING id`, [newStatus, userId, remark ? String(remark).trim() : (approve ? null : "Rejected by supervisor"), id]);
+    res.json(successEnvelope({ id, status: newStatus }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_CONFIRM_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/cancel", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    // 作废/撤销（同参考 cancelOrder）：
+    //  - 待执行(pending)：只有仓库主管/管理员可作废
+    //  - 待确认(pending_confirm)：制单人本人或主管可撤销
+    const id = Number(req.params.id); const { reason } = req.body || {};
+    const userId = req.user?.userId || "";
+    const userRole = req.user?.roleKey || "";
+    const isManager = ["wh_manager", "admin"].includes(userRole);
+    const row = (await query(`SELECT id,status,created_by FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (!["pending_confirm", "pending"].includes(row.status)) return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", "Only pending_confirm / pending tasks can be cancelled"));
+    if (row.status === "pending" && !isManager) return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_FORBIDDEN", "Task is already effective; only a warehouse manager can cancel it"));
+    if (row.status === "pending_confirm" && !isManager && Number(row.created_by) !== Number(userId)) return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_FORBIDDEN", "Only the creator or a warehouse manager can cancel a pending-confirmation task"));
+    await query(`UPDATE defective_move_tasks SET status='cancelled',cancelled_by=$2,cancelled_at=now(),cancel_reason=$3,updated_at=now() WHERE id=$1`,
+      [id, userId, reason ? String(reason).trim() : "Manual cancellation"]);
+    res.json(successEnvelope({ success: true }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_CANCEL_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/scan", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    // 扫描货物标签，校验是否属于本单（逐箱预校验）
+    const id = Number(req.params.id); const { code } = req.body || {};
+    if (!code || !String(code).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "Scan content is empty"));
+    const row = (await query(`SELECT id,status,material_code AS "materialCode",quantity,unit FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (row.status !== "pending") return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", "Task is not in executable state"));
+    const text = String(code).trim();
+    const sep = text.includes("|") ? "|" : text.includes("*") ? "*" : null;
+    let parsed = { structured: false };
+    if (sep) {
+      const parts = text.split(sep).map((p) => p.trim());
+      if (parts.length >= 6) parsed = { structured: true, materialCode: parts[1], batchNo: parts[4], quantity: Number(parts[3]) };
+    }
+    const expectMaterial = String(row.materialCode || "").trim();
+    if (parsed.structured && parsed.materialCode && expectMaterial && parsed.materialCode !== expectMaterial) {
+      return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Material mismatch: scanned ${parsed.materialCode}, expected ${expectMaterial}`));
+    }
+    if (!parsed.structured) {
+      if (expectMaterial && text === expectMaterial) {
+        return res.json(successEnvelope({ matched: true, code: text, materialCode: expectMaterial, expectMaterial, expectBatch: "" }));
+      }
+      return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Barcode does not match this task (material ${expectMaterial || "-"})`));
+    }
+    res.json(successEnvelope({ matched: true, code: text, materialCode: parsed.materialCode || expectMaterial, expectMaterial, expectQty: Number(row.quantity || 0) }));
+  } catch (error) { res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_SCAN_FAILED", error.message)); }
+});
+
+app.post("/api/defective-move/:id/complete", authenticateJWT, requireRole("wh_keeper", "wh_manager", "admin"), async (req, res) => {
+  try {
+    // 执行调拨：必须带「扫描到的货物标签」与「扫描到的目标库位码」，操作人以登录身份为准
+    const id = Number(req.params.id); const { scannedCodes, toLocationCode } = req.body || {};
+    const operatorId = req.user?.userId || "";
+    const codes = Array.isArray(scannedCodes) ? scannedCodes.map((c) => String(c || "").trim()).filter(Boolean) : [];
+    if (codes.length === 0) return res.status(400).json(errorEnvelope("VALIDATION", "Please scan at least one cargo label matching this task"));
+    const toCode = String(toLocationCode || "").trim();
+    if (!toCode) return res.status(400).json(errorEnvelope("VALIDATION", "Please scan the defective warehouse location code"));
+    const loc = (await query(`SELECT id,code,status FROM storage_locations WHERE code=$1`, [toCode])).rows[0];
+    if (!loc || loc.status !== "active") return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_LOCATION_INVALID", `Location ${toCode} is not an active location`));
+    const row = (await query(`SELECT id,move_no AS "moveNo",inventory_id AS "inventoryId",status,material_code AS "materialCode",quantity
+      FROM defective_move_tasks WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("DEFECTIVE_MOVE_NOT_FOUND", "Defective move task not found"));
+    if (row.status !== "pending") return res.status(409).json(errorEnvelope("DEFECTIVE_MOVE_INVALID_STATE", row.status === "pending_confirm" ? "Task has not been confirmed by a warehouse manager" : "Task is already completed or cancelled"));
+    // 全量复核扫码内容（防绕过前端）：物料码必须一致
+    const expectMaterial = String(row.materialCode || "").trim();
+    for (const c of codes) {
+      const sep = c.includes("|") ? "|" : c.includes("*") ? "*" : null;
+      if (sep) {
+        const parts = c.split(sep).map((p) => p.trim());
+        if (parts.length >= 6 && parts[1] && expectMaterial && parts[1] !== expectMaterial) {
+          return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Material mismatch: scanned ${parts[1]}, expected ${expectMaterial}`));
+        }
+      } else if (expectMaterial && c !== expectMaterial) {
+        return res.status(400).json(errorEnvelope("DEFECTIVE_MOVE_MISMATCH", `Barcode does not match this task (material ${expectMaterial})`));
+      }
+    }
+    const qty = Number(row.quantity || 0);
+    await query('BEGIN');
+    const fromLoc = row.inventoryId
+      ? (await query(`SELECT storage_location_id AS "fromLocationId" FROM material_lots WHERE id=$1`, [row.inventoryId])).rows[0]?.fromLocationId || null
+      : null;
+    await query(`UPDATE defective_move_tasks
+      SET status='completed',to_location_id=$2,executed_by=$3,executed_at=now(),updated_at=now(),
+          scan_codes=$4,scan_to_code=$5,scan_at=now()
+      WHERE id=$1 RETURNING id`, [id, loc.id, operatorId, JSON.stringify(codes), toCode]);
+    // Reference WMS writes balanced stock movements for the transfer.
+    await query(
+      `INSERT INTO inventory_transactions (tx_no,action,material_lot_id,qty,from_location_id,to_location_id,
+         operator_id,tx_status,reference_type,reference_no,occurred_at,updated_at)
+       VALUES ($1,'TRANSFER',$2,$3,$4,NULL,$5,'posted','defective_move',$6,now(),now())`,
+      [`DM-OUT-${row.moveNo}`, row.inventoryId || 0, qty, fromLoc, operatorId, row.moveNo]
+    );
+    await query(
+      `INSERT INTO inventory_transactions (tx_no,action,material_lot_id,qty,from_location_id,to_location_id,
+         operator_id,tx_status,reference_type,reference_no,occurred_at,updated_at)
+       VALUES ($1,'TRANSFER',$2,$3,NULL,$4,$5,'posted','defective_move',$6,now(),now())`,
+      [`DM-IN-${row.moveNo}`, row.inventoryId || 0, qty, loc.id, operatorId, row.moveNo]
+    );
+    await query('COMMIT');
+    res.json(successEnvelope({ success: true, quantity: qty, toLocationCode: toCode, status: "completed" }));
+  } catch (error) {
+    try { await query('ROLLBACK'); } catch { /* ignore */ }
+    res.status(500).json(errorEnvelope("DEFECTIVE_MOVE_COMPLETE_FAILED", error.message));
+  }
+});
+
+// ── Grafted WMS routes: wms-hr (api/wms-hr) ──
+// Reference: WMS-20261019 server/modules/hr/hr.controller.ts
+// Role sets from reference:
+//   - hr: hr_manager, hr_staff, admin
+//   - hr: hr_manager, admin
+// SMT user: req.user = { userId, username, roleKey }
+// NOTE: Renamed from /api/hr to /api/wms-hr to avoid collision with SMT's native HR endpoints
+
+app.get("/api/wms-hr/departments", authenticateJWT, async (req, res) => {
+  try {
+    const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,parent_id,manager_employee_id,head_count,status,
+      created_at AS "createdAt",updated_at AS "updatedAt" FROM hr_departments ORDER BY code`);
+    res.json(successEnvelope(rows.rows));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_DEPARTMENTS_FAILED", error.message)); }
+});
+
+app.post("/api/wms-hr/departments", authenticateJWT, requireRole("hr_manager", "hr_staff", "admin"), async (req, res) => {
+  try {
+    const { code, nameZh, nameEn, nameVi, parentId } = req.body || {};
+    const userId = req.user?.userId || "";
+    if (!code || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "code and nameZh are required"));
+    const rows = await query(`INSERT INTO hr_departments(code,name_zh,name_en,name_vi,parent_id,head_count)
+      VALUES($1,$2,$3,$4,$5,0) RETURNING *`, [code, nameZh, nameEn, nameVi, parentId || null]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_CREATE_DEPARTMENT_FAILED", error.message)); }
+});
+
+app.put("/api/wms-hr/departments/:id", authenticateJWT, requireRole("hr_manager", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { code, nameZh, nameEn, nameVi } = req.body || {};
+    if (!code || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "code and nameZh are required"));
+    const row = (await query(`SELECT id FROM hr_departments WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("HR_DEPARTMENT_NOT_FOUND", "Department not found"));
+    await query(`UPDATE hr_departments SET code=$1,name_zh=$2,name_en=$3,name_vi=$4,updated_at=now() WHERE id=$5`,
+      [code, nameZh, nameEn, nameVi, id]);
+    res.json(successEnvelope({ id }));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_UPDATE_DEPARTMENT_FAILED", error.message)); }
+});
+
+app.get("/api/wms-hr/employees", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, keyword, departmentId } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (keyword) {
+      const kw = `%${keyword.trim()}%`;
+      conditions.push(`employee_no ILIKE $${idx++} OR name_zh ILIKE $${idx++}`); params.push(kw, kw); idx += 2;
+    }
+    if (departmentId) { conditions.push(`department_id = $${idx++}`); params.push(departmentId); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,employee_no AS "employeeNo",name_zh,name_en,name_vi,gender,birth_date AS "birthDate",
+      phone,email,department_id AS "departmentId",position_title AS "positionTitle",employment_type AS "employmentType",
+      join_date AS "joinDate",status,created_at AS "createdAt",updated_at AS "updatedAt"
+      FROM hr_employees ${where} ORDER BY employee_no LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM hr_employees ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ items: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_EMPLOYEES_FAILED", error.message)); }
+});
+
+app.get("/api/wms-hr/employees/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM hr_employees WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("HR_EMPLOYEE_NOT_FOUND", "Employee not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_EMPLOYEE_DETAIL_FAILED", error.message)); }
+});
+
+app.post("/api/wms-hr/employees", authenticateJWT, requireRole("hr_manager", "hr_staff", "admin"), async (req, res) => {
+  try {
+    const { employeeNo, nameZh, nameEn, nameVi, gender, departmentId, positionTitle, employmentType, joinDate } = req.body || {};
+    if (!employeeNo || !nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "employeeNo and nameZh are required"));
+    const userId = req.user?.userId || "";
+    const rows = await query(`INSERT INTO hr_employees(employee_no,name_zh,name_en,name_vi,gender,department_id,position_title,employment_type,join_date)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,
+      [employeeNo, nameZh, nameEn, nameVi, gender, departmentId, positionTitle, employmentType, joinDate || null]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_CREATE_EMPLOYEE_FAILED", error.message)); }
+});
+
+app.put("/api/wms-hr/employees/:id", authenticateJWT, requireRole("hr_manager", "hr_staff", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id); const { nameZh, nameEn, nameVi, departmentId, positionTitle } = req.body || {};
+    if (!nameZh) return res.status(400).json(errorEnvelope("VALIDATION", "nameZh is required"));
+    const row = (await query(`SELECT id FROM hr_employees WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("HR_EMPLOYEE_NOT_FOUND", "Employee not found"));
+    await query(`UPDATE hr_employees SET name_zh=$1,name_en=$2,name_vi=$3,department_id=$4,position_title=$5,updated_at=now() WHERE id=$6`,
+      [nameZh, nameEn, nameVi, departmentId, positionTitle, id]);
+    res.json(successEnvelope({ id }));
+  } catch (error) { res.status(500).json(errorEnvelope("HR_UPDATE_EMPLOYEE_FAILED", error.message)); }
+});
+
+// ── Grafted WMS routes: wms-sales (api/wms-sales) ──
+// Reference: WMS-20261019 server/modules/sales/sales.controller.ts
+// Role sets from reference:
+//   - create/update: sales_manager, sales_rep, admin
+//   - delete (soft-void): sales_manager, admin
+// Reference code gen: CUST-<timestamp last 6>
+// SMT user: req.user = { userId, username, roleKey }
+// NOTE: Renamed from /api/sales to /api/wms-sales to avoid collision with SMT's native sales endpoints
+
+app.get("/api/wms-sales/customers", authenticateJWT, async (req, res) => {
+  try {
+    const { page = 1, pageSize = 20, keyword } = req.query;
+    const conditions = []; const params = []; let idx = 1;
+    if (keyword) { conditions.push(`(code ILIKE $${idx++} OR name_zh ILIKE $${idx++} OR name_en ILIKE $${idx++})`); params.push(`%${keyword}%`,`%${keyword}%`,`%${keyword}%`); }
+    const where = conditions.length ? "WHERE " + conditions.join(" AND ") : "";
+    const limit = Math.min(Math.max(Number(pageSize),1),200); const offset = (Math.max(Number(page),1)-1)*limit;
+    params.push(limit, offset);
+    const rows = await query(`SELECT id,code,name_zh,name_en,name_vi,contact_name AS "contactName",contact_phone AS "contactPhone",
+      delivery_address AS "address",tax_registration_no AS "taxCode",payment_terms_days AS "paymentTerm",default_currency_code AS "currency",status,
+      updated_at AS "updatedAt"
+      FROM customers ${where} ORDER BY id DESC LIMIT $${idx} OFFSET $${idx+1}`, params);
+    const totalRows = await query(`SELECT count(*) FROM customers ${where}`, params.slice(0,-2));
+    res.json(successEnvelope({ list: rows.rows, total: Number(totalRows.rows[0].count), page: Number(page), pageSize: limit }));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_CUSTOMERS_FAILED", error.message)); }
+});
+
+app.get("/api/wms-sales/customers/:id", authenticateJWT, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT * FROM customers WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
+    res.json(successEnvelope(row));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_CUSTOMER_DETAIL_FAILED", error.message)); }
+});
+
+// 自动生成客户编码：CUST-<Date.now() 后 6 位>（同参考 createCustomer）
+function nextCustomerCode() {
+  return `CUST-${Date.now().toString().slice(-6)}`;
+}
+
+app.post("/api/wms-sales/customers", authenticateJWT, requireRole("sales_manager", "sales_rep", "admin"), async (req, res) => {
+  try {
+    const { customerName, customerNameVi, customerNameEn, contactPerson, contactPhone, contactEmail, address, taxCode, paymentTerm, currency, remark } = req.body || {};
+    const userId = req.user?.userId || "";
+    if (!customerName || !String(customerName).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "customerName is required"));
+    const code = nextCustomerCode();
+    const rows = await query(`INSERT INTO customers(code,name_zh,name_en,name_vi,contact_name,contact_phone,delivery_address,tax_registration_no,payment_terms_days,default_currency_code,status)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'active',$11,$12) RETURNING *`,
+      [code, String(customerName).trim(), customerNameEn ? String(customerNameEn).trim() : null, customerNameVi ? String(customerNameVi).trim() : null,
+        contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, contactEmail ? String(contactEmail).trim() : null,
+        address ? String(address).trim() : null, taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
+        currency ? String(currency).trim() : "VND", remark ? String(remark).trim() : null, userId]);
+    res.json(successEnvelope(rows[0]));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_CREATE_CUSTOMER_FAILED", error.message)); }
+});
+
+app.put("/api/wms-sales/customers/:id", authenticateJWT, requireRole("sales_manager", "sales_rep", "admin"), async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const { customerName, customerNameVi, customerNameEn, contactPerson, contactPhone, contactEmail, address, taxCode, paymentTerm, currency, remark, status } = req.body || {};
+    if (!customerName || !String(customerName).trim()) return res.status(400).json(errorEnvelope("VALIDATION", "customerName is required"));
+    const row = (await query(`SELECT id FROM customers WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
+    await query(`UPDATE customers SET name_zh=$1,name_en=$2,name_vi=$3,contact_name=$4,contact_phone=$5,delivery_address=$6,tax_registration_no=$7,payment_terms_days=$8,default_currency_code=$9,remark=$10,status=COALESCE($11,status),updated_at=now() WHERE id=$12`,
+      [String(customerName).trim(), customerNameEn ? String(customerNameEn).trim() : null, customerNameVi ? String(customerNameVi).trim() : null,
+        contactPerson ? String(contactPerson).trim() : null, contactPhone ? String(contactPhone).trim() : null, address ? String(address).trim() : null,
+        taxCode ? String(taxCode).trim() : null, paymentTerm ? String(paymentTerm).trim() : "NET30",
+        currency ? String(currency).trim() : "VND", remark ? String(remark).trim() : null, status ? String(status) : null, id]);
+    res.json(successEnvelope({ id }));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_UPDATE_CUSTOMER_FAILED", error.message)); }
+});
+
+app.delete("/api/wms-sales/customers/:id", authenticateJWT, requireRole("sales_manager", "admin"), async (req, res) => {
+  try {
+    // 软删除：参考实现置 status=inactive，SMT 约定用 status 字段软删（voided）
+    const id = Number(req.params.id);
+    const row = (await query(`SELECT id FROM customers WHERE id=$1`, [id])).rows[0];
+    if (!row) return res.status(404).json(errorEnvelope("SALES_CUSTOMER_NOT_FOUND", "Customer not found"));
+    await query(`UPDATE customers SET status='inactive',updated_at=now() WHERE id=$1`, [id]);
+    res.json(successEnvelope({ id, status: "inactive" }));
+  } catch (error) { res.status(500).json(errorEnvelope("SALES_DELETE_CUSTOMER_FAILED", error.message)); }
 });

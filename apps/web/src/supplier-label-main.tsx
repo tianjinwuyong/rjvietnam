@@ -361,6 +361,19 @@ function FirstPasswordChange({ onComplete }: { onComplete: () => void }) {
   return <div className="supplier-login"><section className="supplier-login-panel"><div className="supplier-brand"><span className="supplier-brand-mark"><ShieldCheck size={21}/></span>瑞晶供应商门户</div><h1>{t("title")}</h1><p>{t("note")}</p><form className="supplier-login-form" onSubmit={submit}>{error&&<div className="supplier-login-error">{error}</div>}<label>{t("current")}<input type="password" autoComplete="current-password" value={form.current_password} onChange={e=>setForm(x=>({...x,current_password:e.target.value}))} title={t("current")} required/></label><label>{t("next")}<input type="password" autoComplete="new-password" minLength={10} value={form.new_password} onChange={e=>setForm(x=>({...x,new_password:e.target.value}))} title={t("next")} required/></label><label>{t("confirm")}<input type="password" autoComplete="new-password" minLength={10} value={form.confirm_password} onChange={e=>setForm(x=>({...x,confirm_password:e.target.value}))} title={t("confirm")} required/></label><button title={t("save")}>{t("save")}</button></form></section></div>;
 }
 
+type KanbanCard = {
+  key: string;
+  title: string;
+  meta: string;
+  detail?: string;
+  status: string;
+  progress?: number;
+  progressText?: string;
+  due?: { text: string; tone: string };
+  page: Page;
+};
+type KanbanColumn = { id: string; title: string; tone: string; items: KanbanCard[] };
+
 function Dashboard({
   shipments,
   setPage,
@@ -374,12 +387,12 @@ function Dashboard({
   useEffect(() => { void Promise.all([fetch("/supplier-api/orders", { credentials: "include" }).then(r => r.ok ? r.json() : []), fetch("/supplier-api/label-manifests", { credentials: "include" }).then(r => r.ok ? r.json() : [])]).then(([o,m]) => { setOrders(o); setManifests(m); }); }, []);
   const poTotals = (o:any) => { const total=(o.payload?.lines||[]).reduce((n:number,l:any)=>n+Number(l.qty_ordered||0),0),finished=Number(o.supplier_completed_quantity||0);return {total,finished,percent:total>0?Math.min(100,Math.round(finished/total*100)):0}; };
   const deliveryCountdown=(date:string)=>{if(!date)return {text:"交期未设置",tone:"muted"};const target=new Date(`${date}T23:59:59`),days=Math.ceil((target.getTime()-Date.now())/86400000);return days<0?{text:`已逾期 ${Math.abs(days)} 天`,tone:"danger"}:days===0?{text:"今天到期",tone:"danger"}:days<=3?{text:`剩余 ${days} 天`,tone:"warning"}:{text:`剩余 ${days} 天`,tone:"ok"};};
-  const columns = [
+  const columns: KanbanColumn[] = [
     { id:"new", title:"新 PO", tone:"blue", items:orders.filter(o=>["OPEN","SENT","PENDING"].includes(String(o.status).toUpperCase())).map(o=>({key:`po-${o.po_no}`,title:o.po_no,meta:`${o.payload?.lines?.length||0} 个物料行 · 交期 ${o.requested_delivery_date||"待定"}`,status:o.status,progress:poTotals(o).percent,progressText:`${poTotals(o).finished}/${poTotals(o).total} · ${poTotals(o).percent}% 已完成`,due:deliveryCountdown(o.requested_delivery_date),page:"orders" as Page})) },
     { id:"prepare", title:"备料 / 标签", tone:"purple", items:orders.filter(o=>["ACCEPTED","ACKNOWLEDGED"].includes(String(o.status).toUpperCase())&&!manifests.some(m=>m.po_no===o.po_no)).map(o=>({key:`prep-${o.po_no}`,title:o.po_no,meta:"待生成箱码与托板绑定",status:"TO_PREPARE",due:deliveryCountdown(o.requested_delivery_date),page:"labels" as Page})) },
     { id:"pre", title:"预收货未确认", tone:"amber", items:manifests.filter(m=>String(m.status).startsWith("PRE_RECEIVING")).map(m=>{const o=orders.find(x=>x.po_no===m.po_no),totals=poTotals(o||{});return {key:`manifest-${m.id}`,title:m.po_no||m.material_code,meta:`${m.material_code} · ${m.total_quantity} ${m.unit}`,detail:`托板 ${m.payload?.pallets?.length||0} · 外箱 ${m.outer_box_count} · 子箱 ${m.sub_box_count}`,status:m.status,progress:totals.percent,progressText:`${totals.finished}/${totals.total} · ${totals.percent}% 已完成`,due:deliveryCountdown(o?.requested_delivery_date),page:"labels" as Page}}) },
     { id:"ship", title:"已发运", tone:"cyan", items:shipments.filter(s=>["SUBMITTED","IN_TRANSIT","SHIPPED"].includes(String(s.status).toUpperCase())&&!s.receiving).map(s=>({key:`ship-${s.id}`,title:s.asn,meta:`${s.po} · ETA ${s.eta}`,status:s.status,page:"shipments" as Page})) },
-    { id:"iqc", title:"WMS 收货 / IQC", tone:"orange", items:shipments.filter(s=>!!s.receiving&&!["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status||s.receiving?.status).toUpperCase())).map(s=>({key:`iqc-${s.id}`,title:s.asn,meta:`已扫 ${s.receiving?.scanned_boxes||0}/${s.receiving?.expected_boxes||0} 箱`,detail:`接受 ${s.receiving?.accepted_quantity||0} · 暂扣 ${s.receiving?.hold_quantity||0} · 拒收 ${s.receiving?.rejected_quantity||0}`,status:s.receiving?.iqc_status||s.receiving?.status,page:"shipments" as Page})) },
+    { id:"iqc", title:"WMS 收货 / IQC", tone:"orange", items:shipments.filter(s=>!!s.receiving&&!["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status).toUpperCase())).map(s=>({key:`iqc-${s.id}`,title:s.asn,meta:`已扫 ${s.receiving?.scanned_boxes||0}/${s.receiving?.expected_boxes||0} 箱`,detail:`接受 ${s.receiving?.accepted_quantity||0} · 暂扣 ${s.receiving?.hold_quantity||0} · 拒收 ${s.receiving?.rejected_quantity||0}`,status:s.receiving?.iqc_status||"",page:"shipments" as Page})) },
     { id:"done", title:"完成", tone:"green", items:[...orders.filter(o=>["RECEIVED","CLOSED"].includes(String(o.status).toUpperCase())).map(o=>({key:`done-po-${o.po_no}`,title:o.po_no,meta:"PO 已完成",status:o.status,progress:poTotals(o).percent,progressText:`${poTotals(o).finished}/${poTotals(o).total} · ${poTotals(o).percent}% 已完成`,page:"orders" as Page})),...shipments.filter(s=>["IQC_PASSED","CLOSED"].includes(String(s.receiving?.iqc_status||s.status).toUpperCase())).map(s=>({key:`done-${s.id}`,title:s.asn,meta:`${s.po} · 已完成收货`,status:s.receiving?.iqc_status||s.status,page:"shipments" as Page}))] },
   ];
   return (
@@ -1264,7 +1277,7 @@ function DeliveryPlan({
 }
 
 const staticPages: Record<
-  Exclude<Page, "dashboard" | "shipments" | "labels">,
+  Exclude<Page, "dashboard" | "shipments" | "labels" | "orders">,
   {
     title: string;
     eyebrow: string;
@@ -1354,7 +1367,7 @@ const staticPages: Record<
 function StaticPage({
   page,
 }: {
-  page: Exclude<Page, "dashboard" | "shipments" | "labels" | "returns" | "reviews" | "improvements">;
+  page: Exclude<Page, "dashboard" | "shipments" | "labels" | "returns" | "reviews" | "improvements" | "orders">;
 }) {
   const p = staticPages[page];
   return (

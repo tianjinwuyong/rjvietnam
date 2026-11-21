@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import {
   Repeat, CheckCircle, XCircle, AlertTriangle, ArrowRight,
-  GitBranch, RefreshCw, Settings2,
+  GitBranch, RefreshCw, Settings2, type LucideIcon,
 } from "lucide-react";
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
@@ -207,7 +207,7 @@ function RetestFlow({ nodes }: { nodes: RetestNode[] }) {
 function FlowSummary({ title, station, icon: Icon, color, nodes }: {
   title: string;
   station: string;
-  icon: React.ComponentType<{size?: number; style?: React.CSSProperties}>;
+  icon: LucideIcon | React.ComponentType<{size?: number; style?: React.CSSProperties}>;
   color: string;
   nodes: RetestNode[];
 }) {

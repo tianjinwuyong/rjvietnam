@@ -301,59 +301,6 @@ function SelectField({ label, value, onChange, options }: {
   );
 }
 
-// ── Quick login demo users ───────────────────────────────────────────────────
-const QUICK_USERS = [
-  { username: "VN_OP_001", label: "操作员", role: "SMT Operator", color: "#2563eb" },
-  { username: "VN_WH_001", label: "仓管", role: "Warehouse", color: "#16a34a" },
-  { username: "PMC_CN_01", label: "PMC", role: "Production", color: "#9333ea" },
-  { username: "QC_VN_01", label: "质检", role: "Quality", color: "#ea580c" },
-];
-
-function QuickButton({ username, label, role, color, onLogin }: {
-  username: string; label: string; role: string; color: string;
-  onLogin: (auth: Auth) => void;
-}) {
-  const [loading, setLoading] = useState(false);
-  const handleQuickLogin = async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`${API}/api/auth/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password: "Factory@123" }),
-      });
-      const body = await res.json();
-      if (!res.ok || !body.data?.item?.token) return;
-      const { token, user } = body.data.item;
-      onLogin({ token, username: user.username, permissions: user.permissions ?? [] });
-      speak("登录成功");
-    } catch { /* network error */ }
-    finally { setLoading(false); }
-  };
-  return (
-    <button
-      onClick={handleQuickLogin}
-      disabled={loading}
-      style={{
-        padding: "14px 8px",
-        fontSize: 14,
-        fontWeight: 700,
-        background: loading ? "#374151" : color,
-        color: "#fff",
-        border: "none",
-        borderRadius: 10,
-        cursor: loading ? "not-allowed" : "pointer",
-        flex: 1,
-        minWidth: 80,
-      }}
-    >
-      {loading ? "..." : label}
-      <br /><span style={{ fontSize: 11, fontWeight: 400, opacity: 0.85 }}>{role}</span>
-    </button>
-  );
-}
-
-// ── LoginScreen ────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }: { onLogin: (auth: Auth) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -390,12 +337,6 @@ function LoginScreen({ onLogin }: { onLogin: (auth: Auth) => void }) {
       <h2 style={{ color: "#f9fafb", textAlign: "center", marginBottom: 8 }}>物料有效期管控</h2>
       <p style={{ color: "#6b7280", textAlign: "center", fontSize: 13, marginBottom: 28 }}>快速登录</p>
 
-      {/* Quick login grid */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 24, flexWrap: "wrap" }}>
-        {QUICK_USERS.map((u) => (
-          <QuickButton key={u.username} {...u} onLogin={onLogin} />
-        ))}
-      </div>
 
       <div style={{ borderTop: "1px solid #374151", paddingTop: 20, marginTop: 4 }}>
         <p style={{ color: "#6b7280", textAlign: "center", fontSize: 12, marginBottom: 12 }}>或使用账号密码登录</p>

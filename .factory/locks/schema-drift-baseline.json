@@ -1,0 +1,32 @@
+{
+  "_what_this_is": "Migration files that cannot be replayed in order against an empty schema (their predecessors leave them unable to run). Ratcheted: a newly failing file fails the gate; fix one and re-run with --update to shrink it. Clearing this list is what makes `--fresh` meaningful again.",
+  "failing": {
+    "005_equipment_management_schema.sql": "字段 \"asset_id\" 不存在",
+    "039_facilities_maintenance.sql": "关系 \"equipment_locations\" 不存在",
+    "040_machine_inspection.sql": "关系 \"maintenance_orders\" 不存在",
+    "040_report_categories.sql": "关系 \"downtime_events\" 不存在",
+    "042_equipment_asset_reg.sql": "关系 \"equipment_categories\" 不存在",
+    "043_maintenance_views.sql": "关系 \"equipment_assets\" 不存在",
+    "044_maintenance_fixes.sql": "关系 \"breakdown_events\" 不存在",
+    "044_pm_schedule_system.sql": "关系 \"equipment_assets\" 不存在",
+    "155_mes_m7_route_runtime_ownership_fix.sql": "关系 \"station_sn_route_progress\" 不存在",
+    "156_mes_runtime_trace_indexes.sql": "关系 \"station_sn_registry\" 不存在",
+    "196_equipment_management_enhancement.sql": "关系 \"equipment_assets\" 不存在",
+    "204_maintenance_card.sql": "关系 \"equipment_assets\" 不存在",
+    "234_wms_auto_iqc_waiting.sql": "关系 \"wms_receiving_qr_registrations\" 不存在",
+    "236_wms_iqc_scrap_finance_loop.sql": "关系 \"wms_iqc_defect_cases\" 不存在",
+    "241_procurement_po_incoming_logistics.sql": "关系 \"supplier_shipments\" 不存在",
+    "250_wms_canvas_layout_persistence.sql": "关系 \"wms_canvas_layout_objects\" 不存在",
+    "292_legacy_table_ownership.sql": "关系 \"drift_probe.facility_categories_id_seq\" 不存在",
+    "294_mesrj_qlt_repair_detail_reconcile.sql": "无效的类型 timestamp with time zone 输入语法: \"\"",
+    "295_station_handover_transfers_alarmed_at.sql": "关系 \"station_handover_transfers\" 不存在",
+    "299_mrb_module_ownership.sql": "关系 \"drift_probe.facility_categories_id_seq\" 不存在",
+    "302_supplier_debt_ownership.sql": "关系 \"drift_probe.facility_categories_id_seq\" 不存在",
+    "306_phase3_ownership.sql": "关系 \"drift_probe.facility_categories_id_seq\" 不存在",
+    "309_rjvn_mirror_sync.sql": "关系 \"drift_probe.rjvn_over_picking_order\" 不存在",
+    "311_rjvn_mirror_audit_aliases.sql": "关系 \"drift_probe.rjvn_over_picking_order\" 不存在",
+    "320_wms_iqc_plan_seed_from_rjvn.sql": "关系 \"rjvn_iqc_template\" 不存在",
+    "321_db_ownership_repair.sql": "关系 \"drift_probe.v_wms_inventory_position_available\" 不存在"
+  },
+  "updated_at": "2026-11-20"
+}

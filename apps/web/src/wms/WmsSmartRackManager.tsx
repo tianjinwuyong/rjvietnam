@@ -50,50 +50,7 @@ export type ShelfCell = {
   periodicInspectionDue?: boolean; // 是否需周期复检
 };
 
-/* ── Mock 料架数据（含生命周期管控字段）────────────────────────────── */
 
-const MOCK_CELLS: ShelfCell[] = [
-  {
-    locationCode: "L001A", labelId: "TSN-2025-0601-001", materialCode: "CAP-100UF-16V",
-    materialName: "贴片电容 100μF/16V", qty: 2000, minStock: 500,
-    inTime: "2025-06-28T08:00:00Z",
-    lotNo: "LOT-20250628-001", expiryDate: "2026-06-28", remainingDays: -2,
-    alertLevel: "EXPIRED", fifoOrder: 2, fifoViolation: false,
-  },
-  {
-    locationCode: "L001B", labelId: "TSN-2025-0601-002", materialCode: "RES-10K-0603",
-    materialName: "贴片电阻 10kΩ 0603", qty: 300, minStock: 1000,
-    inTime: "2025-06-28T09:30:00Z",
-    lotNo: "LOT-20250628-002", expiryDate: "2027-06-28", remainingDays: 365,
-    alertLevel: "NORMAL", fifoOrder: 3, fifoViolation: false,
-  },
-  {
-    locationCode: "L002A", labelId: "TSN-2025-0620-015", materialCode: "IC-STM32F103",
-    materialName: "STM32F103 MCU", qty: 450, minStock: 200,
-    inTime: "2025-06-20T14:00:00Z",
-    lotNo: "LOT-20250620-015", expiryDate: "2026-09-20", remainingDays: 82,
-    alertLevel: "BLUE_L2", fifoOrder: 1, fifoViolation: false,
-  },
-  {
-    locationCode: "L002B", labelId: "", materialCode: "", materialName: "", qty: 0, minStock: 0,
-    inTime: "",
-  },
-  {
-    locationCode: "L003A", labelId: "TSN-2025-0615-008", materialCode: "LED-RED-0805",
-    materialName: "红色LED 0805", qty: 80, minStock: 200,
-    inTime: "2025-06-15T10:00:00Z",
-    lotNo: "LOT-20250615-008", expiryDate: "2026-07-01", remainingDays: 1,
-    alertLevel: "RED_L3", fifoOrder: 1, fifoViolation: true,
-    periodicInspectionDue: true,
-  },
-  {
-    locationCode: "L003B", labelId: "TSN-2025-0625-020", materialCode: "CONN-USB-C",
-    materialName: "USB-C 连接器 24P", qty: 150, minStock: 100,
-    inTime: "2025-06-25T11:00:00Z",
-    lotNo: "LOT-20250625-020", expiryDate: "2026-08-25", remainingDays: 56,
-    alertLevel: "YELLOW_L1", fifoOrder: 2, fifoViolation: false,
-  },
-];
 
 const RACKS = ["L001", "L002", "L003"];
 

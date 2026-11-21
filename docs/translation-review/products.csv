@@ -1,0 +1,9 @@
+id,code,name_zh,name_en,name_vi
+1,PCBA-AURORA-CTRL,Aurora 控制板,Aurora Controller PCBA,PCBA điều khiển Aurora
+2,PCBA-POWER-CTRL,电源控制板,Power Controller PCBA,PCBA điều khiển nguồn
+3,B2672111-001,海翼A2672 CD版 1C 100WGaN插墙式电源适配器黑色（US版),Sea Wing A2672 CD Edition 1C 100W GaN Wall Adapter Black (US Edition),"Cáp điện 1C 100W GaN cho tường lắp đặt, màu đen (ứng dụng cho thị trường Mỹ)"
+4,EPS18R1G,NBT 12V1.5A美规插墙式电源适配器冷灰色 产品型号：EPS18R1G AI版,"NBT 12V1.5A US Wall Adapter in Cold Gray, Product Model: EPS18R1G AI Edition","Cáp điện 12V1.5A cho tường lắp đặt, màu lạnh, sản phẩm model: EPS18R1G AI Edition"
+5,EPS48R1-36,NBT 12V4A美规桌面式电源适配器冷灰色 产品型号：EPS48R1-36 AI版,"NBT 12V4A US Desktop Adapter in Cold Gray, Product Model: EPS48R1-36 AI Edition","Cáp điện 12V4A cho bàn làm việc, màu lạnh, sản phẩm model: EPS48R1-36 AI Edition"
+6,PCBA-MOTOR-IO,电机驱动 IO 板,Motor Driver IO Board,Board điều khiển động cơ IO
+7,PCBA-POWER-HV,高压电源板,High Voltage PSU Board,Board nguồn cao áp
+10,NBC56B120460VU AF39a,12V4.6A 电源适配器,12V4.6A Power Adapter,Cáp điện 12V4.6A
