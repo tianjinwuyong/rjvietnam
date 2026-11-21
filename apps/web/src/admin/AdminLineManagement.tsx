@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent } from "react";
 import { t } from "../i18n";
+import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { mesApi } from "../api";
 
 // /mes/lines answers camelCase (lineCode, nameZh...) while the shared FactoryLine type is
@@ -111,15 +112,15 @@ function AdminLineManagement({ locale }: { locale: Locale }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((line: FactoryLine) => (
-                <tr key={line.id}>
+              {filtered.map((line) => (
+                <tr key={line.lineCode}>
                   <td><code>{line.lineCode}</code></td>
                   <td>{line.name_zh}</td>
                   <td>{line.name_en}</td>
                   <td>{line.name_vi}</td>
-                  <td><span className={`badge badge-${lineStatusTone[line.status] ?? "muted"}`}>{t(`lineStatus.${line.status}` as any, locale)}</span></td>
-                  <td>{line.oee ?? "—"}</td>
-                  <td>{(line.outputToday ?? 0).toLocaleString()}</td>
+                  <td><span className={`badge badge-${lineStatusTone[line.status ?? ""] ?? "muted"}`}>{t(`lineStatus.${line.status}` as any, locale)}</span></td>
+                  <td>—</td>
+                  <td>{line.stationCount ?? 0}</td>
                 </tr>
               ))}
               {filtered.length === 0 && (

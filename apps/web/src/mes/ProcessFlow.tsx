@@ -20,7 +20,7 @@ import type { Locale, StationKey, StationDef, StationSection, LineStationState }
 import type { TranslationKey } from "../i18n";
 import { t, text } from "../i18n";
 import { mesApi, type Station, type StationType } from "../api/mes";
-import { stationDefs, demoStationStates } from "../data";
+import { stationDefs } from "../data";
 
 // Section ordering for display
 const sectionOrder: StationSection[] = ["smt", "post_smt", "packaging", "oqc", "auxiliary"];

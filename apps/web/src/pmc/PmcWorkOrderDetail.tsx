@@ -4,6 +4,7 @@ import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { pmcApi } from "../api";
 import type { WorkOrder } from "../api/pmc";
 import { bomApi } from "../api/bom";
+import { wmsApi } from "../api/wms";
 import { mesApi, type FeederLoadingRecord } from "../api/mes";
 
 interface MaterialItem {
