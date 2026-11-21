@@ -213,5 +213,5 @@ npm run schedule:ve -- --once --limit=80                     # 按频率表跑�
 
 **存量审批已处置（2026-11-21 03:42Z）**：业务授权后以 `MO_LI_BIN`（莫立斌）为批准人，一次清掉 275 条 `WAITING_APPROVAL`（attempted 275 / approved 275 / refused 0）；写回创建 270 条后继草稿（IQC_SUBMIT 265、PM_SCHEDULE 4、LOCATION_BIND 1），5 条按设计不推进。库存与业务表零写入。旧向量集合 `smt_factory_memory` 决定**保留不删**。
 
-已做：**生产待批 200 条**用 `MO_LI_BIN` 清零（`approved_by` 200 行、`HUMAN_APPROVED` 200 事件、`WAITING_APPROVAL=0`）；30 个 `NO_PROBE` 岗位全部补齐探针并验证。跨谱系合并 `65e1743` 已落到当前分支（`180 ahead / 0 behind origin/main`），未 push；`harness/**`、locks、ratchet 基线未碰。待定：是否 push，以及生产调度器镜像是否更新到含新探针的版本。
+已做：**生产待批 200 条**用 `MO_LI_BIN` 清零（`approved_by` 200 行、`HUMAN_APPROVED` 200 事件、`WAITING_APPROVAL=0`）；30 个 `NO_PROBE` 岗位全部补齐探针并验证；生产调度器已换新镜像，两跳日志 `NO_PROBE=0 / PROBE_ERROR=0`。跨谱系合并 `65e1743` 已落到当前分支（187 ahead / 0 behind origin/main），未 push；`harness/**`、locks、ratchet 基线未碰。待定：是否 push。
 
