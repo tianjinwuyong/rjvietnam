@@ -159,8 +159,10 @@ export function registerDatasourceRoutes(app, deps) {
         wanted = remoteTables.map((t) => t.name);
       }
       if (!wanted.length) return res.status(400).json(errorEnvelope("VALIDATION", "no tables selected"));
-      if (wanted.length > 400) {
-        return res.status(400).json(errorEnvelope("VALIDATION", "too many tables in one sync (max 400)"));
+      // The production schema has 1,320 tables, so "sync all" must not be capped at a number
+      // that makes the feature refuse its own headline use case.
+      if (wanted.length > 5000) {
+        return res.status(400).json(errorEnvelope("VALIDATION", "too many tables in one sync (max 5000)"));
       }
 
       const { rows: [run] } = await query(
@@ -331,9 +333,10 @@ async function copyTable({ query, provider, code, runId, table, mode, batchSize 
   const cfg = provider.config || {};
   return withRemote(provider, async (remote) => {
     const columns = await remoteColumns(remote, cfg, table);
-    if (!columns.length) throw new Error("source table has no columns");
+    // A name that exists in neither schema nor catalogue is the common case (typo, or a table
+    // that only exists on the local side); say that instead of "no columns".
+    if (!columns.length) throw new Error(`source table ${table} not found in ${cfg.schema || "public"}`);
     const colList = columns.map((c) => `"${c.name.replace(/"/g, '""')}"`).join(", ");
-    const placeholders = columns.map((_, i) => `$${i + 1}`).join(", ");
 
     await query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
     await query(
@@ -380,7 +383,6 @@ async function copyTable({ query, provider, code, runId, table, mode, batchSize 
       offset += rows.length;
       if (rows.length < batchSize) break;
     }
-    void placeholders;
     return copied;
   });
 }
