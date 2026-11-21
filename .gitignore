@@ -177,6 +177,11 @@ apps/web/dist-*.tgz
 /*.jpg
 /*.jpeg
 
+
+# Archived one-off diagnostics (moved out of services/api / repo root).
+/scratch/
+*.backup
+_head_*.mjs
 # One-off scratch scripts written at the repo root.
 # These are anchored with a leading slash on purpose: an unanchored
 # "q*.cjs" also matched services/api/query_*.cjs, and opencode still
