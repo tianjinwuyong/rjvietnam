@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [ main, master, dev ]
+    branches: [ main, master, dev, 'deploy/**', 'feat/**', 'feature/**' ]
   pull_request:
     branches: [ main, master, dev ]
 
@@ -38,6 +38,30 @@ jobs:
 
       - name: Type check services/api (ratcheted)
         run: npm run typecheck:api
+
+      # The remaining signals of the gate's static rung (harness.config.json).
+      # All are database-free, or print a loud SKIP when the DB is absent
+      # (check:picking-drift), so they run on a stock ubuntu runner.
+      - name: i18n trilingual keys
+        run: npm run check:i18n
+
+      - name: Auth order (stranded guards floor = 0)
+        run: npm run check:auth-order
+
+      - name: Migrations append-only ratchet
+        run: npm run check:migrations
+
+      - name: Route census (total must not shrink)
+        run: npm run check:route-census
+
+      - name: Route shadowing (dead guards must not grow)
+        run: npm run check:route-shadowing
+
+      - name: Register deps (no undeclared identifiers at module load)
+        run: npm run check:register-deps
+
+      - name: Picking drift (static half; DB half SKIPs without a database)
+        run: npm run check:picking-drift
 
   test:
     runs-on: ubuntu-latest

@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# pre-push: run the SAME static + unit signals as .github/workflows/ci.yml and
+# harness/harness.config.json before any branch leaves this machine.
+# Install:  cp scripts/hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# Bypass (emergency only, e.g. pushing a WIP backup tag): SKIP_PREPUSH=1 git push …
+set -e
+if [ "${SKIP_PREPUSH:-0}" = "1" ]; then
+  echo "pre-push: SKIPPED via SKIP_PREPUSH=1 (CI still runs on the remote)"
+  exit 0
+fi
+cd "$(git rev-parse --show-toplevel)"
+
+echo "pre-push: static rung (same commands as ci.yml / harness.config.json)"
+npm run typecheck
+npm run check:syntax
+npm run typecheck:api
+npm run check:i18n
+npm run check:auth-order
+npm run check:migrations
+npm run check:route-census
+npm run check:route-shadowing
+npm run check:register-deps
+npm run check:picking-drift
+
+echo "pre-push: unit rung"
+npm run test:unit
+
+echo "pre-push: all signals green"
