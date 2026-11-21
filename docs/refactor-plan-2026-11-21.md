@@ -94,6 +94,16 @@ server.js 经 `src/db.js` 连库(search_path=rjvn,public),但全部业务表在 
 
 验收:故意改坏一个类型,CI 红;恢复后绿。在本工作分支上验证触发,不只在 main。
 
+**执行状态(2026-11-21 晚,已完成)**:上述 1–4 全部落地并推送(提交 41db6bc)。
+首次远端运行即红——红的不是新检查,而是**仓库本来就不能从干净克隆通过 typecheck**:
+`**/reports/` 忽略规则把被已提交代码 import 的源码目录挡在 git 外;8320645 等提交只交了
+消费端(App.tsx / wms/index.ts 的 export),生产端(mesrj groups、6 张 WMS  graft 页、
+reports/ 目录)留在工作区未提交;bwip-js 锁 4.6.0 缺 `padding` 类型。已按归属分 5 个提交
+补齐(f1023b1、f71eff7、43b72ca、2db4df3、b1d6677),本地全组绿后**经 pre-push 钩子全量
+验证推送**(不再 SKIP)。这证明 CI 扩展第一天就抓住了它该抓的东西。
+遗留:`typecheck:api` 基线 595 → 实测 590(live-sync  lane 修掉了自己的 6 个错),
+降基线是人工决定,未动。
+
 ## 阶段 3 — server.js 拆分(6 轮,每轮半天)
 
 方法"搬迁而非复制"保留;每轮固定四步保留;独立提交保留。修正:

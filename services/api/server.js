@@ -43353,13 +43353,3 @@ app.delete("/api/wms-sales/customers/:id", authenticateJWT, requireRole("sales_m
     res.json(successEnvelope({ id, status: "inactive" }));
   } catch (error) { res.status(500).json(errorEnvelope("SALES_DELETE_CUSTOMER_FAILED", error.message)); }
 });
-import { registerDatasourceRoutes } from "./src/routes/datasources.js";
-// External data sources: the provider registry and the table-sync engine. Same reason it sits
-// here — these routes are declared after the app-level auth wrapper, so they are guarded.
-registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
-
-import { registerDatasourceRoutes } from "./src/routes/datasources.js";
-// External data sources: the provider registry and the table-sync engine. Same reason it sits
-// here — these routes are declared after the app-level auth wrapper, so they are guarded.
-registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
-
