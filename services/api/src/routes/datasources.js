@@ -231,11 +231,15 @@ function mapColumnType(kind, dataType, udtName) {
   if (/^(int|integer|smallint|bigint|serial|bigserial)/.test(t)) return "bigint";
   if (/^(numeric|decimal|real|double|float|money)/.test(t)) return "numeric";
   if (/^bool/.test(t)) return "boolean";
-  if (/^timestamp/.test(t)) return "timestamptz";
+  // MySQL spells it DATETIME, PostgreSQL TIMESTAMP; both land in timestamptz.
+  if (/^(timestamp|datetime)/.test(t)) return "timestamptz";
   if (/^date$/.test(t)) return "date";
   if (/^time$/.test(t)) return "time";
   if (/^json/.test(t)) return "jsonb";
   if (kind === "mysql" && /^(tinyint\(1\)|mediumint|year)/.test(t)) return "bigint";
+  // Binary must not fall through to text: node-pg sends a Buffer as `\x…` and a text column
+  // would then store the hex literal instead of the bytes.
+  if (/^(bytea|byte|blob|binary|varbinary|longblob|mediumblob|tinyblob)/.test(t)) return "bytea";
   return "text";
 }
 
@@ -327,6 +331,36 @@ async function remoteColumns(remote, cfg, table) {
   }));
 }
 
+/** Primary key columns of a remote table, in constraint order (empty when it has none). */
+async function remotePrimaryKey(remote, cfg, table) {
+  if (remote.kind === "mysql") {
+    const [rows] = await remote.conn.query(
+      `SELECT k.column_name AS name
+         FROM information_schema.table_constraints c
+         JOIN information_schema.key_column_usage k
+           ON k.constraint_schema = c.constraint_schema
+          AND k.constraint_name = c.constraint_name
+          AND k.table_name = c.table_name
+        WHERE c.table_schema = DATABASE() AND c.table_name = ? AND c.constraint_type = 'PRIMARY KEY'
+        ORDER BY k.ordinal_position`,
+      [table],
+    );
+    return rows.map((r) => r.name);
+  }
+  const { rows } = await remote.conn.query(
+    `SELECT a.attname AS name
+       FROM pg_index i
+       JOIN pg_class c ON c.oid = i.indrelid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       JOIN unnest(i.indkey) WITH ORDINALITY AS k(attnum, ord) ON true
+       JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = k.attnum
+      WHERE n.nspname = $1 AND c.relname = $2 AND i.indisprimary
+      ORDER BY k.ord`,
+    [cfg.schema || "public", table],
+  );
+  return rows.map((r) => r.name);
+}
+
 /** Copy one remote table into `ext_<code>` on this database. */
 async function copyTable({ query, provider, code, runId, table, mode, batchSize }) {
   const schema = targetSchemaFor(code);
@@ -336,33 +370,69 @@ async function copyTable({ query, provider, code, runId, table, mode, batchSize 
     // A name that exists in neither schema nor catalogue is the common case (typo, or a table
     // that only exists on the local side); say that instead of "no columns".
     if (!columns.length) throw new Error(`source table ${table} not found in ${cfg.schema || "public"}`);
-    const colList = columns.map((c) => `"${c.name.replace(/"/g, '""')}"`).join(", ");
+    // Identifier quoting is per dialect: MySQL reads "id" as a *string literal*, so the
+    // double-quoted list that is right for the local INSERT selected the column names as data
+    // ("invalid input syntax for type bigint: \"id\"").
+    const srcQuote = remote.kind === "mysql"
+      ? (name) => `\`${name.replace(/`/g, "``")}\``
+      : (name) => `"${name.replace(/"/g, '""')}"`;
+    const dstQuote = (name) => `"${name.replace(/"/g, '""')}"`;
+    const selectList = columns.map((c) => srcQuote(c.name)).join(", ");
+    const insertList = columns.map((c) => dstQuote(c.name)).join(", ");
 
     await query(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+    // replace = "make the staging copy match the source", so the table is rebuilt rather than
+    // truncated: a column whose type changed on the remote side keeps its old type otherwise,
+    // and CREATE TABLE IF NOT EXISTS would never notice.
+    if (mode === "replace") await query(`DROP TABLE IF EXISTS "${schema}"."${table}"`);
     await query(
       `CREATE TABLE IF NOT EXISTS "${schema}"."${table}" (${columns
-        .map((c) => `"${c.name.replace(/"/g, '""')}" ${c.type}`)
+        .map((c) => `${dstQuote(c.name)} ${c.type}`)
         .join(", ")})`,
     );
-    if (mode === "replace") await query(`TRUNCATE "${schema}"."${table}"`);
+
+    // Paging has to be *ordered* or the source's page boundaries move between queries and a
+    // table being written concurrently loses and duplicates rows at the same time. A
+    // single-column key paginates by keyset (no OFFSET rescan on a 600k-row table); anything
+    // else falls back to ordered OFFSET.
+    const pk = await remotePrimaryKey(remote, cfg, table);
+    const keyColumn = pk.length === 1 ? pk[0] : null;
+    const from = remote.kind === "mysql"
+      ? srcQuote(table)
+      : `${srcQuote(cfg.schema || "public")}.${srcQuote(table)}`;
+    const orderAll = columns.map((_, i) => i + 1).join(", ");
 
     let copied = 0;
     let offset = 0;
+    let lastKey = null;
     for (;;) {
-      let rows;
-      if (remote.kind === "mysql") {
-        const [r] = await remote.conn.query(
-          `SELECT ${colList} FROM \`${table}\` LIMIT ? OFFSET ?`,
-          [batchSize, offset],
-        );
-        rows = r;
-      } else {
-        const r = await remote.conn.query(
-          `SELECT ${colList} FROM "${cfg.schema || "public"}"."${table}" LIMIT $1 OFFSET $2`,
-          [batchSize, offset],
-        );
-        rows = r.rows;
+      let sql = `SELECT ${selectList} FROM ${from}`;
+      const params = [];
+      if (keyColumn && lastKey !== null) {
+        sql += remote.kind === "mysql"
+          ? ` WHERE ${srcQuote(keyColumn)} > ?`
+          : ` WHERE ${srcQuote(keyColumn)} > $${params.length + 1}`;
+        params.push(lastKey);
       }
+      sql += ` ORDER BY ${keyColumn ? srcQuote(keyColumn) : orderAll}`;
+      if (remote.kind === "mysql") {
+        sql += " LIMIT ?";
+        params.push(batchSize);
+        if (!keyColumn) {
+          sql += " OFFSET ?";
+          params.push(offset);
+        }
+      } else {
+        sql += ` LIMIT $${params.length + 1}`;
+        params.push(batchSize);
+        if (!keyColumn) {
+          sql += ` OFFSET $${params.length + 1}`;
+          params.push(offset);
+        }
+      }
+      const rows = remote.kind === "mysql"
+        ? (await remote.conn.query(sql, params))[0]
+        : (await remote.conn.query(sql, params)).rows;
       if (!rows.length) break;
 
       // Insert in chunks so the parameter list stays under PostgreSQL's 65535 limit.
@@ -375,12 +445,13 @@ async function copyTable({ query, provider, code, runId, table, mode, batchSize 
           return `(${columns.map((_, ci) => `$${r * columns.length + ci + 1}`).join(", ")})`;
         });
         await query(
-          `INSERT INTO "${schema}"."${table}" (${colList}) VALUES ${tuples.join(", ")}`,
+          `INSERT INTO "${schema}"."${table}" (${insertList}) VALUES ${tuples.join(", ")}`,
           values,
         );
       }
       copied += rows.length;
-      offset += rows.length;
+      if (keyColumn) lastKey = rows[rows.length - 1][keyColumn];
+      else offset += rows.length;
       if (rows.length < batchSize) break;
     }
     return copied;

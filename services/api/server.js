@@ -43354,3 +43354,8 @@ import { registerDatasourceRoutes } from "./src/routes/datasources.js";
 // here — these routes are declared after the app-level auth wrapper, so they are guarded.
 registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
 
+import { registerDatasourceRoutes } from "./src/routes/datasources.js";
+// External data sources: the provider registry and the table-sync engine. Same reason it sits
+// here — these routes are declared after the app-level auth wrapper, so they are guarded.
+registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
+
