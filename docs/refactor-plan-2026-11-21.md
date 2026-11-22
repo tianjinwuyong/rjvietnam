@@ -184,6 +184,34 @@ register-deps / shadowing(10=10)/ auth-order(0) / syntax 全绿;boot :8091
 SKIP:pack/agent/ping、repair/auto-gen、alert/rules POST、dwell/scan)。
 剩余大块:smt/oqc(约 10621+ 原行号)与 P1,归后续轮次。
 
+**[OK] 阶段 3 轮 2 · WMS 两带收口(2026-11-22)**:server.js 内两段干净连续 WMS 带
+整段迁出——A 带「库存/领料/发料/交接主流程」34 路由(94 KB,原 18848-20405)→
+`src/routes/wms-inventory-flow.js`;C 带「集料/缺料/发料公告」16 路由(61 KB,原
+22540-23624)→ `src/routes/wms-collect.js`。`registerWmsInventoryFlowRoutes` /
+`registerWmsCollectRoutes` 原位挂载(app 级鉴权闸门之后,注册序不变)。
+`resolveOperatorId` → `src/wms-shared.js`(server.js 余 2 处调用改 import);
+`ensureCollectOrder` 经返回值注入 PMC 挂载,**转发函数**消 TDZ(check:register-deps
+当场抓住直传会炸的形态);全仓零调用的 `normalizeLocationKey` /
+`ensureMissingCollectOrders` 随迁删除。server.js 2614→2457 KB(-157 KB)。
+**未搬**:B 带(finance/OA/supplier-portal 交错,非单域)、receiving 散段、shelf 带、
+closure dashboard——归后续轮次;同步冻结区(live-sync/mes-sync/itf/oa)未触碰。
+**随迁修复(HEAD 同样坏,非搬迁引入)**:GET /wms/lot-transactions 与 GET+POST
+/wms/pda-inspection-records 引用从不存在的列(material_lot_id/result/scanned_at/
+from_location…),此前一直 500;按 migration 001 canonical 形状重写,POST 兼容前端
+三种真实调用(WmsPdaIqc/WmsPdaReceiving 纯历史;旧移动端 materialLotId+result 带
+IQC 迁移+流水,operator_id 经 resolveOperatorId 解析因流水表 NOT NULL)。
+一次性 is_test 批次端到端证明后清理。**并行 lane 在途的 migration-332 冻结过滤
+(4 处 SQL)随块搬迁并入提交**(列已在库中,契约测试断言其在场;归属见
+CLAIM-wms-split-round2-api.md);`tests/wms-lot-lock-contract.test.ts` 两条
+server.js 文本断言改指 server.js+新模块(同 needle 同阈值)。验证:census 前后
+全量快照一致(total=2868);干净树(git archive HEAD+仅本搬迁,剥冻结过滤)
+census 与 HEAD 一致(2769);register-deps / auth-order(0)/ shadowing(10=10)/
+syntax(388)/ api-typecheck(561≤595)/ test:unit(1342 过 6 跳 0 败)全绿;
+表驱动认证态冒烟 **50/50** 于工作区 :8093 与干净树 :8094 双跑(写端点只走
+首道守卫拒绝分支);PMC 转发用 pmc.edit JWT 实弹证明 quick-approve-release
+走到自身 NOT_FOUND 分支、无 TDZ。计划轮 2 判据"server.js 减 300 KB":本轮
+-157 KB,余量在 B 带拆分与 receiving/shelf,归轮 2 续切。
+
 ## 阶段 4 — 前端解单文件(3 轮,各半天)
 
 照原稿:registry 抽取 → 模块懒加载 → i18n 按域切 namespace。React 18.3.1 / Vite 5.4.21 不动。
