@@ -33,6 +33,7 @@
     "check:route-census": "node scripts/check-route-census.mjs",
     "check:route-shadowing": "node scripts/check-route-shadowing.mjs",
     "check:picking-drift": "node scripts/check-picking-drift.mjs",
+    "check:iqc-divergence": "node scripts/check-iqc-divergence.mjs",
     "check:register-deps": "node scripts/check-register-deps.mjs",
     "check:integration": "node scripts/check-integration-contracts.mjs",
     "report:ve": "node scripts/ve-report.mjs",

@@ -103,6 +103,8 @@ import { registerMaintenanceRoutes } from "./src/routes/maintenance.js";
 import { registerPmcRoutes } from "./src/routes/pmc.js";
 import { registerQmsRoutes } from "./src/routes/qms.js";
 import { registerDatasourceRoutes } from "./src/routes/datasources.js";
+import { registerLiveSyncRoutes } from "./src/routes/live-sync.js";
+import { registerMesApiRoutes } from "./src/routes/mes-api.js";
 import { registerLifecycleRoutes } from "./src/routes/lifecycle.js";
 import { registerCountRoutes } from "./src/routes/wms-counting.js";
 import { registerStationOpsRoutes } from "./src/routes/station-ops.js";
@@ -1101,7 +1103,15 @@ function temporarySignatureFlagMode(){
 app.use(cors());
 // Station inventory snapshots contain complete 12-board motherboard objects.
 // Keep enough headroom for backlog reconciliation without splitting a snapshot.
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({
+  limit: "10mb",
+  // OA 回调验签必须对「收到的原始字节」做 HMAC（发送方 wms-webhook.js 对
+  // JSON.stringify(payload) 签名）。只给回调路径留存 rawBody，避免全站请求
+  // 双倍内存。其余路径 req.rawBody 保持 undefined。
+  verify: (req, _res, buf) => {
+    if (req.originalUrl && req.originalUrl.includes("/integration/oa/callback")) req.rawBody = buf;
+  },
+}));
 
 const API_DOMAIN_RULES=[
   ["/api/integration","INTEGRATION"],["/api/wms","WMS"],["/api/smt","STATION"],["/api/station","STATION"],["/api/auth","AUTH"],
@@ -13324,6 +13334,14 @@ async function authenticateJWT(req, res, next) {
   if (req.method === "GET" && req.originalUrl.includes("/station/confirmed-motherboards/search/")) return next();
   // Public paths (req.path is relative to api router mount, so /api prefix already stripped)
   if (req.path === "/auth/login" || req.path === "/auth/logout" || req.path === "/auth/session" || req.path === "/wms/receiving/live-state" || req.path === "/wms/receiving/po-queue") return next();
+  // OA 审批回调（参考 @Public()）：对端是 OA 服务而不是浏览器，只持 HMAC 签名
+  // （X-OA-Signature），没有 JWT。验签在处理器内失败关闭（没配密钥 401、签名
+  // 不符 401，见 src/routes/oa-integration.js），所以这里放行不漏鉴权。
+  if (req.path === "/integration/oa/callback" || req.path === "/api/integration/oa/callback") return next();
+  // MES v1 只读契约（app 级挂载，req.path 仍带 /api）：机器客户端持 X-Api-Key，
+  // 每个处理器先过 guard() 验签（缺/错 key 401），放行不漏鉴权。/mes/v1-admin/*
+  // 不匹配此前缀，仍走 JWT + 权限。
+  if (req.path.startsWith("/api/mes/v1/")) return next();
   // Warehouse layout data — needed by PDA before login (no sensitive content,
   // just area/position lookup). The earlier form of this line tested for
   // "/api/wms/areas", which never matched: req.path is already stripped of the
@@ -39380,6 +39398,18 @@ registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvel
 // External data sources: the provider registry and the table-sync engine. Same reason it sits
 // here — these routes are declared after the app-level auth wrapper, so they are guarded.
 registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
+
+// Live-sync adapters: dynamic pull from the RUNNING WMS/OA on the tailnet
+// (100.107.212.49:18080 / :8090). Staging-only landing (sync_stage.live_*),
+// menu-drift snapshots, hub health via itf_api_log. Same lane/audience as the
+// hub above — declared after the auth wrapper, so the routes are guarded.
+registerLiveSyncRoutes(app, { query, requirePermission, errorEnvelope, successEnvelope, listEnvelope });
+
+// MES v1 read contract (grafted WMS-20261019 modules/mes-api): /api/mes/v1/*
+// read-only stock/picking/returns for MES & third-party clients, X-Api-Key auth
+// (prefix exempted in DEVICE_OPEN_PATHS; each handler guards). Data: rjvn_*
+// mirror. Admin key reveal/reset stays JWT+permission guarded.
+registerMesApiRoutes(app, { query, requirePermission, errorEnvelope, successEnvelope });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // AOI STATION API (MySQL)
