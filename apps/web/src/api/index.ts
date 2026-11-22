@@ -101,9 +101,6 @@ export type {
   PcbTrace,
 } from "./mes";
 
-export { projectsApi } from "./projects";
-export type { AppEntry, ProjectFormData } from "../projects/index";
-
 export { getAiHealth, postAiChat } from "./ai";
 export type { AiHealth, AiChatRequest, AiChatResponse } from "./ai";
 

@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { apiClient } from "../api/client";
+import { apiClient, apiBase } from "../api/client";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { t } from "../i18n";
 
@@ -77,7 +77,7 @@ export function PdaCommMonitor({ locale }: { locale: Locale }) {
   // ── SSE connection ─────────────────────────────────────────────────
   const connect = useCallback(() => {
     if (esRef.current) esRef.current.close();
-    const es = new EventSource("http://127.0.0.1:8080/api/pda/events");
+    const es = new EventSource(`${apiBase}/api/pda/events`);
     esRef.current = es;
 
     es.onopen = () => setConnected(true);
@@ -119,7 +119,7 @@ export function PdaCommMonitor({ locale }: { locale: Locale }) {
   // ── Fetch loading status ──────────────────────────────────────────
   const fetchLoadingStatus = useCallback(async (woCode: string) => {
     try {
-      const res = await fetch(`http://127.0.0.1:8080/api/pda/loading-status?woCode=${woCode}`);
+      const res = await fetch(`${apiBase}/api/pda/loading-status?woCode=${woCode}`);
       const json = await res.json();
       setLoadingStatus(json.data ?? null);
     } catch { setLoadingStatus(null); }
@@ -130,7 +130,7 @@ export function PdaCommMonitor({ locale }: { locale: Locale }) {
   const postEvent = async (from: string, to: string, type: string, payload: Record<string, unknown>, priority: Priority) => {
     setPostResult("Sending...");
     try {
-      const res = await fetch("http://127.0.0.1:8080/api/pda/events", {
+      const res = await fetch(`${apiBase}/api/pda/events`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ from, to, type, payload, priority }),
@@ -145,7 +145,7 @@ export function PdaCommMonitor({ locale }: { locale: Locale }) {
   // ── Fetch audit summary ───────────────────────────────────────────
   const [auditSummary, setAuditSummary] = useState<Record<string, number>>({});
   useEffect(() => {
-    fetch("http://127.0.0.1:8080/api/pda/audit-summary")
+    fetch(`${apiBase}/api/pda/audit-summary`)
       .then(r => r.json())
       .then(j => setAuditSummary(j.data ?? {}))
       .catch(() => {});

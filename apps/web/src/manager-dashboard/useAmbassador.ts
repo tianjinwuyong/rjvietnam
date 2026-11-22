@@ -39,6 +39,64 @@ export interface AgentMetrics {
   pending_count: number;
 }
 
+// ── API response → BusStats ───────────────────────────────────────
+// GET /api/agents/bus-stats returns { stats, byAgent, recentMessages }
+// aggregated over the last hour (services/api/server.js). The ambassador
+// pages were written against a flat BusStats shape that the endpoint never
+// returned — every field arrived undefined and computeEfficiencyHealth
+// crashed on throughput.toFixed. Map once here; consumers stay typed.
+interface RawStatusCounts { pending: number; processing: number; completed: number; failed: number; dead: number; total: number }
+interface RawBusStats {
+  stats?: Partial<RawStatusCounts>;
+  byAgent?: Record<string, number>;
+  recentMessages?: Array<{
+    source_agent: string; target_agent: string; subject: string; message_type: string;
+    status: string; priority: string; created_at: string; processed_at: string | null;
+  }>;
+}
+
+export function mapBusStats(raw: RawBusStats): BusStats {
+  const s: RawStatusCounts = {
+    pending: 0, processing: 0, completed: 0, failed: 0, dead: 0, total: 0, ...raw.stats,
+  };
+  const messages: MessageRecord[] = (raw.recentMessages ?? []).map((m, i) => ({
+    id: `${m.source_agent}>${m.target_agent}:${m.created_at}#${i}`,
+    from_agent: m.source_agent,
+    to_agent: m.target_agent,
+    subject: m.subject,
+    type: m.message_type,
+    priority: m.priority,
+    status: m.status,
+    latency_ms: m.processed_at
+      ? Math.max(0, new Date(m.processed_at).getTime() - new Date(m.created_at).getTime())
+      : -1,
+    created_at: m.created_at,
+  }));
+  const latencies = messages.filter(m => m.latency_ms >= 0).map(m => m.latency_ms);
+  const per_agent: Record<string, AgentMetrics> = {};
+  for (const [agent, received] of Object.entries(raw.byAgent ?? {})) {
+    per_agent[agent] = {
+      agent_id: agent, agent_name: agent,
+      messages_sent: 0, messages_received: received,
+      success_count: 0, failed_count: 0,
+      avg_latency_ms: 0, error_rate: 0, pending_count: 0,
+    };
+  }
+  return {
+    total_messages: s.total,
+    pending_count: s.pending,
+    completed_count: s.completed,
+    failed_count: s.failed,
+    // the API window is one hour → msg/min
+    throughput: s.total / 60,
+    avg_latency_ms: latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : 0,
+    error_rate: s.total > 0 ? s.failed / s.total : 0,
+    queue_depth: s.pending + s.processing,
+    messages,
+    per_agent,
+  };
+}
+
 export interface AmbassadorAlert {
   id: string;
   agentId: string;
@@ -80,7 +138,8 @@ export function useAmbassador<T extends AmbassadorAlert>(
 
   const fetchStats = useCallback(async () => {
     try {
-      const data = await apiClient.get<BusStats>("/api/agents/bus-stats");
+      const raw = await apiClient.get<RawBusStats>("/api/agents/bus-stats");
+      const data = mapBusStats(raw);
       setStats(data);
       const derived = deriveAlerts(data);
       setAlerts(prev => {

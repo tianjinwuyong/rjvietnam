@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { t } from "../i18n";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { pmcApi } from "../api";
+import { apiBase } from "../api/client";
 
 /** Patrol node states */
 export type PatrolNodeState = "firing" | "warning" | "idle" | "disabled";
@@ -226,7 +227,7 @@ export function PmcPatrolDashboard({ locale }: { locale: Locale }) {
 
   const fetchPatrolState = useCallback(async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8080/pmc/patrol-state");
+      const res = await fetch(`${apiBase}/pmc/patrol-state`);
       if (res.ok) {
         const data: PatrolState = await res.json();
         setPatrolState(data);

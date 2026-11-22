@@ -11,6 +11,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { CheckCircle, Package, Clock, AlertTriangle, Plus, ArrowRight } from "lucide-react";
 import { t } from "../i18n";
+import { apiBase } from "../api/client";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -106,7 +107,7 @@ export function WmsProductionInbound({ locale }: { locale: Locale }) {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://127.0.0.1:8080/api/production/orders?status=" + (statusFilter || ""), {
+      const res = await fetch(`${apiBase}/api/production/orders?status=${encodeURIComponent(statusFilter || "")}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -120,7 +121,7 @@ export function WmsProductionInbound({ locale }: { locale: Locale }) {
   const fetchReceipts = useCallback(async () => {
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://127.0.0.1:8080/api/production/fg?pageSize=100", {
+      const res = await fetch(`${apiBase}/api/production/fg?pageSize=100`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -142,7 +143,7 @@ export function WmsProductionInbound({ locale }: { locale: Locale }) {
     setSubmitting(true);
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch("http://127.0.0.1:8080/api/production/fg", {
+      const res = await fetch(`${apiBase}/api/production/fg`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

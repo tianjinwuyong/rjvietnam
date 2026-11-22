@@ -38,11 +38,13 @@ export interface QmsNgCase {
   scrap_approved_by: string | null; operator_name: string | null;
   created_at: string; updated_at: string;
 }
+// Mirrors GET /api/qms/kpi/summary (services/api/server.js): COUNT(*) FILTER
+// aggregates over qms_8d_reports + qms_ng_cases. pg returns bigint counts as
+// strings, hence the numeric coercion at the consumer.
 export interface QmsKpiSummary {
-  total_oqc_batches: number; oqc_pass_rate: number;
-  total_8d: number; open_8d: number; closed_8d: number;
-  total_ng: number; ng_repaired: number; ng_scrapped: number; ng_pending: number;
-  customer_complaints: number; supplier_ppm: number;
+  oqc_passed: string; oqc_failed: string;
+  ng_open: string; capa_closed: string; capa_containment: string; capa_open: string;
+  ng: { open: string; repairing: string; retesting: string; closed: string; scrapped: string };
 }
 export interface QmsCustomerStandard {
   id: number; customer_code: string; customer_name: string;
@@ -54,25 +56,25 @@ export interface QmsCustomerStandard {
 // The QMS surface is extended in phases below. Keep one stable, permissive
 // client shape while the backend rolls out the newer IPQC/SPC endpoints.
 export const qmsApi: any = {
-  listOqcBatches: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsOqcBatch[],total:number}}>("/qms/oqc/batches",{params:p}),
-  createOqcBatch: (d: Partial<QmsOqcBatch>) => apiClient.post<QmsOqcBatch>("/qms/oqc/batches",d),
-  getOqcBatch: (id: number) => apiClient.get<QmsOqcBatch>(`/qms/oqc/batches/${id}`),
-  updateOqcBatch: (id: number, d: Partial<QmsOqcBatch>) => apiClient.put<QmsOqcBatch>(`/qms/oqc/batches/${id}`,d),
-  listOqcItems: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsOqcItem[],total:number}}>("/qms/oqc/items",{params:p}),
-  recordOqcItem: (d: Partial<QmsOqcItem>) => apiClient.post<QmsOqcItem>("/qms/oqc/items",d),
-  list8d: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsEightD[],total:number}}>("/qms/8d",{params:p}),
-  create8d: (d: Partial<QmsEightD>) => apiClient.post<QmsEightD>("/qms/8d",d),
-  get8d: (id: number) => apiClient.get<QmsEightD>(`/qms/8d/${id}`),
-  update8d: (id: number, d: Partial<QmsEightD>) => apiClient.put<QmsEightD>(`/qms/8d/${id}`,d),
-  add8dEvidence: (id: number, d: {evidence_type:string;content:string}) => apiClient.post(`/qms/8d/${id}/evidence`,d),
-  close8d: (id: number) => apiClient.put(`/qms/8d/${id}/close`),
-  listNgCases: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsNgCase[],total:number}}>("/qms/ng/cases",{params:p}),
-  createNgCase: (d: Partial<QmsNgCase>) => apiClient.post<QmsNgCase>("/qms/ng/cases",d),
-  repairNg: (id: number, d: {repair_notes:string}) => apiClient.put(`/qms/ng/cases/${id}/repair`,d),
-  retestNg: (id: number, d: {retest_result:string}) => apiClient.put(`/qms/ng/cases/${id}/retest`,d),
-  scrapNg: (id: number, d: {scrap_reason:string;scrap_approved_by:string}) => apiClient.put(`/qms/ng/cases/${id}/scrap`,d),
-  getKpiSummary: () => apiClient.get<QmsKpiSummary>("/qms/kpi/summary"),
-  listCustomerStandards: () => apiClient.get<QmsCustomerStandard[]>("/qms/customer-standards"),
+  listOqcBatches: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsOqcBatch[],total:number}}>("/api/qms/oqc/batches",{params:p}),
+  createOqcBatch: (d: Partial<QmsOqcBatch>) => apiClient.post<QmsOqcBatch>("/api/qms/oqc/batches",d),
+  getOqcBatch: (id: number) => apiClient.get<QmsOqcBatch>(`/api/qms/oqc/batches/${id}`),
+  updateOqcBatch: (id: number, d: Partial<QmsOqcBatch>) => apiClient.put<QmsOqcBatch>(`/api/qms/oqc/batches/${id}`,d),
+  listOqcItems: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsOqcItem[],total:number}}>("/api/qms/oqc/items",{params:p}),
+  recordOqcItem: (d: Partial<QmsOqcItem>) => apiClient.post<QmsOqcItem>("/api/qms/oqc/items",d),
+  list8d: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsEightD[],total:number}}>("/api/qms/8d",{params:p}),
+  create8d: (d: Partial<QmsEightD>) => apiClient.post<QmsEightD>("/api/qms/8d",d),
+  get8d: (id: number) => apiClient.get<QmsEightD>(`/api/qms/8d/${id}`),
+  update8d: (id: number, d: Partial<QmsEightD>) => apiClient.put<QmsEightD>(`/api/qms/8d/${id}`,d),
+  add8dEvidence: (id: number, d: {evidence_type:string;content:string}) => apiClient.post(`/api/qms/8d/${id}/evidence`,d),
+  close8d: (id: number) => apiClient.put(`/api/qms/8d/${id}/close`),
+  listNgCases: (p?: Record<string,string>) => apiClient.get<{data:{items:QmsNgCase[],total:number}}>("/api/qms/ng/cases",{params:p}),
+  createNgCase: (d: Partial<QmsNgCase>) => apiClient.post<QmsNgCase>("/api/qms/ng/cases",d),
+  repairNg: (id: number, d: {repair_notes:string}) => apiClient.put(`/api/qms/ng/cases/${id}/repair`,d),
+  retestNg: (id: number, d: {retest_result:string}) => apiClient.put(`/api/qms/ng/cases/${id}/retest`,d),
+  scrapNg: (id: number, d: {scrap_reason:string;scrap_approved_by:string}) => apiClient.put(`/api/qms/ng/cases/${id}/scrap`,d),
+  getKpiSummary: () => apiClient.get<QmsKpiSummary>("/api/qms/kpi/summary"),
+  listCustomerStandards: () => apiClient.get<QmsCustomerStandard[]>("/api/qms/customer-standards"),
 };
 
 // ── Phase 2: IPQC + SPC Types ─────────────────────────────────────────────────
@@ -142,27 +144,27 @@ export interface QmsSpcAlert {
 
 Object.assign(qmsApi, {
   // IPQC
-  listIpqc: (p?: Record<string,string>) => apiClient.get<QmsIpqcInspection[]>("/qms/ipqc",{params:p}),
-  createIpqc: (d: any) => apiClient.post<QmsIpqcInspection>("/qms/ipqc",d),
-  getIpqc: (id: number) => apiClient.get<QmsIpqcInspection>(`/qms/ipqc/${id}`),
-  updateIpqc: (id: number, d: any) => apiClient.put<QmsIpqcInspection>(`/qms/ipqc/${id}`,d),
-  addIpqcItem: (id: number, d: any) => apiClient.post<QmsIpqcItem>(`/qms/ipqc/${id}/items`,d),
+  listIpqc: (p?: Record<string,string>) => apiClient.get<QmsIpqcInspection[]>("/api/qms/ipqc",{params:p}),
+  createIpqc: (d: any) => apiClient.post<QmsIpqcInspection>("/api/qms/ipqc",d),
+  getIpqc: (id: number) => apiClient.get<QmsIpqcInspection>(`/api/qms/ipqc/${id}`),
+  updateIpqc: (id: number, d: any) => apiClient.put<QmsIpqcInspection>(`/api/qms/ipqc/${id}`,d),
+  addIpqcItem: (id: number, d: any) => apiClient.post<QmsIpqcItem>(`/api/qms/ipqc/${id}/items`,d),
   // First Article
-  listFirstArticle: (p?: Record<string,string>) => apiClient.get<QmsFirstArticle[]>("/qms/first-article",{params:p}),
-  createFirstArticle: (d: any) => apiClient.post<QmsFirstArticle>("/qms/first-article",d),
-  approveFirstArticle: (id: number, d: any) => apiClient.put<QmsFirstArticle>(`/qms/first-article/${id}`,d),
+  listFirstArticle: (p?: Record<string,string>) => apiClient.get<QmsFirstArticle[]>("/api/qms/first-article",{params:p}),
+  createFirstArticle: (d: any) => apiClient.post<QmsFirstArticle>("/api/qms/first-article",d),
+  approveFirstArticle: (id: number, d: any) => apiClient.put<QmsFirstArticle>(`/api/qms/first-article/${id}`,d),
   // SPC Params
-  listSpcParams: (p?: Record<string,string>) => apiClient.get<QmsSpcParam[]>("/qms/spc/params",{params:p}),
-  createSpcParam: (d: any) => apiClient.post<QmsSpcParam>("/qms/spc/params",d),
-  updateSpcParam: (id: number, d: any) => apiClient.put<QmsSpcParam>(`/qms/spc/params/${id}`,d),
+  listSpcParams: (p?: Record<string,string>) => apiClient.get<QmsSpcParam[]>("/api/qms/spc/params",{params:p}),
+  createSpcParam: (d: any) => apiClient.post<QmsSpcParam>("/api/qms/spc/params",d),
+  updateSpcParam: (id: number, d: any) => apiClient.put<QmsSpcParam>(`/api/qms/spc/params/${id}`,d),
   // SPC Readings
-  listSpcReadings: (p?: Record<string,string>) => apiClient.get<QmsSpcReading[]>("/qms/spc/readings",{params:p}),
-  recordSpcReading: (d: any) => apiClient.post<QmsSpcReading>("/qms/spc/readings",d),
+  listSpcReadings: (p?: Record<string,string>) => apiClient.get<QmsSpcReading[]>("/api/qms/spc/readings",{params:p}),
+  recordSpcReading: (d: any) => apiClient.post<QmsSpcReading>("/api/qms/spc/readings",d),
   // SPC CPK
-  getSpcCpk: (paramId: number, hours?: number) => apiClient.get<QmsSpcCpk>("/qms/spc/cpk",{params:{param_id:String(paramId),hours:String(hours||168)}}),
+  getSpcCpk: (paramId: number, hours?: number) => apiClient.get<QmsSpcCpk>("/api/qms/spc/cpk",{params:{param_id:String(paramId),hours:String(hours||168)}}),
   // SPC Alerts
-  listSpcAlerts: (p?: Record<string,string>) => apiClient.get<QmsSpcAlert[]>("/qms/spc/alerts",{params:p}),
-  updateSpcAlert: (id: number, d: any) => apiClient.put<QmsSpcAlert>(`/qms/spc/alerts/${id}`,d),
+  listSpcAlerts: (p?: Record<string,string>) => apiClient.get<QmsSpcAlert[]>("/api/qms/spc/alerts",{params:p}),
+  updateSpcAlert: (id: number, d: any) => apiClient.put<QmsSpcAlert>(`/api/qms/spc/alerts/${id}`,d),
 });
 
 
@@ -257,71 +259,71 @@ export interface QmsQualityCostSummary {
 Object.assign(qmsApi, {
   // Documents
   listDocuments: (p?: Record<string,string>) =>
-    apiClient.get<QmsDocument[]>("/qms/documents",{params:p}),
+    apiClient.get<QmsDocument[]>("/api/qms/documents",{params:p}),
   createDocument: (d: Partial<QmsDocument>) =>
-    apiClient.post<QmsDocument>("/qms/documents",d),
+    apiClient.post<QmsDocument>("/api/qms/documents",d),
   getDocument: (id: number) =>
-    apiClient.get<QmsDocument>(`/qms/documents/${id}`),
+    apiClient.get<QmsDocument>(`/api/qms/documents/${id}`),
   updateDocument: (id: number, d: Partial<QmsDocument>) =>
-    apiClient.put<QmsDocument>(`/qms/documents/${id}`,d),
+    apiClient.put<QmsDocument>(`/api/qms/documents/${id}`,d),
   approveDocument: (id: number) =>
-    apiClient.put(`/qms/documents/${id}/approve`),
+    apiClient.put(`/api/qms/documents/${id}/approve`),
   // Audits
   listAudits: (p?: Record<string,string>) =>
-    apiClient.get<QmsAudit[]>("/qms/audits",{params:p}),
+    apiClient.get<QmsAudit[]>("/api/qms/audits",{params:p}),
   createAudit: (d: Partial<QmsAudit>) =>
-    apiClient.post<QmsAudit>("/qms/audits",d),
+    apiClient.post<QmsAudit>("/api/qms/audits",d),
   getAudit: (id: number) =>
-    apiClient.get<QmsAudit>(`/qms/audits/${id}`),
+    apiClient.get<QmsAudit>(`/api/qms/audits/${id}`),
   updateAudit: (id: number, d: Partial<QmsAudit>) =>
-    apiClient.put<QmsAudit>(`/qms/audits/${id}`,d),
+    apiClient.put<QmsAudit>(`/api/qms/audits/${id}`,d),
   updateAuditStatus: (id: number, d: {status:string}) =>
-    apiClient.put(`/qms/audits/${id}/status`, d),
+    apiClient.put(`/api/qms/audits/${id}/status`, d),
   listAuditNc: (auditId: number) =>
-    apiClient.get<QmsAuditNc[]>(`/qms/audits/${auditId}/findings`),
+    apiClient.get<QmsAuditNc[]>(`/api/qms/audits/${auditId}/findings`),
   createAuditNc: (auditId: number, d: Partial<QmsAuditNc>) =>
-    apiClient.post<QmsAuditNc>(`/qms/audits/${auditId}/findings`, d),
+    apiClient.post<QmsAuditNc>(`/api/qms/audits/${auditId}/findings`, d),
   updateAuditNc: (fid: number, d: Partial<QmsAuditNc>) =>
-    apiClient.put<QmsAuditNc>(`/qms/audits/findings/${fid}/status`, d),
+    apiClient.put<QmsAuditNc>(`/api/qms/audits/findings/${fid}/status`, d),
   // Complaints
   listComplaints: (p?: Record<string,string>) =>
-    apiClient.get<QmsComplaint[]>("/qms/complaints",{params:p}),
+    apiClient.get<QmsComplaint[]>("/api/qms/complaints",{params:p}),
   createComplaint: (d: Partial<QmsComplaint>) =>
-    apiClient.post<QmsComplaint>("/qms/complaints",d),
+    apiClient.post<QmsComplaint>("/api/qms/complaints",d),
   getComplaint: (id: number) =>
-    apiClient.get<QmsComplaint>(`/qms/complaints/${id}`),
+    apiClient.get<QmsComplaint>(`/api/qms/complaints/${id}`),
   updateComplaint: (id: number, d: Partial<QmsComplaint>) =>
-    apiClient.put<QmsComplaint>(`/qms/complaints/${id}`,d),
+    apiClient.put<QmsComplaint>(`/api/qms/complaints/${id}`,d),
   respondComplaint: (id: number, d: {response_text:string;respond_by:string}) =>
-    apiClient.post(`/qms/complaints/${id}/respond`, d),
+    apiClient.post(`/api/qms/complaints/${id}/respond`, d),
   getComplaintResponses: (id: number) =>
-    apiClient.get(`/qms/complaints/${id}/responses`),
+    apiClient.get(`/api/qms/complaints/${id}/responses`),
   getComplaintStats: () =>
-    apiClient.get<QmsComplaintStats>("/qms/complaints/stats"),
+    apiClient.get<QmsComplaintStats>("/api/qms/complaints/stats"),
   // Supplier Evaluations
   listSupplierEvals: (p?: Record<string,string>) =>
-    apiClient.get<QmsSupplierEval[]>("/qms/supplier-evaluations",{params:p}),
+    apiClient.get<QmsSupplierEval[]>("/api/qms/supplier-evaluations",{params:p}),
   createSupplierEval: (d: Partial<QmsSupplierEval>) =>
-    apiClient.post<QmsSupplierEval>("/qms/supplier-evaluations",d),
+    apiClient.post<QmsSupplierEval>("/api/qms/supplier-evaluations",d),
   getSupplierEval: (id: number) =>
-    apiClient.get<QmsSupplierEval>(`/qms/supplier-evaluations/${id}`),
+    apiClient.get<QmsSupplierEval>(`/api/qms/supplier-evaluations/${id}`),
   updateSupplierEval: (id: number, d: Partial<QmsSupplierEval>) =>
-    apiClient.put<QmsSupplierEval>(`/qms/supplier-evaluations/${id}`,d),
+    apiClient.put<QmsSupplierEval>(`/api/qms/supplier-evaluations/${id}`,d),
   getSupplierEvalHistory: (supplierId: string) =>
-    apiClient.get<QmsSupplierEval[]>(`/qms/supplier-evaluations/history/${supplierId}`),
+    apiClient.get<QmsSupplierEval[]>(`/api/qms/supplier-evaluations/history/${supplierId}`),
   getSupplierEvalStats: () =>
-    apiClient.get<QmsSupplierEvalStats>("/qms/supplier-evaluations/stats"),
+    apiClient.get<QmsSupplierEvalStats>("/api/qms/supplier-evaluations/stats"),
   getSupplierEvalSuppliers: () =>
-    apiClient.get<{supplier_code:string;supplier_name:string}[]>("/qms/supplier-evaluations/suppliers"),
+    apiClient.get<{supplier_code:string;supplier_name:string}[]>("/api/qms/supplier-evaluations/suppliers"),
   // Quality Costs
   listQualityCosts: (p?: Record<string,string>) =>
-    apiClient.get<QmsQualityCost[]>("/qms/quality-costs",{params:p}),
+    apiClient.get<QmsQualityCost[]>("/api/qms/quality-costs",{params:p}),
   createQualityCost: (d: Partial<QmsQualityCost>) =>
-    apiClient.post<QmsQualityCost>("/qms/quality-costs",d),
+    apiClient.post<QmsQualityCost>("/api/qms/quality-costs",d),
   getQualityCost: (id: number) =>
-    apiClient.get<QmsQualityCost>(`/qms/quality-costs/${id}`),
+    apiClient.get<QmsQualityCost>(`/api/qms/quality-costs/${id}`),
   updateQualityCost: (id: number, d: Partial<QmsQualityCost>) =>
-    apiClient.put<QmsQualityCost>(`/qms/quality-costs/${id}`,d),
+    apiClient.put<QmsQualityCost>(`/api/qms/quality-costs/${id}`,d),
   getQualityCostSummary: (p?: {period?:string}) =>
-    apiClient.get<QmsQualityCostSummary[]>("/qms/quality-costs/summary",{params:p}),
+    apiClient.get<QmsQualityCostSummary[]>("/api/qms/quality-costs/summary",{params:p}),
 });

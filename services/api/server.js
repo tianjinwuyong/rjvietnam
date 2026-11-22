@@ -116,6 +116,7 @@ import { registerBomRoutes, registerBomChangeRequestsRoutes } from "./src/routes
 import { registerPmcAlertsRoutes } from "./src/routes/pmc-alerts.js";
 import { registerPmcClosureRoutes } from "./src/routes/pmc-closure.js";
 import { registerVirtualEmployeeRoutes } from "./src/routes/virtual-employees.js";
+import { registerQmsPhase3Routes } from "./src/routes/qms-phase3.js";
 import { registerQualityIqcLoopRoutes } from "./src/routes/quality-iqc-loop.js";
 import { registerReportsRoutes } from "./src/routes/reports.js";
 import { registerPdaRoutes } from "./src/routes/pda.js";
@@ -8718,398 +8719,17 @@ api.get('/qms/customer-standards', authenticateJWT, requirePermission('wms.wareh
 })
 // ══════════════════════════════════════════════
 // QMS Phase 3 — ISO体系/审核/客诉/供应商评价/质量成本
+// Extracted to src/routes/qms-phase3.js (Postgres port; the MySQL-direct
+// original 500'd on every endpoint). Mounted at this exact position: same
+// `api` router, same auth posture (router-wide authenticateJWT).
 // ══════════════════════════════════════════════
+registerQmsPhase3Routes(api, { query, errorEnvelope });
 
-// ─── ISO文档管理 ───────────────────────────────
-api.get('/qms/documents', async (req, res) => {
-  try {
-    const { category, status, factory_id } = req.query;
-    let sql = `SELECT d.*, u1.name as uploader_name, u2.name as approver_name
-               FROM qms_documents d
-               LEFT JOIN users u1 ON d.uploaded_by=u1.id
-               LEFT JOIN users u2 ON d.approved_by=u2.id
-               WHERE 1=1`;
-    const params = [];
-    if (category) { sql += ` AND d.category=?`; params.push(category); }
-    if (status) { sql += ` AND d.status=?`; params.push(status); }
-    if (factory_id) { sql += ` AND d.factory_id=?`; params.push(factory_id); }
-    sql += ` ORDER BY d.created_at DESC`;
-    const rows = await query(sql, params);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
 
-api.get('/qms/documents/:id', async (req, res) => {
-  try {
-    const [row] = await query(
-      `SELECT d.*, u1.name as uploader_name, u2.name as approver_name
-       FROM qms_documents d LEFT JOIN users u1 ON d.uploaded_by=u1.id
-       LEFT JOIN users u2 ON d.approved_by=u2.id WHERE d.id=?`,
-      [req.params.id]);
-    if (!row) return res.status(404).json({error: 'Not found'});
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
 
-api.post('/qms/documents', async (req, res) => {
-  try {
-    const { title, category, version, file_url, status='draft', factory_id } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_documents (title,category,version,file_url,status,uploaded_by,factory_id,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,NOW(),NOW())`,
-      [title,category,version,file_url,status,req.user.id,factory_id]);
-    const [row] = await query(`SELECT * FROM qms_documents WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
 
-api.put('/qms/documents/:id', async (req, res) => {
-  try {
-    const { title, category, version, file_url, status } = req.body;
-    const [result] = await query(
-      `UPDATE qms_documents SET title=?,category=?,version=?,file_url=?,status=?,updated_at=NOW() WHERE id=?`,
-      [title,category,version,file_url,status,req.params.id]);
-    const [row] = await query(`SELECT * FROM qms_documents WHERE id=?`, [req.params.id]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
 
-api.put('/qms/documents/:id/approve', async (req, res) => {
-  try {
-    const [result] = await query(
-      `UPDATE qms_documents SET status='active', approved_by=?, approved_at=NOW(), updated_at=NOW() WHERE id=?`,
-      [req.user.id, req.params.id]);
-    const [row] = await query(`SELECT * FROM qms_documents WHERE id=?`, [req.params.id]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.delete('/qms/documents/:id', async (req, res) => {
-  try {
-    await query(`DELETE FROM qms_documents WHERE id=?`, [req.params.id]);
-    res.json({success: true});
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-// ─── 审核管理 ─────────────────────────────────
-api.get('/qms/audits', async (req, res) => {
-  try {
-    const { type, status, factory_id } = req.query;
-    let sql = `SELECT a.*, u1.name as auditor_name, u2.name as assignee_name
-               FROM qms_audits a
-               LEFT JOIN users u1 ON a.auditor_id=u1.id
-               LEFT JOIN users u2 ON a.assignee_id=u2.id
-               WHERE 1=1`;
-    const params = [];
-    if (type) { sql += ` AND a.type=?`; params.push(type); }
-    if (status) { sql += ` AND a.status=?`; params.push(status); }
-    if (factory_id) { sql += ` AND a.factory_id=?`; params.push(factory_id); }
-    sql += ` ORDER BY a.scheduled_date DESC`;
-    const rows = await query(sql, params);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/audits/:id', async (req, res) => {
-  try {
-    const [row] = await query(
-      `SELECT a.*, u1.name as auditor_name, u2.name as assignee_name
-       FROM qms_audits a LEFT JOIN users u1 ON a.auditor_id=u1.id
-       LEFT JOIN users u2 ON a.assignee_id=u2.id WHERE a.id=?`,
-      [req.params.id]);
-    if (!row) return res.status(404).json({error: 'Not found'});
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.post('/qms/audits', async (req, res) => {
-  try {
-    const { title, type, scope, standard, scheduled_date, auditor_id, assignee_id, factory_id } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_audits (title,type,scope,standard,scheduled_date,auditor_id,assignee_id,status,factory_id,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
-      [title,type,scope,standard,scheduled_date,auditor_id,assignee_id,'planned',factory_id,req.user.id]);
-    const [row] = await query(`SELECT * FROM qms_audits WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.put('/qms/audits/:id', async (req, res) => {
-  try {
-    const { title, type, scope, standard, scheduled_date, auditor_id, assignee_id } = req.body;
-    await query(
-      `UPDATE qms_audits SET title=?,type=?,scope=?,standard=?,scheduled_date=?,auditor_id=?,assignee_id=?,updated_at=NOW() WHERE id=?`,
-      [title,type,scope,standard,scheduled_date,auditor_id,assignee_id,req.params.id]);
-    const [row] = await query(`SELECT * FROM qms_audits WHERE id=?`, [req.params.id]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.put('/qms/audits/:id/status', async (req, res) => {
-  try {
-    const { status } = req.body;
-    const updates = { status };
-    if (status === 'in_progress') updates.started_at = 'NOW()';
-    if (status === 'completed') updates.completed_at = 'NOW()';
-    const fields = Object.entries(updates).map(([k]) => `${k}=${k==='started_at'||k==='completed_at'?k:'?'}`).join(',');
-    const vals = Object.entries(updates).filter(([k]) => k!=='status').map(([,v])=>v);
-    await query(`UPDATE qms_audits SET ${fields},updated_at=NOW() WHERE id=?`, [...vals, req.params.id]);
-    const [row] = await query(`SELECT * FROM qms_audits WHERE id=?`, [req.params.id]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/audits/:id/findings', async (req, res) => {
-  try {
-    const rows = await query(
-      `SELECT f.*, u.name as raised_by_name
-       FROM qms_audit_findings f LEFT JOIN users u ON f.raised_by=u.id
-       WHERE f.audit_id=? ORDER BY f.created_at DESC`,
-      [req.params.id]);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.post('/qms/audits/:id/findings', async (req, res) => {
-  try {
-    const { description, severity, category, due_date } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_audit_findings (audit_id,description,severity,category,due_date,status,raised_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,'open',?,NOW(),NOW())`,
-      [req.params.id,description,severity,category,due_date,req.user.id]);
-    const [row] = await query(`SELECT * FROM qms_audit_findings WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.put('/qms/audits/findings/:fid/status', async (req, res) => {
-  try {
-    const { status, resolution } = req.body;
-    await query(
-      `UPDATE qms_audit_findings SET status=?,resolution=?,updated_at=NOW() WHERE id=?`,
-      [status,resolution,req.params.fid]);
-    const [row] = await query(`SELECT * FROM qms_audit_findings WHERE id=?`, [req.params.fid]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-// ─── 客户投诉 ──────────────────────────────────
-api.get('/qms/complaints', async (req, res) => {
-  try {
-    const { status, priority, factory_id } = req.query;
-    let sql = `SELECT c.*, u.name as creator_name
-               FROM qms_complaints c LEFT JOIN users u ON c.created_by=u.id
-               WHERE 1=1`;
-    const params = [];
-    if (status) { sql += ` AND c.status=?`; params.push(status); }
-    if (priority) { sql += ` AND c.priority=?`; params.push(priority); }
-    if (factory_id) { sql += ` AND c.factory_id=?`; params.push(factory_id); }
-    sql += ` ORDER BY c.created_at DESC`;
-    const rows = await query(sql, params);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/complaints/:id', async (req, res) => {
-  try {
-    const [row] = await query(
-      `SELECT c.*, u.name as creator_name
-       FROM qms_complaints c LEFT JOIN users u ON c.created_by=u.id WHERE c.id=?`,
-      [req.params.id]);
-    if (!row) return res.status(404).json({error: 'Not found'});
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.post('/qms/complaints', async (req, res) => {
-  try {
-    const { complaint_no, customer, product, quantity, defect_desc, priority, defect_images, factory_id } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_complaints (complaint_no,customer,product,quantity,defect_desc,priority,defect_images,status,root_cause,corrective_action,factory_id,created_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,'','',?,?,NOW(),NOW())`,
-      [complaint_no,customer,product,quantity,defect_desc,priority,defect_images,'received',factory_id,req.user.id]);
-    const [row] = await query(`SELECT * FROM qms_complaints WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.put('/qms/complaints/:id', async (req, res) => {
-  try {
-    const { root_cause, corrective_action, preventive_action, status } = req.body;
-    await query(
-      `UPDATE qms_complaints SET root_cause=?,corrective_action=?,preventive_action=?,status=?,updated_at=NOW() WHERE id=?`,
-      [root_cause,corrective_action,preventive_action,status,req.params.id]);
-    const [row] = await query(`SELECT * FROM qms_complaints WHERE id=?`, [req.params.id]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.put('/qms/complaints/:id/respond', async (req, res) => {
-  try {
-    const { response_text } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_complaint_responses (complaint_id,respondent_id,response_text,created_at)
-       VALUES (?,?,?,NOW())`,
-      [req.params.id,req.user.id,response_text]);
-    const [row] = await query(`SELECT * FROM qms_complaint_responses WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/complaints/:id/responses', async (req, res) => {
-  try {
-    const rows = await query(
-      `SELECT r.*, u.name as respondent_name
-       FROM qms_complaint_responses r LEFT JOIN users u ON r.respondent_id=u.id
-       WHERE r.complaint_id=? ORDER BY r.created_at ASC`,
-      [req.params.id]);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/complaints/stats', async (req, res) => {
-  try {
-    const [total] = await query(`SELECT COUNT(*) as count FROM qms_complaints`);
-    const [open] = await query(`SELECT COUNT(*) as count FROM qms_complaints WHERE status NOT IN ('closed','resolved')`);
-    const [highPriority] = await query(`SELECT COUNT(*) as count FROM qms_complaints WHERE priority='high' AND status NOT IN ('closed','resolved')`);
-    const [avgDays] = await query(`SELECT AVG(TIMESTAMPDIFF(DAY, created_at, COALESCE(completed_at, NOW()))) as avg_days FROM qms_complaints WHERE status IN ('closed','resolved')`);
-    res.json({ total: total.count, open: open.count, highPriority: highPriority.count, avgResolutionDays: Math.round(avgDays.avg_days || 0) });
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-// ─── 供应商评价 ────────────────────────────────
-api.get('/qms/supplier-evaluations', async (req, res) => {
-  try {
-    const { supplier_id, factory_id } = req.query;
-    let sql = `SELECT e.*, u.name as evaluator_name, s.name as supplier_name
-               FROM qms_supplier_evaluations e
-               LEFT JOIN users u ON e.evaluated_by=u.id
-               LEFT JOIN suppliers s ON e.supplier_id=s.id
-               WHERE 1=1`;
-    const params = [];
-    if (supplier_id) { sql += ` AND e.supplier_id=?`; params.push(supplier_id); }
-    if (factory_id) { sql += ` AND e.factory_id=?`; params.push(factory_id); }
-    sql += ` ORDER BY e.evaluation_date DESC`;
-    const rows = await query(sql, params);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/supplier-evaluations/:id', async (req, res) => {
-  try {
-    const [row] = await query(
-      `SELECT e.*, u.name as evaluator_name, s.name as supplier_name
-       FROM qms_supplier_evaluations e
-       LEFT JOIN users u ON e.evaluated_by=u.id
-       LEFT JOIN suppliers s ON e.supplier_id=s.id WHERE e.id=?`,
-      [req.params.id]);
-    if (!row) return res.status(404).json({error: 'Not found'});
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.post('/qms/supplier-evaluations', async (req, res) => {
-  try {
-    const { supplier_id, evaluation_date, quality_score, delivery_score, service_score, communication_score, overall_score, grade, remarks, factory_id } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_supplier_evaluations (supplier_id,evaluation_date,quality_score,delivery_score,service_score,communication_score,overall_score,grade,remarks,factory_id,evaluated_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
-      [supplier_id,evaluation_date,quality_score,delivery_score,service_score,communication_score,overall_score,grade,remarks,factory_id,req.user.id]);
-    const [row] = await query(`SELECT * FROM qms_supplier_evaluations WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/supplier-evaluations/suppliers', async (req, res) => {
-  try {
-    const rows = await query(`SELECT id, name FROM suppliers WHERE status='active' ORDER BY name`);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/supplier-evaluations/history/:supplierId', async (req, res) => {
-  try {
-    const rows = await query(
-      `SELECT e.*, u.name as evaluator_name
-       FROM qms_supplier_evaluations e
-       LEFT JOIN users u ON e.evaluated_by=u.id
-       WHERE e.supplier_id=? ORDER BY e.evaluation_date DESC LIMIT 12`,
-      [req.params.supplierId]);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/supplier-evaluations/stats', async (req, res) => {
-  try {
-    const [total] = await query(`SELECT COUNT(DISTINCT supplier_id) as count FROM qms_supplier_evaluations`);
-    const [avgScore] = await query(`SELECT AVG(overall_score) as avg FROM qms_supplier_evaluations`);
-    const [gradeDist] = await query(`SELECT grade, COUNT(*) as count FROM qms_supplier_evaluations GROUP BY grade ORDER BY count DESC`);
-    res.json({ totalSuppliers: total.count, avgOverallScore: Math.round((avgScore.avg || 0)*10)/10, gradeDistribution: gradeDist });
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-// ─── 质量成本 ─────────────────────────────────
-api.get('/qms/quality-costs', async (req, res) => {
-  try {
-    const { cost_type, factory_id, start_date, end_date } = req.query;
-    let sql = `SELECT c.*, u.name as recorder_name
-               FROM qms_quality_costs c LEFT JOIN users u ON c.recorded_by=u.id
-               WHERE 1=1`;
-    const params = [];
-    if (cost_type) { sql += ` AND c.cost_type=?`; params.push(cost_type); }
-    if (factory_id) { sql += ` AND c.factory_id=?`; params.push(factory_id); }
-    if (start_date) { sql += ` AND c.cost_date>=?`; params.push(start_date); }
-    if (end_date) { sql += ` AND c.cost_date<=?`; params.push(end_date); }
-    sql += ` ORDER BY c.cost_date DESC`;
-    const rows = await query(sql, params);
-    res.json(rows);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/quality-costs/:id', async (req, res) => {
-  try {
-    const [row] = await query(
-      `SELECT c.*, u.name as recorder_name
-       FROM qms_quality_costs c LEFT JOIN users u ON c.recorded_by=u.id WHERE c.id=?`,
-      [req.params.id]);
-    if (!row) return res.status(404).json({error: 'Not found'});
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.post('/qms/quality-costs', async (req, res) => {
-  try {
-    const { cost_type, category, amount, currency, cost_date, description, related_order_no, factory_id } = req.body;
-    const [result] = await query(
-      `INSERT INTO qms_quality_costs (cost_type,category,amount,currency,cost_date,description,related_order_no,factory_id,recorded_by,created_at,updated_at)
-       VALUES (?,?,?,?,?,?,?,?,?,NOW(),NOW())`,
-      [cost_type,category,amount,currency,cost_date,description,related_order_no,factory_id,req.user.id]);
-    const [row] = await query(`SELECT * FROM qms_quality_costs WHERE id=?`, [result.insertId]);
-    res.json(row);
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-api.get('/qms/quality-costs/summary', async (req, res) => {
-  try {
-    const { factory_id, start_date, end_date } = req.query;
-    let where = `WHERE 1=1`;
-    const params = [];
-    if (factory_id) { where += ` AND factory_id=?`; params.push(factory_id); }
-    if (start_date) { where += ` AND cost_date>=?`; params.push(start_date); }
-    if (end_date) { where += ` AND cost_date<=?`; params.push(end_date); }
-    const [byType] = await query(
-      `SELECT cost_type, SUM(amount) as total, COUNT(*) as count FROM qms_quality_costs ${where} GROUP BY cost_type`,
-      params);
-    const [total] = await query(
-      `SELECT SUM(amount) as total FROM qms_quality_costs ${where}`,
-      params);
-    res.json({ byType, grandTotal: total.total || 0 });
-  } catch(e) { res.status(500).json({error: e.message}); }
-});
-
-// ══════════════════════════════════════════════
-// QMS Phase 3 END
-// ══════════════════════════════════════════════
+// (供应商评价/质量成本 sections also live in src/routes/qms-phase3.js.)
 
 ;
 
@@ -11712,6 +11332,13 @@ const REQUIRED_PERMISSION_ROLE_MAP = {
   "management.exception.authorize": ["admin", "management", "plant_manager", "factory_manager"],
   "mes.admin": ["admin", "engineering"],
   "mes.read": ["admin", "engineering", "quality", "rework", "smt_operator", "smt_loader"],
+  "pmc.view": ["admin", "pmc"],
+  // QMS CRUD + production inbound/outbound blocks guard on these codes, but
+  // no migration ever seeded them — every role got 403 on /api/qms/* and
+  // /api/production/*. Grant mirrors qms.read (admin/engineering/management/
+  // quality) plus warehouse (WMS production screens) and plant_manager.
+  "wms.warehouse.read": ["admin", "quality", "engineering", "management", "plant_manager", "warehouse"],
+  "wms.warehouse.write": ["admin", "quality", "warehouse"],
   "pda.manage": ["admin", "warehouse"],
   "pda.view": ["admin", "quality", "smt_operator", "smt_loader", "warehouse", "management", "plant_manager", "factory_manager", "line_leader"],
   "procurement.manage": ["admin", "finance", "pmc", "warehouse"],
@@ -11902,8 +11529,12 @@ async function authenticateJWT(req, res, next) {
       req.path.startsWith("/shelf/") ||
       req.path.startsWith("/hr/employees/qr-code/scan") ||
       req.path === "/mes/work-start" || req.path === "/mes/feeder-validate" ||
-      // Public station status for display boards (topology page)
-      req.path === "/mes/andon-board" || req.path === "/api/mes/andon-board") return next();
+      // Public station status for display boards (topology page). The
+      // heartbeat SSE stream is the same data class (station code + last-seen
+      // only) and EventSource cannot carry an Authorization header, so it is
+      // public for exactly the same reason as /mes/andon-board.
+      req.path === "/mes/andon-board" || req.path === "/api/mes/andon-board" ||
+      req.path === "/mes/heartbeats/stream") return next();
 
   const authHeader = req.headers.authorization;
   const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : null;

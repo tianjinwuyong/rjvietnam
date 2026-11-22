@@ -3,12 +3,12 @@ import { useState, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { qmsApi, QmsKpiSummary } from "../api/qms";
 
-const card = (label: string, value: string | number, color: string, sub?: string) => (
-  <div style={{ background: "#1e293b", borderRadius: 12, padding: "20px 24px", minWidth: 180, flex: 1, borderLeft: `4px solid ${color}` }}>
-    <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 6 }}>{label}</div>
-    <div style={{ color, fontSize: 28, fontWeight: 700 }}>{value}</div>
-    {sub && <div style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>{sub}</div>}
-  </div>
+const card = (label: string, value: string | number, tone: "ok" | "info" | "warning" | "danger", sub?: string) => (
+  <article className="stat-tile" style={{ borderLeft: `4px solid var(--${tone === "ok" ? "ok" : tone === "danger" ? "danger" : tone === "warning" ? "warn" : "info"})` }}>
+    <span>{label}</span>
+    <strong>{value}</strong>
+    {sub && <small>{sub}</small>}
+  </article>
 );
 
 export function QmsDashboard({ locale }: { locale: string }) {
@@ -23,23 +23,28 @@ export function QmsDashboard({ locale }: { locale: string }) {
       .finally(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ padding: 40, color: "#94a3b8" }}>{t("qms.loading")}</div>;
-  if (!kpi) return <div style={{ padding: 40, color: "#f87171" }}>{t("qms.loadError")}</div>;
+  if (loading) return <div className="empty-state" role="status" data-testid="qms.loading">{t("qms.loading")}</div>;
+  if (!kpi) return <p className="error-note" role="alert" data-testid="qms.error">{t("qms.loadError")}</p>;
+
+  const n = (v: string | number | undefined) => Number(v ?? 0) || 0;
+  const oqcTotal = n(kpi.oqc_passed) + n(kpi.oqc_failed);
+  const passRate = oqcTotal > 0 ? (n(kpi.oqc_passed) / oqcTotal) * 100 : 0;
 
   return (
-    <div style={{ padding: 24 }}>
-      <h2 style={{ color: "#e2e8f0", marginBottom: 20, fontSize: 20 }}>{t("qms.dashboard")}</h2>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 24 }}>
-        {card(t("qms.oqcBatches"), kpi.total_oqc_batches, "#38bdf8", `${t("qms.passRate")}: ${(kpi.oqc_pass_rate * 100).toFixed(1)}%`)}
-        {card(t("qms.open8d"), kpi.open_8d, "#fb923c", `${t("qms.closed8d")}: ${kpi.closed_8d}`)}
-        {card(t("qms.ngPending"), kpi.ng_pending, "#f87171", `${t("qms.ngRepaired")}: ${kpi.ng_repaired} | ${t("qms.ngScrapped")}: ${kpi.ng_scrapped}`)}
-        {card(t("qms.complaints"), kpi.customer_complaints, "#a78bfa")}
-        {card(t("qms.supplierPpm"), kpi.supplier_ppm, "#34d399")}
+    <section className="surface-panel" aria-label={t("qms.dashboard")} data-testid="qms.dashboard">
+      <div className="page-header">
+        <div>
+          <h2>{t("qms.dashboard")}</h2>
+          <p>{t("nav.qms")}</p>
+        </div>
       </div>
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
-        {card(t("qms.totalNg"), kpi.total_ng, "#fbbf24")}
-        {card(t("qms.total8d"), kpi.total_8d, "#60a5fa")}
+      <div className="metric-grid" style={{ gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", marginTop: 12 }}>
+        {card(t("qms.oqcBatches"), oqcTotal, "info", `${t("qms.passRate")}: ${passRate.toFixed(1)}%`)}
+        {card(t("qms.open8d"), n(kpi.capa_open), "warning", `${t("qms.closed8d")}: ${n(kpi.capa_closed)}`)}
+        {card(t("qms.ngPending"), n(kpi.ng?.open) + n(kpi.ng?.retesting), "danger", `${t("qms.ngRepaired")}: ${n(kpi.ng?.repairing)} · ${t("qms.ngScrapped")}: ${n(kpi.ng?.scrapped)}`)}
+        {card(t("qms.total8d"), n(kpi.capa_open) + n(kpi.capa_closed) + n(kpi.capa_containment), "info")}
+        {card(t("qms.totalNg"), n(kpi.ng?.open) + n(kpi.ng?.repairing) + n(kpi.ng?.retesting) + n(kpi.ng?.closed) + n(kpi.ng?.scrapped), "warning")}
       </div>
-    </div>
+    </section>
   );
 }

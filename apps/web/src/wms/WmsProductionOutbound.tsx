@@ -11,6 +11,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Package, Send, Clock, CheckCircle, AlertTriangle } from "lucide-react";
 import { t } from "../i18n";
+import { apiBase } from "../api/client";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -99,7 +100,7 @@ export function WmsProductionOutbound({ locale }: { locale: Locale }) {
     setLoading(true);
     try {
       const token = localStorage.getItem("token");
-      const url = "http://127.0.0.1:8080/api/production/orders?status=" + (statusFilter || "");
+      const url = `${apiBase}/api/production/orders?status=${encodeURIComponent(statusFilter || "")}`;
       const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
       if (res.ok) {
         const data = await res.json();
@@ -117,7 +118,7 @@ export function WmsProductionOutbound({ locale }: { locale: Locale }) {
     setIssueQty({});
     try {
       const token = localStorage.getItem("token");
-      const res = await fetch(`http://127.0.0.1:8080/api/production/orders/${order.id}/items`, {
+      const res = await fetch(`${apiBase}/api/production/orders/${order.id}/items`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) {
@@ -136,7 +137,7 @@ export function WmsProductionOutbound({ locale }: { locale: Locale }) {
       for (const item of orderItems) {
         const qty = Number(issueQty[item.id] || 0);
         if (qty <= 0) continue;
-        await fetch("http://127.0.0.1:8080/api/production/material-issue", {
+        await fetch(`${apiBase}/api/production/material-issue`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

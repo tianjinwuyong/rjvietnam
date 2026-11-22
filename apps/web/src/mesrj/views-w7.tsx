@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import { mesrjApi } from "./api";
+import { apiBase } from "../api/client";
 import { t } from "./i18n";
 
 const box = { border: "1px solid var(--border, #e2e8f0)", borderRadius: 10, padding: 14, marginBottom: 14 } as const;
@@ -56,7 +57,7 @@ function Table({ header, rows }: { header: string[]; rows: Record<string, unknow
 
 // ── 设备侧 API（X-Api-Key，不走 JWT）────────────────────────────────────────
 async function deviceRequest(method: string, path: string, apiKey: string, body?: unknown) {
-  const res = await fetch(`http://localhost:8080/api/mesrj${path}`, {
+  const res = await fetch(`${apiBase}/api/mesrj${path}`, {
     method,
     headers: { "X-Api-Key": apiKey, "Content-Type": "application/json" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
