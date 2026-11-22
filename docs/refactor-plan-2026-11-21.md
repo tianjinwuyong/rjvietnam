@@ -154,6 +154,18 @@ unit(435 passed,DB-free 真跳过 boot-smoke)全绿后才推。
   census 总数是**只升不降**,两个方向别混。
 - 挂载位置是 auth 语义的一部分:搬动 `authenticateJWT` 相关代码前先枚举其内部公开路径清单。
 
+**[OK] 阶段 3 轮 1 · smta 域收口(2026-11-22)**:W10 辅料管控 31 路由(63 KB)整段
+搬入 `src/mesrj/smta-routes.js`,`createMesrjRouter` 原位置只留 `registerSmtaRoutes`
+调用(JWT 之后、W11 之前,注册序不变)。mesrj.js 617→546 KB。搬迁体与原块逐字节一致,
+仅两处语义等价修正消掉随迁的 7 个 checkJs 报错(`t1-t0`→`getTime()` 差;去掉不可达的
+`|| {}` 兜底)——api-typecheck 590→583,零新增签名,未动基线。验证:census 前后全量
+快照一致(total=2868,smta=31,前缀/方法逐项相等);register-deps / shadowing(10=10)/
+auth-order(0)/ syntax(376)全绿;干净树(`git archive HEAD`+junction node_modules,
+HEAD 版 mesrj.js 仅套用本搬迁)boot :18280,表驱动认证态冒烟 34/34(31 端点全覆盖:
+读端点 200 信封、写端点走真实校验/404 分支、匿名 401);`v_integration_app_health`
+各通道 active、itf ping 401(X-Api-Key 守卫在)。计划要求 mesrj.js <400 KB:本轮后
+546 KB,余量在 pack/panel/pallet/repair/smt/oqc 各域,留给轮 1 续切(同一 claim)。
+
 ## 阶段 4 — 前端解单文件(3 轮,各半天)
 
 照原稿:registry 抽取 → 模块懒加载 → i18n 按域切 namespace。React 18.3.1 / Vite 5.4.21 不动。
