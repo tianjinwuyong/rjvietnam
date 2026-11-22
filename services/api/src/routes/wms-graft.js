@@ -1,21 +1,49 @@
 /**
- * WMS 功能移植（graft）：把运行中 WMS 的接口能力接进 SMT。
+ * WMS 功能移植（graft）—— **只剩 IQC 批次这一块镜像债**。
  *
- * 数据不新造：IQC/领料写在 309 镜像过来的原系统表上
- * （rjvn_iqc_lot / rjvn_iqc_inspection_record / rjvn_iqc_inspection_draft /
- *   rjvn_iqc_template_material / rjvn_picking_order / rjvn_picking_order_item），
- * 盘点/库存走 SMT 自己的 count_sessions / count_items / material_lots。
+ * 目标是一个 WMS，不是两套。2026-11-21 起本文件被收窄成唯一还读 309 镜像表的地方：
  *
- * 注意镜像表的主键是 uuid（count_* 是 serial），镜像表时间戳列名为 _updated_at。
+ *  · IQC 批次（iqc/pending、lot/:id、draft、judge、exempt、template）—— 仍在镜像
+ *    （rjvn_iqc_lot / rjvn_iqc_inspection_record / rjvn_iqc_inspection_draft /
+ *      rjvn_iqc_template_material）。卡住它的是语义而不是列名：canonical 侧
+ *    没有「批次聚合 + 逐项检验记录 + 草稿」这个形状，而且模板↔物料绑定
+ *    还是未决的产品决策（docs/WMS-ONE-PARITY.md §7 / slice 3b）。
+ *  · 领料 4 条 —— 已在 slice 1/2 迁到 wms_picking_orders / wms_picking_order_items
+ *    （迁移 327 补列），迁移对账数据见 docs/WMS-GRAFT-LOG 对应条目。
+ *  · 盘点 10 / 库存汇总 2 / 调拨校验 2 / 有效期 2 —— 本来就写 SMT 自己的
+ *    count_sessions / count_items / material_lots / storage_locations / materials，
+ *    只是当年一次移植时混在这个文件里。2026-11-21 已整体搬到
+ *    `routes/wms-ops.js`（registerWmsOpsRoutes），所以删掉本文件不会再连带删功能。
+ *    搬走时注册顺序与路由字节完全保持不变，先用 route-census + 实调验证过。
+ *
+ * 类型约定：镜像主键是 uuid（用 uuid() 校验），时间戳列名是 _created_at/_updated_at
+ * （canonical 的 bigint/id64 与 created_at/updated_at 约定见 wms-ops.js）。
  * 路径同时注册 /wms/... 与 /api/wms/...（前端 apiClient 走 /api 前缀）。
  */
+import crypto from "node:crypto";
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function registerWmsGraftRoutes(app, deps) {
-  const { query, requirePermission, errorEnvelope, listEnvelope } = deps;
+  const { query, requirePermission, authenticateJWT, errorEnvelope, listEnvelope } = deps;
 
+  // authenticateJWT is MANDATORY here, not belt-and-braces. This module is
+  // registered at server.js:8996, ABOVE both the app-level wrapper (~15684) and
+  // the bare app.use(authenticateJWT) (~29476). A guarded route declared up there
+  // never gets `req.user`, so requirePermission() answers UNAUTHORIZED.
+  // Measured: all 24 bare `/wms/*` aliases returned 401 "Not authenticated" to an
+  // admin token. The `/api/wms/*` twins did NOT — the `api` router's own gate
+  // (server.js:164, the first registration on that router) authenticated them —
+  // which is why the web UI (apiClient prefixes /api) never saw this. The aliases
+  // are still part of the surface (nginx, PDA and upstream WMS clients call them),
+  // so the fix belongs here rather than in a "nobody uses them" judgement.
+  // `check:auth-order` cannot see this class: it scans literal `app.*` lines in
+  // server.js, and these registrations live inside this function.
+  // Authenticating in the helper (not by moving the mount) keeps registration
+  // order byte-identical, so nothing starts shadowing anything else; the routes
+  // stay permission-gated (verified: no token -> 401, token without wms.view -> 403).
   const on = (method, path, perm, handler) => {
-    for (const p of [path, `/api${path}`]) app[method](p, requirePermission(perm), handler);
+    for (const p of [path, `/api${path}`]) app[method](p, authenticateJWT, requirePermission(perm), handler);
   };
   const bad = (res, msg) => res.status(400).json(errorEnvelope("BAD_REQUEST", msg));
   const num = (v, d = null) => {
@@ -167,330 +195,81 @@ export function registerWmsGraftRoutes(app, deps) {
     } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
   });
 
-  // ── 领料（源 /api/workorder/picking/*）：列表 / 审批 / 拣料 / 接收 ──
-  // rjvn_picking_order.work_order_id 是 uuid，与 work_orders(bigint) 不同域，故不做 join。
-  on("get", "/wms/picking-orders", "wms.view", async (req, res) => {
+  // ── IQC 判定分歧：报告 + 隔离（不翻转任何判定）─────────────────────────────
+  // 背景（docs/WMS_GRAFT_LOG.md 2026-11-21 slice 3b）：canonical
+  // material_lots.iqc_status 与镜像 rjvn_iqc_lot.status 曾在 16 个批次上互相
+  // 矛盾（15 批 mirror=rejected 但 canonical=released，1 批反向）。两边都是
+  // 「这批料能不能用」的判断，合并工程师无权替检验现场拍板翻转。本surface只做
+  // 两件事：① 把分歧摆出来（report）；② 提供保守的隔离动作（quarantine→hold），
+  // hold 在发料口径里本就不可领（391 视图 / server.js 发料门禁按 released 判定），
+  // 所以隔离是「拦下待人工复核」，不是改判 released/rejected。释放/拒收仍走既有
+  // IQC_RELEASE / IQC_REJECT 事务（server.js），由质量人署名决定。
+  const DIVERGENCE_SQL = `
+    SELECT ml.id AS "lotId", ml.lot_no AS "lotNo", ml.iqc_status AS "canonicalStatus",
+           il.status AS "mirrorStatus", il.inspection_no AS "inspectionNo",
+           m.code AS "materialCode", COALESCE(m.name_zh, m.code) AS "materialName",
+           ml.received_qty AS "receivedQty", ml.reserved_qty AS "reservedQty",
+           ml.locked, ml.lifecycle_status AS "lifecycleStatus",
+           CASE WHEN ml.iqc_status='released' AND il.status IN ('rejected','review_pending')
+                THEN 'CANONICAL_RELEASED_MIRROR_BLOCKED'
+                WHEN ml.iqc_status='rejected' AND il.status IN ('pending','pass','review_pending')
+                THEN 'CANONICAL_BLOCKED_MIRROR_OPEN'
+                ELSE 'OTHER' END AS "divergenceType"
+      FROM material_lots ml
+      JOIN rjvn_iqc_lot il ON il.lot_no = ml.lot_no
+      LEFT JOIN materials m ON m.id = ml.material_id
+     WHERE ml.iqc_status <> CASE il.status
+             WHEN 'pass' THEN 'released'
+             WHEN 'rejected' THEN 'rejected'
+             WHEN 'pending' THEN 'pending'
+             WHEN 'review_pending' THEN 'pending'
+             ELSE il.status END`;
+
+  on("get", "/wms/iqc/divergence", "wms.view", async (req, res) => {
     try {
-      const status = text(req.query.status);
-      const args = [];
-      let where = "";
-      if (status) { args.push(status); where = `WHERE o.status=$1`; }
-      const orders = await query(
-        `SELECT o.id, o.picking_no AS "pickingNo", o.work_order_id AS "workOrderId",
-                w.work_order_no AS "workOrderNo", w.product_code AS "productCode",
-                o.req_id AS "reqId", o.work_section AS "workSection",
-                o.is_supplement AS "isSupplement", o.total_qty AS "totalQty", o.status,
-                o.applicant_id AS "applicantId", o.approver_id AS "approverId",
-                o.approval_time AS "approvalTime", o.approval_remark AS "approvalRemark",
-                o.picker_id AS "pickerId", o.pick_time AS "pickTime",
-                o.received_by AS "receivedBy", o.received_time AS "receivedTime",
-                o.receive_remark AS "receiveRemark", o.source, o.mes_issue_no AS "mesIssueNo",
-                o.remark, o._created_at AS "createdAt"
-           FROM rjvn_picking_order o
-           LEFT JOIN rjvn_work_order w ON w.id = o.work_order_id
-           ${where} ORDER BY o.picking_no DESC LIMIT 200`, args);
-      const ids = orders.rows.map((x) => x.id);
-      const items = ids.length
-        ? (await query(
-            `SELECT id, picking_id AS "pickingId", material_code AS "materialCode",
-                    material_name AS "materialName", unit, pick_qty AS "pickQty",
-                    actual_qty AS "actualQty", actual_material_code AS "actualMaterialCode",
-                    received_qty AS "receivedQty", receive_remark AS "receiveRemark"
-               FROM rjvn_picking_order_item WHERE picking_id = ANY($1::uuid[]) ORDER BY material_code`, [ids])).rows
-        : [];
-      const by = new Map();
-      for (const it of items) {
-        if (!by.has(it.pickingId)) by.set(it.pickingId, []);
-        by.get(it.pickingId).push(it);
+      const r = await query(`${DIVERGENCE_SQL} ORDER BY "divergenceType", ml.lot_no`);
+      const byType = {};
+      for (const row of r.rows) byType[row.divergenceType] = (byType[row.divergenceType] || 0) + 1;
+      res.json({ data: {
+        total: r.rows.length,
+        byType,
+        note: "canonical=material_lots.iqc_status, mirror=rjvn_iqc_lot.status。"
+          + "分歧不自动翻转；quarantine 置 hold（不可领），释放/拒收走 IQC_RELEASE/IQC_REJECT 由质量人决定。",
+        items: r.rows,
+      } });
+    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
+  });
+
+  // 隔离单批：released→hold（保守拦截）。已是 hold/pending/rejected 的不动判定，
+  // 只记录。镜像状态原样保留作为分歧证据。写 wms_audit_events 留痕。
+  on("post", "/wms/iqc/divergence/:lotId/quarantine", "wms.execute", async (req, res) => {
+    try {
+      const lotId = num(req.params.lotId);
+      if (!lotId) return bad(res, "lotId 不是数字");
+      const reason = text(req.body?.reason) || "IQC divergence quarantine (mirror blocks, canonical released)";
+      const cur = (await query(
+        `SELECT ml.id, ml.lot_no, ml.iqc_status, il.status AS mirror_status
+           FROM material_lots ml LEFT JOIN rjvn_iqc_lot il ON il.lot_no=ml.lot_no
+          WHERE ml.id=$1`, [lotId])).rows[0];
+      if (!cur) return res.status(404).json(errorEnvelope("NOT_FOUND", "批次不存在"));
+      const before = { iqcStatus: cur.iqc_status, mirrorStatus: cur.mirror_status };
+      // 只把 released 拦成 hold；其余状态保持（不翻转 rejected/pending 的判定）。
+      const newStatus = cur.iqc_status === "released" ? "hold" : cur.iqc_status;
+      if (newStatus !== cur.iqc_status) {
+        await query("UPDATE material_lots SET iqc_status='hold' WHERE id=$1", [lotId]);
       }
-      res.json(listEnvelope(orders.rows.map((o) => ({ ...o, items: by.get(o.id) || [] }))));
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // 审批：approved=false 即驳回（源 /api/workorder/picking/:id/approve）
-  on("post", "/wms/picking-orders/:id/approve", "wms.execute", async (req, res) => {
-    try {
-      const id = uuid(req.params.id);
-      if (!id) return bad(res, "id 不是 uuid");
-      const p = req.body ?? {};
-      const approved = p.approved !== false;
-      const status = approved ? "approved" : "rejected";
-      const r = await query(
-        `UPDATE rjvn_picking_order SET status=$1, approver_id=COALESCE($2, approver_id),
-                approval_time=now(), approval_remark=COALESCE($3, approval_remark), _updated_at=now()
-          WHERE id=$4 RETURNING picking_no AS "pickingNo"`,
-        [status, uuid(p.approverId), orNull(p.remark), id]);
-      if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "领料单不存在"));
-      res.json({ data: { pickingId: id, ...r.rows[0], status } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // 拣料：写 actual_qty / actual_material_code，单头转 picking
-  on("post", "/wms/picking-orders/:id/pick", "wms.execute", async (req, res) => {
-    try {
-      const id = uuid(req.params.id);
-      if (!id) return bad(res, "id 不是 uuid");
-      const p = req.body ?? {};
-      const items = Array.isArray(p.items) ? p.items : [];
-      if (!items.length) return bad(res, "缺少 items（[{id, actualQty, actualMaterialCode}]）");
-      let touched = 0;
-      for (const it of items) {
-        const itemId = uuid(it.id ?? it.itemId);
-        const qty = num(it.actualQty ?? it.actual_qty);
-        if (!itemId || qty == null) continue;
-        const r = await query(
-          `UPDATE rjvn_picking_order_item
-              SET actual_qty=$1, actual_material_code=COALESCE($2, actual_material_code), _updated_at=now()
-            WHERE id=$3 AND picking_id=$4 RETURNING id`,
-          [qty, orNull(it.actualMaterialCode ?? it.actual_material_code), itemId, id]);
-        touched += r.rows.length;
-      }
-      const sum = (await query(
-        `SELECT COALESCE(SUM(actual_qty),0) AS picked FROM rjvn_picking_order_item WHERE picking_id=$1`, [id])).rows[0];
-      const head = await query(
-        `UPDATE rjvn_picking_order SET status='picking', picker_id=COALESCE($1, picker_id),
-                pick_time=now(), total_qty=$2, _updated_at=now() WHERE id=$3 RETURNING picking_no AS "pickingNo"`,
-        [uuid(p.pickerId), sum.picked, id]);
-      if (!head.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "领料单不存在"));
-      res.json({ data: { pickingId: id, ...head.rows[0], pickedQty: sum.picked, itemsPicked: touched } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  on("post", "/wms/picking-orders/:id/receive", "wms.execute", async (req, res) => {
-    try {
-      const id = uuid(req.params.id);
-      if (!id) return bad(res, "id 不是 uuid");
-      const p = req.body ?? {};
-      for (const it of Array.isArray(p.items) ? p.items : []) {
-        const itemId = uuid(it.id ?? it.itemId);
-        const qty = num(it.receivedQty ?? it.received_qty);
-        if (!itemId || qty == null) continue;
-        await query(
-          `UPDATE rjvn_picking_order_item
-              SET received_qty=$1, receive_remark=COALESCE($2, receive_remark), _updated_at=now()
-            WHERE id=$3 AND picking_id=$4`,
-          [qty, orNull(it.remark), itemId, id]);
-      }
-      const head = await query(
-        `UPDATE rjvn_picking_order SET status='received', received_by=COALESCE($1, received_by),
-                received_time=now(), receive_remark=COALESCE($2, receive_remark), _updated_at=now()
-          WHERE id=$3 RETURNING picking_no AS "pickingNo"`,
-        [uuid(p.receiverId ?? p.receivedBy), orNull(p.remark), id]);
-      if (!head.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "领料单不存在"));
-      res.json({ data: { pickingId: id, ...head.rows[0], status: "received" } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // ── 盘点：进行中盘点单清单（/wms/count-sessions 列表在 server.js 里挂 wms.read，权限更细）
-  on("get", "/wms/count/open", "wms.view", async (req, res) => {
-    try {
-      const limit = Math.min(num(req.query.limit, 50) || 50, 200);
-      const r = await query(
-        `SELECT id, session_code AS "sessionCode", location_code AS "locationCode", status,
-                system_qty AS "systemQty", counted_qty AS "countedQty", variance,
-                threshold_pct AS "thresholdPct", claimed_at AS "claimedAt", created_at AS "createdAt"
-           FROM count_sessions WHERE status='open' ORDER BY id DESC LIMIT $1`, [limit]);
-      res.json(listEnvelope(r.rows, r.rows.length));
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // ── 盘点（源 /api/stock-take/*）：明细 / 调整 / 确认 / 审批 / 取消 / 解锁 / 报表 ──
-  on("get", "/wms/count-sessions/:id/items", "wms.view", async (req, res) => {
-    try {
-      const id = num(req.params.id);
-      if (id == null) return bad(res, "id 不是数字");
-      const r = await query(
-        `SELECT id, count_session_id AS "sessionId", lot_no AS "lotNo",
-                material_code AS "materialCode", material_name_zh AS "materialName",
-                system_qty AS "systemQty", counted_qty AS "countedQty", variance,
-                counted, counted_at AS "countedAt", counted_by AS "countedBy",
-                inventory_tx_no AS "inventoryTxNo"
-           FROM count_items WHERE count_session_id=$1 ORDER BY material_code`, [id]);
-      res.json(listEnvelope(r.rows, r.rows.length));
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  on("post", "/wms/count-sessions/:id/item/:itemId/adjust", "wms.execute", async (req, res) => {
-    try {
-      const id = num(req.params.id), itemId = num(req.params.itemId);
-      if (id == null || itemId == null) return bad(res, "id / itemId 不是数字");
-      const qty = num(req.body?.countedQty ?? req.body?.counted_qty);
-      if (qty == null || qty < 0) return bad(res, "countedQty 必须是非负数");
-      const it = await query(
-        `UPDATE count_items SET counted_qty=$1, counted=true, counted_at=now(),
-                counted_by=COALESCE($2, counted_by), variance=$1 - system_qty
-          WHERE id=$3 AND count_session_id=$4
-        RETURNING id, lot_no AS "lotNo", material_code AS "materialCode",
-                  system_qty AS "systemQty", counted_qty AS "countedQty", variance`,
-        [qty, num(req.body?.operator), itemId, id]);
-      if (!it.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "盘点明细不存在"));
       await query(
-        `UPDATE count_sessions
-            SET counted_qty=(SELECT COALESCE(SUM(counted_qty),0) FROM count_items WHERE count_session_id=$1),
-                variance=(SELECT COALESCE(SUM(variance),0) FROM count_items WHERE count_session_id=$1)
-          WHERE id=$1`, [id]);
-      res.json({ data: it.rows[0] });
+        `INSERT INTO wms_audit_events
+          (event_id,actor_id,actor_name,action,entity_type,entity_key,before_data,after_data,source_node,ip_address)
+         VALUES($1,$2,$3,'IQC_DIVERGENCE_QUARANTINE','material_lot',$4,$5,$6,'MES-WMS-API',$7)`,
+        [crypto.randomUUID(), req.user?.userId ?? null, req.user?.username ?? null,
+         String(cur.lot_no), JSON.stringify(before),
+         JSON.stringify({ iqcStatus: newStatus, mirrorStatus: cur.mirror_status, reason }),
+         req.ip || null]);
+      res.json({ data: {
+        lotId, lotNo: cur.lot_no, beforeStatus: cur.iqc_status, afterStatus: newStatus,
+        mirrorStatus: cur.mirror_status, quarantined: newStatus !== cur.iqc_status, reason,
+      } });
     } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
   });
-
-  const setCountStatus = (status, extraSql = "") => async (req, res) => {
-    try {
-      const id = num(req.params.id);
-      if (id == null) return bad(res, "id 不是数字");
-      const r = await query(
-        `UPDATE count_sessions SET status=$1 ${extraSql} WHERE id=$2
-        RETURNING session_code AS "sessionCode", status, variance`, [status, id]);
-      if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "盘点单不存在"));
-      res.json({ data: r.rows[0] });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  };
-  on("post", "/wms/count-sessions/:id/confirm-result", "wms.execute", setCountStatus("confirmed", ", completed_at=now()"));
-  on("post", "/wms/count-sessions/:id/approve", "wms.execute", setCountStatus("approved", ", completed_at=COALESCE(completed_at, now())"));
-  on("post", "/wms/count-sessions/:id/cancel", "wms.execute", setCountStatus("cancelled"));
-  on("post", "/wms/count-sessions/:id/unlock", "wms.execute", setCountStatus("open", ", claimed_at=NULL"));
-
-  on("get", "/wms/count-sessions/:id/report", "wms.view", async (req, res) => {
-    try {
-      const id = num(req.params.id);
-      if (id == null) return bad(res, "id 不是数字");
-      const s = (await query(
-        `SELECT session_code AS "sessionCode", location_code AS "locationCode", status,
-                system_qty AS "systemQty", counted_qty AS "countedQty", variance,
-                threshold_pct AS "thresholdPct", claimed_at AS "claimedAt", completed_at AS "completedAt"
-           FROM count_sessions WHERE id=$1`, [id])).rows[0];
-      if (!s) return res.status(404).json(errorEnvelope("NOT_FOUND", "盘点单不存在"));
-      const rows = (await query(
-        `SELECT material_code AS "materialCode", material_name_zh AS "materialName",
-                system_qty AS "systemQty", counted_qty AS "countedQty", variance,
-                CASE WHEN system_qty = 0 THEN 0
-                     ELSE ROUND(ABS(variance) * 100.0 / system_qty, 2) END AS "variancePct"
-           FROM count_items WHERE count_session_id=$1 ORDER BY ABS(variance) DESC`, [id])).rows;
-      res.json({ data: { ...s, items: rows,
-        overThreshold: rows.filter((r) => Number(r.variancePct) > Number(s.thresholdPct || 0)).length } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // ── 库存汇总（源 /api/inventory/stock-summary + /export）──
-  on("get", "/wms/inventory/stock-summary", "wms.view", async (req, res) => {
-    try {
-      const q = text(req.query.q);
-      const args = [];
-      let where = "";
-      if (q) { args.push(`%${q}%`); where = "WHERE m.code ILIKE $1 OR COALESCE(m.name_zh, m.name_en) ILIKE $1"; }
-      const r = await query(
-        `SELECT m.code AS "materialCode", COALESCE(m.name_zh, m.name_en, '') AS "materialName",
-                m.uom AS unit, m.material_type AS "materialType", COUNT(*)::int AS "lotCount",
-                COALESCE(SUM(ml.received_qty),0) AS "totalQty",
-                COALESCE(SUM(ml.reserved_qty),0) AS "reservedQty",
-                COUNT(*) FILTER (WHERE ml.iqc_status NOT IN ('pass','exempt'))::int AS "notReleasedLots"
-           FROM material_lots ml JOIN materials m ON m.id = ml.material_id
-           ${where}
-          GROUP BY m.code, m.name_zh, m.name_en, m.uom, m.material_type
-          ORDER BY m.code LIMIT 500`, args);
-      const totalQty = r.rows.reduce((a, b) => a + Number(b.totalQty || 0), 0);
-      res.json({ data: r.rows, meta: { total: r.rows.length, totalQty } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  on("get", "/wms/inventory/stock-summary/export", "wms.view", async (req, res) => {
-    try {
-      const r = await query(
-        `SELECT m.code, COALESCE(m.name_zh, m.name_en, '') AS name, m.uom,
-                COUNT(*)::int AS lots, COALESCE(SUM(ml.received_qty),0) AS qty,
-                COALESCE(SUM(ml.reserved_qty),0) AS reserved
-           FROM material_lots ml JOIN materials m ON m.id = ml.material_id
-          GROUP BY m.code, m.name_zh, m.name_en, m.uom ORDER BY m.code`);
-      const esc = (s) => `"${String(s ?? "").replace(/"/g, '""')}"`;
-      const csv = ["物料编码,物料名称,单位,批次数,库存数量,预留数量"]
-        .concat(r.rows.map((x) => [esc(x.code), esc(x.name), esc(x.uom), x.lots, x.qty, x.reserved].join(",")))
-        .join("\r\n");
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", 'attachment; filename="stock-summary.csv"');
-      res.send("\uFEFF" + csv);
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // ── 调拨校验（源 /api/inventory/intra-transfer/verify-source|verify-target）──
-  on("get", "/wms/inventory/intra-transfer/verify-source", "wms.view", async (req, res) => {
-    try {
-      const code = text(req.query.lotNo ?? req.query.lot_no);
-      if (!code) return bad(res, "缺少 lotNo");
-      const r = await query(
-        `SELECT ml.id, ml.lot_no AS "lotNo", m.code AS "materialCode",
-                COALESCE(m.name_zh, m.name_en, '') AS "materialName",
-                ml.received_qty AS "availableQty", sl.code AS "locationCode",
-                COALESCE(sl.name_zh, sl.name_en, '') AS "locationName",
-                ml.expiry_date AS "expiryDate", ml.iqc_status AS "iqcStatus"
-           FROM material_lots ml
-           JOIN materials m ON m.id = ml.material_id
-           LEFT JOIN storage_locations sl ON sl.id = ml.storage_location_id
-          WHERE ml.lot_no=$1 AND COALESCE(ml.lot_status,'') NOT IN ('closed','voided')`, [code]);
-      if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "批次不存在"));
-      res.json({ data: r.rows[0] });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  on("get", "/wms/inventory/intra-transfer/verify-target", "wms.view", async (req, res) => {
-    try {
-      const code = text(req.query.locationCode ?? req.query.location_code);
-      if (!code) return bad(res, "缺少 locationCode");
-      const r = await query(
-        `SELECT id, code AS "locationCode", COALESCE(name_zh, name_en, '') AS "locationName",
-                location_type AS "locationType", area, status, warehouse_id AS "warehouseId",
-                capacity_qty AS "capacityQty", allow_transfer AS "allowTransfer"
-           FROM storage_locations WHERE code=$1 AND status='active'`, [code]);
-      if (!r.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "目标库位不存在"));
-      res.json({ data: r.rows[0] });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  // ── 有效期延期（源 /api/inventory/expiry/extend-by-batch）：改批 + 记原系统延期流水 ──
-  on("post", "/wms/inventory-expiry/extend-by-batch", "wms.execute", async (req, res) => {
-    try {
-      const p = req.body ?? {};
-      const code = text(p.lotNo ?? p.lot_no);
-      const newExpiry = text(p.newExpiry ?? p.new_expiry);
-      if (!code) return bad(res, "缺少 lotNo");
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(newExpiry)) return bad(res, "newExpiry 需要 YYYY-MM-DD");
-      const lot = await query(
-        `SELECT ml.id, ml.lot_no, ml.expiry_date, ml.material_id, m.code AS material_code
-           FROM material_lots ml JOIN materials m ON m.id = ml.material_id
-          WHERE ml.lot_no=$1`, [code]);
-      if (!lot.rows.length) return res.status(404).json(errorEnvelope("NOT_FOUND", "批次不存在"));
-      const row = lot.rows[0];
-      const upd = await query(
-        `UPDATE material_lots SET expiry_date=$1, updated_at=now() WHERE id=$2
-        RETURNING id, lot_no AS "lotNo", expiry_date AS "expiryDate"`, [newExpiry, row.id]);
-      // 镜像表流水：只有该物料在原系统里也存在时才能记（material_id 是 uuid 域）
-      const rmat = await query("SELECT id FROM rjvn_material WHERE material_code=$1 LIMIT 1", [row.material_code]);
-      if (rmat.rows.length) {
-        const days = row.expiry_date
-          ? Math.round((Date.parse(newExpiry) - Date.parse(row.expiry_date)) / 86400000) : null;
-        await query(
-          `INSERT INTO rjvn_material_expiry_extension
-             (material_id, batch_no, original_expiry_date, new_expiry_date, extended_days, operator_id, remark)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [rmat.rows[0].id, row.lot_no, row.expiry_date, newExpiry, days,
-           uuid(p.operatorId), orNull(p.reason) || "SMT 有效期延期"]).catch(() => {});
-      }
-      res.json({ data: { ...upd.rows[0], materialCode: row.material_code,
-        originalExpiry: row.expiry_date } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-
-  on("get", "/wms/inventory-expiry/by-material", "wms.view", async (req, res) => {
-    try {
-      const r = await query(
-        `SELECT m.code AS "materialCode", COALESCE(m.name_zh, m.name_en, '') AS "materialName",
-                COUNT(*)::int AS "lotCount",
-                COUNT(*) FILTER (WHERE ml.expiry_date < CURRENT_DATE)::int AS "expiredLots",
-                COUNT(*) FILTER (WHERE ml.expiry_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 7)::int AS "d7Lots",
-                COUNT(*) FILTER (WHERE ml.expiry_date BETWEEN CURRENT_DATE + 8 AND CURRENT_DATE + 30)::int AS "d30Lots",
-                MIN(ml.expiry_date) AS "soonestExpiry"
-           FROM material_lots ml JOIN materials m ON m.id = ml.material_id
-          WHERE ml.expiry_date IS NOT NULL AND COALESCE(ml.lot_status,'') NOT IN ('closed','voided')
-          GROUP BY m.code, m.name_zh, m.name_en ORDER BY "soonestExpiry" LIMIT 300`);
-      res.json({ data: r.rows, meta: { total: r.rows.length } });
-    } catch (err) { res.status(500).json(errorEnvelope("SERVER_ERROR", err.message)); }
-  });
-}
+}
