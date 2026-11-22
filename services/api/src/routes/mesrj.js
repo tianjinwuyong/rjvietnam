@@ -367,7 +367,13 @@ function registerCrud(router, resources, permView, permEdit) {
     const r = getRes(req.params.name);
     if (!r) return fail(res, `未知资源（${req.params.name}）`, 404);
     if (permView && !hasPerm(req.mesrjUser, permView)) return fail(res, `没有权限（${permView}）`, 403);
-    const row = (await query(`SELECT * FROM ${r.table} WHERE id=$1`, [req.params.rid])).rows[0];
+    // 与 PUT 同语义：数字 id 或（定义了 key 的资源）业务键定位。
+    // 之前这里无条件 WHERE id=$1，/md/mo/list 这类字面量后缀把 "list" 塞进
+    // bigint 参数 → pg 22P02 未捕获拒绝，进程日志被刷爆（2026-11-23 api-8080 取证）。
+    const byKey = !!(r.key && !/^\d+$/.test(req.params.rid));
+    if (!byKey && !/^\d+$/.test(req.params.rid)) return fail(res, "记录不存在", 404);
+    const idCol = byKey ? r.key : "id";
+    const row = (await query(`SELECT * FROM ${r.table} WHERE ${idCol}=$1`, [req.params.rid])).rows[0];
     if (!row) return fail(res, "记录不存在", 404);
     return ok(res, row);
   });

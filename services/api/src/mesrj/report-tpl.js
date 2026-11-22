@@ -246,7 +246,11 @@ function safeJson(s, dflt) {
 }
 
 export async function getTpl(tplId) {
-  const r = (await query("SELECT * FROM cfg_report_tpl WHERE id=$1", [tplId])).rows[0];
+  // 调用方传 Number(req.params.id)，非数字时是 NaN——pg 把它当字符串塞进
+  // bigint 参数直接 22P02。空/非数字一律按“不存在”处理。
+  const id = Number(tplId);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const r = (await query("SELECT * FROM cfg_report_tpl WHERE id=$1", [id])).rows[0];
   if (!r) return null;
   return { ...r, sheets: safeJson(r.sheets, []), mapping: safeJson(r.mapping, {}) };
 }
