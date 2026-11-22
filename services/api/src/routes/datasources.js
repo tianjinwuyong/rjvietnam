@@ -441,7 +441,16 @@ async function copyTable({ query, provider, code, runId, table, mode, batchSize 
         const slice = rows.slice(i, i + chunk);
         const values = [];
         const tuples = slice.map((row, r) => {
-          columns.forEach((c, ci) => values.push(row[c.name] ?? null));
+          columns.forEach((c, ci) => {
+            const v = row[c.name] ?? null;
+            // node-pg parses remote jsonb into JS values; its default prepareValue
+            // turns a JS *array* into a Postgres array literal ({...}), which is not
+            // valid JSON — every jsonb column holding a JSON array (flow_nodes,
+            // locations, items…) died with "invalid input syntax for type json".
+            // Serialize jsonb-bound values ourselves so objects AND arrays go over
+            // as JSON text.
+            values.push(v !== null && c.type === "jsonb" && typeof v !== "string" ? JSON.stringify(v) : v);
+          });
           return `(${columns.map((_, ci) => `$${r * columns.length + ci + 1}`).join(", ")})`;
         });
         await query(

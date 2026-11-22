@@ -66,8 +66,35 @@ export async function convergeTask(query, code, task) {
     };
   }
   if (code === "wms-rjvn" && task === "picking") return convergePicking(query);
-  if (code === "wms-rjvn" && task === "inventory") return convergeInventoryMirror(query);
-  if (code === "oa-portal" && task === "instances") return convergeOaInstances(query);
+  if (code === "wms-rjvn" && task === "inventory") {
+    const mirror = await convergeInventoryMirror(query);
+    // ext_wms_src.* is refreshed by the datasources sync (not this pull);
+    // backfilling here every round means a refreshed copy converges without
+    // any extra trigger. Insert-only, so the cost is one NOT EXISTS per table.
+    const backfill = await convergeExtWmsBackfill(query);
+    const gen = await backfillFromExt(query, "ext_wms_src");
+    const genCreated = Object.values(gen).reduce((a, x) => a + (x.created || 0), 0);
+    const genSkipped = Object.values(gen).reduce((a, x) => a + (x.skipped || 0), 0);
+    return {
+      created: mirror.created + backfill.created + genCreated,
+      updated: mirror.updated,
+      skipped: mirror.skipped + backfill.skipped + genSkipped,
+      note: `${backfill.note} | gen+${genCreated} skip${genSkipped}`,
+    };
+  }
+  if (code === "oa-portal" && task === "instances") {
+    const r = await convergeOaInstances(query);
+    const gen = await backfillFromExt(query, "ext_oa_src");
+    const genCreated = Object.values(gen).reduce((a, x) => a + (x.created || 0), 0);
+    const genUpdated = Object.values(gen).reduce((a, x) => a + (x.updated || 0), 0);
+    const genSkipped = Object.values(gen).reduce((a, x) => a + (x.skipped || 0), 0);
+    return {
+      created: r.created + genCreated,
+      updated: r.updated + genUpdated,
+      skipped: r.skipped + genSkipped,
+      note: `ext-backfill+${genCreated}/~${genUpdated} skip${genSkipped}`,
+    };
+  }
   if (code === "oa-portal" && task === "flows") return convergeOaFlows(query);
   return { created: 0, updated: 0, skipped: 0, note: "no convergence target" };
 }
@@ -273,6 +300,247 @@ async function convergeIqcLotMirror(query) {
        AND (NOT EXISTS (SELECT 1 FROM rjvn_material m WHERE m.id::text = s.payload->>'materialId')
          OR NOT EXISTS (SELECT 1 FROM rjvn_supplier sp WHERE sp.id::text = s.payload->>'supplierId'))`, []);
   return { created, updated: r.rows.length - created, skipped: badKey.rows[0].n };
+}
+
+// ── Generic ext_* → business-table row backfill (parity closer) ───────────
+// The datasources full-table copies (ext_oa_src.*, ext_wms_src.*) are the
+// only complete mirrors of the running systems; the live list APIs expose a
+// subset. This walks a declarative table list and inserts rows the business
+// table is missing, keyed on the natural match columns (source id where the
+// id spaces are shared — OA; (task, started_at, request_id) for WMS logs).
+// Columns are the ext∩target intersection; text-typed ext columns (uuid PKs
+// land as text in staging) are cast explicitly; composite-domain columns
+// (rjvn_user_profile) are skipped, never invented; FK guards make a row with
+// a missing master a counted skip instead of an error. OA sequences are
+// bumped past mirrored ids so local inserts cannot collide.
+const EXT_BACKFILL = [
+  // OA — source bigint ids preserved (oa.* already carries the same id space)
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_system", idMode: "preserve",
+    fk: [`e.created_by IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.created_by)`,
+         `e.owner_dept_id IS NULL OR EXISTS(SELECT 1 FROM oa.org_department d WHERE d.id = e.owner_dept_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "attachment", idMode: "preserve",
+    fk: [`e.instance_id IS NULL OR EXISTS(SELECT 1 FROM oa.flow_instance i WHERE i.id = e.instance_id)`,
+         `e.uploaded_by IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.uploaded_by)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_code_ledger", idMode: "preserve",
+    fk: [`e.doc_id IS NULL OR EXISTS(SELECT 1 FROM oa.doc_system d WHERE d.id = e.doc_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_issue_record", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.doc_system d WHERE d.id = e.doc_id)`,
+         `e.dept_id IS NULL OR EXISTS(SELECT 1 FROM oa.org_department dd WHERE dd.id = e.dept_id)`,
+         `e.holder_id IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.holder_id)`,
+         `e.operator_id IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u2 WHERE u2.id = e.operator_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_issue_feed", idMode: "preserve",
+    fk: [`e.doc_id IS NULL OR EXISTS(SELECT 1 FROM oa.doc_system d WHERE d.id = e.doc_id)`,
+         `e.issued_by IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.issued_by)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_version_lang", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.doc_system d WHERE d.id = e.doc_id)`,
+         `e.file_id IS NULL OR EXISTS(SELECT 1 FROM oa.attachment a WHERE a.id = e.file_id)`,
+         `e.sealed_file_id IS NULL OR EXISTS(SELECT 1 FROM oa.attachment a2 WHERE a2.id = e.sealed_file_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "sys_doc_version", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.doc_system d WHERE d.id = e.doc_id)`,
+         `e.created_by IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.created_by)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_print_log", idMode: "preserve" },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_review_read", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.flow_instance i WHERE i.id = e.instance_id)`,
+         `EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.user_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "flow_definition_version", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.flow_definition fd WHERE fd.id = e.definition_id)`,
+         `e.created_by IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.created_by)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "flow_log", idMode: "preserve",
+    fk: [`e.actor_id IS NULL OR EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.actor_id)`,
+         `e.instance_id IS NULL OR EXISTS(SELECT 1 FROM oa.flow_instance i WHERE i.id = e.instance_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "flow_task", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.flow_instance i WHERE i.id = e.instance_id)`,
+         `EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.assignee_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "notification", idMode: "preserve",
+    fk: [`EXISTS(SELECT 1 FROM oa.org_user u WHERE u.id = e.user_id)`] },
+  { ext: "ext_oa_src", tgt: "oa", table: "doc_change_log", idMode: "preserve" },
+  // WMS operational logs + param mirror — id spaces are NOT shared (source
+  // bigint vs mirror uuid); match on the natural key, mint a fresh uuid.
+  { ext: "ext_wms_src", tgt: "public", table: "mes_sync_log", tgtTable: "rjvn_mes_sync_log", idMode: "generate",
+    match: [`t.task IS NOT DISTINCT FROM e.task`, `t.started_at = e.started_at`, `COALESCE(t.request_id,'') = COALESCE(e.request_id,'')`] },
+  { ext: "ext_wms_src", tgt: "public", table: "operation_log", tgtTable: "rjvn_operation_log", idMode: "generate",
+    match: [`t.action = e.action`, `t._created_at = e._created_at`, `t.biz_no IS NOT DISTINCT FROM e.biz_no`] },
+  { ext: "ext_wms_src", tgt: "public", table: "sys_param", tgtTable: "rjvn_sys_param", idMode: "default",
+    match: [`t.param_key = e.param_key`] },
+];
+
+async function backfillFromExt(query, extPrefix) {
+  const out = {};
+  for (const spec of EXT_BACKFILL) {
+    if (spec.ext !== extPrefix) continue;
+    const tgtTable = spec.tgtTable ?? spec.table;
+    const exists = await query(`SELECT to_regclass($1) AS t`, [`${spec.ext}.${spec.table}`]);
+    if (!exists.rows[0].t) continue; // copy not taken yet
+    const toReg = await query(`SELECT to_regclass($1) AS t`, [`${spec.tgt}.${tgtTable}`]);
+    if (!toReg.rows[0].t) { out[spec.table] = { note: "target missing" }; continue; }
+    // column intersection with both sides' types, target order
+    const colRows = await query(`
+      SELECT e.column_name AS name, e.data_type AS etype, t.data_type AS ttype
+        FROM information_schema.columns e
+        JOIN information_schema.columns t
+          ON t.table_schema = $2 AND t.table_name = $3 AND t.column_name = e.column_name
+       WHERE e.table_schema = $1 AND e.table_name = $4
+       ORDER BY t.ordinal_position`, [spec.ext, spec.tgt, tgtTable, spec.table]);
+    // array-typed target columns (doc_review_read.langs) have no safe text
+    // cast from the staging copy — leave them NULL rather than emit `::ARRAY`.
+    const usable = colRows.rows.filter((x) => x.ttype !== "USER-DEFINED" && x.ttype !== "ARRAY"
+      && !(spec.idMode !== "preserve" && x.name === "id"));
+    const expr = (x) => {
+      if (x.name === "id" && spec.idMode === "preserve") return `e."id"`;
+      if (x.etype === x.ttype) return `e."${x.name}"`;
+      if (x.etype === "text") {
+        if (x.ttype === "uuid") return `NULLIF(e."${x.name}",'')::uuid`;
+        if (x.ttype === "bigint" || x.ttype === "integer") return `NULLIF(e."${x.name}",'')::${x.ttype}`;
+        if (x.ttype === "numeric" || x.ttype === "date" || x.ttype === "boolean" || x.ttype === "jsonb") return `NULLIF(e."${x.name}",'')::${x.ttype}`;
+        if (x.ttype === "timestamp with time zone") return `NULLIF(e."${x.name}",'')::timestamptz`;
+      }
+      if (x.ttype === "text" || x.ttype === "timestamp with time zone" && x.etype === "timestamp with time zone") return `e."${x.name}"`;
+      return `e."${x.name}"::${x.ttype === "character varying" ? "text" : x.ttype}`;
+    };
+    const list = usable.map((x) => `"${x.name}"`).join(", ");
+    const sel = usable.map(expr).join(", ");
+    const idSel = spec.idMode === "generate" ? "gen_random_uuid() AS id, " : "";
+    const matchCond = (spec.match ?? [`t.id = e.id${spec.tgt === "public" ? "::text" : ""}`]).join(" AND ");
+    // parens are load-bearing: the guards are `x IS NULL OR EXISTS(...)` and
+    // without them the OR swallows the NOT EXISTS and re-inserts existing rows.
+    const fk = spec.fk?.length ? ` AND (${spec.fk.join(" AND ")})` : "";
+    const ins = await query(`
+      INSERT INTO "${spec.tgt}"."${tgtTable}" (${spec.idMode === "generate" ? "id, " : ""}${list})
+      SELECT ${idSel}${sel}
+        FROM "${spec.ext}"."${spec.table}" e
+       WHERE NOT EXISTS (SELECT 1 FROM "${spec.tgt}"."${tgtTable}" t WHERE ${matchCond})${fk}
+      RETURNING 1`, []);
+    let skipped = 0;
+    if (spec.fk?.length) {
+      const sk = await query(`SELECT count(*)::int AS n FROM "${spec.ext}"."${spec.table}" e
+        WHERE NOT EXISTS (SELECT 1 FROM "${spec.tgt}"."${tgtTable}" t WHERE ${matchCond})
+          AND NOT (${spec.fk.join(" AND ")})`, []);
+      skipped = sk.rows[0].n;
+    }
+    // mirrored ids can sit above the local sequence — bump it (OA preserve mode)
+    if (spec.idMode === "preserve") {
+      const seq = await query(`SELECT pg_get_serial_sequence($1,'id') AS s`, [`${spec.tgt}.${tgtTable}`]);
+      if (seq.rows[0]?.s) {
+        await query(`SELECT setval($1, (SELECT COALESCE(max(id),1) FROM "${spec.tgt}"."${tgtTable}"), true)`, [seq.rows[0].s]).catch(() => undefined);
+      }
+    }
+    out[tgtTable] = { created: ins.rows.length, skipped };
+  }
+  // key-based alignment (no id column, and NO unique constraint on prefix/key
+  // in these two — so UPDATE + NOT-EXISTS INSERT, never ON CONFLICT)
+  if (extPrefix === "ext_oa_src") {
+    const cs = await query(`SELECT to_regclass('ext_oa_src.doc_code_seq') t`, []);
+    if (cs.rows[0].t) {
+      await query(`
+        UPDATE oa.doc_code_seq t SET max_seq = e.max_seq, updated_at = e.updated_at
+          FROM ext_oa_src.doc_code_seq e
+         WHERE t.prefix = e.prefix AND t.max_seq < e.max_seq`, []);
+      const ins = await query(`
+        INSERT INTO oa.doc_code_seq (prefix, max_seq, updated_at)
+        SELECT e.prefix, e.max_seq, e.updated_at FROM ext_oa_src.doc_code_seq e
+         WHERE NOT EXISTS (SELECT 1 FROM oa.doc_code_seq t WHERE t.prefix = e.prefix)
+        RETURNING prefix`, []);
+      out.doc_code_seq = { created: ins.rows.length, skipped: 0 };
+    }
+    const sc = await query(`SELECT to_regclass('ext_oa_src.sys_config') t`, []);
+    if (sc.rows[0].t) {
+      await query(`
+        UPDATE oa.sys_config t SET value = e.value, label = e.label, updated_at = e.updated_at
+          FROM ext_oa_src.sys_config e
+         WHERE t.key = e.key AND t.value IS DISTINCT FROM e.value`, []);
+      const ins = await query(`
+        INSERT INTO oa.sys_config (key, value, label, updated_at)
+        SELECT e.key, e.value, e.label, e.updated_at FROM ext_oa_src.sys_config e
+         WHERE NOT EXISTS (SELECT 1 FROM oa.sys_config t WHERE t.key = e.key)
+        RETURNING key`, []);
+      out.sys_config = { created: ins.rows.length, skipped: 0 };
+    }
+  }
+  return out;
+}
+
+// ── ext_wms_src backfill → receipt / iqc_lot_receipt / inventory_transaction
+// The datasources full-table copy (ext_wms_src.*) is the only complete mirror
+// of the running WMS — the live API list endpoints do not expose receipts or
+// transactions. This closes the three business-table DIFFs measured
+// 2026-11-22 (docs/live-source-parity-2026-11-22.md): receipt_order 773/924,
+// iqc_lot_receipt 773/917, inventory_transaction 777/935. Insert-only keyed
+// on source uuid; rows whose FK masters are not in the mirror are skipped and
+// counted, never guessed. ext columns are text (staging is for reading), so
+// every uuid/numeric/date binding casts explicitly. keeper/_by columns are the
+// composite domain rjvn_user_profile — left NULL. Runs every converge round;
+// when ext_wms_src is refreshed (datasources sync), new rows land next round.
+async function convergeExtWmsBackfill(query) {
+  // Fresh installs never ran the datasources sync — no ext copy, nothing to
+  // backfill. Report it instead of throwing and marking the round partial.
+  const ext = await query(`SELECT to_regclass('ext_wms_src.receipt_order') AS t`, []);
+  if (!ext.rows[0].t) return { created: 0, updated: 0, skipped: 0, note: "ext-backfill: ext_wms_src absent" };
+  // 1) receipt_order (parent of iqc_lot_receipt FK — must go first)
+  const ro = await query(`
+    INSERT INTO rjvn_receipt_order (id, receipt_no, receipt_date, supplier_id, material_id,
+                                    quantity, unit, production_date, batch_no, serial_no,
+                                    location_id, qr_content, remark, status, _created_at, _updated_at)
+    SELECT e.id::uuid, e.receipt_no, e.receipt_date,
+           NULLIF(e.supplier_id,'')::uuid, e.material_id::uuid,
+           e.quantity, e.unit, e.production_date, e.batch_no, e.serial_no,
+           NULLIF(e.location_id,'')::uuid, e.qr_content, e.remark, e.status,
+           COALESCE(e._created_at, now()), now()
+      FROM ext_wms_src.receipt_order e
+     WHERE NOT EXISTS (SELECT 1 FROM rjvn_receipt_order m WHERE m.id::text = e.id)
+       AND e.receipt_no IS NOT NULL AND e.receipt_date IS NOT NULL
+       AND EXISTS (SELECT 1 FROM rjvn_material mm WHERE mm.id::text = e.material_id)
+       AND (NULLIF(e.location_id,'') IS NULL
+            OR EXISTS (SELECT 1 FROM rjvn_warehouse_location l WHERE l.id::text = e.location_id))
+    RETURNING id`, []);
+  const roSkipped = await query(`
+    SELECT count(*)::int AS n FROM ext_wms_src.receipt_order e
+     WHERE NOT EXISTS (SELECT 1 FROM rjvn_receipt_order m WHERE m.id::text = e.id)
+       AND NOT (e.receipt_no IS NOT NULL AND e.receipt_date IS NOT NULL
+         AND EXISTS (SELECT 1 FROM rjvn_material mm WHERE mm.id::text = e.material_id)
+         AND (NULLIF(e.location_id,'') IS NULL
+              OR EXISTS (SELECT 1 FROM rjvn_warehouse_location l WHERE l.id::text = e.location_id)))`, []);
+
+  // 2) iqc_lot_receipt (FKs to rjvn_iqc_lot + rjvn_receipt_order — both now filled)
+  const lr = await query(`
+    INSERT INTO rjvn_iqc_lot_receipt (id, lot_id, receipt_id, _created_at)
+    SELECT e.id::uuid, e.lot_id::uuid, e.receipt_id::uuid, COALESCE(e._created_at, now())
+      FROM ext_wms_src.iqc_lot_receipt e
+     WHERE NOT EXISTS (SELECT 1 FROM rjvn_iqc_lot_receipt m WHERE m.id::text = e.id)
+       AND EXISTS (SELECT 1 FROM rjvn_iqc_lot l WHERE l.id::text = e.lot_id)
+       AND EXISTS (SELECT 1 FROM rjvn_receipt_order r WHERE r.id::text = e.receipt_id)
+    RETURNING id`, []);
+  const lrSkipped = await query(`
+    SELECT count(*)::int AS n FROM ext_wms_src.iqc_lot_receipt e
+     WHERE NOT EXISTS (SELECT 1 FROM rjvn_iqc_lot_receipt m WHERE m.id::text = e.id)
+       AND NOT (EXISTS (SELECT 1 FROM rjvn_iqc_lot l WHERE l.id::text = e.lot_id)
+         AND EXISTS (SELECT 1 FROM rjvn_receipt_order r WHERE r.id::text = e.receipt_id))`, []);
+
+  // 3) inventory_transaction (no FKs; NOT NULL material_id, location_id, tx_type)
+  const it = await query(`
+    INSERT INTO rjvn_inventory_transaction (id, material_id, location_id, batch_no, label_no,
+                                            stock_status, tx_type, tx_no, qty, balance_after, unit,
+                                            reference_no, remark, _created_at, _updated_at)
+    SELECT e.id::uuid, e.material_id::uuid, e.location_id::uuid, e.batch_no, e.label_no,
+           e.stock_status, e.tx_type, e.tx_no, e.qty, e.balance_after, e.unit,
+           e.reference_no, e.remark, COALESCE(e._created_at, now()), now()
+      FROM ext_wms_src.inventory_transaction e
+     WHERE NOT EXISTS (SELECT 1 FROM rjvn_inventory_transaction m WHERE m.id::text = e.id)
+       AND NULLIF(e.material_id,'') IS NOT NULL
+       AND NULLIF(e.location_id,'') IS NOT NULL
+       AND e.tx_type IS NOT NULL
+    RETURNING id`, []);
+  const itSkipped = await query(`
+    SELECT count(*)::int AS n FROM ext_wms_src.inventory_transaction e
+     WHERE NOT EXISTS (SELECT 1 FROM rjvn_inventory_transaction m WHERE m.id::text = e.id)
+       AND NOT (NULLIF(e.material_id,'') IS NOT NULL
+         AND NULLIF(e.location_id,'') IS NOT NULL AND e.tx_type IS NOT NULL)`, []);
+
+  return {
+    created: ro.rows.length + lr.rows.length + it.rows.length,
+    updated: 0,
+    skipped: roSkipped.rows[0].n + lrSkipped.rows[0].n + itSkipped.rows[0].n,
+    note: `ext-backfill receipt+${ro.rows.length} lot_receipt+${lr.rows.length} inv_tx+${it.rows.length}`,
+  };
 }
 
 // ── Inventory mirror → rjvn_inventory (the screen /rjvn-inventory/list reads)

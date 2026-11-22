@@ -34,6 +34,47 @@ import path from 'node:path';
 
 // 下载/落库共用的 MIME 表见 utils/mime.js（原来这里内联了一份，已抽取避免两处漂移）
 
+// ── 运行中 OA 的文件字节按需代理 ────────────────────────────────────────────
+// oa.attachment.file_path 指向源系统磁盘；本地 oa-uploads 只有 bulk 预拉
+// （scripts/pull-oa-attachments.mjs）覆盖到的部分。缺字节时按相对路径向源
+// /api/files/<rel> 取一次并落盘缓存。授权在调用方（/api/files/* 路由）完成，
+// 这里只负责取字节；源离线/失败返回 null，由路由降级为 404。
+const srcOaSession = { token: null, base: null, expiresAt: 0, failedUntil: 0 };
+async function srcOaConfig() {
+  if (srcOaSession.failedUntil > Date.now()) return null; // 对端离线时快速失败，60s 内不重试登录
+  if (srcOaSession.base && srcOaSession.token && srcOaSession.expiresAt > Date.now() + 60_000) return srcOaSession;
+  const row = await query(
+    `SELECT param_key, param_val FROM sys_param WHERE param_key IN ('liveoa.base_url','liveoa.account','liveoa.password')`,
+  ).catch(() => ({ rows: [] }));
+  const cfg = Object.fromEntries((row.rows || []).map((r) => [r.param_key, r.param_val]));
+  const base = String(cfg['liveoa.base_url'] || '').replace(/\/+$/, '');
+  if (!base || !cfg['liveoa.account'] || !cfg['liveoa.password']) { srcOaSession.failedUntil = Date.now() + 60_000; return null; }
+  const res = await fetch(`${base}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username: cfg['liveoa.account'], password: cfg['liveoa.password'] }),
+    signal: AbortSignal.timeout(8_000),
+  }).catch(() => null);
+  if (!res || !res.ok) { srcOaSession.failedUntil = Date.now() + 60_000; return null; }
+  const j = await res.json().catch(() => null);
+  if (!j?.data?.token) { srcOaSession.failedUntil = Date.now() + 60_000; return null; }
+  srcOaSession.token = j.data.token;
+  srcOaSession.base = base;
+  srcOaSession.expiresAt = Date.now() + 20 * 3600_000; // 源会话 24h，留余量
+  return srcOaSession;
+}
+async function fetchFromSourceOa(rel) {
+  const s = await srcOaConfig();
+  if (!s) return null;
+  const url = rel.split('/').map(encodeURIComponent).join('/');
+  const res = await fetch(`${s.base}/api/files/${url}`, {
+    headers: { authorization: `Bearer ${s.token}` },
+    signal: AbortSignal.timeout(30_000),
+  }).catch(() => null);
+  if (!res || !res.ok) { if (res?.status === 401 || res?.status === 403) { srcOaSession.token = null; srcOaSession.expiresAt = 0; } return null; }
+  return Buffer.from(await res.arrayBuffer());
+}
+
 /**
  * mimetype → 扩展名（上传时 filename 无扩展名的兜底）
  * 只覆盖移动端拍照/相册常见类型，未列出的继续按「不支持」拒绝。
@@ -834,7 +875,10 @@ export default async function systemRoutes(app) {
   app.get('/api/files/*', wrap(async (req, reply) => {
     // 路径归一：旧实现用 `rel.replace(/\.\./g,'')` + path.join 兜穿越，属于「黑名单」式防御；
     // 统一改用 drive-service 已加固的 absFromRel（拒绝 .. 段 / 绝对路径 / 盘符 / 越根，含二次解码校验）。
-    const relRaw = (req.params['*'] || '');
+    // Express 5 把裸 `*` 捕获拆成 req.params['*'] 数组（旧 Express 是整串）。
+    // 直接 String() 会得到 "docs,2420,xxx.docx" —— 必须按 '/' 重组。
+    const splat = req.params['*'];
+    const relRaw = Array.isArray(splat) ? splat.join('/') : String(splat || req.params['0'] || '');
     let full;
     try {
       full = absFromRel(relRaw);
@@ -843,7 +887,6 @@ export default async function systemRoutes(app) {
     }
     // 日志与 DB 反查用的统一相对路径（与 attachment.file_path / drive_file.file_path 同形态）
     const rel = path.relative(config.upload.dir, full).split(path.sep).join('/');
-    if (!fs.existsSync(full)) return reply.code(404).send({ code: 1, msg: '文件不存在' });
 
     // ---- 归属授权（B3 修复：原实现只判登录 ⇒ 任意登录用户可下载任意附件 / 公共盘文件）----
     // 分类与判定见 middleware/file-access.js：公共盘走 drive_acl、流程附件走单据可见性、
@@ -891,6 +934,17 @@ export default async function systemRoutes(app) {
     const ct = DOWNLOAD_MIME[path.extname(rel).toLowerCase()] || 'application/octet-stream';
     reply.header('Content-Type', ct);
     reply.header('X-Content-Type-Options', 'nosniff');
+    // 本地缺字节 → 向运行中 OA 按需拉取并落盘缓存（授权已在上文通过；
+    // 对端离线/拉取失败才 404）。bulk 预拉见 scripts/pull-oa-attachments.mjs。
+    if (!fs.existsSync(full)) {
+      const buf = await fetchFromSourceOa(rel).catch(() => null);
+      if (!buf) return reply.code(404).send({ code: 1, msg: '文件不存在' });
+      try {
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, buf);
+      } catch { /* 缓存失败不影响本次响应 */ }
+      return reply.send(buf);
+    }
     return reply.send(fs.createReadStream(full));
   }));
 

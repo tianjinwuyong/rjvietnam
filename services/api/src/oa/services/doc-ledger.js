@@ -95,6 +95,21 @@ export const LEDGER_DEFS = {
       { key: 'remark', label: '备注', label_vi: 'Ghi chú' },
     ],
   },
+  // 运行中 OA 的字段级修改审计（oa.doc_change_log，live-sync 收敛落点，
+  // migration 395）。源系统只写不删，这里只读。
+  changes: {
+    label: '字段修改记录', labelVi: 'Lịch sử sửa trường',
+    columns: [
+      { key: 'code', label: '文件编号', label_vi: 'Mã tài liệu' },
+      { key: 'field', label: '修改字段', label_vi: 'Trường sửa' },
+      { key: 'old_value', label: '修改前', label_vi: 'Giá trị cũ' },
+      { key: 'new_value', label: '修改后', label_vi: 'Giá trị mới' },
+      { key: 'source', label: '来源', label_vi: 'Nguồn' },
+      { key: 'operator_name', label: '操作人', label_vi: 'Người thao tác' },
+      { key: 'reason', label: '原因', label_vi: 'Lý do' },
+      { key: 'created_at', label: '时间', label_vi: 'Thời gian' },
+    ],
+  },
 };
 
 /** 台账类型是否合法 */
@@ -230,6 +245,21 @@ export async function query(type, filters = {}) {
       `SELECT d.code, rv.review_type, rv.plan_date, rv.done_date, rv.conclusion,
               u.real_name AS reviewer_name, rv.remark ${fromSql}
        ORDER BY rv.plan_date DESC NULLS LAST, rv.id DESC LIMIT ${size} OFFSET ${offset}`, params);
+    total = (await one(`SELECT COUNT(*)::int AS n ${fromSql}`, params))?.n || 0;
+  } else if (type === 'changes') {
+    const params = [];
+    let where = '1=1';
+    if (filters.keyword) { params.push(`%${filters.keyword}%`); where += ` AND (d.code ILIKE $${params.length} OR d.title ILIKE $${params.length})`; }
+    if (filters.from) { params.push(filters.from); where += ` AND cl.created_at >= $${params.length}::date`; }
+    if (filters.to) { params.push(filters.to); where += ` AND cl.created_at < ($${params.length}::date + interval '1 day')`; }
+    const fromSql = `FROM doc_change_log cl
+       JOIN doc_system d ON d.id = cl.doc_id
+       LEFT JOIN org_user u ON u.id = cl.operator_id
+      WHERE ${where}`;
+    list = await many(
+      `SELECT d.code, cl.field, cl.old_value, cl.new_value, cl.source,
+              u.real_name AS operator_name, cl.reason, cl.created_at ${fromSql}
+       ORDER BY cl.created_at DESC NULLS LAST, cl.id DESC LIMIT ${size} OFFSET ${offset}`, params);
     total = (await one(`SELECT COUNT(*)::int AS n ${fromSql}`, params))?.n || 0;
   }
 

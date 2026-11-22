@@ -384,6 +384,26 @@ export function registerLiveSyncRoutes(app, deps) {
     } catch (e) { res.status(500).json(errorEnvelope("LIVE_SYNC_STATUS_FAILED", e.message)); }
   });
 
+  // 评审 N5:嫁接屏操作员侧的新鲜度探针。只回每源"最近成功轮询时间 + 间隔",
+  // 不暴露账号/基址,所以门槛是 wms.view(操作员都有)而不是 adminOnly。
+  app.get("/api/live-sync/freshness", requirePermission("wms.view"), async (req, res) => {
+    try {
+      const out = [];
+      for (const code of Object.keys(APPS)) {
+        const cfg = await loadConfig(code);
+        const last = await query(
+          `SELECT max(started_at) AS at FROM live_sync_log WHERE app=$1 AND status IN ('success','partial')`, [code]);
+        out.push({
+          app: code,
+          lastSuccessAt: last.rows[0]?.at ?? null,
+          intervalMinutes: cfg.intervalMinutes,
+          autoSync: cfg.autoSync,
+        });
+      }
+      res.json(listEnvelope(out, out.length));
+    } catch (e) { res.status(500).json(errorEnvelope("LIVE_SYNC_FRESHNESS_FAILED", e.message)); }
+  });
+
   app.put("/api/live-sync/config/:code", adminOnly, async (req, res) => {
     const code = req.params.code;
     const a = APPS[code];

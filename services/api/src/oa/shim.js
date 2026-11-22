@@ -37,6 +37,9 @@ function makeReply(res) {
       reply.sent = true;
       if (body === null || body === undefined) { res.end(); return reply; }
       if (Buffer.isBuffer(body) || typeof body === 'string') { res.send(body); return reply; }
+      // Fastify 的 reply.send(stream) 直接流式输出;Express 会把 stream 当
+      // 普通对象 JSON 序列化(348 字节的 ReadState 转储)。显式 pipe。
+      if (body && typeof body.pipe === 'function') { body.on('error', () => res.end()); body.pipe(res); return reply; }
       res.json(body);
       return reply;
     },
