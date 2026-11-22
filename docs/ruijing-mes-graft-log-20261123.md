@@ -86,11 +86,12 @@
 - 后端：临时 API :8093 + JWT 逐条实调 10 条新路由；`kitting` 递归展开 demand_total=600=3×2×100 且 SFG 段 excluded_cnt=1；`point-to-mo` 实改 `mo_hint` OLD→MO + 审计；设备侧无 key/错 key 401（fail-closed），正确 key 200。探针数据与临时密钥 `finally` 删净（left=0）。
 - 前端：headless Chromium 实跑，重启 API 后 `/menu` 叶子 166→176；逐屏点开，W17 10/10 渲染真实视图（无「建设中」、无 `[object Object]`）；W18 抽检的登记屏与跳转卡全部 `wip:false`。
 
-**自己写出并修掉的 bug**（都靠实跑/截图暴露，静态检查抓不到）：
-1. 共享 `Table` 对每格 `String(v)`，把 React 元素渲染成 `[object Object]` → 加 `cellVal`（`isValidElement` 直接渲染）。
-2. `GenericScreen` 对可选 `def.columns` 直接 `.filter`（tsc 抓到）。
-3. 用了 `Promise.withResolvers`，本仓 tsconfig lib < ES2024 → 回 executor 形式。
-4. 台账条目一度插错位（在 W17 之前）且含乱码片段 → 已按时间序移到末尾并修正。
+**自己写出并修掉的 4 个问题**（按「怎么被抓到」分：2 个静态检查抓到、1 个实跑截图抓到、1 个复核抓到）：
+1. 【实跑/截图抓到，静态检查抓不到】共享 `Table` 对每格 `String(v)`，把 React 元素渲染成 `[object Object]`（组织架构页暴露）→ 加 `cellVal`（`isValidElement` 直接渲染，否则 String）。
+2. 【tsc 抓到】`GenericScreen` 对可选 `def.columns` 直接 `.filter`（TS18048 possibly undefined）→ 与表格同一处解析列（显式优先，留空 autoCols）。
+3. 【tsc 抓到】用了 `Promise.withResolvers`，本仓 tsconfig lib < ES2024（TS2550）→ 回 executor 形式并注明原因。
+4. 【复核抓到，非代码 bug】台账条目一度插错位（在 W17 之前）且含乱码片段 → 已按时间序移到末尾并修正。
+> 更正：上一版把这 4 条一律写成「静态检查抓不到」，不准确——#2/#3 正是 `npm run typecheck` 报出来的。只有 #1 是静态检查的盲区（React 元素被 String 化，类型合法）。
 
 ---
 
