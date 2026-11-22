@@ -53,8 +53,23 @@ export interface ScreenDef {
   params?: Record<string, string>;
   /** 顶部说明（i18n key） */
   note?: string;
-  /** 行内动作：调用 POST endpoint + 该动作名，body 带 id */
-  actions?: Array<{ name: string; label: string; endpoint: string; body?: (row: Record<string, unknown>) => Record<string, unknown> }>;
+  /**
+   * 行内动作：
+   *   kind="post"（默认）→ POST endpoint，body 由 row 派生
+   *   kind="goto"        → 跳到本模块另一个叶子（源「去维修」= A.go('qlt.repairdesk')），
+   *                        由调用方注入 onGoto，组件本身不持有路由状态
+   */
+  actions?: Array<{
+    name: string; label: string;
+    kind?: "post" | "goto";
+    endpoint?: string;
+    target?: string;
+    /** 执行前确认：i18n key 或由行生成的文案（源 confirmBox） */
+    confirm?: string | ((row: Record<string, unknown>) => string);
+    /** 该动作是否对这一行可见（源 rowActions 按状态分支） */
+    show?: (row: Record<string, unknown>) => boolean;
+    body?: (row: Record<string, unknown>) => Record<string, unknown>;
+  }>;
   /** 允许导出 CSV */
   exportable?: boolean;
 }
@@ -104,10 +119,11 @@ function cell(v: unknown): string {
   return s.length >= 19 && /^\d{4}-\d{2}-\d{2}T/.test(s) ? s.slice(0, 19).replace("T", " ") : s;
 }
 
-export function GenericScreen({ locale, def, renderers }: {
+export function GenericScreen({ locale, def, renderers, onGoto }: {
   locale: Locale;
   def: ScreenDef;
   renderers?: Record<string, (v: unknown, row: Row, locale: Locale) => ReactNode>;
+  onGoto?: (code: string, row: Row) => void;
 }) {
   const [rows, setRows] = useState<Record<string, unknown>[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -135,15 +151,28 @@ export function GenericScreen({ locale, def, renderers }: {
 
   const runAction = async (a: NonNullable<ScreenDef["actions"]>[number], row: Record<string, unknown>) => {
     setErr(""); setMsg("");
+    if (a.kind === "goto") {
+      if (a.target && onGoto) onGoto(a.target, row);
+      return;
+    }
+    if (!a.endpoint) return;
+    if (a.confirm) {
+      const text = typeof a.confirm === "function" ? a.confirm(row) : t(a.confirm, locale);
+      if (!window.confirm(text)) return;
+    }
     try {
       await mesrjApi.post(a.endpoint, a.body ? a.body(row) : { id: row.id });
       setMsg(t("w18.done", locale)); void load();
     } catch (ex) { setErr(ex instanceof Error ? ex.message : String(ex)); }
   };
 
+  // label 既可能是 i18n key（"w18.c.station"）也可能是字面量（"SN"）：
+  // t() 查不到时原样返回，所以两种都能安全过一遍，不会露出裸键。
+  const L = (x?: string) => (x ? t(x, locale) : "");
+
   const exportCsv = () => {
     const cols = (def.columns?.length ? def.columns : autoCols(rows)).filter(c => !c.hide);
-    const head = cols.map(c => c.label || c.key).join(",");
+    const head = cols.map(c => L(c.label) || c.key).join(",");
     const body = rows.map(r => cols.map(c => `"${cell(r[c.key]).replace(/"/g, '""')}"`).join(",")).join("\n");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(new Blob(["\ufeff" + head + "\n" + body], { type: "text/csv" }));
@@ -169,13 +198,13 @@ export function GenericScreen({ locale, def, renderers }: {
         {(def.filters || []).map(f => (
           f.type === "select" ? (
             <select key={f.key} value={fv[f.key] || ""} onChange={e => setFv(v => ({ ...v, [f.key]: e.target.value }))} style={inp}>
-              <option value="">{f.label || f.key}</option>
-              {optsFor(f).map(o => <option key={o.v} value={o.v}>{o.t}</option>)}
+              <option value="">{L(f.label) || f.key}</option>
+              {optsFor(f).map(o => <option key={o.v} value={o.v}>{L(o.t)}</option>)}
             </select>
           ) : f.type === "date" ? (
-            <input key={f.key} type="date" value={fv[f.key] || ""} onChange={e => setFv(v => ({ ...v, [f.key]: e.target.value }))} style={inp} title={f.label || f.key} />
+            <input key={f.key} type="date" value={fv[f.key] || ""} onChange={e => setFv(v => ({ ...v, [f.key]: e.target.value }))} style={inp} title={L(f.label) || f.key} />
           ) : (
-            <input key={f.key} value={fv[f.key] || ""} onChange={e => setFv(v => ({ ...v, [f.key]: e.target.value }))} placeholder={f.label || f.key} style={{ ...inp, width: 130 }} />
+            <input key={f.key} value={fv[f.key] || ""} onChange={e => setFv(v => ({ ...v, [f.key]: e.target.value }))} placeholder={L(f.label) || f.key} style={{ ...inp, width: 130 }} />
           )
         ))}
         <button onClick={() => void load()} disabled={busy}>{t("search", locale)}</button>
@@ -192,7 +221,7 @@ export function GenericScreen({ locale, def, renderers }: {
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <thead><tr>
-                {shown.map(c => <th key={c.key} style={{ padding: "6px 8px", borderBottom: "1px solid var(--border, #e2e8f0)", textAlign: "left", width: c.width }}>{c.label || c.key}</th>)}
+                {shown.map(c => <th key={c.key} style={{ padding: "6px 8px", borderBottom: "1px solid var(--border, #e2e8f0)", textAlign: "left", width: c.width }}>{L(c.label) || c.key}</th>)}
                 {def.actions?.length ? <th style={{ padding: "6px 8px", borderBottom: "1px solid var(--border, #e2e8f0)" }}>{t("w18.actions", locale)}</th> : null}
               </tr></thead>
               <tbody>
@@ -205,7 +234,7 @@ export function GenericScreen({ locale, def, renderers }: {
                     ))}
                     {def.actions?.length ? (
                       <td style={{ padding: "5px 8px" }}>
-                        {def.actions.map(a => <button key={a.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void runAction(a, r)}>{a.label}</button>)}
+                        {def.actions.filter(a => !a.show || a.show(r)).map(a => <button key={a.name} style={{ fontSize: 11, marginRight: 4 }} onClick={() => void runAction(a, r)}>{t(a.label, locale)}</button>)}
                       </td>
                     ) : null}
                   </tr>

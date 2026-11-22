@@ -127,4 +127,57 @@ export const SCREENS: Record<string, ScreenDef> = {
     code: "qlt.oqcboard", endpoint: "/oqc/board", pick: "stations",
     columns: [],
   },
+
+  // ── W19：Tier-1 补齐（后端已存在，此前只是没登记入口）──
+  // 不良记录（源 exec.defect：listPage over /api/exec/defect + 去维修/报废 两个行内动作）
+  "exec.defect": {
+    code: "exec.defect", endpoint: "/exec/defect",
+    filters: [
+      { key: "f_station_code", label: "w18.c.station", fromColumn: "station_code", type: "select" },
+      { key: "f_defect_code", label: "w19.c.defectCode", fromColumn: "defect_code", type: "select" },
+      { key: "f_handle", label: "w19.c.handle", type: "select", options: [
+        { v: "待处理", t: "w19.h.pending" }, { v: "维修", t: "w19.h.repaired" }, { v: "报废", t: "w19.h.scrapped" }] },
+    ],
+    columns: [
+      { key: "defect_time", label: "w19.c.occurred" },
+      { key: "sn", label: "SN" },
+      { key: "mo_no", label: "w18.col.mo" },
+      { key: "process_code", label: "w19.c.process" },
+      { key: "station_code", label: "w18.c.station" },
+      { key: "defect_code", label: "w19.c.defectCode" },
+      { key: "root_cause", label: "w19.c.rootCause" },
+      { key: "handle", label: "w19.c.handle" },
+      { key: "repair_times", label: "w19.c.times" },
+    ],
+    // 源 rowActions：待处理/维修 才给「去维修」；非报废才给「报废」
+    actions: [
+      { name: "toDesk", label: "w19.act.toDesk", kind: "goto", target: "qlt.repairdesk",
+        show: r => r.handle === "待处理" || r.handle === "维修" },
+      { name: "scrap", label: "w19.act.scrap", endpoint: "/exec/scrap",
+        confirm: r => `确定把 ${String(r.sn)} 判定为报废？\n报废后该 SN 禁止再过站。`,
+        body: r => ({ sn: r.sn, reason: "不良记录页判废" }),
+        show: r => r.handle !== "报废" },
+    ],
+  },
+  // 上料基准（首扫建档）
+  "smt.baseline": {
+    code: "smt.baseline", endpoint: "/smt/baseline/list",
+    columns: [
+      { key: "line_code", label: "w18.c.line" }, { key: "model", label: "w18.c.model" },
+      { key: "material", label: "w18.c.material" }, { key: "machine_no", label: "w18.c.machine" },
+      { key: "slot_no", label: "w18.c.slot" }, { key: "hits", label: "w19.c.hits" },
+      { key: "locked", label: "w19.c.locked" }, { key: "by_user", label: "w18.c.operator" },
+      { key: "created_at", label: "w18.c.time" },
+    ],
+    actions: [
+      { name: "lock", label: "w19.act.lock", endpoint: "/smt/baseline/lock", body: r => ({ id: r.id, locked: true }) },
+      { name: "clear", label: "w19.act.clear", endpoint: "/smt/baseline/clear", body: r => ({ id: r.id }),
+        confirm: "w19.act.clearConfirm" },
+    ],
+  },
+  // OQC 检验记录（/oqc/list 已返回 {total,rows}）
+  "qlt.oqclist": {
+    code: "qlt.oqclist", endpoint: "/oqc/list",
+    columns: [],
+  },
 };
