@@ -166,6 +166,24 @@ HEAD 版 mesrj.js 仅套用本搬迁)boot :18280,表驱动认证态冒烟 34/34(
 各通道 active、itf ping 401(X-Api-Key 守卫在)。计划要求 mesrj.js <400 KB:本轮后
 546 KB,余量在 pack/panel/pallet/repair/smt/oqc 各域,留给轮 1 续切(同一 claim)。
 
+**[OK] 阶段 3 轮 1 续 · 九域收口(2026-11-22)**:pack(21)/panel(17)/pallet(17)/repair(31)/
+analyze(9)/bind(11)/laser(11)/shift(7)/dwell(7) 共 131 路由整段搬入
+`src/mesrj/{pack,panel,pallet,repair,analyze,bind,laser,shift,dwell}-routes.js`,
+`registerXxxRoutes(router, deps)` 原位挂载,注册序不变。mesrj.js 546→383 KB,
+**达成计划 <400 KB 判据**。搬迁体与原块逐字节一致(verify2 ALL_IDENTICAL);随后仅做
+语义等价修正:pack `preview` 未导入的隐性 ReferenceError 补导入、pallet 三处
+`makePrintJob` 返回对象误当字符串(`job.job_no`)、panel todo 元组与 analyze points
+的 JSDoc 类型注记、laser test-draw 字符串展开垃圾键(`...out.sn`)改直传 ——
+api-typecheck 595→561,零新增签名,基线未动。裁掉因搬迁而空置的 import
+(th/guard_untested/guard_route_incomplete/repair-core 全组/designator/pack-label 等),
+并行 lane 在途 import(tsStr/aoi 组/ultra/itf)原样保留。P1 补齐块(8769-9231 原行号)
+含并行 lane 未提交的 aoi/export 改写,**留在 mesrj.js 不搬**。验证:census 前后
+全量快照一致(total=2868,前缀/方法逐项相等,ROUTE_MULTISET_IDENTICAL);
+register-deps / shadowing(10=10)/ auth-order(0) / syntax 全绿;boot :8091
+表驱动认证态冒烟 129 过/4 跳过/0 失败(131 端点中写型无安全拒绝分支的 4 个明确
+SKIP:pack/agent/ping、repair/auto-gen、alert/rules POST、dwell/scan)。
+剩余大块:smt/oqc(约 10621+ 原行号)与 P1,归后续轮次。
+
 ## 阶段 4 — 前端解单文件(3 轮,各半天)
 
 照原稿:registry 抽取 → 模块懒加载 → i18n 按域切 namespace。React 18.3.1 / Vite 5.4.21 不动。
