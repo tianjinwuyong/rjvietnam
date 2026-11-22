@@ -253,6 +253,29 @@ shadowing(10=10)/ syntax(390)/ api-typecheck(561≤595)/ test:unit 全绿。
 坑已记入 app_rules/server-split.md。仍未搬:activity/pda-heartbeats/mes-heartbeat
 (4679-4764)与 mes/quality 交错段(5279-5404)——非单域,归后续轮次。
 
+**[OK] 阶段 3 轮 4 · BOM/PMC 四带收口(2026-11-22)**:四段纯连续带整段迁出——
+A「BOM 域」12 路由 + resolveProductId/resolveMaterialId 两个私有 helper +
+`/erp/boms/product/:code` PDA 读端点(原 14323-14953)→ `src/routes/bom.js`
+`registerBomRoutes`;G「BOM 导入变更申请」2 路由(原 17992-18025)→ 同文件
+`registerBomChangeRequestsRoutes`(两挂载点共用 hoisted `bomDeps`);
+B「PMC 告警通道/NG 评审」9 路由(原 15059-15294)→ `src/routes/pmc-alerts.js`;
+EF「客户订单关闭门+出货」PO_CLOSURE_GATES + getPmcPoClosure + 6 路由
+(原 15661-15973)→ `src/routes/pmc-closure.js`。四带都在 app 级鉴权闸门
+**之下**(gate_line 14307),wrapper 鉴权语义不变;register 调用留原行号。
+helper 归属经全仓核实:只在本带使用的随带迁入;`pmcPoClosureReady`(DDL promise)
+与 `assertWorkOrderCustomerPoOpen`(pmc.js 经 deps 消费)留在 server.js。
+server.js 2353→**2294 KB**;四轮累计 2614→2294(−320 KB)。
+验证:四带 HEAD↔工作区**逐字节相同**(带内零脏行)→ 纯搬迁;工作区 census
+前后逐条相等(2878);提交候选树(git archive HEAD+仅本搬迁)census 与 HEAD
+相等(2769)且启动;表驱动认证态冒烟 **28/28 双树**(:8099/:8100)——本轮改用
+自签 `permissions:["*"]` JWT,让每个搬迁处理器的**首道业务守卫分支真正执行**
+(种子 admin 缺 bom.*/pmc.*,只会停在 403 门,证明不了处理器体);
+1 项显式 SKIP:`POST /pmc/ng-reviews/auto-import`(INSERT 真实 ng_reviews,
+无安全拒绝分支)。register-deps / auth-order(0, calls=13)/ shadowing(10=10)/
+migrations / syntax(393)/ api-typecheck(561≤595)/ test:unit(1342 过 0 败)全绿。
+踩坑:src/routes 下新模块的 import 深度是 `../db.js` 不是 `./db.js`
+(TS2307×6,api-typecheck 当场照出)。
+
 ## 阶段 4 — 前端解单文件(3 轮,各半天)
 
 照原稿:registry 抽取 → 模块懒加载 → i18n 按域切 namespace。React 18.3.1 / Vite 5.4.21 不动。
