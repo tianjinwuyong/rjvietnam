@@ -13,3 +13,20 @@ REPAIRS INSIDE THE MOVE (latent bugs that travelled with the block, broken at HE
 Proven live: `?stationCode=manu_rework&sn=ZZTEST123` → 200 `{ok:true,items:[]}` on both trees. No other endpoint behavior changed.
 
 Verification: worktree census multiset identical before/after (2868=2868); commit-candidate tree (git archive HEAD + this move only, junction node_modules) census identical to HEAD (2769) and boots; table-driven authenticated smoke 30/30 on worktree :8095 AND clean tree :8096 (reads 200, writes via first-guard rejection 400/404 only; DELETE /api/station/data targets a nonexistent sentinel — splice on empty array is a no-op). register-deps OK / auth-order stranded=0 (registerCalls=12) / shadowing 10=10 / migrations 362=baseline / syntax 389 files / api-typecheck 561≤595 / test:unit 1342 pass 0 fail.
+
+Round-3 continuation (2026-11-22): bucket band (inventory PUT/GET, bucket-snapshots
+PUT/GET, database-management, ng-guard, ng-special-exemption — 7 routes, ~30 KB,
+old 4765-5277) moved verbatim into the same file as registerStationBucketRoutes,
+register call at the original line (above the gate, JWT-exempt unchanged).
+LEGACY_BUCKET_STATION_ALIASES + stationBucketSnapshotCache are used ONLY inside
+the band -> travel with it (cache rewritten in place, same object as before).
+The four exports now share ONE hoisted stationEdgeDeps declared above the earliest
+call site (check:register-deps requires every call site to pass every destructured
+name; comments must stay OUTSIDE the braces — the checker joins object lines with
+spaces and // comments swallow the rest). server.js 2383->2353 KB.
+Verified: worktree census identical before/after (2878 incl. parallel-lane routes);
+commit-candidate tree census identical to HEAD (2769) and boots; smoke 30/30 (round-3
+regression) + 7/7 (bucket) on worktree :8097 and clean tree :8098 — bucket PUT via
+DOMAIN_MISMATCH rejection (no write), inventory PUT via ZZ sentinel row deleted after.
+register-deps / auth-order(0, calls=13) / shadowing(10=10) / syntax(390) /
+api-typecheck(561<=595) green; test:unit green.

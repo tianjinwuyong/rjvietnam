@@ -15,6 +15,7 @@ import { query } from "../db.js";
 import { errorEnvelope } from "../shared/helpers.js";
 import { createHash } from "node:crypto";
 import { neuralBroadcast } from "../shared/neural-bus.js";
+import { canonicalStationCode } from "../shared/station-identity.js";
 
 export function registerStationEdgeRoutes(app, deps) {
   const {
@@ -1037,3 +1038,536 @@ app.delete("/api/station/data/:stationCode", async (req, res) => {
   }
 });
 }
+
+// ============================================================================
+// 工位桶快照/库存上报/NG 守卫（bucket snapshot）—— 从 server.js 整段搬迁
+// （refactor-plan-2026-11-21 阶段3轮3续）。原位置：server.js 4765-5277（7 路由：
+// inventory PUT/GET、bucket-snapshots PUT/GET、database-management、ng-guard、
+// ng-special-exemption）。挂载在 app.use("/api",api) 与鉴权闸门之上,位置语义不变。
+// LEGACY_BUCKET_STATION_ALIASES / stationBucketSnapshotCache 全仓只在本段使用,
+// 随段迁入(缓存原地改写,与搬迁前同一份对象)。canonicalStationCode 直接 import。
+// ============================================================================
+export function registerStationBucketRoutes(app, deps) {
+  const {
+    domainLineCode, stationDomain, stationHeartbeatSnapshot,
+    mesManagerInstructionReady, stationNgDispatchAlarmReady, stationAgingHistoryReady,
+    stationConflictColumnsReady, stationHandoverReady, stationInterceptionReady,
+    stationInventoryReady, stationRepairWorkOrderReady, stationRouteProgressReady,
+    stationRouteRequestReady, stationSnapshotTableReady,
+  } = deps;
+
+// ── P0-2: /api/station/inventory/{station} ─ bucket snapshot via unified body ─
+// Rework Core (and other Cores) push a consolidated payload here.
+app.put("/api/station/inventory/:stationCode", async (req, res) => {
+  try {
+    const stationCode = String(req.params.stationCode || "").trim().toLowerCase();
+    if (!stationCode) return res.status(400).json(errorEnvelope("VALIDATION", "stationCode required"));
+    const payload = req.body?.payload || {};
+    await query(`CREATE TABLE IF NOT EXISTS station_inventory_snapshots (
+      station_code VARCHAR(64) PRIMARY KEY,
+      sn_records JSONB NOT NULL DEFAULT '[]'::jsonb,
+      pass JSONB NOT NULL DEFAULT '[]'::jsonb,
+      pending_ng JSONB NOT NULL DEFAULT '[]'::jsonb,
+      confirmed_ng JSONB NOT NULL DEFAULT '[]'::jsonb,
+      stats JSONB NOT NULL DEFAULT '[]'::jsonb,
+      version BIGINT NOT NULL DEFAULT 1,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )`).catch(()=>{});
+    const version = Date.now();
+    await query(`INSERT INTO station_inventory_snapshots
+      (station_code,sn_records,pass,pending_ng,confirmed_ng,stats,version,updated_at)
+      VALUES($1,$2,$3,$4,$5,$6,$7,NOW())
+      ON CONFLICT(station_code) DO UPDATE SET
+        sn_records=EXCLUDED.sn_records, pass=EXCLUDED.pass,
+        pending_ng=EXCLUDED.pending_ng, confirmed_ng=EXCLUDED.confirmed_ng,
+        stats=EXCLUDED.stats, version=EXCLUDED.version, updated_at=NOW()`, [
+      stationCode,
+      JSON.stringify(payload.sn_records || []),
+      JSON.stringify(payload.pass || []),
+      JSON.stringify(payload.pending_ng || []),
+      JSON.stringify(payload.confirmed_ng || []),
+      JSON.stringify(payload.stats || []),
+      version
+    ]);
+    res.json({ ok: true, stationCode, version });
+  } catch (e) {
+    res.status(500).json(errorEnvelope("INVENTORY_SNAPSHOT_FAILED", e.message));
+  }
+});
+
+app.get("/api/station/inventory/:stationCode", async (req, res) => {
+  try {
+    const stationCode = String(req.params.stationCode || "").trim().toLowerCase();
+    const r = await query(`SELECT * FROM station_inventory_snapshots WHERE station_code=$1`, [stationCode]);
+    res.json(r.rows[0] ? { ok: true, ...r.rows[0] } : { ok: true, stationCode, items: [] });
+  } catch (e) {
+    res.status(500).json(errorEnvelope("INVENTORY_QUERY_FAILED", e.message));
+  }
+});
+
+query(`CREATE TABLE IF NOT EXISTS station_bucket_snapshots (
+  station_code VARCHAR(64) NOT NULL,
+  bucket_name VARCHAR(64) NOT NULL,
+  version BIGINT NOT NULL DEFAULT 1,
+  payload JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  PRIMARY KEY (station_code,bucket_name))
+`).catch(e => console.error("station_bucket_snapshots init:", e.message));
+
+const LEGACY_BUCKET_STATION_ALIASES = Object.freeze({
+  manu_aoi:'manu_aio', manu_qrbinding:'manu_shellbinding',
+  manu_assembly:'manu_assem_ate', manu_hivolt:'manu_hivolt_ate',
+  manu_packing:'manu_package_ate', manu_case:'manu_case_binding',
+  manu_outer_box_binding:'manu_case_binding', manu_pallet:'manu_pallet_binding',
+  auto_ate_left:'auto_package_ate', auto_ate_right:'auto_package_ate'
+});
+
+app.put("/api/station/bucket-snapshots/:stationCode/:bucketName", async (req, res) => {
+  const requestedStationCode = String(req.params.stationCode || '').trim().toLowerCase();
+  const stationCode = LEGACY_BUCKET_STATION_ALIASES[requestedStationCode]
+    || canonicalStationCode(requestedStationCode, domainLineCode(stationDomain(requestedStationCode)));
+  const bucketName = String(req.params.bucketName || '').trim().toLowerCase();
+  const payload = req.body?.payload ?? [];
+  const domain = stationDomain(stationCode);
+  const claimedDomain = String(req.body?.domain || '').trim().toLowerCase();
+  if (domain && claimedDomain && claimedDomain !== domain)
+    return res.status(409).json(errorEnvelope('DOMAIN_MISMATCH', `${stationCode} belongs to ${domain}`));
+  const records = Array.isArray(payload) ? payload : [payload];
+  const foreign = records.find(item => {
+    const embedded = String(item?.stationCode || item?.sourceStationCode || '').trim();
+    const embeddedDomain = stationDomain(embedded);
+    return embeddedDomain && domain && embeddedDomain !== domain;
+  });
+  if (foreign)
+    return res.status(409).json(errorEnvelope('CROSS_DOMAIN_BUCKET_WRITE_DENIED', `${stationCode} cannot store another line's station payload`));
+  try {
+    const result = await query(`
+      INSERT INTO station_bucket_snapshots (station_code,bucket_name,version,payload)
+      VALUES ($1,$2,1,$3)
+      ON CONFLICT (station_code,bucket_name) DO UPDATE SET
+        version=station_bucket_snapshots.version+1,payload=EXCLUDED.payload,updated_at=NOW()
+      RETURNING station_code,bucket_name,version,updated_at`,
+      [stationCode, bucketName, JSON.stringify(payload)]
+    );
+    const row = result.rows[0];
+    // A write must make the short-lived polling cache stale immediately.
+    if (typeof stationBucketSnapshotCache !== 'undefined') {
+      stationBucketSnapshotCache.expiresAt = 0;
+      stationBucketSnapshotCache.value = null;
+    }
+    const snapshotEvent = {
+      from: "mes_server", to: "*", type: "BUCKET_SNAPSHOT_UPDATE",
+      stationCode,
+      payload: {
+        stationCode,
+        bucketName,
+        version: Number(row.version),
+        records: payload,
+        updatedAt: row.updated_at,
+      },
+      priority: "info",
+    };
+    neuralBroadcast(snapshotEvent);
+    res.json({ ok: true, stationCode, bucketName, version: Number(row.version), updatedAt: row.updated_at });
+  } catch (e) {
+    res.status(500).json(errorEnvelope("SERVER_ERROR", e.message));
+  }
+});
+
+// MES 3D clients poll this endpoint from several tabs at once.  Snapshot
+// payloads can be large, so coalesce concurrent identical reads and briefly
+// reuse the completed result instead of opening one PostgreSQL query per tab.
+let stationBucketSnapshotCache = { key: "", expiresAt: 0, value: null, pending: null };
+
+app.get("/api/station/bucket-snapshots", async (req, res) => {
+  try {
+    const domain = String(req.query.domain || '').trim().toLowerCase();
+    if (domain && !['smt','auto','manual'].includes(domain))
+      return res.status(400).json(errorEnvelope('VALIDATION', 'domain must be smt, auto or manual'));
+    const prefix = domain === 'smt' ? 'smt_%' : domain === 'auto' ? 'auto_%' : domain === 'manual' ? 'manu_%' : null;
+    const key = domain || 'all';
+    const now = Date.now();
+    if (stationBucketSnapshotCache.key === key && stationBucketSnapshotCache.expiresAt > now && stationBucketSnapshotCache.value) {
+      return res.json(stationBucketSnapshotCache.value);
+    }
+    if (stationBucketSnapshotCache.key !== key || !stationBucketSnapshotCache.pending) {
+      stationBucketSnapshotCache = {
+        key,
+        expiresAt: 0,
+        value: null,
+        pending: query(`SELECT station_code AS "stationCode",bucket_name AS "bucketName",version,payload,updated_at AS "updatedAt"
+          FROM station_bucket_snapshots WHERE ($1::text IS NULL OR station_code LIKE $1 OR ($1='manu_%' AND station_code='wave_solder'))
+          ORDER BY station_code,CASE WHEN bucket_name='simulation' THEN 0 ELSE 1 END,bucket_name`, [prefix])
+          .then(result => {
+            const value = { ok: true, items: result.rows };
+            stationBucketSnapshotCache.value = value;
+            stationBucketSnapshotCache.expiresAt = Date.now() + 1500;
+            return value;
+          })
+          .finally(() => { stationBucketSnapshotCache.pending = null; })
+      };
+    }
+    res.json(await stationBucketSnapshotCache.pending);
+  } catch (e) {
+    res.status(500).json(errorEnvelope("SERVER_ERROR", e.message));
+  }
+});
+
+app.get("/api/station/database-management", async (_req, res) => {
+  try {
+    await Promise.all([stationSnapshotTableReady, stationInventoryReady, stationConflictColumnsReady]);
+    const result = await query(`
+      WITH station_catalog AS (
+        SELECT DISTINCT ON (station_code) station_code,line_code,sequence_order,station_name_zh
+        FROM station_sequences ORDER BY station_code,sequence_order
+      ), station_codes AS (
+        SELECT station_code FROM station_catalog UNION SELECT station_code FROM station_bucket_snapshots
+        UNION SELECT station_code FROM station_inventory_checks UNION SELECT station_code FROM station_data_conflicts
+      ), snapshot_stats AS (
+        SELECT station_code,COUNT(*)::int dataset_count,
+          COALESCE(SUM(CASE WHEN jsonb_typeof(payload)='array' THEN jsonb_array_length(payload) ELSE 1 END),0)::int mes_record_count,
+          MAX(updated_at) latest_snapshot_at,ARRAY_AGG(bucket_name ORDER BY bucket_name) datasets
+        FROM station_bucket_snapshots GROUP BY station_code
+      ), latest_inventory AS (
+        SELECT DISTINCT ON (station_code,dataset) station_code,dataset,local_count,mes_count,status,checked_at
+        FROM station_inventory_checks ORDER BY station_code,dataset,checked_at DESC
+      ), inventory_stats AS (
+        SELECT station_code,COUNT(*)::int inventory_dataset_count,COALESCE(SUM(local_count),0)::int local_count,
+          COALESCE(SUM(mes_count),0)::int inventory_mes_count,
+          COUNT(*) FILTER (WHERE status NOT IN ('CONSISTENT','MATCHED','OK'))::int mismatch_count,
+          MAX(checked_at) latest_inventory_at FROM latest_inventory GROUP BY station_code
+      ), conflict_stats AS (
+        SELECT station_code,COUNT(*) FILTER (WHERE status='PENDING_INVESTIGATION')::int open_conflicts
+        FROM station_data_conflicts GROUP BY station_code
+      )
+      SELECT c.station_code AS "stationCode",s.line_code AS "lineCode",s.sequence_order AS "sequenceOrder",
+        s.station_name_zh AS "stationName",COALESCE(ss.dataset_count,0) AS "datasetCount",
+        COALESCE(ss.datasets,ARRAY[]::varchar[]) AS datasets,COALESCE(i.inventory_dataset_count,0) AS "inventoryDatasetCount",
+        COALESCE(i.local_count,0) AS "localCount",COALESCE(i.inventory_mes_count,ss.mes_record_count,0) AS "mesCount",
+        COALESCE(i.mismatch_count,0) AS "mismatchCount",COALESCE(cf.open_conflicts,0) AS "openConflicts",
+        ss.latest_snapshot_at AS "latestSnapshotAt",i.latest_inventory_at AS "latestInventoryAt"
+      FROM station_codes c LEFT JOIN station_catalog s ON s.station_code=c.station_code
+      LEFT JOIN snapshot_stats ss ON ss.station_code=c.station_code LEFT JOIN inventory_stats i ON i.station_code=c.station_code
+      LEFT JOIN conflict_stats cf ON cf.station_code=c.station_code
+      ORDER BY COALESCE(s.line_code,'ZZZ'),COALESCE(s.sequence_order,9999),c.station_code`);
+    const now = Date.now();
+    const items = result.rows.map(row => {
+      const heartbeat = stationHeartbeatSnapshot.get(row.stationCode);
+      const latestSignal = Math.max(heartbeat?.receivedAt || 0,
+        row.latestInventoryAt ? new Date(row.latestInventoryAt).getTime() : 0,
+        row.latestSnapshotAt ? new Date(row.latestSnapshotAt).getTime() : 0);
+      const ageMs = latestSignal ? now - latestSignal : Number.POSITIVE_INFINITY;
+      const status = heartbeat && now-heartbeat.receivedAt < 45_000 ? "ONLINE" : ageMs < 15*60_000 ? "STALE" : "OFFLINE";
+      return {...row,localCount:Number(row.localCount),mesCount:Number(row.mesCount),datasetCount:Number(row.datasetCount),
+        inventoryDatasetCount:Number(row.inventoryDatasetCount),mismatchCount:Number(row.mismatchCount),openConflicts:Number(row.openConflicts),status,
+        heartbeatAt:heartbeat?new Date(heartbeat.receivedAt).toISOString():null,latestSignalAt:latestSignal?new Date(latestSignal).toISOString():null};
+    });
+    const count = status => items.filter(item => item.status===status).length;
+    res.json({ok:true,generatedAt:new Date(now).toISOString(),thresholds:{onlineSeconds:45,staleMinutes:15},
+      summary:{stations:items.length,online:count("ONLINE"),stale:count("STALE"),offline:count("OFFLINE"),
+        mismatched:items.filter(item=>item.mismatchCount>0).length,conflicts:items.reduce((sum,item)=>sum+item.openConflicts,0)},items});
+  } catch(error) { res.status(500).json(errorEnvelope("STATION_DATABASE_MANAGEMENT_FAILED",error.message)); }
+});
+
+app.get('/api/mes/managers/status',async(_req,res)=>{
+  try{
+    await Promise.all([stationRouteProgressReady,stationInterceptionReady,stationHandoverReady,
+      stationRouteRequestReady,stationRepairWorkOrderReady,stationNgDispatchAlarmReady]);
+    const [route,routeBlocks,ng,handover,repair,identity,guards]=await Promise.all([
+      query(`SELECT COUNT(*)::int total,COUNT(DISTINCT root_sn)::int products,
+        MAX(completed_at) last_activity FROM station_sn_route_progress`),
+      query(`SELECT COUNT(*)::int open,MAX(intercepted_at) last_activity
+        FROM station_interception_events WHERE interception_type='OUT_OF_SEQUENCE' AND status='OPEN'`),
+      query(`SELECT COALESCE(SUM(jsonb_array_length(payload)),0)::int active,
+        MAX(updated_at) last_activity FROM station_bucket_snapshots WHERE bucket_name='confirmed_ng'`),
+      query(`SELECT COUNT(*) FILTER(WHERE status='WAITING_RECEIPT')::int waiting,
+        COUNT(*) FILTER(WHERE status='WAITING_RECEIPT' AND alarmed_at IS NOT NULL)::int overdue,
+        MAX(COALESCE(received_at,sent_at)) last_activity FROM station_handover_transfers`),
+      query(`SELECT COUNT(*) FILTER(WHERE status='WAITING_RECEIPT')::int waiting,
+        COUNT(*) FILTER(WHERE status='REPAIR_IN_PROGRESS')::int repairing,
+        COUNT(*) FILTER(WHERE repair_deadline_at<=NOW() AND status NOT IN('COMPLETED','REVIVED','SCRAPPED'))::int overdue,
+        MAX(updated_at) last_activity FROM station_repair_work_orders`),
+      query(`SELECT COUNT(*)::int aliases,COUNT(DISTINCT root_sn)::int products,MAX(created_at) last_activity
+        FROM station_sn_identity_alias`),
+      query(`SELECT COUNT(*) FILTER(WHERE status='OPEN')::int open,
+        COUNT(*) FILTER(WHERE status='OPEN' AND interception_type IN('TODAY_DUPLICATE','HISTORICAL_DUPLICATE','CONFIRMED_NG'))::int critical,
+        MAX(intercepted_at) last_activity FROM station_interception_events`)
+    ]);
+    const now=Date.now();
+    const card=(code,name,metrics,lastActivity,critical=0)=>({code,name,
+      status:Number(critical)>0?'attention':'working',metrics,lastActivity:lastActivity||null,
+      reportedAt:now});
+    res.json({ok:true,reportedAt:now,managers:[
+      card('ROUTE_MANAGER','Route Sequence Manager',{products:route.rows[0].products,completedSteps:route.rows[0].total,blocked:routeBlocks.rows[0].open},routeBlocks.rows[0].last_activity||route.rows[0].last_activity,routeBlocks.rows[0].open),
+      card('NG_MANAGER','NG Lifecycle Manager',{activeNg:ng.rows[0].active},ng.rows[0].last_activity,ng.rows[0].active),
+      card('HANDOVER_MANAGER','Handover Manager',{waiting:handover.rows[0].waiting,overdue:handover.rows[0].overdue},handover.rows[0].last_activity,handover.rows[0].overdue),
+      card('MAINTENANCE_MANAGER','Maintenance WO Manager',{waiting:repair.rows[0].waiting,repairing:repair.rows[0].repairing,overdue:repair.rows[0].overdue},repair.rows[0].last_activity,repair.rows[0].overdue),
+      card('IDENTITY_MANAGER','Canonical Identity Manager',{aliases:identity.rows[0].aliases,products:identity.rows[0].products},identity.rows[0].last_activity),
+      card('GUARD_MANAGER','DUP / NG Guard',{open:guards.rows[0].open,critical:guards.rows[0].critical},guards.rows[0].last_activity,guards.rows[0].critical)
+    ]});
+  }catch(error){res.status(500).json(errorEnvelope('MES_MANAGER_STATUS_FAILED',error.message));}
+});
+
+app.get('/api/mes/managers/instructions',async(_req,res)=>{
+  try{
+    await mesManagerInstructionReady;
+    const result=await query(`SELECT instruction_id AS "instructionId",manager_code AS "managerCode",
+      command,instructed_by AS "instructedBy",note,status,created_at AS "createdAt",
+      completed_at AS "completedAt",result FROM mes_manager_instructions
+      ORDER BY created_at DESC LIMIT 100`);
+    res.json({ok:true,items:result.rows});
+  }catch(error){res.status(500).json(errorEnvelope('MES_MANAGER_INSTRUCTIONS_FAILED',error.message));}
+});
+
+app.post('/api/mes/managers/instructions',async(req,res)=>{
+  try{
+    await mesManagerInstructionReady;
+    const managerCode=String(req.body?.managerCode||'').trim().toUpperCase();
+    const command=String(req.body?.command||'').trim().toUpperCase();
+    const instructedBy=String(req.body?.instructedBy||'').trim();
+    const note=String(req.body?.note||'').trim();
+    const managers=new Set(['ROUTE_MANAGER','NG_MANAGER','HANDOVER_MANAGER','MAINTENANCE_MANAGER','IDENTITY_MANAGER','GUARD_MANAGER']);
+    const commands=new Set(['REPORT_NOW','RUN_AUDIT','RECONCILE']);
+    if(!managers.has(managerCode)||!commands.has(command)||!instructedBy)
+      return res.status(400).json(errorEnvelope('VALIDATION','valid managerCode, command and instructedBy required'));
+    const created=(await query(`INSERT INTO mes_manager_instructions
+      (manager_code,command,instructed_by,note,status) VALUES($1,$2,$3,$4,'ACCEPTED')
+      RETURNING instruction_id,created_at`,[managerCode,command,instructedBy,note])).rows[0];
+    const payload={instructionId:created.instruction_id,managerCode,command,instructedBy,note,
+      createdAt:created.created_at,prohibitsOverride:true};
+    neuralBroadcast({from:'mes_manager_console',to:managerCode,type:'MES_MANAGER_INSTRUCTION',
+      stationCode:'mes',payload,priority:command==='RUN_AUDIT'?'critical':'info'});
+    await query(`UPDATE mes_manager_instructions SET status='COMPLETED',completed_at=NOW(),
+      result=$2 WHERE instruction_id=$1`,[created.instruction_id,JSON.stringify({broadcast:true,accepted:true})]);
+    res.status(201).json({ok:true,...payload,status:'COMPLETED'});
+  }catch(error){res.status(500).json(errorEnvelope('MES_MANAGER_INSTRUCTION_FAILED',error.message));}
+});
+
+app.get("/api/station/ng-guard", async (_req,res)=>{
+  try {
+    await stationSnapshotTableReady;
+    await stationAgingHistoryReady;
+    const [result,aging]=await Promise.all([
+      query(`SELECT station_code AS "stationCode",bucket_name AS "bucketName",version,payload,updated_at AS "updatedAt"
+        FROM station_bucket_snapshots WHERE bucket_name IN ('pending_ng','confirmed_ng')
+          AND jsonb_array_length(payload)>0 ORDER BY station_code,bucket_name`),
+      query(`WITH aging_ng AS (
+        SELECT sn,batch_id AS "batchId",status,latest_result AS result,
+          ng_detected_at AS "ngDetectedAt",updated_at AS "updatedAt"
+          FROM station_aging_control WHERE status='NG_MARKED'
+        UNION ALL
+        SELECT UPPER(TRIM(payload->>'sn')) AS sn,
+          COALESCE(NULLIF(payload->>'batchId',''),UPPER(TRIM(payload->>'sn'))) AS "batchId",
+          'NG_MARKED' AS status,'NG' AS result,received_at AS "ngDetectedAt",received_at AS "updatedAt"
+          FROM station_production_events
+          WHERE station_code='manu_agingcab' AND event_type='STATION_NG_MARKED'
+            AND COALESCE(TRIM(payload->>'sn'),'')<>''
+            AND NOT EXISTS (SELECT 1 FROM station_production_events picked
+              WHERE picked.event_type='STATION_NG_PICKED'
+                AND UPPER(TRIM(picked.payload->>'sn'))=UPPER(TRIM(station_production_events.payload->>'sn')))
+      ) SELECT DISTINCT ON(sn) * FROM aging_ng ORDER BY sn,"updatedAt" DESC`)
+    ]);
+    const candidates=result.rows.flatMap(row=>(Array.isArray(row.payload)?row.payload:[]).map(item=>{
+      const stationResults=Array.isArray(item.stationResults)?item.stationResults:[];
+      // Ensure row.stationCode is always represented in stationResults for this SN
+      const rowStationCode=String(row.stationCode||'');
+      if(rowStationCode&&!stationResults.some(s=>String(s.stationCode||'')===rowStationCode)){
+        stationResults.push({stationCode:rowStationCode,results:['FAIL'],finalResult:'FAIL',testCount:1});
+      }
+      return{
+        ...item,sn:String(item.sn||'').trim().toUpperCase(),
+        sourceStationCode:item.sourceStationCode||row.stationCode,
+        stationResults,ngState:row.bucketName==='confirmed_ng'?'CONFIRMED_NG':'PENDING_NG',
+        bucketName:row.bucketName,bucketVersion:Number(row.version)
+      };
+    })).concat(aging.rows.map(item=>({
+      ...item,sn:String(item.sn||'').trim().toUpperCase(),sourceStationCode:'manu_agingcab',
+      destinationStationCode:'manu_hivolt_ate',ngState:'NG_MARKED',markedOnly:true,
+      destinationNgBox:'AGING_NG_BOX',destinationNgBoxLabel:'老化 NG 箱 / AGING NG BOX',
+      blockingSuppressedAtSource:true,pickOutRequiredDownstream:true
+    })));
+    // Safety fallback: an unresolved MES NG must remain an active stop guard
+    // even if the station_bucket_snapshots writer missed its update.
+    const unresolvedResult = await query(`
+      SELECT sn, station_code AS "sourceStationCode",
+        defect_code AS "defectCode", created_at AS "firstDetectedAt",
+        repair_status AS "repairStatus"
+      FROM ng_defect_records
+      WHERE LOWER(COALESCE(result,''))='fail'
+        AND LOWER(COALESCE(repair_status,'pending')) NOT IN ('repaired','scrapped')
+    `);
+    for (const ng of unresolvedResult.rows) {
+      const sn = String(ng.sn || '').trim().toUpperCase();
+      if (!sn) continue;
+      candidates.push({
+        sn,
+        batchId: sn,
+        sourceStationCode: ng.sourceStationCode || 'UNKNOWN',
+        stationResults: [{ stationCode: ng.sourceStationCode || 'UNKNOWN', results: ['FAIL'], finalResult: 'FAIL', testCount: 1 }],
+        result: 'FAIL',
+        defectCode: ng.defectCode || 'NG',
+        defectDescription: 'NG',
+        firstDetectedAt: ng.firstDetectedAt,
+        ngState: 'CONFIRMED_NG',
+        bucketName: 'confirmed_ng',
+        bucketVersion: 0,
+        fallbackFromNgDefectRecords: true,
+      });
+    }
+    // Some machine integrations write the canonical NG fact to the SN journey
+    // ledger before the legacy ng_defect_records projection is available.
+    // Keep those unclosed NG_DEFECT events blocking as well.
+    const unresolvedJourneyNg = await query(`
+      SELECT e.sn, e.batch_id AS "batchId", e.station_code AS "sourceStationCode",
+        e.defect_code AS "defectCode", e.defect_description AS "defectDescription",
+        e.event_at AS "firstDetectedAt"
+      FROM sn_journey_events e
+      WHERE e.event_type='NG_DEFECT'
+        AND NOT EXISTS (
+          SELECT 1 FROM sn_journey_events closed
+          WHERE UPPER(closed.sn)=UPPER(e.sn)
+            AND closed.event_type IN ('NG_PICKED','NG_REPAIRED','NG_REVIVED','NG_SCRAPPED')
+            AND closed.event_at >= e.event_at
+        )
+    `);
+    for (const ng of unresolvedJourneyNg.rows) {
+      const sn = String(ng.sn || '').trim().toUpperCase();
+      if (!sn) continue;
+      candidates.push({
+        sn,
+        batchId: ng.batchId || sn,
+        sourceStationCode: ng.sourceStationCode || 'UNKNOWN',
+        stationResults: [{ stationCode: ng.sourceStationCode || 'UNKNOWN', results: ['FAIL'], finalResult: 'FAIL', testCount: 1 }],
+        result: 'FAIL',
+        defectCode: ng.defectCode || 'NG',
+        defectDescription: ng.defectDescription || 'NG',
+        firstDetectedAt: ng.firstDetectedAt,
+        ngState: 'CONFIRMED_NG',
+        bucketName: 'confirmed_ng',
+        bucketVersion: 0,
+        fallbackFromJourneyLedger: true,
+      });
+    }
+    // Active station residence is the final safety source for machine results.
+    // If the unit is still IN_STATION with is_ng=true, it must be blocked even
+    // when the legacy NG table and journey projection are incomplete.
+    const activeNgResidence = await query(`
+      SELECT p.source_sn AS sn, r.batch_id AS "batchId",
+        p.station_code AS "sourceStationCode", p.result,
+        p.completed_at AS "firstDetectedAt", p.detail
+      FROM station_sn_route_progress p
+      JOIN station_product_residence r
+        ON UPPER(r.sn)=UPPER(p.source_sn)
+      WHERE r.is_ng=true
+        AND r.status='IN_STATION'
+        AND (UPPER(COALESCE(p.status,''))='NG_COMPLETED'
+          OR LOWER(COALESCE(p.result,'')) IN ('fail','ng'))
+    `);
+    for (const ng of activeNgResidence.rows) {
+      const sn = String(ng.sn || '').trim().toUpperCase();
+      if (!sn) continue;
+      candidates.push({
+        sn,
+        batchId: ng.batchId || sn,
+        sourceStationCode: ng.sourceStationCode || 'UNKNOWN',
+        stationResults: [{ stationCode: ng.sourceStationCode || 'UNKNOWN', results: ['FAIL'], finalResult: 'FAIL', testCount: 1 }],
+        result: 'FAIL',
+        defectCode: 'ACTIVE_NG_RESIDENCE',
+        defectDescription: 'NG unit remains in station',
+        firstDetectedAt: ng.firstDetectedAt,
+        ngState: 'CONFIRMED_NG',
+        bucketName: 'confirmed_ng',
+        bucketVersion: 0,
+        fallbackFromActiveResidence: true,
+      });
+    }
+    const rank={PENDING_NG:1,NG_MARKED:2,CONFIRMED_NG:3};
+    const bySn=new Map();
+    for(const item of candidates){
+      if(!item.sn)continue;
+      const previous=bySn.get(item.sn);
+      if(!previous){
+        bySn.set(item.sn,item);
+      } else if((rank[item.ngState]||0)>(rank[previous.ngState]||0)){
+        bySn.set(item.sn,item);
+      } else if(item.ngState===previous.ngState){
+        // Same ngState — union stationResults so no station is lost, regardless of source
+        const prevResults=Array.isArray(previous.stationResults)?previous.stationResults:[];
+        const currResults=Array.isArray(item.stationResults)?item.stationResults:[];
+        const prevSrc=String(previous.sourceStationCode||'');
+        const currSrc=String(item.sourceStationCode||'');
+        const prevIct=/ict/i.test(prevSrc);
+        const prevFct=/fct/i.test(prevSrc);
+        const currIct=/ict/i.test(currSrc);
+        const currFct=/fct/i.test(currSrc);
+        // Debug: print deduplication
+        if(item.sn&&(item.sn.includes('DUAL-')||item.sn.includes('FCT')||item.sn.includes('ICT'))){
+          console.error(`[NG-DEDUP] sn=${item.sn} prevSrc=${prevSrc} currSrc=${currSrc} prevResults=${JSON.stringify(prevResults.map(r=>r.stationCode))} currResults=${JSON.stringify(currResults.map(r=>r.stationCode))}`);
+        }
+        // Deduplicate by stationCode
+        const seen=new Set();
+        const merged=[];
+        for(const r of [...prevResults,...currResults]){
+          const key=String(r.stationCode||'');
+          if(key&&!seen.has(key)){seen.add(key);merged.push(r);}
+        }
+        bySn.set(item.sn,{
+          ...previous,
+          sourceStationCode:prevIct&&prevFct?prevSrc:(currIct&&currFct?currSrc:prevIct?'manu_ict':prevFct?'manu_fct':currSrc),
+          stationResults:merged,
+        });
+      }
+    }
+    const items=[...bySn.values()];
+    // The bucket version alone is not globally monotonic: a busy station can
+    // have a lower version than an older, high-volume station.  Include the
+    // snapshot update time so any newly changed source station advances the
+    // MES→Agent NG cursor and is delivered on the next poll.
+    const version=Math.max(0,...result.rows.map(r=>Number(r.version)||0),
+      ...result.rows.map(r=>new Date(r.updatedAt||0).getTime()||0),
+      ...aging.rows.map(r=>new Date(r.updatedAt||0).getTime()||0));
+
+    // NG异常消失检测：检查ng_defect_records中未完成闭环的SN是否还在ng-guard中
+    // 如果一个SN在ng_defect_records中标记为NG，但在ng-guard中消失了，且没有对应的STATION_NG_PICKED或NG_REVIVED事件，则触发报警
+    const activeGuardSns=new Set(items.map(i=>i.sn));
+    const unresolvedNgs=await query(`SELECT sn,id AS "ngDefectId",station_code AS "stationCode",defect_code AS "defectCode",created_at AS "createdAt" FROM ng_defect_records WHERE LOWER(COALESCE(result,''))='fail' AND LOWER(COALESCE(repair_status,'pending')) NOT IN('repaired','scrapped') AND created_at > NOW()-INTERVAL '24 hours'`);
+    const alerts=[];
+    for(const ng of unresolvedNgs.rows){
+      if(!activeGuardSns.has(ng.sn)){
+        // SN不在ng-guard中，检查是否有闭环事件
+        const closedEvent=await query(`SELECT 1 FROM sn_journey_events WHERE UPPER(sn)=UPPER($1) AND event_type IN('NG_PICKED','NG_REPAIRED','NG_REVIVED','NG_SCRAPPED') AND event_at>=$2 LIMIT 1`,[ng.sn,ng.createdAt]);
+        if(!closedEvent.rows.length){
+          // 无闭环事件，触发异常消失报警
+          alerts.push({type:'NG_GONE',sn:ng.sn,ngDefectId:ng.ngDefectId,stationCode:ng.stationCode,defectCode:ng.defectCode,detectedAt:ng.createdAt,message:`NG记录异常消失: SN=${ng.sn} 在${ng.stationCode}产生NG但在ng-guard中消失且无闭环记录`});
+        }
+      }
+    }
+    if(alerts.length>0){
+      neuralBroadcast({from:'mes_ng_registry',to:'*',type:'NG_GONE_ALARM',priority:'critical',stationCode:'mes',payload:{alerts,count:alerts.length}});
+    }
+
+    res.json({ok:true,active:true,count:items.length,version,scope:'ALL_STATION_NG',items,alerts:alerts.length>0?alerts:undefined});
+  } catch(error){res.status(500).json(errorEnvelope("NG_GUARD_QUERY_FAILED",error.message));}
+});
+
+// NG special exemptions are centrally approved in MES. They are intentionally
+// limited to ultrasonic-origin NG and expire eight hours after approval.
+app.get("/api/station/ng-special-exemption", async (req,res)=>{
+  try{
+    const sn=String(req.query?.sn||"").trim().toUpperCase();
+    const stationCode=String(req.query?.stationCode||"").trim().toLowerCase();
+    if(!sn||stationCode!=="manu_case_binding")
+      return res.status(400).json(errorEnvelope("VALIDATION","sn and manu_case_binding stationCode are required"));
+    await query(`UPDATE ng_special_exemptions SET status='EXPIRED'
+      WHERE status='ACTIVE' AND expires_at<=NOW()`);
+    const item=(await query(`SELECT exemption_id AS "exemptionId",sn,source_station AS "sourceStation",
+      reason,approved_by_username AS "approvedByUsername",approved_by_name AS "approvedByName",
+      approved_at AS "approvedAt",expires_at AS "expiresAt",status
+      FROM ng_special_exemptions WHERE UPPER(sn)=$1 AND status='ACTIVE'
+        AND expires_at>NOW() AND source_station IN('manu_supersonic','supersonic')
+      ORDER BY approved_at DESC LIMIT 1`,[sn])).rows[0]||null;
+    res.json({ok:true,active:Boolean(item),item});
+  }catch(error){res.status(500).json(errorEnvelope("NG_EXEMPTION_STATION_QUERY_FAILED",error.message));}
+});
+}
+

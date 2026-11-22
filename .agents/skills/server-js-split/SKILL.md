@@ -27,4 +27,5 @@ Full rules, dep classification table, and gotchas: `app_rules/server-split.md`. 
 - 轮1 (mesrj) done: commits fe7416e, 938a6ef — mesrj.js 617→383 KB.
 - 轮2 (WMS bands A+C) done: commit 80f225f — server.js 2614→2457 KB, 50 routes.
 - 轮3 (station edge 20 + scrap 10 routes) done: see CLAIM-server-js-split-round3-api.md — server.js 2457→2383 KB.
+- 轮3续 (bucket band 7 routes; band-local decls travel; ONE hoisted union deps object above the earliest call site, comments OUTSIDE the braces) done — server.js 2383→2353 KB.
 - Remaining bands: WMS B band (finance/OA interleaved — needs splitting, not moving), receiving scatter, shelf, closure dashboard; then 轮4 PMC/BOM, 轮5 QMS/MRB, 轮6 finance/auth/admin.

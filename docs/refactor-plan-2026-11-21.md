@@ -224,9 +224,10 @@ stationOpsDeps 块原地不动。server.js 2457→2383 KB(-74 KB)。
 错误——`const snCond` 重赋值(tsc TS2588 照出,运行时 TypeError)、`UPPER($3)` 对
 jsonb-text 无类型推断(pg 500)、第二查询 LIMIT 占位符索引重复计数 sn。修复后
 `?stationCode=…&sn=…` 双树实测 200。
-**未搬**:4675-5300 的 activity/inventory/bucket-snapshots/database-management/ng-guard
+**未搬(轮3首切)**:4675-5300 的 activity/inventory/bucket-snapshots/database-management/ng-guard
 段——与 pda/mes/quality 路由交错且含 LEGACY_BUCKET_STATION_ALIASES /
 stationBucketSnapshotCache 模块级声明,违反"连续单域无声明"配方,归后续轮次。
+
 验证:census 全量快照前后逐条相等(2868);提交候选树(git archive HEAD+仅本搬迁)
 census 与 HEAD 相等(2769)且启动;表驱动认证态冒烟 **30/30** 于工作区 :8095 与
 干净树 :8096(读 200,写只走首道守卫拒绝分支,DELETE 打不存在的哨兵);
@@ -235,6 +236,22 @@ syntax(389)/ api-typecheck(561≤595)/ test:unit(1342 过 0 败)全绿。
 本轮另沉淀方法论:`app_rules/server-split.md`(lane 规则)+
 `.agents/skills/server-js-split`(技能:带选择、tsc --checkJs 求 deps、TDZ 转发、
 census 不变式、干净树冒烟、随迁并行 lane 行的归属判据)。
+
+**[OK] 阶段 3 轮 3 续 · 桶快照带收口(2026-11-22)**:复查发现 4765-5277 是**纯 station
+连续带**(7 路由:inventory PUT/GET、bucket-snapshots PUT/GET、database-management、
+ng-guard、ng-special-exemption,~30 KB),两个模块级声明(LEGACY_BUCKET_STATION_ALIASES /
+stationBucketSnapshotCache)全仓只在本段使用——随段迁入 station-edge.js(缓存原地改写,
+同一对象,与搬迁前一致)。`registerStationBucketRoutes` 原行号挂载(闸门之上,JWT-exempt
+不变)。四个导出改为**共用一份 hoisted stationEdgeDeps**,声明在最前一个挂载点之上——
+check:register-deps 要求每个挂载点传齐模块内全部解构名,且它把对象行**以空格拼接**,
+花括号内的 `//` 注释会吞掉其后所有条目(本轮踩中,注释移到 const 行上方)。
+server.js 2383→2353 KB;三轮累计 2614→2353(−261 KB)。
+验证:census 前后逐条相等(工作区 2878,含并行 lane 新增路由;候选树 2769=HEAD);
+冒烟 30/30(轮3回归)+ 7/7(桶带)双树——桶 PUT 走 DOMAIN_MISMATCH 拒绝分支零写入,
+inventory PUT 打 ZZ 哨兵行用后即删;register-deps / auth-order(0, calls=13)/
+shadowing(10=10)/ syntax(390)/ api-typecheck(561≤595)/ test:unit 全绿。
+坑已记入 app_rules/server-split.md。仍未搬:activity/pda-heartbeats/mes-heartbeat
+(4679-4764)与 mes/quality 交错段(5279-5404)——非单域,归后续轮次。
 
 ## 阶段 4 — 前端解单文件(3 轮,各半天)
 

@@ -86,6 +86,8 @@ A band may contain another lane's **uncommitted** lines (e.g. migration-332 manu
 
 ## Gotchas (learned the hard way)
 
+- **`check:register-deps` reads a hoisted deps object by joining its lines with SPACES** (`objectLiteralFor`), so a `// comment` on its own line *inside* `const xDeps = { … }` swallows every entry after it — the gate then reports every destructured name as UNPASSED and looks like a real bug. Keep comments for a hoisted deps object **above** the `const` line, never inside the braces.
+- **One shared deps object across several `registerXRoutes(app, deps)` calls must be complete**: the gate checks, per call site, that the object passes *every* name destructured anywhere in the module file. Consolidating several bands into one module means one union deps object — declare it above the earliest call site.
 - **Never leave a copy of `server.js` (or any `*.js`) under `services/api/`.** `check-route-census` walks that tree and counts every `*.js`; a `.bak`/duplicate of the pre-cut file silently adds the whole band a second time (2868 → 2898) and the gate stays "green" because it only checks the floor. Scratch lives in repo-root `.tmp-*` (gitignored) or `/tmp`.
 - **`const X=""; if(...) X=…`** reassign-to-const is a latent runtime `TypeError` that `node --check` and even `tsc` miss in some shapes; HEAD has several (`snCond`). Fix to `let` as it travels and note it.
 - **awk `\b` counting on server.js is unreliable** for identifiers embedded in template strings; extract the band with `sed -n 'A,Bp'` and `grep -cE "(^|[^.[:alnum:]_])name\b"`.
