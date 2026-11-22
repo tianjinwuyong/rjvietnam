@@ -27,6 +27,10 @@ const API_BASE = String(
 ).replace(/\/$/, "");
 const API_AUTH_BASE = `${API_BASE}/api`;
 
+// Same-origin base ("" in prod/nginx; dev override via VITE_API_BASE). Exported
+// for non-JSON endpoints like /health that bypass request()'s envelope parsing.
+export const apiBase = API_BASE;
+
 export interface ApiError {
   code: string;
   message: string;

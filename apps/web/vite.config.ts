@@ -54,7 +54,18 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/supplier-api/, ''),
       },
-      '/api/pda': {
+      // SPA heartbeat hits /health same-origin; forward it to the API.
+      '/health': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+      // App-level API prefixes (no /api segment) — the SAME list nginx
+      // proxies (nginx.conf `location ~ ^/(wms|hr|…)`). Without this the dev
+      // server answered these calls with index.html and every WMS/HR/QMS
+      // screen showed "0 条" + API DOWN while the data was in the DB.
+      // Keep in sync with nginx.conf; the SPA's client routes are query-based
+      // (/?view=…), so none of these prefixes is a page route.
+      '^/(wms|hr|mes|pmc|qms|boms|erp|ai|admin|dashboard|equipment|equipment-supplier-comms|equipment-suppliers|factory-sim|finance|maintenance|managers|parts-pricing|parts-supplier-comms|parts-suppliers|pda|procurement|public|quality|reports|rjvn-inventory|rjvn-receipt|rjvn-wms|rjvn-iqc|rjvn-picking|rjvn-doc|spare-parts|supplier-quotes|traceability|bom-import-change-requests)(/|$)': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
         proxyTimeout: 30000,
@@ -77,7 +88,11 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/supplier-api/, ''),
       },
-      '/api/pda': {
+      '/health': {
+        target: 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+      '^/(wms|hr|mes|pmc|qms|boms|erp|ai|admin|dashboard|equipment|equipment-supplier-comms|equipment-suppliers|factory-sim|finance|maintenance|managers|parts-pricing|parts-supplier-comms|parts-suppliers|pda|procurement|public|quality|reports|rjvn-inventory|rjvn-receipt|rjvn-wms|rjvn-iqc|rjvn-picking|rjvn-doc|spare-parts|supplier-quotes|traceability|bom-import-change-requests)(/|$)': {
         target: 'http://127.0.0.1:8080',
         changeOrigin: true,
       },

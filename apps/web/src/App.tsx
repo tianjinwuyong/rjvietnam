@@ -28,7 +28,7 @@ import { AoiStation } from "./aoi/AoiStation";
 import { FctStation } from "./quality/stations/FctStation";
 import { AutoLineStation } from "./quality/stations/AutoLineStation";
 import { authApi, authStorage, wmsApi, pmcApi, bomApi, mesApi, qualityApi } from "./api";
-import { apiClient } from "./api/client";
+import { apiClient, apiBase } from "./api/client";
 import {
   PanelLeft,
   PanelLeftClose,
@@ -154,7 +154,11 @@ import { OaModule } from "./oa";
 import { MesrjModule } from "./mesrj";
 import { User } from "lucide-react";
 
-type ModuleKey = "smtLine3d" | "mobile" | "smtReelConsumption" | "groupLeaderPda" | "pdaUiDesigner" | "managementUiDesigner" | "dashboard" | "pmc" | "wms" | "mes" | "mesrj" | "quality" | "trace" | "reports" | "admin" | "hr" | "maintenance" | "ai" | "finance" | "sales" | "service" | "bom" | "andonBoard" | "projects" | "projectMgmt" | "agents" | "employee" | "managerDashboard" | "safetyManager" | "pdaCommMonitor" | "ambassadorDashboard" | "effectivenessAmbassador" | "efficiencyAmbassador" | "swiftnessAmbassador" | "collaborationAmbassador" | "procurement" | "einvoice" | "workflow" | "oa" | "manualLine3d" | "pdaAgent3d" | "aoiAgent3d" | "ictAgent3d" | "fctAgent3d" | "assemblyAteAgent3d" | "supersonicAgent3d" | "agingCabAgent3d" | "highVoltAteAgent3d" | "packingAteAgent3d" | "outerBoxBindingAgent3d" | "depanelAgent3d" | "qrbindingAgent2d" | "qrbindingAgent3d" | "mesManagerConsole" | "team" | "mobileleave" | "dashboard" | "qms";
+// Sidebar keys (the `modules` array below) plus hash-only surfaces: mobile/PDA
+// apps and 3D station agents are reached by URL hash or factory:navigate, never
+// from the desktop sidebar. Keep both kinds in one union — the content map is
+// keyed by it — but a key absent from `modules` is hash-only by declaration.
+type ModuleKey = "smtLine3d" | "mobile" | "smtReelConsumption" | "groupLeaderPda" | "pdaUiDesigner" | "managementUiDesigner" | "dashboard" | "pmc" | "wms" | "mes" | "quality" | "trace" | "reports" | "admin" | "hr" | "maintenance" | "ai" | "finance" | "sales" | "service" | "bom" | "andonBoard" | "projects" | "projectMgmt" | "agents" | "employee" | "managerDashboard" | "safetyManager" | "pdaCommMonitor" | "ambassadorDashboard" | "effectivenessAmbassador" | "efficiencyAmbassador" | "swiftnessAmbassador" | "collaborationAmbassador" | "procurement" | "einvoice" | "workflow" | "oa" | "manualLine3d" | "pdaAgent3d" | "aoiAgent3d" | "ictAgent3d" | "fctAgent3d" | "assemblyAteAgent3d" | "supersonicAgent3d" | "agingCabAgent3d" | "highVoltAteAgent3d" | "packingAteAgent3d" | "outerBoxBindingAgent3d" | "depanelAgent3d" | "qrbindingAgent2d" | "qrbindingAgent3d" | "mesManagerConsole" | "team" | "mobileleave" | "qms";
 
 const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge }> = [
   { key: "dashboard", label: "nav.dashboard", icon: Gauge },
@@ -166,7 +170,10 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
   { key: "pdaUiDesigner", label: "nav.pdaUiDesigner", icon: LayoutDashboard },
   { key: "managementUiDesigner", label: "nav.managementUiDesigner", icon: Palette },
   { key: "andonBoard", label: "nav.andon", icon: Activity },
-  { key: "quality", label: "nav.quality", icon: ClipboardCheck },
+  // Quality domain: QMS is the sidebar main entry (nav.qms). `quality` (line
+  // quality board) stays registered for roles whose whitelist lists it and for
+  // deep links, but moduleGroups does not show it as a second sidebar entry.
+  { key: "quality", label: "nav.quality", icon: ShieldCheck },
   { key: "qms", label: "nav.qms", icon: ClipboardCheck },
   { key: "trace", label: "nav.trace", icon: Search },
   { key: "reports", label: "nav.reports", icon: LineChart },
@@ -195,12 +202,21 @@ const modules: Array<{ key: ModuleKey; label: TranslationKey; icon: typeof Gauge
   { key: "collaborationAmbassador", label: "nav.collaborationAmbassador", icon: Users },
 ];
 
+// Domain-grouped sidebar (2026-11-21 restructure): overview → planning/material
+// → execution → quality → office → business/system → ambassadors → projects →
+// employee. Every item here must exist in `modules`; role visibility comes from
+// roleModuleAccess/FULL_MODULES, not from hiding entries out of groups.
 const moduleGroups: Array<{ label: TranslationKey; items: ModuleKey[] }> = [
-  { label: "nav.group.operations", items: ["dashboard", "pmc", "wms", "bom", "managerDashboard", "workflow", "safetyManager", "pdaCommMonitor", "ambassadorDashboard", "effectivenessAmbassador", "efficiencyAmbassador", "swiftnessAmbassador", "collaborationAmbassador"] },
-  { label: "nav.group.execution", items: ["mes", "smtReelConsumption", "pdaUiDesigner", "managementUiDesigner", "andonBoard", "quality", "qms", "trace"] },
-  { label: "nav.group.control", items: ["reports", "sales", "service", "finance", "procurement", "einvoice", "admin", "hr", "maintenance", "projects", "ai", "agents", "oa"] },
-  { label: "nav.group.projects", items: ["projectMgmt"] },
-  { label: "nav.group.employee", items: ["employee"] },
+  { label: "nav.group.overview", items: ["dashboard", "managerDashboard", "reports"] },
+  { label: "nav.group.planning", items: ["pmc", "wms", "bom", "procurement"] },
+  { label: "nav.group.production", items: ["mes", "smtReelConsumption", "andonBoard", "maintenance", "pdaUiDesigner", "managementUiDesigner", "pdaCommMonitor", "safetyManager"] },
+  { label: "nav.group.quality", items: ["qms", "trace"] },
+  { label: "nav.group.office", items: ["oa", "workflow", "hr", "employee"] },
+  { label: "nav.group.business", items: ["finance", "sales", "service", "einvoice", "projects", "projectMgmt", "admin", "ai", "agents"] },
+  // Ambassador pages are role-scoped (not in FULL_MODULES): only roles whose
+  // whitelist lists them see this group. That is explicit visibility, not an
+  // accident of group membership.
+  { label: "nav.group.ambassadors", items: ["ambassadorDashboard", "effectivenessAmbassador", "efficiencyAmbassador", "swiftnessAmbassador", "collaborationAmbassador"] },
 ];
 
 const moduleSubtitleKeys: Partial<Record<ModuleKey, TranslationKey>> = {
@@ -426,10 +442,14 @@ function TableShell({ children }: { children: ReactNode }) {
  * system (admin, plant_manager) so the sidebar never depends on a per-role list.
  */
 const FULL_MODULES: ModuleKey[] = [
-  "dashboard", "pmc", "wms", "bom", "mes", "smtReelConsumption", "quality", "qms", "trace",
-  "reports", "admin", "hr", "mobile", "maintenance", "finance", "sales", "service",
+  "dashboard", "pmc", "wms", "bom", "mes", "smtReelConsumption", "qms", "trace",
+  "reports", "admin", "hr", "maintenance", "finance", "sales", "service",
   "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee",
-  "managerDashboard", "workflow", "oa", "andonBoard", "manualLine3d", "mesrj",
+  "managerDashboard", "workflow", "oa", "andonBoard",
+  "pdaUiDesigner", "managementUiDesigner", "safetyManager", "pdaCommMonitor",
+  // Hash-only surfaces (mobile check-in, manual-line 3D): granted to full-workspace
+  // roles for deep links; intentionally absent from the desktop sidebar.
+  "mobile", "manualLine3d",
 ];
 
 const roleModuleAccess: Record<string, ModuleKey[]> = {
@@ -505,7 +525,7 @@ function Heartbeat() {
 
   const check = useCallback(async () => {
     try {
-      const res = await fetch("http://127.0.0.1:8080/health");
+      const res = await fetch(`${apiBase}/health`);
       const data = await res.json();
       if (mountedRef.current) setStatus(data.ok ? "ok" : "down");
     } catch {
@@ -549,7 +569,7 @@ function Shell({
   children: ReactNode;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const allowedModules = roleModuleAccess[currentUser.roleKey] ?? ["dashboard"];
+  const allowedModules = resolveModuleAccess(currentUser);
   const visibleGroups = moduleGroups
     .map((group) => ({
       ...group,
@@ -3200,7 +3220,8 @@ export function App() {
     managerDashboard: <ManagerDashboard locale={locale} />,
     workflow: <WorkflowDashboard locale={locale} />,
     oa: <OaModule locale={locale} currentUsername={currentUser.username} roleKey={currentUser.roleKey} />,
-    mesrj: <MesrjModule locale={locale} />,
+    // mesrj has no standalone module entry: its five domain tabs render inside
+    // the MES groups (mesrjHome/Material/Exec/Quality/Cfg, see renderActiveView).
     manualLine3d: <LazyManualLineDashboard />,
     pdaAgent3d: <LazyPdaStationMonitor locale={locale} />,
     aoiAgent3d: <LazyAoiStationMonitor locale={locale} />,

@@ -1,0 +1,21 @@
+{
+ "shots": {
+  "dashboard": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-dashboard.png",
+  "pmc": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-pmc.png",
+  "wms": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-wms.png",
+  "mes": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-mes.png",
+  "quality": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-quality.png",
+  "qms": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-qms.png",
+  "oa": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-oa.png",
+  "reports": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-reports.png",
+  "admin": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\02-admin.png",
+  "wms-nav": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\03-wms-nav.png",
+  "mes-nav": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\03-mes-nav.png",
+  "oa-nav": "C:\\Users\\tianj\\Desktop\\越南工厂瑞晶\\smt-factory-system\\ui-eval\\03-oa-nav.png"
+ },
+ "inv": {
+  "wms": {},
+  "mes": {},
+  "oa": {}
+ }
+}
