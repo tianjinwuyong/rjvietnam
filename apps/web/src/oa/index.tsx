@@ -24,6 +24,7 @@ import { KnowledgeView } from "./KnowledgeView";
 import { SysView } from "./SysView";
 import { EquipmentView } from "./EquipmentView";
 import { HrView } from "./HrView";
+import { PayrollEngineView } from "./PayrollEngineView";
 import { QualityView } from "./QualityView";
 import { SettingsView } from "./SettingsView";
 import { OA_MENU, menuText, type OaMenuItem, type OaViewId } from "./menu";
@@ -379,6 +380,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
     <FlowDesignView locale={locale} />
   ) : view === "equipment" || view === "equipStocktake" || view === "equipTasks" || view === "equipCalib" || view === "equipAlerts" ? (
     <EquipmentView locale={locale} sub={view} />
+  ) : view === "payrollEngine" ? (
+    <PayrollEngineView locale={locale} />
   ) : view === "attendance" || view === "cardRule" || view === "workCalendar" || view === "schedule" || view === "salary" || view === "salaryTemplate" || view === "perfFlow" || view === "training" || view === "myExams" || view === "handover" || view === "meetingCreate" || view === "meetingList" || view === "meetingSeries" || view === "meetingActions" || view === "meetingMinutes" ? (
     <HrView locale={locale} sub={view} onNavigate={s => setView(s)} />
   ) : view === "iqcInspect" || view === "mrbReview" || view === "ipqcFill" || view === "ipqcRecords" || view === "faiFill" || view === "faiRecords" || view === "inspectFill" || view === "inspectRecords" || view === "oqcInspect" || view === "qcTemplates" ? (

@@ -81,6 +81,7 @@ export type OaViewId =
   | "salary"
   | "salaryTemplate"
   | "perfFlow"
+  | "payrollEngine"
   | "training"
   | "myExams"
   | "handover"
@@ -199,6 +200,7 @@ export const OA_MENU: OaMenuGroup[] = [
           { titleKey: "menu.salary", view: "salary" },
           { titleKey: "menu.salaryTemplate", view: "salaryTemplate" },
           { titleKey: "menu.perfFlow", view: "perfFlow" },
+          { titleKey: "menu.payrollEngine", view: "payrollEngine" },
         ],
       },
       {
