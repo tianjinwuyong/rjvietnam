@@ -242,6 +242,7 @@ function AdminIntegrationHub({ locale }: { locale: Locale }) {
                 <th>{L("最近一轮", "Last round", "Vòng gần nhất")}</th>
                 <th>{L("拉取", "Pulled", "Đã kéo")}</th>
                 <th>{L("菜单漂移(7d)", "Menu drift(7d)", "Trôi menu(7ng)")}</th>
+                <th>{L("快照条目", "Snapshot items", "Mục ảnh chụp")}</th>
                 <th>{L("操作", "Action", "Thao tác")}</th>
               </tr>
             </thead>
@@ -278,9 +279,14 @@ function AdminIntegrationHub({ locale }: { locale: Locale }) {
                     ) : L("未跑过", "never run", "chưa chạy")}
                   </td>
                   <td className="text-xs">{a.lastRun?.pulled ?? "—"}</td>
-                  <td className="text-xs" style={{ color: a.menuDrifts7d > 0 ? "var(--warning)" : undefined }}>
+                  {/* 评审 N2:原 "0 · 33" 把漂移数与快照条目塞进一格,列头只解释前者 */}
+                  <td className="text-xs" style={{ color: a.menuDrifts7d > 0 ? "var(--warning)" : undefined }}
+                      title={L("近 7 天源菜单/流程定义变化次数", "menu drift events in the last 7 days", "số lần trôi menu/định nghĩa trong 7 ngày qua")}>
                     {a.menuDrifts7d}
-                    {a.lastMenuSnapshot ? ` · ${a.lastMenuSnapshot.item_count}` : ""}
+                  </td>
+                  <td className="text-xs"
+                      title={L("最近一次源快照的条目数(菜单项或流程定义)", "item count of the latest source snapshot (menu entries or flow defs)", "số mục của ảnh chụp nguồn gần nhất")}>
+                    {a.lastMenuSnapshot ? a.lastMenuSnapshot.item_count : "—"}
                   </td>
                   <td>
                     <button type="button" onClick={() => void liveRun(a.app)} disabled={busy === `run-${a.app}` || a.running}>

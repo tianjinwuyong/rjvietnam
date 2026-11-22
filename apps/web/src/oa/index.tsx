@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 import {
   oaApi,
@@ -71,13 +72,14 @@ function StatCard({ label, value, color }: { label: string; value: number; color
 }
 
 function InstanceTable({
-  rows, locale, onOpen,
+  rows, locale, onOpen, emptyState,
 }: {
   rows: OaInstanceSummary[];
   locale: Locale;
   onOpen: (id: OaInstanceSummary["id"]) => void;
+  emptyState?: ReactNode;
 }) {
-  if (rows.length === 0) return <div className="empty-state">{t("common.empty", locale)}</div>;
+  if (rows.length === 0) return <>{emptyState ?? <div className="empty-state">{t("common.empty", locale)}</div>}</>;
   return (
     <div className="table-shell">
       <table>
@@ -226,6 +228,8 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
   const [detailId, setDetailId] = useState<OaInstanceSummary["id"] | null>(null);
   const [startDef, setStartDef] = useState<OaFlowDef | null>(null);
   const [autoPickCode, setAutoPickCode] = useState<string | null>(null);
+  // 首页 byDef 表默认只渲染 n>0 的行(评审 M6):一墙 0 会让操作员以为系统坏了。
+  const [showZeroDefs, setShowZeroDefs] = useState(false);
   const isAdmin = !!profile?.isAdmin;
 
   // 管理员判定 + 角标计数（一次加载，常驻）
@@ -317,17 +321,36 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
           <div className="table-shell">
             <table>
               <thead>
-                <tr><th>{t("flowList.defCol", locale)}</th><th style={{ width: 80 }}>N</th></tr>
+                <tr><th>{t("flowList.defCol", locale)}</th><th style={{ width: 80 }}>{t("dash.defTotal", locale)}</th></tr>
               </thead>
               <tbody>
                 {overview.byDef.length === 0
                   ? <tr><td colSpan={2}>{t("common.empty", locale)}</td></tr>
-                  : overview.byDef.map(d => (
-                    <tr key={d.id}>
-                      <td>{locale === "vi-VN" && d.name_vi ? d.name_vi : d.name}</td>
-                      <td>{d.n}</td>
-                    </tr>
-                  ))}
+                  : (() => {
+                    const nonZero = overview.byDef.filter(d => d.n > 0);
+                    const zeroCount = overview.byDef.length - nonZero.length;
+                    const shown = showZeroDefs ? overview.byDef : nonZero;
+                    return (
+                      <>
+                        {shown.map(d => (
+                          <tr key={d.id}>
+                            <td>{locale === "vi-VN" && d.name_vi ? d.name_vi : d.name}</td>
+                            <td>{d.n}</td>
+                          </tr>
+                        ))}
+                        {shown.length === 0 && <tr><td colSpan={2}>{t("common.empty", locale)}</td></tr>}
+                        {zeroCount > 0 && (
+                          <tr>
+                            <td colSpan={2}>
+                              <button onClick={() => setShowZeroDefs(v => !v)} style={{ cursor: "pointer", fontSize: 12, color: "var(--text-muted, #64748b)", background: "transparent", border: 0, padding: 0 }}>
+                                {showZeroDefs ? t("dash.hideZero", locale) : t("dash.showZero", locale, { n: zeroCount })}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    );
+                  })()}
               </tbody>
             </table>
           </div>
@@ -411,7 +434,22 @@ export function OaModule({ locale }: { locale: Locale; currentUsername: string; 
       </div>
       {loading ? <div className="empty-state">{t("common.loading", locale)}</div> : (
         <>
-          <InstanceTable rows={instances.list} locale={locale} onOpen={setDetailId} />
+          <InstanceTable
+            rows={instances.list}
+            locale={locale}
+            onOpen={setDetailId}
+            emptyState={view === "todo" ? (
+              // 评审 M5:空待办必须区分"没事做"与"镜像没同步",给出下一步。
+              <div className="surface-panel" style={{ padding: "24px 18px", textAlign: "center" }}>
+                <div style={{ fontSize: 15, fontWeight: 700 }}>{t("todo.emptyTitle", locale)}</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted, #64748b)", margin: "8px auto 14px", maxWidth: 460 }}>{t("todo.emptyHint", locale)}</div>
+                <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+                  <button onClick={() => setView("start")} style={{ cursor: "pointer" }}>{t("todo.goStart", locale)}</button>
+                  <button onClick={() => { setView("done"); setPage(1); void loadView("done", { keyword, page: 1 }); }} style={{ cursor: "pointer" }}>{t("todo.goDone", locale)}</button>
+                </div>
+              </div>
+            ) : undefined}
+          />
           {instances.total > instances.size && (
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 10 }}>
               <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} style={{ cursor: "pointer" }}>←</button>

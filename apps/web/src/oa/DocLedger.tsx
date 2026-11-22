@@ -11,7 +11,7 @@ import { t } from "./i18n";
  */
 
 export const LEDGER_TYPES = [
-  "controlled", "issue", "obsolete", "destroy", "borrow", "external", "review",
+  "controlled", "issue", "obsolete", "destroy", "borrow", "external", "review", "changes",
 ] as const;
 
 export type LedgerType = (typeof LEDGER_TYPES)[number];
@@ -24,6 +24,7 @@ const TYPE_KEY: Record<LedgerType, string> = {
   borrow: "docLedger.typeBorrow",
   external: "docLedger.typeExternal",
   review: "docLedger.typeReview",
+  changes: "docLedger.typeChanges",
 };
 
 /** 各台账支持的筛选（与 doc-ledger.js query 的 filters 对齐） */
@@ -35,6 +36,7 @@ const FILTERS: Record<LedgerType, { keyword: boolean; from: boolean; to: boolean
   borrow: { keyword: true, from: true, to: true, status: true },
   external: { keyword: true, from: false, to: false, status: false },
   review: { keyword: true, from: true, to: true, status: false },
+  changes: { keyword: true, from: true, to: true, status: false },
 };
 
 function fmtCell(value: unknown): string {
@@ -165,7 +167,15 @@ export function LedgerTable({ locale, type }: { locale: Locale; type: LedgerType
                   <tbody>
                     {data.list.map((row, i) => (
                       <tr key={i}>
-                        {data.columns.map(c => <td key={c.key}>{fmtCell(row[c.key])}</td>)}
+                        {/* 评审 N1:编号列不折行;长文本列(原因/备注/结论/新旧值)两行钳制 +
+                            title 全文,行高不再被 60+ 字段落撑到 ~90px。仿 WmsRjvnIqc.tsx:452。 */}
+                        {data.columns.map(c => {
+                          const text = fmtCell(row[c.key]);
+                          if (c.key === "code") return <td key={c.key} style={{ whiteSpace: "nowrap" }}>{text}</td>;
+                          if (["reason", "remark", "conclusion", "old_value", "new_value"].includes(c.key))
+                            return <td key={c.key} title={String(row[c.key] ?? "")} style={{ maxWidth: 280, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{text}</td>;
+                          return <td key={c.key}>{text}</td>;
+                        })}
                       </tr>
                     ))}
                   </tbody>

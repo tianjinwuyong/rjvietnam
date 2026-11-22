@@ -490,6 +490,16 @@ td span {
   gap: 12px;
 }
 
+/* rjvn graft screens (WmsRjvnInventory/Iqc/Receipt/Picking/DocFlow/Data,
+   WmsCanonicalData) render `<div className="stat-grid">` KPI rows; the class
+   had no rule, so cards stacked full-width and pushed the working table below
+   the fold (review M1, 2026-11-22). */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
 .stat-card,
 .report-card {
   padding: 14px;

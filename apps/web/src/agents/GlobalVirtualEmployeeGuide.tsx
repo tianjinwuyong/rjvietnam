@@ -65,6 +65,7 @@ function inspectPage(): GuideState {
 
 export function GlobalVirtualEmployeeGuide({ moduleKey, locale }: { moduleKey: string; locale: Locale }) {
   const [open, setOpen] = useState(false);
+  const [hidden, setHidden] = useState(false); // 评审 N3：会话内隐藏为圆标
   const [state, setState] = useState<GuideState>(() => inspectPage());
   const [checking, setChecking] = useState(false);
   const employeeId = resolveEmployee(moduleKey);
@@ -100,9 +101,19 @@ export function GlobalVirtualEmployeeGuide({ moduleKey, locale }: { moduleKey: s
   }, [moduleKey]);
 
   const statusText = ready ? t("virtualGuide.ready", locale) : t("virtualGuide.waiting", locale);
+  // 评审 N3:密表右下角会被 dock 压住。隐藏态缩为 40px 圆标,点击即恢复;
+  // 仅本次会话生效(不写 localStorage),刷新后回到默认。
+  if (hidden) {
+    return <button type="button" data-global-virtual-guide onClick={() => setHidden(false)}
+      title={`${employeeId} · ${statusText}`}
+      style={{ position: "fixed", right: 18, bottom: 18, zIndex: 240, width: 40, height: 40, borderRadius: "50%", border: `2px solid ${ready ? "#0f766e" : "#f97316"}`, background: ready ? "#065f46" : "#9a3412", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 8px 20px rgba(15,23,42,.24)" }}>
+      <Bot size={20} />
+    </button>;
+  }
   return <aside data-global-virtual-guide style={{ position: "fixed", right: 18, bottom: 18, zIndex: 240, width: open ? 390 : 290, maxWidth: "calc(100vw - 28px)", border: `2px solid ${ready ? "#0f766e" : "#f97316"}`, borderRadius: 12, background: "#fff", boxShadow: "0 16px 42px rgba(15,23,42,.24)", overflow: "hidden" }}>
     <button type="button" onClick={() => setOpen(value => !value)} title={t("virtualGuide.toggleTooltip", locale)} style={{ width: "100%", border: 0, padding: "11px 13px", background: ready ? "#065f46" : "#9a3412", color: "#fff", display: "flex", alignItems: "center", gap: 9, cursor: "pointer", textAlign: "left" }}>
       <Bot size={23} /><span style={{ flex: 1 }}><strong style={{ display: "block", fontSize: 13 }}>{employeeId}</strong><small>{statusText}</small></span>{open ? <ChevronDown size={18} /> : <ChevronUp size={18} />}
+      <span role="button" tabIndex={0} title={t("virtualGuide.hideSession", locale)} onClick={e => { e.stopPropagation(); setHidden(true); }} onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setHidden(true); } }} style={{ paddingLeft: 8, opacity: .85, fontWeight: 700 }}>×</span>
     </button>
     {open && <div style={{ padding: 13, fontSize: 12, color: "#334155" }}>
       <div style={{ display: "flex", gap: 9, alignItems: "flex-start", padding: 10, borderRadius: 8, background: ready ? "#ecfdf5" : "#fff7ed" }}>

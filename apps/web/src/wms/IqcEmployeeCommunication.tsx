@@ -36,14 +36,21 @@ export function IqcEmployeeCommunication({ locale }: { locale: Locale }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
+  // 评审 M3:横幅默认折叠成单行状态条,检验队列在首屏;展开才挂 iframe。
+  const [panelOpen, setPanelOpen] = useState(false);
+  const failRef = useRef(0);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const load = useCallback(async () => {
     try {
-      const response: any = await apiClient.get("/qms/iqc/virtual-employee/tasks", { status: "" });
+      const response = await apiClient.get<{ items?: IqcTask[]; data?: { items?: IqcTask[] } }>("/qms/iqc/virtual-employee/tasks", { status: "" });
       setTasks(response.items ?? response.data?.items ?? []);
+      failRef.current = 0;
       setError("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : t("iqcGuide.connectionFailed", locale));
+      // 单次 5s 轮询抖动不得在质量屏上挂"正在重新连接"(评审 M4):
+      // 连续 3 次失败才置错,期间保留最后一次 tasks 快照继续显示。
+      failRef.current += 1;
+      if (failRef.current >= 3) setError(cause instanceof Error ? cause.message : t("iqcGuide.connectionFailed", locale));
     }
   }, [locale]);
   useEffect(() => { void load(); const timer = window.setInterval(load, 5000); return () => window.clearInterval(timer); }, [load]);
@@ -59,13 +66,15 @@ export function IqcEmployeeCommunication({ locale }: { locale: Locale }) {
   const open = tasks.filter(task => !["DONE", "CANCELLED"].includes(String(task.status))).length;
   const done = tasks.filter(task => task.status === "DONE").length;
 
-  return <section className="surface-panel" style={{ marginBottom: 14, border: "2px solid #0f766e", overflow: "hidden" }}>
+  return <section className="surface-panel" style={{ marginBottom: 14, border: `2px solid ${error ? "#d97706" : "#0f766e"}`, overflow: "hidden" }}>
     <div style={{ padding: "12px 16px", background: "linear-gradient(90deg,#064e3b,#0f766e)", color: "white", display: "flex", alignItems: "center", gap: 12 }}>
       <img src="/avatars/iqc-employee-2026.png" alt={t("iqcGuide.specialist", locale)} style={{ width: 54, height: 54, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,.75)" }} />
       <span style={{ width: 10, height: 10, borderRadius: 10, background: error ? "#f87171" : "#4ade80", boxShadow: "0 0 0 4px rgba(255,255,255,.15)" }} />
       <div><strong>IQC-VIRTUAL-01 · {t("iqcGuide.specialist", locale)}</strong><div style={{ fontSize: 11, opacity: .82 }}>{error ? t("iqcGuide.reconnecting", locale) : t("iqcGuide.online", locale)} · {t(`iqcGuide.step.${node}`, locale)}</div></div>
-      <button type="button" onClick={() => void run()} disabled={busy} title={t("iqcGuide.checkTooltip", locale)} style={{ marginLeft: "auto", background: "white", color: "#065f46", border: 0, borderRadius: 7, padding: "8px 14px", fontWeight: 700 }}>{busy ? t("iqcGuide.checking", locale) : t("iqcGuide.checkNow", locale)}</button>
+      <button type="button" onClick={() => setPanelOpen(v => !v)} title={panelOpen ? t("iqcGuide.collapse", locale) : t("iqcGuide.expand", locale)} style={{ marginLeft: "auto", background: "transparent", color: "white", border: "1px solid rgba(255,255,255,.5)", borderRadius: 7, padding: "8px 12px", fontWeight: 700 }}>{panelOpen ? "▾" : "▸"}</button>
+      <button type="button" onClick={() => void run()} disabled={busy} title={t("iqcGuide.checkTooltip", locale)} style={{ background: "white", color: "#065f46", border: 0, borderRadius: 7, padding: "8px 14px", fontWeight: 700 }}>{busy ? t("iqcGuide.checking", locale) : t("iqcGuide.checkNow", locale)}</button>
     </div>
+    {!panelOpen ? null : <>
     <div style={{ padding: "12px 16px", background: awaitingHuman ? "#fff7ed" : "#ecfdf5", borderBottom: `2px solid ${awaitingHuman ? "#f97316" : "#10b981"}`, display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12 }}>
       <span style={{ padding: "5px 9px", borderRadius: 999, background: error ? "#d97706" : "#16a34a", color: "white", fontSize: 12, fontWeight: 900 }}>{error ? t("iqcGuide.reconnecting", locale) : t("iqcGuide.online", locale)}</span>
       <div style={{ minWidth: 240 }}><div style={{ fontSize: 11, fontWeight: 900, color: "#475569" }}>{t("iqcGuide.currentStatus", locale)}</div><div style={{ fontSize: 20, fontWeight: 900, color: awaitingHuman ? "#9a3412" : "#064e3b" }}>{t(`iqcGuide.step.${node}`, locale)}</div></div>
@@ -84,6 +93,7 @@ export function IqcEmployeeCommunication({ locale }: { locale: Locale }) {
         <div style={{ padding: 14, borderRadius: 9, background: "#f8fafc", border: "1px solid #cbd5e1" }}><div style={{ fontSize: 11, fontWeight: 800 }}>{t("iqcGuide.queue", locale)}</div><div style={{ display: "flex", gap: 16, marginTop: 10 }}><b>{t("iqcGuide.open", locale)} {open}</b><b style={{ color: "#c2410c" }}>{t("iqcGuide.human", locale)} {tasks.filter(task => task.requires_human).length}</b><b style={{ color: "#15803d" }}>{t("iqcGuide.done", locale)} {done}</b></div></div>
       </div>
     </div>
+    </>}
     {error && <div style={{ padding: "0 14px 12px", color: "#b91c1c" }}>{t("iqcGuide.communicationError", locale)}：{error}</div>}
   </section>;
 }

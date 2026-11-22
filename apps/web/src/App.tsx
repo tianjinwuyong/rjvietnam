@@ -138,6 +138,7 @@ import { Projects } from "./projects/Projects";
 import { ProjectMgmt } from "./project-mgmt";
 import { AgentsModule } from "./agents/AgentsModule";
 import { GlobalVirtualEmployeeGuide } from "./agents/GlobalVirtualEmployeeGuide";
+import { MirrorFreshnessPill } from "./components/MirrorFreshnessPill";
 import { EmployeePanel } from "./employee/EmployeePanel";
 import { ManagerDashboard } from "./manager-dashboard/ManagerDashboard";
 import { WorkflowDashboard } from "./workflow/WorkflowDashboard";
@@ -1844,6 +1845,11 @@ function Maintenance({ locale }: { locale: Locale }) {
   );
 }
 
+// 评审 N4:仓库组里偏工程/管理的 tab(非日常作业),用于弱化显示 + tooltip 前缀。
+const WMS_ENGINEERING_TABS: Partial<Record<WmsTabKey, true>> = {
+  batchManagement: true, locationManagement: true, fifoSimulation: true, transactions: true,
+};
+
 function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: string[]; roleKey: string }) {
   const [activeTab, setActiveTab] = useState<WmsTabKey>(() => {
     const requested = new URLSearchParams(window.location.search).get("wmsTab") as WmsTabKey | null;
@@ -2025,7 +2031,7 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
                   type="button"
                   title={t(group.translationKey as TranslationKey, locale)}
                   style={{ background: activeGroup.key === group.key ? "var(--info)" : "var(--nav)" }}
-                  onClick={() => navigateWms(group.tabs[0])}
+                  onClick={() => { if (!group.tabs.includes(activeTab)) navigateWms(group.tabs[0]); }}
                 >
                   {t(group.translationKey as TranslationKey, locale)}
                 </button>
@@ -2041,6 +2047,7 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
                   type="button"
                   className={activeTab === subKey ? "active" : ""}
                   onClick={() => navigateWms(subKey)}
+                  style={activeGroup.key === "warehouse" && WMS_ENGINEERING_TABS[subKey] ? { opacity: 0.78 } : undefined}
                 >
                   {t(wmsTabTranslationKeys[subKey] as TranslationKey, locale)}
                 </button>
@@ -3336,6 +3343,7 @@ export function App() {
     }}>
       {content}
       <GlobalVirtualEmployeeGuide moduleKey={active} locale={locale} />
+      <MirrorFreshnessPill moduleKey={active} locale={locale} />
     </Shell>
   );
 }
