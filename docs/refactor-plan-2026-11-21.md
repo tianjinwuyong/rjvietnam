@@ -282,6 +282,19 @@ migrations / syntax(393)/ api-typecheck(561≤595)/ test:unit(1342 过 0 败)全
 验收 `npm run build` + Playwright 既有基线(注意 e2e 需 5178 活站 + 种子库;24 页扫描以现有
 tests/e2e 与 procurement-ui-smoke 为准,不新造基线)。
 
+**[OK] 阶段 4 步 1 · 模块注册表抽取(2026-11-23)**:`App.tsx` 的 `ModuleKey` 联合类型、
+`modules` 侧边栏清单、`FULL_MODULES` 全量授权、`roleModuleAccess` 角色白名单四段
+**逐字搬迁**到 `apps/web/src/modules/registry.ts`(方法同阶段3:搬迁而非复制,声明零改动),
+`App.tsx` 原位置只留一行 `import { type ModuleKey, modules, FULL_MODULES, roleModuleAccess }`。
+派生结构 `moduleGroups` / `permissionModuleMap` 等仍留 App.tsx(它们消费注册表导出)。
+App.tsx 199 KB→187 KB。`typecheck`(web program)与 `npm run build` 全绿,main chunk 体积不变。
+**渲染冒烟**:Playwright chromium 未安装(`npx playwright install` 未跑),改用 omp headless
+browser 驱动活站 :5178 验证——admin 登录渲染完整分组侧边栏(走 FULL_MODULES),
+warehouse(VN_WH_001)登录只渲染 总览/WMS物料/质量/追溯(= roleModuleAccess.warehouse
+经 moduleGroups 过滤),证明 per-role 白名单经新 import 在运行时生效。
+**未做**(按计划仍属阶段4后续步,风险更高、收益独立):模块懒加载(App.tsx 只留路由分发)、
+i18n.ts 按域切 namespace。
+
 ## 阶段 5 — 人工门分级(1 天)
 
 三档(可批量/逐条必看/双人复核)照原稿。落点修正:`humanGates` 定义在
