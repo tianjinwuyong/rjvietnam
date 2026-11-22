@@ -212,6 +212,30 @@ syntax(388)/ api-typecheck(561≤595)/ test:unit(1342 过 6 跳 0 败)全绿;
 走到自身 NOT_FOUND 分支、无 TDZ。计划轮 2 判据"server.js 减 300 KB":本轮
 -157 KB,余量在 B 带拆分与 receiving/shelf,归轮 2 续切。
 
+**[OK] 阶段 3 轮 3 · 工位边缘两带收口(2026-11-22)**:server.js 两段连续 station 带
+整段迁出——边缘带(拦截/工单请求/维护交接/NG 复活审计/SN 守卫与注册/sync 对账与
+冲突,20 路由,原 5405-6115)+ 报废带(统一报废审批链/驻留统计/工位数据清除 +
+overall-balance/lineage,10 路由,原 6135-6414)→ `src/routes/station-edge.js`
+(两个导出,各自原位挂载)。两段都在 `app.use("/api",api)` 与 app 级鉴权闸门之上,
+register 调用留在原行号 → **JWT-exempt-by-position 语义逐条不变**;3 条报废审批路由
+的内联 authenticateJWT 经转发闭包注入(TDZ,station-ops 先例)。两带之间的
+stationOpsDeps 块原地不动。server.js 2457→2383 KB(-74 KB)。
+**随迁修复(HEAD 即坏)**:GET /api/station/ng-revival/audit 的 `?sn=` 路径三处潜伏
+错误——`const snCond` 重赋值(tsc TS2588 照出,运行时 TypeError)、`UPPER($3)` 对
+jsonb-text 无类型推断(pg 500)、第二查询 LIMIT 占位符索引重复计数 sn。修复后
+`?stationCode=…&sn=…` 双树实测 200。
+**未搬**:4675-5300 的 activity/inventory/bucket-snapshots/database-management/ng-guard
+段——与 pda/mes/quality 路由交错且含 LEGACY_BUCKET_STATION_ALIASES /
+stationBucketSnapshotCache 模块级声明,违反"连续单域无声明"配方,归后续轮次。
+验证:census 全量快照前后逐条相等(2868);提交候选树(git archive HEAD+仅本搬迁)
+census 与 HEAD 相等(2769)且启动;表驱动认证态冒烟 **30/30** 于工作区 :8095 与
+干净树 :8096(读 200,写只走首道守卫拒绝分支,DELETE 打不存在的哨兵);
+register-deps / auth-order(0, registerCalls=12)/ shadowing(10=10)/ migrations /
+syntax(389)/ api-typecheck(561≤595)/ test:unit(1342 过 0 败)全绿。
+本轮另沉淀方法论:`app_rules/server-split.md`(lane 规则)+
+`.agents/skills/server-js-split`(技能:带选择、tsc --checkJs 求 deps、TDZ 转发、
+census 不变式、干净树冒烟、随迁并行 lane 行的归属判据)。
+
 ## 阶段 4 — 前端解单文件(3 轮,各半天)
 
 照原稿:registry 抽取 → 模块懒加载 → i18n 按域切 namespace。React 18.3.1 / Vite 5.4.21 不动。

@@ -14,6 +14,7 @@ Each agent must load the rule file for its lane before editing code. If a task s
 - `data-contract.md` for UI-to-DB mapping and DTO alignment
 - `backend-validation.md` for continuous backend verification
 - `runtime-ports.md` for startup ports and service launch rules
+- `server-split.md` for the 阶段3 server.js route-extraction lane (band selection, TDZ-safe deps via `tsc --checkJs`, verbatim move, census invariance, clean-tree smoke, travelling parallel-lane lines)
 
 ## Shared rules
 
