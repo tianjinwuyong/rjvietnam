@@ -19,16 +19,16 @@ interface TimeoutWarning { id: number; lot_no: string; material_code: string; su
 interface CalWarning { id: number; equipment_code: string; equipment_name: string; equipment_type: string; calibration_status: string; next_calibration_date: string; status: string; }
 interface Stats { criticalAlerts: number; warningAlerts: number; timeoutWarnings: number; calibrationDue: number; mesLocks: number; }
 
-const SEVERITY_COLOR: Record<string, string> = { critical: "#dc2626", warning: "#f59e0b" };
-const STATUS_COLOR: Record<string, string> = { acknowledged: "#64748b", unresolved: "#f59e0b", resolved: "#16a34a" };
+const SEVERITY_COLOR: Record<string, string> = { critical: "var(--danger)", warning: "var(--warn)" };
+const STATUS_COLOR: Record<string, string> = { acknowledged: "var(--muted)", unresolved: "var(--warn)", resolved: "var(--ok)" };
 
 function AndonCard({ children, severity, onClick }: { children: React.ReactNode; severity: string; onClick?: () => void }) {
   return (
     <div
       onClick={onClick}
       style={{
-        background: "#1e293b",
-        border: `2px solid ${SEVERITY_COLOR[severity] || "#334155"}`,
+        background: 'var(--panel)',
+        border: `2px solid ${SEVERITY_COLOR[severity] || "var(--nav)"}`,
         borderRadius: 12,
         padding: 16,
         cursor: onClick ? "pointer" : "default",
@@ -42,36 +42,36 @@ function AndonCard({ children, severity, onClick }: { children: React.ReactNode;
 function AlertRow({ alert, onAcknowledge, onResolve }: { alert: Alert; onAcknowledge: (id: number) => void; onResolve: (id: number) => void }) {
   return (
     <div style={{
-      background: "#0f172a",
+      background: 'var(--surface-2)',
       borderRadius: 8,
       padding: "12px 16px",
       marginBottom: 8,
-      borderLeft: `4px solid ${SEVERITY_COLOR[alert.severity] || "#334155"}`,
+      borderLeft: `4px solid ${SEVERITY_COLOR[alert.severity] || "var(--nav)"}`,
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
         <div style={{ flex: 1 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
             {alert.severity === "critical"
-              ? <AlertCircle size={16} color="#dc2626" />
-              : <AlertTriangle size={16} color="#f59e0b" />}
-            <span style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 14 }}>[{alert.alert_type}]</span>
-            <span style={{ color: "#94a3b8", fontSize: 13, marginLeft: 8 }}>{alert.material_code} / {alert.parameter_code}</span>
+              ? <AlertCircle size={16} color="var(--danger)" />
+              : <AlertTriangle size={16} color="var(--warn)" />}
+            <span style={{ color: 'var(--text)', fontWeight: 600, fontSize: 14 }}>[{alert.alert_type}]</span>
+            <span style={{ color: 'var(--muted)', fontSize: 13, marginLeft: 8 }}>{alert.material_code} / {alert.parameter_code}</span>
           </div>
-          <div style={{ color: "#64748b", fontSize: 12, marginLeft: 24 }}>{alert.description}</div>
-          <div style={{ color: "#475569", fontSize: 11, marginLeft: 24, marginTop: 4 }}>
+          <div style={{ color: 'var(--muted)', fontSize: 12, marginLeft: 24 }}>{alert.description}</div>
+          <div style={{ color: 'var(--muted)', fontSize: 11, marginLeft: 24, marginTop: 4 }}>
             {alert.created_at ? new Date(alert.created_at).toLocaleString() : "-"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 6, flexShrink: 0, marginLeft: 12 }}>
           {alert.acknowledged && !alert.resolved && (
             <button onClick={() => onResolve(alert.id)}
-              style={{ padding: "5px 12px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+              style={{ padding: "5px 12px", background: "var(--ok)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
               解决
             </button>
           )}
           {!alert.acknowledged && (
             <button onClick={() => onAcknowledge(alert.id)}
-              style={{ padding: "5px 12px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
+              style={{ padding: "5px 12px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 12 }}>
               确认
             </button>
           )}
@@ -171,24 +171,24 @@ export function QmsIqcAndon() {
   const filteredAlerts = alerts.filter(a => filter === "all" ? true : a.severity === filter);
 
   return (
-    <div style={{ padding: 24, background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
+    <div style={{ padding: 24, background: 'var(--surface-2)', minHeight: "100vh", color: 'var(--text)' }}>
       {/* Audio for critical alerts */}
       <audio ref={audioRef} src="data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2teleD4D" />
 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Zap size={28} color="#fbbf24" />
-          <h2 style={{ color: "#e2e8f0", fontSize: 22, margin: 0 }}>IQC Andon 预警中心</h2>
+          <Zap size={28} color="var(--warn)" />
+          <h2 style={{ color: 'var(--text)', fontSize: 22, margin: 0 }}>IQC Andon 预警中心</h2>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button onClick={() => setSound(!sound)}
-            style={{ padding: "6px 12px", background: sound ? "#16a34a" : "#334155", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            style={{ padding: "6px 12px", background: sound ? "var(--ok)" : "var(--nav)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
             {sound ? <Bell size={14} /> : <BellOff size={14} />}
             {sound ? "声音开" : "声音关"}
           </button>
           <button onClick={loadAll}
-            style={{ padding: "6px 12px", background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            style={{ padding: "6px 12px", background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
             <RefreshCw size={14} /> 刷新
           </button>
         </div>
@@ -198,16 +198,16 @@ export function QmsIqcAndon() {
       {stats && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 20 }}>
           {[
-            { label: "Critical", value: stats.criticalAlerts, color: "#dc2626", icon: AlertCircle },
-            { label: "Warning", value: stats.warningAlerts, color: "#f59e0b", icon: AlertTriangle },
-            { label: "超时未检", value: stats.timeoutWarnings, color: "#f97316", icon: Clock },
-            { label: "校准到期", value: stats.calibrationDue, color: "#eab308", icon: ShieldCheck },
-            { label: "MES锁定", value: stats.mesLocks, color: "#7c3aed", icon: Zap },
+            { label: "Critical", value: stats.criticalAlerts, color: "var(--danger)", icon: AlertCircle },
+            { label: "Warning", value: stats.warningAlerts, color: "var(--warn)", icon: AlertTriangle },
+            { label: "超时未检", value: stats.timeoutWarnings, color: "var(--warn)", icon: Clock },
+            { label: "校准到期", value: stats.calibrationDue, color: "var(--warn)", icon: ShieldCheck },
+            { label: "MES锁定", value: stats.mesLocks, color: "var(--info)", icon: Zap },
           ].map(({ label, value, color, icon: Icon }) => (
             <div key={label} onClick={() => { if (label === "Critical" || label === "Warning") setTab("alerts"); else if (label === "超时未检") setTab("timeout"); else if (label === "校准到期") setTab("calibration"); }}
-              style={{ background: "#1e293b", border: `1px solid ${color}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer", textAlign: "center" }}>
+              style={{ background: 'var(--panel)', border: `1px solid ${color}`, borderRadius: 10, padding: "14px 16px", cursor: "pointer", textAlign: "center" }}>
               <div style={{ color, fontSize: 32, fontWeight: 800, display: "flex", justifyContent: "center" }}>{value}</div>
-              <div style={{ color: "#94a3b8", fontSize: 12, marginTop: 4, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
+              <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4, display: "flex", justifyContent: "center", alignItems: "center", gap: 4 }}>
                 <Icon size={12} /> {label}
               </div>
             </div>
@@ -220,8 +220,8 @@ export function QmsIqcAndon() {
         {(["alerts", "timeout", "calibration"] as const).map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ padding: "8px 20px", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14,
-              background: tab === t ? "#2563eb" : "#1e293b", color: tab === t ? "#fff" : "#94a3b8",
-              borderBottom: tab === t ? "2px solid #2563eb" : "none" }}>
+              background: tab === t ? "var(--info)" : "var(--panel)", color: tab === t ? "#fff" : "var(--muted)",
+              borderBottom: tab === t ? "2px solid var(--info)" : "none" }}>
             {t === "alerts" ? `SPC告警 (${alerts.length})` : t === "timeout" ? `超时预警 (${timeouts.length})` : `计量预警 (${calibrations.length})`}
           </button>
         ))}
@@ -234,18 +234,18 @@ export function QmsIqcAndon() {
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
             {(["all", "critical", "warning"] as const).map(f => (
               <button key={f} onClick={() => setFilter(f)}
-                style={{ padding: "4px 14px", border: "1px solid #334155", borderRadius: 6, cursor: "pointer", fontSize: 12,
-                  background: filter === f ? "#334155" : "transparent", color: filter === f ? "#e2e8f0" : "#64748b" }}>
+                style={{ padding: "4px 14px", border: '1px solid var(--line)', borderRadius: 6, cursor: "pointer", fontSize: 12,
+                  background: filter === f ? "var(--nav)" : "transparent", color: filter === f ? "var(--text)" : "var(--muted)" }}>
                 {f === "all" ? "全部" : f === "critical" ? "严重" : "警告"}
               </button>
             ))}
           </div>
 
           {loading ? (
-            <div style={{ color: "#64748b", padding: 40, textAlign: "center" }}>加载中…</div>
+            <div style={{ color: 'var(--muted)', padding: 40, textAlign: "center" }}>加载中…</div>
           ) : filteredAlerts.length === 0 ? (
-            <div style={{ background: "#1e293b", borderRadius: 12, padding: 60, textAlign: "center", color: "#475569" }}>
-              <CheckCircle2 size={48} color="#16a34a" style={{ margin: "0 auto 16px", display: "block" }} />
+            <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 60, textAlign: "center", color: 'var(--muted)' }}>
+              <CheckCircle2 size={48} color="var(--ok)" style={{ margin: "0 auto 16px", display: "block" }} />
               无进行中的告警
             </div>
           ) : (
@@ -260,27 +260,27 @@ export function QmsIqcAndon() {
       {tab === "timeout" && (
         <div>
           {timeouts.length === 0 ? (
-            <div style={{ background: "#1e293b", borderRadius: 12, padding: 60, textAlign: "center", color: "#475569" }}>
-              <Clock size={48} color="#16a34a" style={{ margin: "0 auto 16px", display: "block" }} />
+            <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 60, textAlign: "center", color: 'var(--muted)' }}>
+              <Clock size={48} color="var(--ok)" style={{ margin: "0 auto 16px", display: "block" }} />
               无超时预警
             </div>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {timeouts.map(t => (
-                <div key={t.id} style={{ background: "#1e293b", border: "1px solid #f97316", borderRadius: 8, padding: "12px 16px", borderLeft: "4px solid #f97316" }}>
+                <div key={t.id} style={{ background: 'var(--panel)', border: "1px solid var(--warn)", borderRadius: 8, padding: "12px 16px", borderLeft: "4px solid var(--warn)" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
-                      <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 14 }}>{t.lot_no}</div>
-                      <div style={{ color: "#64748b", fontSize: 12, marginTop: 2 }}>{t.material_code} | {t.supplier_name || t.supplier_code}</div>
+                      <div style={{ color: 'var(--text)', fontWeight: 600, fontSize: 14 }}>{t.lot_no}</div>
+                      <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 2 }}>{t.material_code} | {t.supplier_name || t.supplier_code}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ color: "#f97316", fontSize: 22, fontWeight: 800 }}>
+                      <div style={{ color: "var(--warn)", fontSize: 22, fontWeight: 800 }}>
                         {Math.floor(t.hours_pending)}h
                       </div>
-                      <div style={{ color: "#475569", fontSize: 11 }}>超时</div>
+                      <div style={{ color: 'var(--muted)', fontSize: 11 }}>超时</div>
                     </div>
                   </div>
-                  <div style={{ color: "#64748b", fontSize: 12, marginTop: 6 }}>
+                  <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 6 }}>
                     检验员: {t.inspector_name || "-"} | 开始时间: {t.inspection_date ? new Date(t.inspection_date).toLocaleString() : "-"}
                   </div>
                 </div>
@@ -294,23 +294,23 @@ export function QmsIqcAndon() {
       {tab === "calibration" && (
         <div>
           {calibrations.length === 0 ? (
-            <div style={{ background: "#1e293b", borderRadius: 12, padding: 60, textAlign: "center", color: "#475569" }}>
-              <ShieldCheck size={48} color="#16a34a" style={{ margin: "0 auto 16px", display: "block" }} />
+            <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 60, textAlign: "center", color: 'var(--muted)' }}>
+              <ShieldCheck size={48} color="var(--ok)" style={{ margin: "0 auto 16px", display: "block" }} />
               无计量预警
             </div>
           ) : (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
               {calibrations.map(c => (
-                <div key={c.id} style={{ background: "#1e293b", border: `1px solid ${c.status === "expired" ? "#dc2626" : "#eab308"}`, borderRadius: 8, padding: 16 }}>
+                <div key={c.id} style={{ background: 'var(--panel)', border: `1px solid ${c.status === "expired" ? "var(--danger)" : "var(--warn)"}`, borderRadius: 8, padding: 16 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                    <div style={{ color: "#e2e8f0", fontWeight: 600, fontSize: 14 }}>{c.equipment_name}</div>
-                    <span style={{ background: c.status === "expired" ? "#dc2626" : "#eab308", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
+                    <div style={{ color: 'var(--text)', fontWeight: 600, fontSize: 14 }}>{c.equipment_name}</div>
+                    <span style={{ background: c.status === "expired" ? "var(--danger)" : "var(--warn)", color: "#fff", padding: "2px 8px", borderRadius: 4, fontSize: 11, fontWeight: 600 }}>
                       {c.status === "expired" ? "已过期" : "即将到期"}
                     </span>
                   </div>
-                  <div style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>编码: {c.equipment_code}</div>
-                  <div style={{ color: "#64748b", fontSize: 12 }}>类型: {c.equipment_type}</div>
-                  <div style={{ color: c.status === "expired" ? "#dc2626" : "#fbbf24", fontSize: 13, marginTop: 8, fontWeight: 600 }}>
+                  <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>编码: {c.equipment_code}</div>
+                  <div style={{ color: 'var(--muted)', fontSize: 12 }}>类型: {c.equipment_type}</div>
+                  <div style={{ color: c.status === "expired" ? "var(--danger)" : "var(--warn)", fontSize: 13, marginTop: 8, fontWeight: 600 }}>
                     到期: {c.next_calibration_date}
                   </div>
                 </div>

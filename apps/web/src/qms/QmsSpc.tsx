@@ -3,10 +3,10 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { qmsApi, QmsSpcParam, QmsSpcReading, QmsSpcCpk, QmsSpcAlert } from "../api/qms";
 
-const catColor: Record<string,string> = { SPI: "#fbbf24", AOI: "#fb923c", PLACEMENT: "#38bdf8", REFLOW: "#f87171", WAVE: "#a78bfa", FAI: "#34d399" };
+const catColor: Record<string,string> = { SPI: "var(--warn)", AOI: "var(--warn)", PLACEMENT: "var(--info)", REFLOW: "var(--danger)", WAVE: "var(--info)", FAI: "var(--ok)" };
 
 function ControlChart({ readings, param }: { readings: QmsSpcReading[]; param: QmsSpcParam }) {
-  if (!readings.length) return <div style={{ color: "#64748b", padding: 20, textAlign: "center" }}>No data</div>;
+  if (!readings.length) return <div style={{ color: 'var(--muted)', padding: 20, textAlign: "center" }}>No data</div>;
   const vals = readings.map(r => r.measured_value).reverse();
   const w = 600, h = 200, pad = 40;
   const allVals = [...vals];
@@ -27,19 +27,19 @@ function ControlChart({ readings, param }: { readings: QmsSpcReading[]; param: Q
   );
   const points = vals.map((v, i) => {
     const ooc = readings[readings.length - 1 - i]?.is_ooc;
-    return <circle key={i} cx={x(i)} cy={y(v)} r={ooc ? 5 : 3} fill={ooc ? "#f87171" : "#38bdf8"} stroke={ooc ? "#f87171" : "none"} strokeWidth={ooc ? 2 : 0} />;
+    return <circle key={i} cx={x(i)} cy={y(v)} r={ooc ? 5 : 3} fill={ooc ? "var(--danger)" : "var(--info)"} stroke={ooc ? "var(--danger)" : "none"} strokeWidth={ooc ? 2 : 0} />;
   });
   const path = vals.map((v, i) => `${i === 0 ? "M" : "L"}${x(i)},${y(v)}`).join(" ");
   return (
-    <svg width={w} height={h} style={{ background: "#0f172a", borderRadius: 8, border: "1px solid #1e293b" }}>
-      {param.ucl != null && line(param.ucl, "#f87171", "UCL")}
-      {param.lcl != null && line(param.lcl, "#f87171", "LCL")}
-      {param.usl != null && line(param.usl, "#fb923c", "USL", "8,4")}
-      {param.lsl != null && line(param.lsl, "#fb923c", "LSL", "8,4")}
-      {param.target_value != null && line(param.target_value, "#34d399", "Target", "2,4")}
-      <path d={path} fill="none" stroke="#38bdf8" strokeWidth={1.5} opacity={0.6} />
+    <svg width={w} height={h} style={{ background: 'var(--surface-2)', borderRadius: 8, border: "1px solid var(--line)" }}>
+      {param.ucl != null && line(param.ucl, "var(--danger)", "UCL")}
+      {param.lcl != null && line(param.lcl, "var(--danger)", "LCL")}
+      {param.usl != null && line(param.usl, "var(--warn)", "USL", "8,4")}
+      {param.lsl != null && line(param.lsl, "var(--warn)", "LSL", "8,4")}
+      {param.target_value != null && line(param.target_value, "var(--ok)", "Target", "2,4")}
+      <path d={path} fill="none" stroke="var(--info)" strokeWidth={1.5} opacity={0.6} />
       {points}
-      <text x={pad} y={14} fill="#94a3b8" fontSize={11}>{param.param_name} ({param.unit})</text>
+      <text x={pad} y={14} fill="var(--muted)" fontSize={11}>{param.param_name} ({param.unit})</text>
     </svg>
   );
 }
@@ -90,27 +90,27 @@ export function QmsSpc({ locale }: { locale: string }) {
       .catch(e => alert(e.message));
   };
 
-  const cpkColor = (v: number | null) => v == null ? "#64748b" : v >= 1.33 ? "#34d399" : v >= 1.0 ? "#fbbf24" : "#f87171";
+  const cpkColor = (v: number | null) => v == null ? "var(--muted)" : v >= 1.33 ? "var(--ok)" : v >= 1.0 ? "var(--warn)" : "var(--danger)";
 
   return (
-    <div style={{ padding: 24 }}>
-      <h2 style={{ color: "#e2e8f0", fontSize: 20, marginBottom: 16 }}>{t("qms.spcTitle")}</h2>
+    <div className="surface-panel" style={{ padding: 16 }} role="region" aria-label={t("qms.spcTitle")} data-testid="qms.spc">
+      <h2 style={{ color: 'var(--text)', fontSize: 20, marginBottom: 16 }}>{t("qms.spcTitle")}</h2>
 
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-        <button onClick={() => setTab("chart")} style={{ padding: "6px 16px", background: tab === "chart" ? "#2563eb" : "#1e293b", color: tab === "chart" ? "#fff" : "#94a3b8", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.controlChart")}</button>
-        <button onClick={() => setTab("alerts")} style={{ padding: "6px 16px", background: tab === "alerts" ? "#dc2626" : "#1e293b", color: tab === "alerts" ? "#fff" : "#94a3b8", border: "none", borderRadius: 6, cursor: "pointer", position: "relative" }}>
-          {t("qms.spcAlerts")} {alerts.length > 0 && <span style={{ background: "#f87171", color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 11, marginLeft: 4 }}>{alerts.length}</span>}
+        <button onClick={() => setTab("chart")} style={{ padding: "6px 16px", background: tab === "chart" ? "var(--info)" : "var(--panel)", color: tab === "chart" ? "#fff" : "var(--muted)", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.controlChart")}</button>
+        <button onClick={() => setTab("alerts")} style={{ padding: "6px 16px", background: tab === "alerts" ? "var(--danger)" : "var(--panel)", color: tab === "alerts" ? "#fff" : "var(--muted)", border: "none", borderRadius: 6, cursor: "pointer", position: "relative" }}>
+          {t("qms.spcAlerts")} {alerts.length > 0 && <span style={{ background: "var(--danger)", color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 11, marginLeft: 4 }}>{alerts.length}</span>}
         </button>
       </div>
 
       {tab === "chart" && (
         <div style={{ display: "flex", gap: 16 }}>
           <div style={{ width: 200, flexShrink: 0 }}>
-            <div style={{ color: "#94a3b8", fontSize: 12, marginBottom: 8 }}>{t("qms.spcParams")}</div>
-            {loading ? <div style={{ color: "#64748b" }}>...</div> : params.map(p => (
+            <div style={{ color: 'var(--muted)', fontSize: 12, marginBottom: 8 }}>{t("qms.spcParams")}</div>
+            {loading ? <div style={{ color: 'var(--muted)' }}>...</div> : params.map(p => (
               <button key={p.id} onClick={() => setSelParam(p)}
-                style={{ display: "block", width: "100%", padding: "8px 12px", marginBottom: 4, background: selParam?.id === p.id ? "#2563eb22" : "#1e293b", border: selParam?.id === p.id ? "1px solid #2563eb" : "1px solid #334155", borderRadius: 6, color: selParam?.id === p.id ? "#60a5fa" : "#94a3b8", cursor: "pointer", fontSize: 12, textAlign: "left" }}>
-                <span style={{ color: catColor[p.category] ?? "#94a3b8", fontWeight: 600, marginRight: 6 }}>{p.category}</span>
+                style={{ display: "block", width: "100%", padding: "8px 12px", marginBottom: 4, background: selParam?.id === p.id ? "var(--info-bg)" : "var(--panel)", border: selParam?.id === p.id ? "1px solid var(--info)" : "1px solid var(--line)", borderRadius: 6, color: selParam?.id === p.id ? "var(--info)" : "var(--muted)", cursor: "pointer", fontSize: 12, textAlign: "left" }}>
+                <span style={{ color: catColor[p.category] ?? "var(--muted)", fontWeight: 600, marginRight: 6 }}>{p.category}</span>
                 {locale === "zh" ? p.param_name : (p.param_name_en ?? p.param_name)}
               </button>
             ))}
@@ -120,63 +120,63 @@ export function QmsSpc({ locale }: { locale: string }) {
               <>
                 <ControlChart readings={readings} param={selParam} />
                 <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
-                  <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
-                    <div style={{ color: "#94a3b8", fontSize: 11 }}>CPK</div>
+                  <div style={{ background: 'var(--panel)', borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
+                    <div style={{ color: 'var(--muted)', fontSize: 11 }}>CPK</div>
                     <div style={{ color: cpkColor(cpk?.cpk ?? null), fontSize: 24, fontWeight: 700 }}>{cpk?.cpk ?? "-"}</div>
                   </div>
-                  <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
-                    <div style={{ color: "#94a3b8", fontSize: 11 }}>CP</div>
+                  <div style={{ background: 'var(--panel)', borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
+                    <div style={{ color: 'var(--muted)', fontSize: 11 }}>CP</div>
                     <div style={{ color: cpkColor(cpk?.cp ?? null), fontSize: 24, fontWeight: 700 }}>{cpk?.cp ?? "-"}</div>
                   </div>
-                  <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
-                    <div style={{ color: "#94a3b8", fontSize: 11 }}>Mean</div>
-                    <div style={{ color: "#e2e8f0", fontSize: 24, fontWeight: 700 }}>{cpk?.mean ?? "-"}</div>
+                  <div style={{ background: 'var(--panel)', borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
+                    <div style={{ color: 'var(--muted)', fontSize: 11 }}>Mean</div>
+                    <div style={{ color: 'var(--text)', fontSize: 24, fontWeight: 700 }}>{cpk?.mean ?? "-"}</div>
                   </div>
-                  <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
-                    <div style={{ color: "#94a3b8", fontSize: 11 }}>Std</div>
-                    <div style={{ color: "#e2e8f0", fontSize: 24, fontWeight: 700 }}>{cpk?.std ?? "-"}</div>
+                  <div style={{ background: 'var(--panel)', borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
+                    <div style={{ color: 'var(--muted)', fontSize: 11 }}>Std</div>
+                    <div style={{ color: 'var(--text)', fontSize: 24, fontWeight: 700 }}>{cpk?.std ?? "-"}</div>
                   </div>
-                  <div style={{ background: "#1e293b", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
-                    <div style={{ color: "#94a3b8", fontSize: 11 }}>N</div>
-                    <div style={{ color: "#e2e8f0", fontSize: 24, fontWeight: 700 }}>{cpk?.count ?? 0}</div>
+                  <div style={{ background: 'var(--panel)', borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center" }}>
+                    <div style={{ color: 'var(--muted)', fontSize: 11 }}>N</div>
+                    <div style={{ color: 'var(--text)', fontSize: 24, fontWeight: 700 }}>{cpk?.count ?? 0}</div>
                   </div>
                   {cpk?.trend && (
-                    <div style={{ background: "#fbbf2422", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center", border: "1px solid #fbbf24" }}>
-                      <div style={{ color: "#fbbf24", fontSize: 11 }}>Trend</div>
-                      <div style={{ color: "#fbbf24", fontSize: 16, fontWeight: 700 }}>{cpk.trend}</div>
+                    <div style={{ background: "var(--warn-bg)", borderRadius: 10, padding: "14px 20px", minWidth: 120, textAlign: "center", border: "1px solid var(--warn)" }}>
+                      <div style={{ color: "var(--warn)", fontSize: 11 }}>Trend</div>
+                      <div style={{ color: "var(--warn)", fontSize: 16, fontWeight: 700 }}>{cpk.trend}</div>
                     </div>
                   )}
                 </div>
-                <div style={{ marginTop: 12, color: "#64748b", fontSize: 12 }}>
+                <div style={{ marginTop: 12, color: 'var(--muted)', fontSize: 12 }}>
                   USL: {selParam.usl ?? "-"} | LSL: {selParam.lsl ?? "-"} | UCL: {selParam.ucl ?? "-"} | LCL: {selParam.lcl ?? "-"} | Target: {selParam.target_value ?? "-"} {selParam.unit}
                 </div>
               </>
-            ) : <div style={{ color: "#64748b", padding: 40 }}>{t("qms.selectParam")}</div>}
+            ) : <div style={{ color: 'var(--muted)', padding: 40 }}>{t("qms.selectParam")}</div>}
           </div>
         </div>
       )}
 
       {tab === "alerts" && (
         <div>
-          {alerts.length === 0 ? <div style={{ color: "#34d399", padding: 24 }}>{t("qms.noAlerts")}</div> : (
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr style={{ borderBottom: "1px solid #334155" }}>
+          {alerts.length === 0 ? <div style={{ color: "var(--ok)", padding: 24 }}>{t("qms.noAlerts")}</div> : (
+            <table className="data-table">
+              <thead><tr style={{ borderBottom: '1px solid var(--line)' }}>
                 {[t("qms.param"), t("qms.alertType"), t("qms.severity"), t("qms.message"), t("qms.time"), t("qms.action")].map(h => (
-                  <th key={h} style={{ padding: "10px 12px", color: "#94a3b8", fontSize: 12, textAlign: "left" }}>{h}</th>
+                  <th key={h} style={{ padding: "10px 12px", color: 'var(--muted)', fontSize: 12, textAlign: "left" }}>{h}</th>
                 ))}
               </tr></thead>
               <tbody>
                 {alerts.map(a => (
-                  <tr key={a.id} style={{ borderBottom: "1px solid #1e293b" }}>
-                    <td style={{ padding: "10px 12px", color: "#38bdf8" }}>{a.param_code ?? a.param_id}</td>
-                    <td style={{ padding: "10px 12px", color: a.alert_type === "OOC" ? "#f87171" : "#fbbf24", fontWeight: 600, fontSize: 12 }}>{a.alert_type}</td>
+                  <tr key={a.id} style={{ borderBottom: "1px solid var(--line)" }}>
+                    <td style={{ padding: "10px 12px", color: "var(--info)" }}>{a.param_code ?? a.param_id}</td>
+                    <td style={{ padding: "10px 12px", color: a.alert_type === "OOC" ? "var(--danger)" : "var(--warn)", fontWeight: 600, fontSize: 12 }}>{a.alert_type}</td>
                     <td style={{ padding: "10px 12px" }}>
-                      <span style={{ color: a.severity === "CRITICAL" ? "#f87171" : "#fbbf24", fontSize: 12 }}>{a.severity}</span>
+                      <span style={{ color: a.severity === "CRITICAL" ? "var(--danger)" : "var(--warn)", fontSize: 12 }}>{a.severity}</span>
                     </td>
-                    <td style={{ padding: "10px 12px", color: "#94a3b8", fontSize: 12, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.message}</td>
-                    <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12 }}>{new Date(a.created_at).toLocaleString()}</td>
+                    <td style={{ padding: "10px 12px", color: 'var(--muted)', fontSize: 12, maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.message}</td>
+                    <td style={{ padding: "10px 12px", color: 'var(--muted)', fontSize: 12 }}>{new Date(a.created_at).toLocaleString()}</td>
                     <td style={{ padding: "10px 12px" }}>
-                      <button onClick={() => ackAlert(a.id)} style={{ padding: "4px 12px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>{t("qms.acknowledge")}</button>
+                      <button onClick={() => ackAlert(a.id)} style={{ padding: "4px 12px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>{t("qms.acknowledge")}</button>
                     </td>
                   </tr>
                 ))}

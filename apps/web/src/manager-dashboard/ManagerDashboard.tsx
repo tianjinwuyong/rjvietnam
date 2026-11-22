@@ -28,10 +28,13 @@ type HealthData = Record<string, HealthItem>;
 
 type AmbassadorTab = "overview" | "training" | "dailyPerformance" | "safety" | "effectiveness" | "efficiency" | "swiftness" | "collaboration";
 
-const STATUS_CONFIG: Record<string, { cls: string; icon: string }> = {
-  online:  { cls: "badge good",  icon: "●" },
-  busy:    { cls: "badge warn",  icon: "◐" },
-  offline: { cls: "badge error", icon: "○" },
+// Status pills use the shared badge tones (warning = busy/at-risk, danger =
+// offline/blocked) and always carry the translated status text in the DOM —
+// never color or ●/○/◐ glyphs alone (brief defects #4/#5, ergonomics).
+const STATUS_CONFIG: Record<string, string> = {
+  online: "badge-ok",
+  busy: "badge-warning",
+  offline: "badge-danger",
 };
 
 const MANAGER_STATUS_KEYS: Record<string, string> = {
@@ -100,7 +103,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
     try {
       type MsgRes = { data: { msg: string; reply?: { from: string; text: string; status: string } } };
       const r = await apiClient.post<MsgRes>("/managers/message", { from, to, message: text });
-      setMsgResult(r.data?.msg ?? "✅ " + t("sent.ok", locale));
+      setMsgResult(r.data?.msg ?? t("sent.ok", locale));
       const log: ChatEntry[] = [{ dir: "out", from: mgrName(from), to: mgrName(to), text, time: ts }];
       if (r.data?.reply?.text) {
         log.push({ dir: "in", from: mgrName(r.data.reply.from), to: mgrName(from), text: r.data.reply.text, time: new Date().toLocaleTimeString() });
@@ -108,16 +111,19 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
       setMessageLog(prev => [...log, ...prev]);
       (e.target as HTMLFormElement).reset();
       setSelectedManager("");
-    } catch { setMsgResult("❌ " + t("send.fail", locale)); }
+    } catch { setMsgResult(t("send.fail", locale)); }
     setSending(false);
     setTimeout(() => setMsgResult(""), 3000);
   };
 
-  const statusIcon = (s: string) => STATUS_CONFIG[s]?.icon ?? "○";
-  const statusBadge = (s: string) => STATUS_CONFIG[s]?.cls ?? "badge error";
+  const statusBadge = (s: string) => STATUS_CONFIG[s] ?? "badge-danger";
   const statusLabel = (s: string) => MANAGER_STATUS_KEYS[s] ? t(MANAGER_STATUS_KEYS[s], locale) : s;
-  const priorityColor = (p: string) => p === "high" ? "#e53935" : p === "medium" ? "#fb8c00" : "#43a047";
-  const hpBadge = (s: string) => s === "ok" ? "✅" : s === "warn" ? "⚠️" : "❌";
+  const priorityColor = (p: string) => p === "high" ? "var(--danger)" : p === "medium" ? "var(--warn)" : "var(--ok)";
+  const hpBadge = (s: string) => s === "ok"
+    ? <span className="badge badge-ok">{t("status.ok", locale)}</span>
+    : s === "warn"
+      ? <span className="badge badge-warning">{t("status.warning", locale)}</span>
+      : <span className="badge badge-danger">{t("status.fail", locale)}</span>;
 
   const onlineCount = managers.filter(m => m.statusCls === "online").length;
   const busyCount = managers.filter(m => m.statusCls === "busy").length;
@@ -306,8 +312,8 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
                     ({locale === "zh-CN" ? m.deptZh : m.dept})
                   </span>
                 </div>
-                <span className={statusBadge(m.statusCls)}>
-                  {statusIcon(m.statusCls)} {statusLabel(m.statusCls)}
+                <span className={`badge ${statusBadge(m.statusCls)}`} title={statusLabel(m.statusCls)}>
+                  {statusLabel(m.statusCls)}
                 </span>
               </div>
               <div style={{ fontSize: 12, color: "#555" }}>
@@ -377,7 +383,7 @@ export function ManagerDashboard({ locale }: { locale: Locale }) {
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <button type="submit" disabled={sending}
                 style={{ padding: "8px 20px", background: "#1a73e8", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>
-                {sending ? t("sending.title", locale) : "📤 " + t("send.button", locale)}
+                {sending ? t("sending.title", locale) : t("send.button", locale)}
               </button>
               {msgResult && <span style={{ fontSize: 12, color: "#388e3c" }}>{msgResult}</span>}
             </div>

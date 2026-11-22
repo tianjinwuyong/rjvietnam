@@ -134,7 +134,7 @@ import { SmtMaterialLoadingPage } from "./mes/SmtMaterialLoadingPage";
 import { OqcAqlConsole } from "./qms/OqcAqlConsole";
 import { AiPatrolChat } from "./ai/AiPatrolChat";
 import { qualityPatrol, maintenancePatrol, mesPatrol, hrPatrol } from "./ai/patrol";
-import { Projects } from "./projects/Projects";
+
 import { ProjectMgmt } from "./project-mgmt";
 import { AgentsModule } from "./agents/AgentsModule";
 import { GlobalVirtualEmployeeGuide } from "./agents/GlobalVirtualEmployeeGuide";
@@ -448,6 +448,11 @@ const FULL_MODULES: ModuleKey[] = [
   "procurement", "einvoice", "projects", "ai", "projectMgmt", "agents", "employee",
   "managerDashboard", "workflow", "oa", "andonBoard",
   "pdaUiDesigner", "managementUiDesigner", "safetyManager", "pdaCommMonitor",
+  // Ambassador oversight pages: the sidebar group exists and the components
+  // are live, so they must be in the grant list — previously no role listed
+  // them and the whole group rendered empty for every user.
+  "ambassadorDashboard", "effectivenessAmbassador", "efficiencyAmbassador",
+  "swiftnessAmbassador", "collaborationAmbassador",
   // Hash-only surfaces (mobile check-in, manual-line 3D): granted to full-workspace
   // roles for deep links; intentionally absent from the desktop sidebar.
   "mobile", "manualLine3d",
@@ -660,8 +665,8 @@ function Shell({
       </aside>
       )}
 
-      <main className="workspace">
-        <header className="topbar">
+      <main className="workspace" aria-label={t(activeModule.label, locale)} data-testid="app.main">
+        <header className="topbar" data-testid="app.topbar">
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
               type="button"
@@ -766,7 +771,7 @@ function Dashboard({ locale, setActive }: { locale: Locale; setActive: (module: 
         <SurfacePanel>
           <SectionHeader title={t("dashboard.workOrders", locale)} subtitle={t("page.pmc", locale)} />
           <TableShell>
-            <table>
+            <table data-testid="dashboard.wo-table" aria-label={t("dashboard.workOrders", locale)}>
               <thead>
                 <tr>
                   <th>{t("common.workOrder", locale)}</th>
@@ -778,7 +783,13 @@ function Dashboard({ locale, setActive }: { locale: Locale; setActive: (module: 
                 </tr>
               </thead>
               <tbody>
-                {workOrders.map((order) => (
+                {workOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={6}>
+                      <div className="empty-state" data-testid="dashboard.wo-table-empty"><strong>{t("common.noData", locale)}</strong></div>
+                    </td>
+                  </tr>
+                ) : workOrders.map((order) => (
                   <tr key={order.id}>
                     <td>
                       <strong>{order.code}</strong>
@@ -838,12 +849,12 @@ function Dashboard({ locale, setActive }: { locale: Locale; setActive: (module: 
       <div className="content-grid two">
         <SurfacePanel>
           <SectionHeader title={t("section.live", locale)} subtitle={t("page.dashboard", locale)} />
-          <div className="status-stack">
+          <div className="status-stack" data-testid="dashboard.line-status">
             {Object.entries(lineByStatus).map(([status, cnt]) => (
               <div className="status-row" key={status}>
-                <span>{status}</span>
+                <span>{t(lineStatusLabelMap[status as keyof typeof lineStatusLabelMap] ?? "status.idle", locale)}</span>
                 <strong>{cnt}</strong>
-                <Badge tone={toneForStatus(status)}>{status}</Badge>
+                <Badge tone={toneForStatus(status)} title={t("ui.statusIndicator", locale)}>{t(lineStatusLabelMap[status as keyof typeof lineStatusLabelMap] ?? "status.idle", locale)}</Badge>
               </div>
             ))}
           </div>
@@ -938,12 +949,14 @@ function Pmc({ locale, permissions }: { locale: Locale; permissions: string[] })
     <div className="screen-stack">
       <SurfacePanel>
         <SectionHeader title={t("nav.pmc", locale)} subtitle={t("page.pmc", locale)} />
-        <div className="toolbar">
+        <div className="toolbar" data-testid="pmc.tabs">
           {visibleTabs.map((tabKey) => (
             <button
               key={tabKey}
               type="button"
               className={activeTab === tabKey ? "active" : ""}
+              data-testid={`pmc.tab.${tabKey}`}
+              title={t(pmcTabTranslationKeys[tabKey], locale)}
               onClick={() => setActiveTab(tabKey)}
             >
               {t(pmcTabTranslationKeys[tabKey], locale)}
@@ -1000,6 +1013,8 @@ function Hr({ locale }: { locale: Locale }) {
               key={tabKey}
               type="button"
               className={activeTab === tabKey ? "active" : ""}
+              data-testid={`hr.tab.${tabKey}`}
+              title={t(hrTabTranslationKeys[tabKey], locale)}
               onClick={() => setActiveTab(tabKey)}
             >
               {t(hrTabTranslationKeys[tabKey], locale)}
@@ -1067,6 +1082,8 @@ function Finance({ locale, permissions }: { locale: Locale; permissions: string[
               key={tabKey}
               type="button"
               className={activeTab === tabKey ? "active" : ""}
+              data-testid={`finance.tab.${tabKey}`}
+              title={t(financeTabTranslationKeys[tabKey], locale)}
               onClick={() => setActiveTab(tabKey)}
             >
               {t(financeTabTranslationKeys[tabKey], locale)}
@@ -1130,7 +1147,7 @@ function Procurement({ locale, permissions }: { locale: Locale; permissions: str
         <SectionHeader title={t("nav.procurement", locale)} subtitle={t("page.procurement", locale)} />
         <div className="toolbar">
           {procurementTabKeys.map(tabKey => (
-            <button key={tabKey} type="button" className={activeTab === tabKey ? "active" : ""} onClick={() => { setActiveTab(tabKey); setSelectedContractId(null); }}>
+            <button key={tabKey} type="button" className={activeTab === tabKey ? "active" : ""} data-testid={`procurement.tab.${tabKey}`} title={procurementTabLabel(tabKey)} onClick={() => { setActiveTab(tabKey); setSelectedContractId(null); }}>
               {procurementTabLabel(tabKey)}
             </button>
           ))}
@@ -1175,7 +1192,7 @@ function EInvoice({ locale, permissions }: { locale: Locale; permissions: string
         <SectionHeader title={t("nav.einvoice", locale)} subtitle={t("page.einvoice", locale)} />
         <div className="toolbar">
           {einvoiceTabKeys.map(tabKey => (
-            <button key={tabKey} type="button" className={activeTab === tabKey ? "active" : ""} onClick={() => { setActiveTab(tabKey); setSelectedInvoiceId(null); }}>
+            <button key={tabKey} type="button" className={activeTab === tabKey ? "active" : ""} data-testid={`einvoice.tab.${tabKey}`} title={t(einvoiceTabTranslationKeys[tabKey], locale)} onClick={() => { setActiveTab(tabKey); setSelectedInvoiceId(null); }}>
               {t(einvoiceTabTranslationKeys[tabKey], locale)}
             </button>
           ))}
@@ -1259,6 +1276,8 @@ function Sales({ locale, permissions }: { locale: Locale; permissions: string[] 
               key={tabKey}
               type="button"
               className={activeTab === tabKey ? "active" : ""}
+              data-testid={`sales.tab.${tabKey}`}
+              title={t(salesTabTranslationKeys[tabKey], locale)}
               onClick={() => setActiveTab(tabKey)}
             >
               {t(salesTabTranslationKeys[tabKey], locale)}
@@ -1669,6 +1688,8 @@ function Service({ locale, permissions }: { locale: Locale; permissions: string[
               key={tabKey}
               type="button"
               className={activeTab === tabKey ? "active" : ""}
+              data-testid={`service.tab.${tabKey}`}
+              title={t(serviceTabTranslationKeys[tabKey], locale)}
               onClick={() => setActiveTab(tabKey)}
             >
               {t(serviceTabTranslationKeys[tabKey], locale)}
@@ -1833,6 +1854,8 @@ function Maintenance({ locale }: { locale: Locale }) {
               key={tabKey}
               type="button"
               className={activeTab === tabKey ? "active" : ""}
+              data-testid={`maintenance.tab.${tabKey}`}
+              title={t(maintenanceTabTranslationKeys[tabKey], locale)}
               onClick={() => setActiveTab(tabKey)}
             >
               {t(maintenanceTabTranslationKeys[tabKey], locale)}
@@ -2014,7 +2037,7 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
         <>
           <SurfacePanel>
             <SectionHeader title={t("nav.wms", locale)} subtitle={t("page.wms", locale)} />
-            <div className="toolbar" style={{ flexWrap: "wrap", overflowX: "visible" }}>
+            <div className="toolbar" style={{ flexWrap: "wrap", overflowX: "visible" }} data-testid="wms.groups">
               <button
                 className="action-button"
                 type="button"
@@ -2029,6 +2052,7 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
                   className="action-button"
                   key={group.key}
                   type="button"
+                  data-testid={`wms.group.${group.key}`}
                   title={t(group.translationKey as TranslationKey, locale)}
                   style={{ background: activeGroup.key === group.key ? "var(--info)" : "var(--nav)" }}
                   onClick={() => { if (!group.tabs.includes(activeTab)) navigateWms(group.tabs[0]); }}
@@ -2040,12 +2064,19 @@ function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: st
           </SurfacePanel>
 
           <SurfacePanel>
-            <div className="toolbar" style={{ flexWrap: "wrap", overflowX: "visible" }}>
+            <div className="toolbar" style={{ flexWrap: "wrap", overflowX: "visible" }} data-testid="wms.tabs">
               {activeGroup.tabs.map((subKey) => (
                 <button
                   key={subKey}
                   type="button"
                   className={activeTab === subKey ? "active" : ""}
+                  data-testid={`wms.tab.${subKey}`}
+                  // 评审 N4:仓库组 13 个 tab 平铺时,工程/管理类(批次序列号、库位精细化、
+                  // FIFO 模拟、履历)与日常作业同权重。tooltip 里加"管理/工程"前缀标注,
+                  // 不增加点击深度、不改路由。
+                  title={(activeGroup.key === "warehouse" && WMS_ENGINEERING_TABS[subKey]
+                    ? `${t("wms.engineeringTabHint" as TranslationKey, locale)} · ` : "")
+                    + t(wmsTabTranslationKeys[subKey] as TranslationKey, locale)}
                   onClick={() => navigateWms(subKey)}
                   style={activeGroup.key === "warehouse" && WMS_ENGINEERING_TABS[subKey] ? { opacity: 0.78 } : undefined}
                 >
@@ -2240,6 +2271,7 @@ function Mes({ locale }: { locale: Locale }) {
               key={theme.key}
               type="button"
               className={`mes-theme-tab ${activeTheme === theme.key ? "active" : ""}`}
+              data-testid={`mes.theme.${theme.key}`}
               title={t(`${theme.labelKey}.tip` as TranslationKey, locale)}
               onClick={() => openMesTab(mesGroups.find((group) => group.theme === theme.key)!.tabs[0])}
             >
@@ -2252,6 +2284,7 @@ function Mes({ locale }: { locale: Locale }) {
               key={group.key}
               type="button"
               className={`mes-group-tab ${activeGroup.key === group.key ? "active" : ""}`}
+              data-testid={`mes.group.${group.key}`}
               title={t(`${group.labelKey}.tip` as TranslationKey, locale)}
               onClick={() => openMesTab(group.tabs[0])}
             >
@@ -2268,6 +2301,7 @@ function Mes({ locale }: { locale: Locale }) {
               key={tabKey}
               type="button"
               className={`${activeTab === tabKey ? "active" : ""} ${activeScore >= 4 ? "mes-page-primary" : "mes-page-support"}`}
+              data-testid={`mes.tab.${tabKey}`}
               title={`${t("mes.navigation.openPage", locale)}：${t(mesTabTranslationKeys[tabKey] as TranslationKey, locale)}。${t(contribution.rationaleKey, locale)}`}
               onClick={() => openMesTab(tabKey)}
             >
@@ -2484,7 +2518,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.dashboard" style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("dashboard")}
             >
               {t("quality.dashboard", locale)}
@@ -2492,7 +2526,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.aoi" style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("aoi")}
             >
               {t("aoi.title", locale)}
@@ -2516,7 +2550,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.dashboard" style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("dashboard")}
             >
               {t("quality.dashboard", locale)}
@@ -2524,7 +2558,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.aoi" style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("aoi")}
             >
               {t("aoi.title", locale)}
@@ -2532,7 +2566,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("fct") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.fct" style={{ background: isActiveTab("fct") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("fct")}
             >
               {t("fct.title", locale)}
@@ -2540,7 +2574,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("autoLine") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.autoLine" style={{ background: isActiveTab("autoLine") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("autoLine")}
             >
               {t("quality.autoLine", locale)}
@@ -2564,7 +2598,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.dashboard" style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("dashboard")}
             >
               {t("quality.dashboard", locale)}
@@ -2572,7 +2606,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.aoi" style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("aoi")}
             >
               {t("aoi.title", locale)}
@@ -2580,7 +2614,7 @@ function Quality({ locale }: { locale: Locale }) {
             <button
               type="button"
               className="action-button"
-              style={{ background: isActiveTab("fct") ? "var(--info)" : "var(--nav)" }}
+              data-testid="quality.tab.fct" style={{ background: isActiveTab("fct") ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab("fct")}
             >
               {t("fct.title", locale)}
@@ -2611,7 +2645,7 @@ function Quality({ locale }: { locale: Locale }) {
           <button
             type="button"
             className="action-button"
-            style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
+            data-testid="quality.tab.dashboard" style={{ background: isActiveTab("dashboard") ? "var(--info)" : "var(--nav)" }}
             onClick={() => setActiveTab("dashboard")}
           >
             {t("quality.dashboard", locale)}
@@ -2619,7 +2653,7 @@ function Quality({ locale }: { locale: Locale }) {
           <button
             type="button"
             className="action-button"
-            style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
+            data-testid="quality.tab.aoi" style={{ background: isActiveTab("aoi") ? "var(--info)" : "var(--nav)" }}
             onClick={() => setActiveTab("aoi")}
           >
             {t("aoi.title", locale)}
@@ -2627,7 +2661,7 @@ function Quality({ locale }: { locale: Locale }) {
           <button
             type="button"
             className="action-button"
-            style={{ background: isActiveTab("fct") ? "var(--info)" : "var(--nav)" }}
+            data-testid="quality.tab.fct" style={{ background: isActiveTab("fct") ? "var(--info)" : "var(--nav)" }}
             onClick={() => setActiveTab("fct")}
           >
             {t("fct.title", locale)}
@@ -2804,11 +2838,11 @@ function Admin({ locale }: { locale: Locale }) {
           <SectionHeader title={t("admin.lineManagement.title", locale)} subtitle={t("admin.lineManagement.subtitle", locale)} />
           <div className="toolbar">
             <button type="button" className="active">{t("admin.lineManagement.list", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
-            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.dataSources" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" data-testid="admin.tab.integrationHub" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
         <AdminLineManagement locale={locale} />
@@ -2822,13 +2856,13 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title="用户授权管理" subtitle="分配系统角色并保留审计记录" />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
             <button type="button" className="active">用户授权</button>
-            <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
-            <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.pdaAppAssignment" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+            <button type="button" data-testid="admin.tab.pdaCatalog" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
           </div>
         </SurfacePanel>
         <UserAuthorizationManager />
@@ -2843,13 +2877,13 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title="PDA用户权限" subtitle="为用户分配PDA应用菜单 — 蒙营和莫立斌可操作" />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.authorization" onClick={() => setAdminTab("authorization")}>用户授权</button>
             <button type="button" className="active">PDA用户权限</button>
-            <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.pdaCatalog" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
           </div>
         </SurfacePanel>
         <UserPdaAppAssignment />
@@ -2863,13 +2897,13 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title="PDA应用目录" subtitle="管理PDA应用角色定义 — 添加、编辑、启用/停用" />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
-            <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.authorization" onClick={() => setAdminTab("authorization")}>用户授权</button>
+            <button type="button" data-testid="admin.tab.pdaAppAssignment" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
             <button type="button" className="active">PDA应用目录</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
           </div>
         </SurfacePanel>
         <PdaAppCatalogManager />
@@ -2883,10 +2917,10 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title={t("admin.services.title", locale)} subtitle={t("admin.services.subtitle", locale)} />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
             <button type="button" className="active">{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
           </div>
         </SurfacePanel>
         <SystemMonitor locale={locale} />
@@ -2900,12 +2934,12 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title={t("admin.databases.title", locale)} subtitle={t("admin.databases.subtitle", locale)} />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
             <button type="button" className="active">{t("admin.databases.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
-            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
+            <button type="button" data-testid="admin.tab.dataSources" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" data-testid="admin.tab.integrationHub" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
         <StationDatabaseManagement locale={locale} />
@@ -2919,12 +2953,12 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title={locale === "zh-CN" ? "外部数据源" : "External data sources"} subtitle={locale === "zh-CN" ? "登记外部数据库并把表同步到本库暂存 schema" : "Register external databases and stage their tables locally"} />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
             <button type="button" className="active">{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
-            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
+            <button type="button" data-testid="admin.tab.integrationHub" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
         <AdminDataSources locale={locale} />
@@ -2938,11 +2972,11 @@ function Admin({ locale }: { locale: Locale }) {
         <SurfacePanel>
           <SectionHeader title={locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"} subtitle={locale === "zh-CN" ? "被吸收应用统一登记与健康总览（嫁接标准 §13）" : locale === "vi-VN" ? "Đăng ký ứng dụng hấp thụ và tổng quan sức khỏe" : "Registry and health of absorbed apps (grafting standard §13)"} />
           <div className="toolbar">
-            <button type="button" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
-            <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" data-testid="admin.tab.overview" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
+            <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+            <button type="button" data-testid="admin.tab.dataSources" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
             <button type="button" className="active">{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
           </div>
         </SurfacePanel>
@@ -2957,14 +2991,14 @@ function Admin({ locale }: { locale: Locale }) {
         <SectionHeader title={t("nav.admin", locale)} subtitle={t("page.admin", locale)} />
         <div className="toolbar">
           <button type="button" className="active" onClick={() => setAdminTab("overview")}>{t("admin.roles", locale)}</button>
-          <button type="button" onClick={() => setAdminTab("authorization")}>用户授权</button>
-          <button type="button" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
-          <button type="button" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
-          <button type="button" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
-          <button type="button" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
-            <button type="button" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
-          <button type="button" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
-          <button type="button" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
+          <button type="button" data-testid="admin.tab.authorization" onClick={() => setAdminTab("authorization")}>用户授权</button>
+          <button type="button" data-testid="admin.tab.pdaAppAssignment" onClick={() => setAdminTab("pdaAppAssignment")}>PDA用户权限</button>
+          <button type="button" data-testid="admin.tab.pdaCatalog" onClick={() => setAdminTab("pdaCatalog")}>PDA应用目录</button>
+          <button type="button" data-testid="admin.tab.lines" onClick={() => setAdminTab("lines")}>{t("admin.lineManagement.title", locale)}</button>
+          <button type="button" data-testid="admin.tab.dataSources" onClick={() => setAdminTab("dataSources")}>{locale === "zh-CN" ? "外部数据源" : "External data sources"}</button>
+            <button type="button" data-testid="admin.tab.integrationHub" onClick={() => setAdminTab("integrationHub")}>{locale === "zh-CN" ? "集成枢纽" : locale === "vi-VN" ? "Trung tâm tích hợp" : "Integration hub"}</button>
+          <button type="button" data-testid="admin.tab.services" onClick={() => setAdminTab("services")}>{t("admin.services.title", locale)}</button>
+          <button type="button" data-testid="admin.tab.databases" onClick={() => setAdminTab("databases")}>{t("admin.databases.title", locale)}</button>
         </div>
       </SurfacePanel>
 
@@ -3052,6 +3086,7 @@ function Bom({ locale }: { locale: Locale }) {
               key={tabKey}
               type="button"
               className="action-button"
+              data-testid={`bom.tab.${tabKey}`}
               title={t(bomTabTranslationKeys[tabKey] as TranslationKey, locale)}
               style={{ background: activeTab === tabKey ? "var(--info)" : "var(--nav)" }}
               onClick={() => setActiveTab(tabKey)}
@@ -3219,7 +3254,9 @@ export function App() {
     sales: <Sales locale={locale} permissions={currentUser.permissions} />,
     service: <Service locale={locale} permissions={currentUser.permissions} />,
     ai: <AiChat locale={locale} />,
-    projects: <Projects locale={locale} />,
+    // App Registry: the real integration_app registry (was a demo store
+    // calling a /api/projects route that never existed in the backend).
+    projects: <AdminIntegrationHub locale={locale} />,
     projectMgmt: <ProjectMgmt locale={locale} />,
     andonBoard: <PmcAndonBoard locale={locale} />,
     agents: <AgentsModule locale={locale} currentUser={currentUser} />,

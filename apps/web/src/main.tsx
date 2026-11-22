@@ -1,8 +1,20 @@
 import React, { Component, Suspense, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
 import { App } from "./App";
 import { Toaster } from "sonner";
+import { i18nextResources } from "./i18n";
 import "./styles.css";
+
+// qms/* and maintenance/IsolatedFactory3D call useTranslation(); without an
+// initialized instance every key rendered as a raw dotted string in the UI.
+void i18n.use(initReactI18next).init({
+  resources: i18nextResources(),
+  lng: "zh-CN",
+  fallbackLng: "zh-CN",
+  interpolation: { escapeValue: false },
+});
 
 class ErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean; errorMessage: string }> {
   constructor(props: { children: ReactNode }) {

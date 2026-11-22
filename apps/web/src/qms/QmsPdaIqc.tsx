@@ -87,10 +87,10 @@ const SAMPLE_SIZES: Record<string, number> = {
 };
 
 function AqlBadge({ status, t }: { status: string; t: (key: string) => string }) {
-  const colors: Record<string, string> = { NORMAL: "#2563eb", REDUCED: "#16a34a", TIGHTENED: "#dc2626" };
+  const colors: Record<string, string> = { NORMAL: "var(--info)", REDUCED: "var(--ok)", TIGHTENED: "var(--danger)" };
   const labelKeys: Record<string, string> = { NORMAL: "qms.pda.aqlNormal", REDUCED: "qms.pda.aqlReduced", TIGHTENED: "qms.pda.aqlTightened" };
   return (
-    <span style={{ background: colors[status] || "#2563eb", color: "#fff", padding: "2px 10px", borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
+    <span style={{ background: colors[status] || "var(--info)", color: "#fff", padding: "2px 10px", borderRadius: 4, fontSize: 12, fontWeight: 600 }}>
       AQL {t(labelKeys[status]) || status}
     </span>
   );
@@ -102,7 +102,7 @@ function StatusBar({ online, queueCount, syncing, t }: { online: boolean; queueC
       position: "sticky", top: 0, zIndex: 50,
       display: "flex", justifyContent: "space-between", alignItems: "center",
       padding: "8px 16px",
-      background: online ? "#16a34a" : "#dc2626",
+      background: online ? "var(--ok)" : "var(--danger)",
       color: "#fff", fontSize: 13, fontWeight: 600,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -111,7 +111,7 @@ function StatusBar({ online, queueCount, syncing, t }: { online: boolean; queueC
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         {queueCount > 0 && (
-          <span style={{ background: "#fbbf24", color: "#000", padding: "1px 8px", borderRadius: 10, fontSize: 12, fontWeight: 700 }}>
+          <span style={{ background: "var(--warn)", color: "#000", padding: "1px 8px", borderRadius: 10, fontSize: 12, fontWeight: 700 }}>
             {queueCount} {t("qms.pda.pendingSync")}
           </span>
         )}
@@ -123,12 +123,12 @@ function StatusBar({ online, queueCount, syncing, t }: { online: boolean; queueC
 
 function ResultBadge({ result, t }: { result: string; t: (key: string) => string }) {
   const m: Record<string, { bg: string; textKey: string }> = {
-    PASS: { bg: "#16a34a", textKey: "qms.pda.passResult" },
-    FAIL: { bg: "#dc2626", textKey: "qms.pda.failResult" },
-    HOLD: { bg: "#f97316", textKey: "qms.pda.holdResult" },
-    CONDITIONAL_PASS: { bg: "#eab308", textKey: "qms.pda.conditionalPass" },
+    PASS: { bg: "var(--ok)", textKey: "qms.pda.passResult" },
+    FAIL: { bg: "var(--danger)", textKey: "qms.pda.failResult" },
+    HOLD: { bg: "var(--warn)", textKey: "qms.pda.holdResult" },
+    CONDITIONAL_PASS: { bg: "var(--warn)", textKey: "qms.pda.conditionalPass" },
   };
-  const s = m[result] || { bg: "#64748b", textKey: result };
+  const s = m[result] || { bg: "var(--muted-bg)", textKey: result };
   return <span style={{ background: s.bg, color: "#fff", padding: "3px 12px", borderRadius: 4, fontSize: 13, fontWeight: 700 }}>{t(s.textKey)}</span>;
 }
 
@@ -403,49 +403,49 @@ export function QmsPdaIqc() {
   // ── Scan View ──────────────────────────────────────────────────────────────
   if (view === "scan") {
     return (
-      <div style={{ background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
+      <div style={{ background: 'var(--surface-2)', minHeight: "100vh", color: 'var(--text)' }}>
         <StatusBar online={online} queueCount={queueCount} syncing={syncing} t={t} />
-        <div style={{ padding: 24 }}>
-          {iqcWaitingNotice && <div role="alert" style={{ background: "#7f1d1d", border: "1px solid #f87171", borderRadius: 10, padding: 14, marginBottom: 18, color: "#fff" }}>
+        <div className="surface-panel" style={{ padding: 16 }} role="region" aria-label={t("qms.pda")} data-testid="qms.pda">
+          {iqcWaitingNotice && <div role="alert" style={{ background: "var(--danger)", border: "1px solid var(--danger)", borderRadius: 10, padding: 14, marginBottom: 18, color: "#fff" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
-              <div><strong>QMS / PDA IQC 待检提示</strong><div style={{ marginTop: 6, fontSize: 13 }}>物料批次 <b>{String(iqcWaitingNotice.lotNo || "-")}</b> 已收料完成，请进行 IQC 检测。</div><div style={{ marginTop: 4, fontSize: 12, color: "#fecaca" }}>来源：{String(iqcWaitingNotice.sourceType || "PO_RECEIPT")} · 数量：{String(iqcWaitingNotice.quantity || 0)} · 状态：IQC_PENDING</div></div>
-              <button onClick={() => setIqcWaitingNotice(null)} style={{ background: "transparent", border: "1px solid #fecaca", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>关闭</button>
+              <div><strong>QMS / PDA IQC 待检提示</strong><div style={{ marginTop: 6, fontSize: 13 }}>物料批次 <b>{String(iqcWaitingNotice.lotNo || "-")}</b> 已收料完成，请进行 IQC 检测。</div><div style={{ marginTop: 4, fontSize: 12, color: "var(--danger-bg)" }}>来源：{String(iqcWaitingNotice.sourceType || "PO_RECEIPT")} · 数量：{String(iqcWaitingNotice.quantity || 0)} · 状态：IQC_PENDING</div></div>
+              <button onClick={() => setIqcWaitingNotice(null)} style={{ background: "transparent", border: "1px solid var(--danger-bg)", color: "#fff", borderRadius: 6, padding: "4px 8px", cursor: "pointer" }}>关闭</button>
             </div>
           </div>}
-          <h2 style={{ color: "#e2e8f0", fontSize: 22, marginTop: 8, marginBottom: 4 }}>{t("qms.pda.scanTitle")}</h2>
-          <p style={{ color: "#64748b", fontSize: 13, marginBottom: 24 }}>{t("qms.pda.scanHint")}</p>
+          <h2 style={{ color: 'var(--text)', fontSize: 22, marginTop: 8, marginBottom: 4 }}>{t("qms.pda.scanTitle")}</h2>
+          <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 24 }}>{t("qms.pda.scanHint")}</p>
 
-          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 10, padding: 14, marginBottom: 18 }}>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 10, padding: 14, marginBottom: 18 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
-              <strong style={{ color: "#fbbf24" }}>IQC 待检队列</strong>
-              <button onClick={() => void loadIqcQueue()} style={{ background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 5, padding: "5px 9px", cursor: "pointer" }}>刷新</button>
+              <strong style={{ color: "var(--warn)" }}>IQC 待检队列</strong>
+              <button onClick={() => void loadIqcQueue()} style={{ background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 5, padding: "5px 9px", cursor: "pointer" }}>刷新</button>
             </div>
-            {pendingIqcLots.length === 0 ? <div style={{ color: "#94a3b8", fontSize: 13 }}>当前没有待检物料</div> : <div style={{ display: "grid", gap: 8 }}>
-              {pendingIqcLots.map(item => <button key={item.id} onClick={() => { setLotInput(item.lot_no); void lookupLot(item.lot_no); }} style={{ textAlign: "left", background: item.lot_no === lotInput ? "#1d4ed8" : "#0f172a", color: "#e2e8f0", border: "1px solid #475569", borderRadius: 7, padding: "9px 10px", cursor: "pointer" }}>
-                <div style={{ fontWeight: 700 }}>{item.lot_no} · {item.material_code}</div><div style={{ color: "#cbd5e1", fontSize: 12, marginTop: 3 }}>数量 {item.received_qty} · 收料时间 {item.received_at ? new Date(item.received_at).toLocaleString() : "-"} · IQC_PENDING</div>
+            {pendingIqcLots.length === 0 ? <div style={{ color: 'var(--muted)', fontSize: 13 }}>当前没有待检物料</div> : <div style={{ display: "grid", gap: 8 }}>
+              {pendingIqcLots.map(item => <button key={item.id} onClick={() => { setLotInput(item.lot_no); void lookupLot(item.lot_no); }} style={{ textAlign: "left", background: item.lot_no === lotInput ? "var(--info)" : "var(--surface-2)", color: 'var(--text)', border: "1px solid var(--line)", borderRadius: 7, padding: "9px 10px", cursor: "pointer" }}>
+                <div style={{ fontWeight: 700 }}>{item.lot_no} · {item.material_code}</div><div style={{ color: 'var(--text-2)', fontSize: 12, marginTop: 3 }}>数量 {item.received_qty} · 收料时间 {item.received_at ? new Date(item.received_at).toLocaleString() : "-"} · IQC_PENDING</div>
               </button>)}
             </div>}
           </div>
 
-          <div style={{ background: "#1e293b", border: "2px dashed #334155", borderRadius: 12, padding: "40px 24px", textAlign: "center", marginBottom: 20 }}>
-            <ScanBarcode size={64} color="#38bdf8" style={{ margin: "0 auto 16px" }} />
-            <div style={{ color: "#94a3b8", fontSize: 14, marginBottom: 16 }}>{t("qms.pda.scanAlign")}</div>
+          <div style={{ background: 'var(--panel)', border: "2px dashed var(--line)", borderRadius: 12, padding: "40px 24px", textAlign: "center", marginBottom: 20 }}>
+            <ScanBarcode size={64} color="var(--info)" style={{ margin: "0 auto 16px" }} />
+            <div style={{ color: 'var(--muted)', fontSize: 14, marginBottom: 16 }}>{t("qms.pda.scanAlign")}</div>
             <input
               value={lotInput}
               onChange={e => setLotInput(e.target.value)}
               onKeyDown={e => e.key === "Enter" && lotInput && lookupLot(lotInput)}
               placeholder={t("qms.pda.inputLot")}
               style={{
-                width: "100%", padding: "12px 16px", background: "#0f172a", border: "1px solid #334155",
-                borderRadius: 8, color: "#e2e8f0", fontSize: 16, textAlign: "center", outline: "none",
+                width: "100%", padding: "12px 16px", background: 'var(--surface-2)', border: '1px solid var(--line)',
+                borderRadius: 8, color: 'var(--text)', fontSize: 16, textAlign: "center", outline: "none",
               }}
             />
-            {error && <div style={{ color: "#f87171", marginTop: 8, fontSize: 13 }}>{error}</div>}
+            {error && <div style={{ color: "var(--danger)", marginTop: 8, fontSize: 13 }}>{error}</div>}
             <button
               onClick={() => lotInput && lookupLot(lotInput)}
               disabled={!lotInput || loading}
               style={{
-                marginTop: 16, width: "100%", padding: "14px", background: loading ? "#334155" : "#2563eb",
+                marginTop: 16, width: "100%", padding: "14px", background: loading ? "var(--nav)" : "var(--info)",
                 color: "#fff", border: "none", borderRadius: 8, fontSize: 16, cursor: loading ? "not-allowed" : "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
               }}>
@@ -454,11 +454,11 @@ export function QmsPdaIqc() {
           </div>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
-            <button onClick={() => setView("history")} style={{ padding: 16, background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", cursor: "pointer", textAlign: "center" }}>
+            <button onClick={() => setView("history")} style={{ padding: 16, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--muted)', cursor: "pointer", textAlign: "center" }}>
               <History size={24} style={{ margin: "0 auto 8px" }} />
               <div style={{ fontSize: 13 }}>{t("qms.pda.offlineRecords")} ({queueCount})</div>
             </button>
-            <button onClick={() => setView("settings")} style={{ padding: 16, background: "#1e293b", border: "1px solid #334155", borderRadius: 8, color: "#94a3b8", cursor: "pointer", textAlign: "center" }}>
+            <button onClick={() => setView("settings")} style={{ padding: 16, background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, color: 'var(--muted)', cursor: "pointer", textAlign: "center" }}>
               <Settings size={24} style={{ margin: "0 auto 8px" }} />
               <div style={{ fontSize: 13 }}>{t("qms.pda.settings")}</div>
             </button>
@@ -471,27 +471,27 @@ export function QmsPdaIqc() {
   // ── History View ──────────────────────────────────────────────────────────
   if (view === "history") {
     return (
-      <div style={{ background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
+      <div style={{ background: 'var(--surface-2)', minHeight: "100vh", color: 'var(--text)' }}>
         <StatusBar online={online} queueCount={queueCount} syncing={syncing} t={t} />
         <div style={{ padding: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 style={{ color: "#e2e8f0", fontSize: 18, margin: 0 }}>{t("qms.pda.offlineRecords")}</h2>
+          <div className="page-header">
+            <h2 style={{ color: 'var(--text)', fontSize: 18, margin: 0 }}>{t("qms.pda.offlineRecords")}</h2>
             <div style={{ display: "flex", gap: 8 }}>
-              <button onClick={syncNow} disabled={!online || syncing} style={{ padding: "6px 16px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: online ? "pointer" : "not-allowed", opacity: online ? 1 : 0.5 }}>
+              <button onClick={syncNow} disabled={!online || syncing} style={{ padding: "6px 16px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 6, cursor: online ? "pointer" : "not-allowed", opacity: online ? 1 : 0.5 }}>
                 {syncing ? t("qms.pda.syncing") : t("qms.pda.syncNow")}
               </button>
-              <button onClick={() => setView("scan")} style={{ padding: "6px 16px", background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.pda.back")}</button>
+              <button onClick={() => setView("scan")} style={{ padding: "6px 16px", background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.pda.back")}</button>
             </div>
           </div>
           {pendingInspections.length === 0 ? (
-            <div style={{ color: "#475569", textAlign: "center", padding: 40 }}>{t("qms.pda.noPendingRecords")}</div>
+            <div style={{ color: 'var(--muted)', textAlign: "center", padding: 40 }}>{t("qms.pda.noPendingRecords")}</div>
           ) : (
             <div style={{ display: "grid", gap: 10 }}>
               {pendingInspections.map(item => (
-                <div key={item.id as string} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: "12px 16px" }}>
-                  <div style={{ color: "#e2e8f0", fontWeight: 600 }}>{item.lot_no as string}</div>
-                  <div style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>{item.material_code as string} | {t("qms.pda.inspectionResult")}: {item.inspection_result as string}</div>
-                  <div style={{ color: "#475569", fontSize: 11 }}>{t("common.created", locale)}: {item.createdAt as string}</div>
+                <div key={item.id as string} style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: "12px 16px" }}>
+                  <div style={{ color: 'var(--text)', fontWeight: 600 }}>{item.lot_no as string}</div>
+                  <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>{item.material_code as string} | {t("qms.pda.inspectionResult")}: {item.inspection_result as string}</div>
+                  <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t("common.created", locale)}: {item.createdAt as string}</div>
                 </div>
               ))}
             </div>
@@ -504,19 +504,19 @@ export function QmsPdaIqc() {
   // ── Settings View ──────────────────────────────────────────────────────────
   if (view === "settings") {
     return (
-      <div style={{ background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
+      <div style={{ background: 'var(--surface-2)', minHeight: "100vh", color: 'var(--text)' }}>
         <StatusBar online={online} queueCount={queueCount} syncing={syncing} t={t} />
         <div style={{ padding: 16 }}>
           <h2 style={{ fontSize: 18, marginBottom: 16 }}>{t("qms.pda.settings")}</h2>
-          <div style={{ background: "#1e293b", borderRadius: 8, padding: 16, marginBottom: 12 }}>
-            <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 8 }}>{t("qms.pda.offlineQueueStatus")}</div>
+          <div style={{ background: 'var(--panel)', borderRadius: 8, padding: 16, marginBottom: 12 }}>
+            <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 8 }}>{t("qms.pda.offlineQueueStatus")}</div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <span style={{ color: queueCount > 0 ? "#fbbf24" : "#34d399", fontSize: 24, fontWeight: 700 }}>{queueCount}</span>
-              <span style={{ color: "#64748b", fontSize: 13 }}>{t("qms.pda.recordsPending")}</span>
+              <span style={{ color: queueCount > 0 ? "var(--warn)" : "var(--ok)", fontSize: 24, fontWeight: 700 }}>{queueCount}</span>
+              <span style={{ color: 'var(--muted)', fontSize: 13 }}>{t("qms.pda.recordsPending")}</span>
             </div>
           </div>
-          <button onClick={clearQueue} style={{ width: "100%", padding: 12, background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14 }}>{t("qms.pda.clearQueue")}</button>
-          <button onClick={() => setView("scan")} style={{ width: "100%", padding: 12, marginTop: 8, background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 8, cursor: "pointer" }}>{t("qms.pda.back")}</button>
+          <button onClick={clearQueue} style={{ width: "100%", padding: 12, background: "var(--danger)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 14 }}>{t("qms.pda.clearQueue")}</button>
+          <button onClick={() => setView("scan")} style={{ width: "100%", padding: 12, marginTop: 8, background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 8, cursor: "pointer" }}>{t("qms.pda.back")}</button>
         </div>
       </div>
     );
@@ -525,16 +525,16 @@ export function QmsPdaIqc() {
   // ── Inspect View ───────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div style={{ background: "#0f172a", minHeight: "100vh", color: "#e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24 }}>
-        <div style={{ background: inspectionResult === "PASS" ? "#16a34a" : "#dc2626", width: 80, height: 80, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
+      <div style={{ background: 'var(--surface-2)', minHeight: "100vh", color: 'var(--text)', display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: 24 }}>
+        <div style={{ background: inspectionResult === "PASS" ? "var(--ok)" : "var(--danger)", width: 80, height: 80, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 24px" }}>
           {inspectionResult === "PASS" ? <CheckCircle size={40} color="#fff" /> : <XCircle size={40} color="#fff" />}
         </div>
-        <h2 style={{ fontSize: 24, color: "#e2e8f0", marginBottom: 8 }}>{inspectionResult === "PASS" ? t("qms.pda.inspectPassed") : t("qms.pda.inspectComplete")}</h2>
-        <p style={{ color: "#64748b", marginBottom: 24 }}>
+        <h2 style={{ fontSize: 24, color: 'var(--text)', marginBottom: 8 }}>{inspectionResult === "PASS" ? t("qms.pda.inspectPassed") : t("qms.pda.inspectComplete")}</h2>
+        <p style={{ color: 'var(--muted)', marginBottom: 24 }}>
           {!online ? t("qms.pda.storedLocally") : t("qms.pda.submittedServer")}
         </p>
         <button onClick={() => { setSubmitted(false); setView("scan"); setLot(null); setDefects([]); setMeasurementItems([]); setNotes(""); setPhotoUrl(null); }}
-          style={{ padding: "12px 32px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 16 }}>
+          style={{ padding: "12px 32px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontSize: 16 }}>
           {t("qms.pda.continueScan")}
         </button>
       </div>
@@ -542,33 +542,33 @@ export function QmsPdaIqc() {
   }
 
   return (
-    <div style={{ background: "#0f172a", minHeight: "100vh", color: "#e2e8f0" }}>
+    <div style={{ background: 'var(--surface-2)', minHeight: "100vh", color: 'var(--text)' }}>
       <StatusBar online={online} queueCount={queueCount} syncing={syncing} t={t} />
 
       {/* Header */}
-      <div style={{ padding: "12px 16px", background: "#1e293b", borderBottom: "1px solid #334155", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <button onClick={() => setView("scan")} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 20 }}>←</button>
+      <div style={{ padding: "12px 16px", background: 'var(--panel)', borderBottom: '1px solid var(--line)', display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <button onClick={() => setView("scan")} style={{ background: "none", border: "none", color: 'var(--muted)', cursor: "pointer", fontSize: 20 }}>←</button>
         <div style={{ textAlign: "center" }}>
-          <div style={{ color: "#e2e8f0", fontWeight: 700, fontSize: 16 }}>{lot?.lot_no}</div>
-          <div style={{ color: "#64748b", fontSize: 11 }}>{lot?.material_code} | {lot?.supplier_name}</div>
+          <div style={{ color: 'var(--text)', fontWeight: 700, fontSize: 16 }}>{lot?.lot_no}</div>
+          <div style={{ color: 'var(--muted)', fontSize: 11 }}>{lot?.material_code} | {lot?.supplier_name}</div>
         </div>
         <button onClick={submitInspection} disabled={!inspectionResult || submitting}
-          style={{ padding: "6px 16px", background: inspectionResult ? "#16a34a" : "#334155", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, cursor: inspectionResult ? "pointer" : "not-allowed" }}>
+          style={{ padding: "6px 16px", background: inspectionResult ? "var(--ok)" : "var(--nav)", color: "#fff", border: "none", borderRadius: 6, fontSize: 13, cursor: inspectionResult ? "pointer" : "not-allowed" }}>
           {submitting ? t("qms.pda.submitting") : t("qms.pda.submit")}
         </button>
       </div>
 
       {/* Lot Info */}
       {lot && (
-        <div style={{ padding: "8px 16px", background: "#0f172a", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderBottom: "1px solid #1e293b" }}>
+        <div style={{ padding: "8px 16px", background: 'var(--surface-2)', display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", borderBottom: "1px solid var(--line)" }}>
           <AqlBadge status={lot.dynamic_aql_status} t={t} />
-          <span style={{ color: "#64748b", fontSize: 12 }}>{t("qms.pda.aqlLevel")}: {lot.aql_level}</span>
-          <span style={{ color: "#64748b", fontSize: 12 }}>|</span>
-          <span style={{ color: "#64748b", fontSize: 12 }}>{t("qms.pda.batchSize")}: {lot.batch_size}</span>
-          <span style={{ color: "#64748b", fontSize: 12 }}>|</span>
-          <span style={{ color: "#64748b", fontSize: 12 }}>{t("qms.pda.supplier")}: {lot.supplier_name}</span>
-          <span style={{ color: "#64748b", fontSize: 12 }}>|</span>
-          <span style={{ color: inspectionResult === "PASS" ? "#34d399" : inspectionResult === "FAIL" ? "#f87171" : "#fbbf24", fontSize: 13, fontWeight: 700 }}>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>{t("qms.pda.aqlLevel")}: {lot.aql_level}</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>|</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>{t("qms.pda.batchSize")}: {lot.batch_size}</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>|</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>{t("qms.pda.supplier")}: {lot.supplier_name}</span>
+          <span style={{ color: 'var(--muted)', fontSize: 12 }}>|</span>
+          <span style={{ color: inspectionResult === "PASS" ? "var(--ok)" : inspectionResult === "FAIL" ? "var(--danger)" : "var(--warn)", fontSize: 13, fontWeight: 700 }}>
             {inspectionResult === "PASS" ? t("qms.pda.passResult") : inspectionResult === "FAIL" ? t("qms.pda.failResult") : inspectionResult === "HOLD" ? t("qms.pda.holdResult") : t("qms.pda.evaluating")}
           </span>
         </div>
@@ -576,44 +576,44 @@ export function QmsPdaIqc() {
 
       <div style={{ padding: 16 }}>
         {/* Camera */}
-        <div style={{ background: "#1e293b", borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
+        <div style={{ background: 'var(--panel)', borderRadius: 8, marginBottom: 16, overflow: "hidden" }}>
           <video ref={cameraRef} style={{ width: "100%", maxHeight: 200, display: photoUrl ? "none" : "block", background: "#000" }} autoPlay playsInline />
           {photoUrl && <img src={photoUrl} style={{ width: "100%", maxHeight: 200, objectFit: "cover" }} alt="Captured" />}
           <div style={{ padding: "8px 12px", display: "flex", gap: 8 }}>
             {!streamRef.current && !photoUrl && (
-              <button onClick={openCamera} style={{ flex: 1, padding: 8, background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+              <button onClick={openCamera} style={{ flex: 1, padding: 8, background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
                 <Camera size={16} /> {t("qms.pda.takePhoto")}
               </button>
             )}
             {streamRef.current && (
-              <button onClick={capturePhoto} style={{ flex: 1, padding: 8, background: "#dc2626", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>{t("qms.pda.capture")}</button>
+              <button onClick={capturePhoto} style={{ flex: 1, padding: 8, background: "var(--danger)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>{t("qms.pda.capture")}</button>
             )}
-            {photoUrl && <button onClick={() => setPhotoUrl(null)} style={{ flex: 1, padding: 8, background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>{t("qms.pda.clear")}</button>}
+            {photoUrl && <button onClick={() => setPhotoUrl(null)} style={{ flex: 1, padding: 8, background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13 }}>{t("qms.pda.clear")}</button>}
           </div>
         </div>
 
         {/* Measurement Items */}
-        <div style={{ background: "#1e293b", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-          <h3 style={{ color: "#38bdf8", margin: "0 0 12px", fontSize: 14 }}>{t("qms.pda.measurementItems")}</h3>
+        <div style={{ background: 'var(--panel)', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <h3 style={{ color: "var(--info)", margin: "0 0 12px", fontSize: 14 }}>{t("qms.pda.measurementItems")}</h3>
           {measurementItems.map(item => (
-            <div key={item.sequence} style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
-              <div style={{ color: "#94a3b8", fontSize: 11, marginBottom: 4 }}>{item.code} — {item.name}</div>
+            <div key={item.sequence} style={{ background: 'var(--surface-2)', borderRadius: 6, padding: "8px 12px", marginBottom: 8 }}>
+              <div style={{ color: 'var(--muted)', fontSize: 11, marginBottom: 4 }}>{item.code} — {item.name}</div>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
                 <input type="number" placeholder={`LSL`} value={item.lsl ?? ""} onChange={e => updateMeasurement(item.sequence, "lsl", Number(e.target.value))}
-                  style={{ padding: "6px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#e2e8f0", fontSize: 13, width: "100%" }} />
+                  style={{ padding: "6px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--text)', fontSize: 13, width: "100%" }} />
                 <input type="number" placeholder={t("qms.pda.measuredValue")} value={item.measured ?? ""} onChange={e => {
                   const v = Number(e.target.value);
                   updateMeasurement(item.sequence, "measured", v);
                   const res = (item.lsl !== undefined && item.usl !== undefined) ? (v >= item.lsl && v <= item.usl ? "PASS" : "FAIL") : "PASS";
                   updateMeasurement(item.sequence, "result", res);
                 }}
-                  style={{ padding: "6px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#e2e8f0", fontSize: 13, width: "100%" }} />
+                  style={{ padding: "6px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--text)', fontSize: 13, width: "100%" }} />
                 <input type="number" placeholder={`USL`} value={item.usl ?? ""} onChange={e => updateMeasurement(item.sequence, "usl", Number(e.target.value))}
-                  style={{ padding: "6px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#e2e8f0", fontSize: 13, width: "100%" }} />
+                  style={{ padding: "6px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--text)', fontSize: 13, width: "100%" }} />
               </div>
               {item.result && (
                 <div style={{ textAlign: "right", marginTop: 4 }}>
-                  <span style={{ background: item.result === "PASS" ? "#16a34a" : "#dc2626", color: "#fff", padding: "1px 8px", borderRadius: 3, fontSize: 11, fontWeight: 600 }}>{item.result}</span>
+                  <span style={{ background: item.result === "PASS" ? "var(--ok)" : "var(--danger)", color: "#fff", padding: "1px 8px", borderRadius: 3, fontSize: 11, fontWeight: 600 }}>{item.result}</span>
                 </div>
               )}
             </div>
@@ -621,45 +621,45 @@ export function QmsPdaIqc() {
         </div>
 
         {/* Defects */}
-        <div style={{ background: "#1e293b", borderRadius: 8, padding: 12, marginBottom: 16 }}>
+        <div style={{ background: 'var(--panel)', borderRadius: 8, padding: 12, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <h3 style={{ color: "#f87171", margin: 0, fontSize: 14 }}>{t("qms.pda.defectRecords")} {defects.length > 0 && `(${defects.length})`}</h3>
-            <button onClick={addDefect} style={{ padding: "4px 12px", background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>+ {t("qms.pda.addDefect")}</button>
+            <h3 style={{ color: "var(--danger)", margin: 0, fontSize: 14 }}>{t("qms.pda.defectRecords")} {defects.length > 0 && `(${defects.length})`}</h3>
+            <button onClick={addDefect} style={{ padding: "4px 12px", background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>+ {t("qms.pda.addDefect")}</button>
           </div>
           {defects.map((d, idx) => (
-            <div key={idx} style={{ background: "#0f172a", borderRadius: 6, padding: "8px 12px", marginBottom: 8, borderLeft: "3px solid #f87171" }}>
+            <div key={idx} style={{ background: 'var(--surface-2)', borderRadius: 6, padding: "8px 12px", marginBottom: 8, borderLeft: "3px solid var(--danger)" }}>
               <div style={{ display: "flex", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
                 <select value={d.defect_code} onChange={e => setDefects(prev => prev.map((x, i) => i === idx ? { ...x, defect_code: e.target.value, defect_type: e.target.options[e.target.selectedIndex].text } : x))}
-                  style={{ flex: 1, padding: "4px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#e2e8f0", fontSize: 12, minWidth: 100 }}>
+                  style={{ flex: 1, padding: "4px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--text)', fontSize: 12, minWidth: 100 }}>
                   <option value="">{t("qms.pda.defectType")}</option>
                   {DEFECT_TYPES.map(dt => <option key={dt.code} value={dt.code}>{dt.label_zh}</option>)}
                 </select>
                 <select value={d.severity} onChange={e => setDefects(prev => prev.map((x, i) => i === idx ? { ...x, severity: e.target.value } : x))}
-                  style={{ padding: "4px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: d.severity === "critical" ? "#dc2626" : d.severity === "major" ? "#f97316" : "#fbbf24", fontSize: 12 }}>
+                  style={{ padding: "4px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: d.severity === "critical" ? "var(--danger)" : d.severity === "major" ? "var(--warn)" : "var(--warn)", fontSize: 12 }}>
                   <option value="minor">{t("qms.pda.minor")}</option>
                   <option value="major">{t("qms.pda.major")}</option>
                   <option value="critical">{t("qms.pda.critical")}</option>
                 </select>
                 <input type="number" min={1} value={d.count} onChange={e => setDefects(prev => prev.map((x, i) => i === idx ? { ...x, count: Number(e.target.value) } : x))}
-                  style={{ width: 60, padding: "4px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#e2e8f0", fontSize: 12 }} />
-                <button onClick={() => removeDefect(idx)} style={{ padding: "4px 8px", background: "none", color: "#f87171", border: "1px solid #f87171", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>×</button>
+                  style={{ width: 60, padding: "4px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--text)', fontSize: 12 }} />
+                <button onClick={() => removeDefect(idx)} style={{ padding: "4px 8px", background: "none", color: "var(--danger)", border: "1px solid var(--danger)", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>×</button>
               </div>
               <input type="text" placeholder={t("qms.pda.defectLocation")} value={d.location} onChange={e => setDefects(prev => prev.map((x, i) => i === idx ? { ...x, location: e.target.value } : x))}
-                style={{ width: "100%", padding: "4px 8px", background: "#1e293b", border: "1px solid #334155", borderRadius: 4, color: "#e2e8f0", fontSize: 12, boxSizing: "border-box" }} />
+                style={{ width: "100%", padding: "4px 8px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 4, color: 'var(--text)', fontSize: 12, boxSizing: "border-box" }} />
               {d.photo && <img src={d.photo} style={{ width: "100%", maxHeight: 100, objectFit: "cover", borderRadius: 4, marginTop: 4 }} alt="Defect" />}
             </div>
           ))}
           {defects.length === 0 && (
-            <div style={{ color: "#475569", fontSize: 13, textAlign: "center", padding: "12px 0" }}>{t("qms.pda.noDefectRecords")}</div>
+            <div style={{ color: 'var(--muted)', fontSize: 13, textAlign: "center", padding: "12px 0" }}>{t("qms.pda.noDefectRecords")}</div>
           )}
         </div>
 
         {/* Notes */}
-        <div style={{ background: "#1e293b", borderRadius: 8, padding: 12, marginBottom: 16 }}>
-          <h3 style={{ color: "#94a3b8", margin: "0 0 8px", fontSize: 14 }}>{t("qms.pda.notes")}</h3>
+        <div style={{ background: 'var(--panel)', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+          <h3 style={{ color: 'var(--muted)', margin: "0 0 8px", fontSize: 14 }}>{t("qms.pda.notes")}</h3>
           <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3}
             placeholder={t("qms.pda.notesPlaceholder")}
-            style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 14, resize: "vertical", boxSizing: "border-box" }} />
+            style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', fontSize: 14, resize: "vertical", boxSizing: "border-box" }} />
         </div>
       </div>
     </div>

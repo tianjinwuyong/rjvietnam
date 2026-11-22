@@ -24,17 +24,30 @@ function formatDate(dateStr: string): string {
   }
 }
 
+interface SupplySignal {
+  po_no: string;
+  supplier_code?: string;
+  supplier_name?: string;
+  completed_quantity: number | string;
+  ordered_quantity: number | string;
+  completion_percent: number | string;
+  remaining_quantity: number | string;
+  days_remaining: number | string | null;
+  risk_level: string;
+  review_status: string;
+}
+
 export function PmcDashboard({ locale }: { locale: Locale }) {
   const [workOrders, setWorkOrders] = useState<WorkOrder[]>([]);
   const [customerPos, setCustomerPos] = useState<(CustomerPo & { productCode?: string })[]>([]);
   const [loading, setLoading] = useState(true);
-  const [supplySignals,setSupplySignals]=useState<any[]>([]);
+  const [supplySignals, setSupplySignals] = useState<SupplySignal[]>([]);
 
   useEffect(() => {
     Promise.all([
       pmcApi.getWorkOrders({ limit: 200 }),
       pmcApi.getCustomerPos(),
-      apiClient.get<ListEnvelope<Record<string, unknown>>>("/pmc/supplier-supply-signals").catch(() => ({ items: [] as Record<string, unknown>[], total: 0 })),
+      apiClient.get<ListEnvelope<SupplySignal>>("/pmc/supplier-supply-signals").catch(() => ({ items: [] as SupplySignal[], total: 0 })),
     ]).then(([woRes, poRes,signalRes]) => {
       const wos = woRes.items;
       const pos = poRes.items;
@@ -112,7 +125,7 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
             </div>
           </div>
           <div className="table-shell">
-            <table>
+            <table data-testid="pmc.delivery-watch-table" aria-label={t("dashboard.deliveryWatch", locale)}>
               <thead>
                 <tr>
                   <th>{t("table.po", locale)}</th>
@@ -133,7 +146,7 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
                       <td>{formatDate(po.dueDate)}</td>
                       <td>
                         <span className={`badge badge-${risk === "high" ? "danger" : risk === "medium" ? "warning" : "ok"}`}>
-                          {t(`risk.${risk}` as any, locale)}
+                          {t(`risk.${risk}`, locale)}
                         </span>
                       </td>
                     </tr>
@@ -166,15 +179,67 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
               </div>
             ))}
             {workOrders.length === 0 && (
-              <p style={{ color: "var(--muted)", padding: 8, fontSize: 13 }}>{t("common.noData", locale)}</p>
+              <div className="empty-state" data-testid="pmc.line-health-empty"><strong>{t("common.noData", locale)}</strong></div>
             )}
           </div>
         </section>
       </div>
 
-      <section className="surface-panel">
-        <div className="section-header"><div><h2>供应商交付进度对生产计划的影响</h2><p>供应商完成数量只形成排产风险信号；PMC 确认后才调整正式计划。</p></div><span className={`badge badge-${supplySignals.some(x=>x.risk_level==="HIGH")?"danger":"info"}`}>{supplySignals.filter(x=>x.review_status==="PENDING_PMC_REVIEW").length} 项待评审</span></div>
-        <div className="table-shell"><table><thead><tr><th>采购 PO</th><th>供应商</th><th>完成进度</th><th>供应缺口</th><th>距离交期</th><th>风险</th><th>PMC 状态</th></tr></thead><tbody>{supplySignals.map(x=><tr key={x.po_no}><td><b>{x.po_no}</b></td><td>{x.supplier_name||x.supplier_code}</td><td><b>{Number(x.completed_quantity).toLocaleString()} / {Number(x.ordered_quantity).toLocaleString()}</b><div className="progress" title={`${x.completion_percent}%`}><span style={{width:`${Math.min(100,Number(x.completion_percent))}%`}}/></div></td><td>{Number(x.remaining_quantity).toLocaleString()}</td><td>{x.days_remaining==null?"未设置":x.days_remaining<0?`逾期 ${Math.abs(x.days_remaining)} 天`:`剩余 ${x.days_remaining} 天`}</td><td><span className={`badge badge-${x.risk_level==="HIGH"?"danger":x.risk_level==="MEDIUM"?"warning":"ok"}`}>{x.risk_level}</span></td><td>{x.review_status}</td></tr>)}{!supplySignals.length&&<tr><td colSpan={7} style={{textAlign:"center",padding:24,color:"var(--muted)"}}>暂无供应商进度风险信号</td></tr>}</tbody></table></div>
+      <section className="surface-panel" aria-label={t("pmc.supply.title", locale)} data-testid="pmc.supply-signals">
+        <div className="section-header">
+          <div>
+            <h2>{t("pmc.supply.title", locale)}</h2>
+            <p>{t("pmc.supply.subtitle", locale)}</p>
+          </div>
+          <span className={`badge badge-${supplySignals.some(x => x.risk_level === "HIGH") ? "danger" : "info"}`}>
+            {supplySignals.filter(x => x.review_status === "PENDING_PMC_REVIEW").length} {t("pmc.supply.pendingReview", locale)}
+          </span>
+        </div>
+        <div className="table-shell">
+          <table>
+            <thead>
+              <tr>
+                <th>{t("pmc.supply.col.po", locale)}</th>
+                <th>{t("pmc.supply.col.supplier", locale)}</th>
+                <th>{t("pmc.supply.col.progress", locale)}</th>
+                <th>{t("pmc.supply.col.shortfall", locale)}</th>
+                <th>{t("pmc.supply.col.dueIn", locale)}</th>
+                <th>{t("pmc.supply.col.risk", locale)}</th>
+                <th>{t("pmc.supply.col.pmcStatus", locale)}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {supplySignals.map(x => {
+                const days = x.days_remaining == null ? null : Number(x.days_remaining);
+                return (
+                  <tr key={x.po_no}>
+                    <td><strong>{x.po_no}</strong></td>
+                    <td>{x.supplier_name || x.supplier_code}</td>
+                    <td>
+                      <strong>{Number(x.completed_quantity).toLocaleString()} / {Number(x.ordered_quantity).toLocaleString()}</strong>
+                      <div className="progress" title={`${x.completion_percent}%`}><span style={{ width: `${Math.min(100, Number(x.completion_percent))}%` }} /></div>
+                    </td>
+                    <td>{Number(x.remaining_quantity).toLocaleString()}</td>
+                    <td>{days == null || Number.isNaN(days) ? t("pmc.supply.notSet", locale) : days < 0 ? t("pmc.supply.overdue", locale).replace("{n}", String(Math.abs(days))) : t("pmc.supply.remaining", locale).replace("{n}", String(days))}</td>
+                    <td><span className={`badge badge-${x.risk_level === "HIGH" ? "danger" : x.risk_level === "MEDIUM" ? "warning" : "ok"}`} title={x.risk_level}>{x.risk_level}</span></td>
+                    <td>
+                      <span className={`badge badge-${x.review_status === "APPROVED_BY_PMC" ? "ok" : x.review_status === "REJECTED" ? "danger" : "warning"}`}>
+                        {x.review_status === "APPROVED_BY_PMC" ? t("pmc.review.approved", locale) : x.review_status === "REJECTED" ? t("pmc.review.rejected", locale) : t("pmc.review.pending", locale)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+              {!supplySignals.length && (
+                <tr>
+                  <td colSpan={7}>
+                    <div className="empty-state" data-testid="pmc.supply-empty"><strong>{t("pmc.supply.empty", locale)}</strong></div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
 
       <section className="surface-panel">
@@ -185,7 +250,7 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
           </div>
         </div>
         <div className="table-shell">
-          <table>
+          <table data-testid="pmc.release-queue-table" aria-label={t("pmc.releaseQueue", locale)}>
             <thead>
               <tr>
                 <th>{t("common.workOrder", locale)}</th>
@@ -219,8 +284,8 @@ export function PmcDashboard({ locale }: { locale: Locale }) {
               ))}
               {workOrders.length === 0 && (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: "center", color: "var(--muted)", padding: 24 }}>
-                    {t("common.noData", locale)}
+                  <td colSpan={7}>
+                    <div className="empty-state" data-testid="pmc.release-queue-empty"><strong>{t("common.noData", locale)}</strong></div>
                   </td>
                 </tr>
               )}

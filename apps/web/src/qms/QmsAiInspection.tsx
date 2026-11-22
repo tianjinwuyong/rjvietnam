@@ -17,15 +17,15 @@ export function QmsAiInspection({locale="zh"}:{locale?:string}) {
   useEffect(()=>{void load()},[load]);
   const submit=async()=>{if(!form.sn.trim())return setError("SN required");try{setBusy(true);await visualInspectionApi.submit(form);setForm(v=>({...v,sn:""}));await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}};
   const review=async(id:number,d:"PASS"|"FAIL")=>{try{setBusy(true);await visualInspectionApi.review(id,d);await load()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}};
-  const inp={background:"#0f172a",color:"#e2e8f0",border:"1px solid #475569",borderRadius:6,padding:"8px",width:140};
-  return <div style={{padding:24,color:"#e2e8f0"}}><div style={{display:"flex",justifyContent:"space-between"}}><h2>{c.title}</h2><button onClick={load}>{c.refresh}</button></div>
-    <div style={{padding:12,border:"1px solid #f59e0b",borderRadius:8,color:"#fbbf24",marginBottom:16}}>{c.note}</div>
-    <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:16,background:"#1e293b",borderRadius:10,marginBottom:18}}>
+  const inp={background:"var(--surface-2)",color:"var(--text)",border:"1px solid var(--line)",borderRadius:6,padding:"8px",width:140};
+  return <div style={{padding:24,color:"var(--text)"}}><div style={{display:"flex",justifyContent:"space-between"}}><h2>{c.title}</h2><button onClick={load}>{c.refresh}</button></div>
+    <div style={{padding:12,border:"1px solid var(--warn)",borderRadius:8,color:"var(--warn)",marginBottom:16}}>{c.note}</div>
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",padding:16,background:"var(--panel)",borderRadius:10,marginBottom:18}}>
       {[[c.station,"stationCode","text"],[c.sn,"sn","text"],[c.pass,"passScore","number"],[c.defect,"defectScore","number"],[c.latency,"latencyMs","number"],[c.code,"defectCode","text"]].map(([l,k,t])=>
-        <label key={k} style={{display:"grid",gap:5,fontSize:12,color:"#94a3b8"}}>{l}<input style={inp} type={t} step={t==="number"?"0.01":undefined} value={(form as any)[k]} onChange={e=>setForm(v=>({...v,[k]:t==="number"?Number(e.target.value):e.target.value}))}/></label>)}
-      <button disabled={busy} onClick={submit} style={{alignSelf:"end",padding:"9px 16px",background:"#2563eb",color:"white",border:0,borderRadius:6}}>{c.send}</button>
-    </div>{error&&<div style={{color:"#f87171"}}>{error}</div>}
-    <table style={{width:"100%",borderCollapse:"collapse"}}><thead><tr>{["No.",c.station,c.sn,"Model","Confidence","Result","Status",""].map(x=><th key={x} style={{textAlign:"left",padding:9,borderBottom:"1px solid #334155"}}>{x}</th>)}</tr></thead>
+        <label key={k} style={{display:"grid",gap:5,fontSize:12,color:"var(--muted)"}}>{l}<input style={inp} type={t} step={t==="number"?"0.01":undefined} value={(form as any)[k]} onChange={e=>setForm(v=>({...v,[k]:t==="number"?Number(e.target.value):e.target.value}))}/></label>)}
+      <button disabled={busy} onClick={submit} style={{alignSelf:"end",padding:"9px 16px",background:"var(--info)",color:"white",border:0,borderRadius:6}}>{c.send}</button>
+    </div>{error&&<div style={{color:"var(--danger)"}}>{error}</div>}
+    <table className="data-table"><thead><tr>{["No.",c.station,c.sn,"Model","Confidence","Result","Status",""].map(x=><th key={x} style={{textAlign:"left",padding:9,borderBottom:"1px solid var(--line)"}}>{x}</th>)}</tr></thead>
       <tbody>{items.map(x=><tr key={x.id}><td style={{padding:9}}>{x.inspection_no}</td><td>{x.station_code}</td><td>{x.sn}</td><td>{x.model_name}@{x.model_version}<small> {x.inference_latency_ms}ms</small></td><td>{(Number(x.confidence)*100).toFixed(1)}%</td><td>{x.final_result??x.proposed_result}</td><td>{x.status}</td><td>{x.status==="PENDING_REVIEW"&&<><button onClick={()=>review(x.id,"PASS")}>{c.yes}</button><button onClick={()=>review(x.id,"FAIL")}>{c.no}</button></>}</td></tr>)}</tbody>
-    </table>{!items.length&&<div style={{padding:24,color:"#64748b"}}>{c.empty}</div>}</div>;
+    </table>{!items.length&&<div style={{padding:24,color:"var(--muted)"}}>{c.empty}</div>}</div>;
 }

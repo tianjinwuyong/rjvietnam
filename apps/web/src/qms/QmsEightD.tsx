@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { qmsApi, type QmsEightD as QmsEightDRecord } from "../api/qms";
 
-const sevColor: Record<string,string> = { CRITICAL: "#f87171", MAJOR: "#fb923c", MINOR: "#fbbf24" };
-const stColor: Record<string,string> = { OPEN: "#f87171", IN_PROGRESS: "#38bdf8", CLOSED: "#34d399" };
+const sevColor: Record<string,string> = { CRITICAL: "var(--danger)", MAJOR: "var(--warn)", MINOR: "var(--warn)" };
+const stColor: Record<string,string> = { OPEN: "var(--danger)", IN_PROGRESS: "var(--info)", CLOSED: "var(--ok)" };
 
 const D_FIELDS = ["d1_team","d2_problem","d3_containment","d4_root_cause","d5_corrective","d6_implement","d7_preventive","d8_congratulate"] as const;
 
@@ -56,23 +56,23 @@ export function QmsEightD({ locale }: { locale: string }) {
 
   const inp = (label: string, key: string, type = "text") => (
     <div style={{ marginBottom: 10 }}>
-      <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>{label}</label>
+      <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>{label}</label>
       <input type={type} value={(form as any)[key]} onChange={e => setForm({ ...form, [key]: type === "number" ? Number(e.target.value) : e.target.value })}
-        style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", boxSizing: "border-box" }} />
+        style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', boxSizing: "border-box" }} />
     </div>
   );
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h2 style={{ color: "#e2e8f0", fontSize: 20, margin: 0 }}>{t("qms.eightDTitle")}</h2>
-        <button onClick={() => setShowCreate(!showCreate)} style={{ padding: "8px 20px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
+    <div className="surface-panel" style={{ padding: 16 }} role="region" aria-label={t("qms.8dTitle")} data-testid="qms.8d">
+      <div className="page-header">
+        <h2>{t("qms.eightDTitle")}</h2>
+        <button onClick={() => setShowCreate(!showCreate)} style={{ padding: "8px 20px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
           + {t("qms.new8d")}
         </button>
       </div>
 
       {showCreate && (
-        <div style={{ background: "#1e293b", borderRadius: 12, padding: 20, marginBottom: 16 }}>
+        <div style={{ background: 'var(--panel)', borderRadius: 12, padding: 20, marginBottom: 16 }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
             {inp(t("qms.title"), "title")}
             {inp(t("qms.source"), "source")}
@@ -82,38 +82,38 @@ export function QmsEightD({ locale }: { locale: string }) {
             {inp(t("qms.ngQty"), "ng_qty", "number")}
           </div>
           <div style={{ marginBottom: 10 }}>
-            <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>{t("qms.defectDesc")}</label>
+            <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>{t("qms.defectDesc")}</label>
             <textarea value={form.defect_desc} onChange={e => setForm({ ...form, defect_desc: e.target.value })}
-              style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", minHeight: 60, boxSizing: "border-box" }} />
+              style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', minHeight: 60, boxSizing: "border-box" }} />
           </div>
-          <button onClick={create} style={{ padding: "8px 24px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.submit")}</button>
+          <button onClick={create} style={{ padding: "8px 24px", background: "var(--ok)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.submit")}</button>
         </div>
       )}
 
-      {loading ? <div style={{ color: "#94a3b8" }}>{t("qms.loading")}</div> : (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      {loading ? <div style={{ color: 'var(--muted)' }}>{t("qms.loading")}</div> : (
+        <table className="data-table">
           <thead>
-            <tr style={{ borderBottom: "1px solid #334155" }}>
+            <tr style={{ borderBottom: '1px solid var(--line)' }}>
               {[t("qms.reportNo"), t("qms.title"), t("qms.severity"), t("qms.source"), t("qms.ngQty"), t("qms.status"), t("qms.action")].map(h => (
-                <th key={h} style={{ padding: "10px 12px", color: "#94a3b8", fontSize: 12, textAlign: "left" }}>{h}</th>
+                <th key={h} style={{ padding: "10px 12px", color: 'var(--muted)', fontSize: 12, textAlign: "left" }}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {list.map(r => (
-              <tr key={r.id} style={{ borderBottom: "1px solid #1e293b", cursor: "pointer" }} onClick={() => open(r)}>
-                <td style={{ padding: "10px 12px", color: "#38bdf8" }}>{r.report_no}</td>
-                <td style={{ padding: "10px 12px", color: "#e2e8f0" }}>{r.title}</td>
+              <tr key={r.id} style={{ borderBottom: "1px solid var(--line)", cursor: "pointer" }} onClick={() => open(r)}>
+                <td style={{ padding: "10px 12px", color: "var(--info)" }}>{r.report_no}</td>
+                <td style={{ padding: "10px 12px", color: 'var(--text)' }}>{r.title}</td>
                 <td style={{ padding: "10px 12px" }}>
-                  <span style={{ color: sevColor[r.severity] ?? "#94a3b8", fontSize: 12, fontWeight: 600 }}>{r.severity}</span>
+                  <span style={{ color: sevColor[r.severity] ?? "var(--muted)", fontSize: 12, fontWeight: 600 }}>{r.severity}</span>
                 </td>
-                <td style={{ padding: "10px 12px", color: "#94a3b8" }}>{r.source}</td>
-                <td style={{ padding: "10px 12px", color: "#e2e8f0" }}>{r.ng_qty}</td>
+                <td style={{ padding: "10px 12px", color: 'var(--muted)' }}>{r.source}</td>
+                <td style={{ padding: "10px 12px", color: 'var(--text)' }}>{r.ng_qty}</td>
                 <td style={{ padding: "10px 12px" }}>
-                  <span style={{ color: stColor[r.status] ?? "#94a3b8", background: `${stColor[r.status] ?? "#94a3b8"}22`, padding: "2px 10px", borderRadius: 10, fontSize: 12 }}>{r.status}</span>
+                  <span style={{ color: stColor[r.status] ?? "var(--muted)", background: `${stColor[r.status] ?? "var(--muted)"}22`, padding: "2px 10px", borderRadius: 10, fontSize: 12 }}>{r.status}</span>
                 </td>
                 <td style={{ padding: "10px 12px" }}>
-                  <button onClick={e => { e.stopPropagation(); open(r); }} style={{ padding: "4px 12px", background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>{t("qms.detail")}</button>
+                  <button onClick={e => { e.stopPropagation(); open(r); }} style={{ padding: "4px 12px", background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>{t("qms.detail")}</button>
                 </td>
               </tr>
             ))}
@@ -122,25 +122,25 @@ export function QmsEightD({ locale }: { locale: string }) {
       )}
 
       {sel && (
-        <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 520, background: "#0f172a", borderLeft: "1px solid #334155", padding: 24, overflowY: "auto", zIndex: 100 }}>
+        <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 520, background: 'var(--surface-2)', borderLeft: "1px solid var(--line)", padding: 24, overflowY: "auto", zIndex: 100 }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 12 }}>
-            <h3 style={{ color: "#e2e8f0", margin: 0 }}>{sel.report_no} — {sel.title}</h3>
-            <button onClick={() => setSel(null)} style={{ background: "none", border: "none", color: "#94a3b8", cursor: "pointer", fontSize: 20 }}>x</button>
+            <h3 style={{ color: 'var(--text)', margin: 0 }}>{sel.report_no} — {sel.title}</h3>
+            <button onClick={() => setSel(null)} style={{ background: "none", border: "none", color: 'var(--muted)', cursor: "pointer", fontSize: 20 }}>x</button>
           </div>
-          <div style={{ color: "#94a3b8", fontSize: 13, marginBottom: 16 }}>
+          <div style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 16 }}>
             {sel.severity} | {sel.source} | {sel.status} | NG: {sel.ng_qty}
           </div>
           {D_FIELDS.map((f, i) => (
             <div key={f} style={{ marginBottom: 10 }}>
-              <label style={{ color: "#60a5fa", fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>D{i + 1}: {t(`qms.${f}`)}</label>
+              <label style={{ color: "var(--info)", fontSize: 12, fontWeight: 600, display: "block", marginBottom: 4 }}>D{i + 1}: {t(`qms.${f}`)}</label>
               <textarea value={editD[f] ?? ""} onChange={e => setEditD({ ...editD, [f]: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", background: "#1e293b", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", minHeight: 50, boxSizing: "border-box" }} />
+                style={{ width: "100%", padding: "8px 12px", background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', minHeight: 50, boxSizing: "border-box" }} />
             </div>
           ))}
           <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-            <button onClick={saveD} style={{ flex: 1, padding: "10px", background: "#2563eb", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.save")}</button>
+            <button onClick={saveD} style={{ flex: 1, padding: "10px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.save")}</button>
             {sel.status !== "CLOSED" && (
-              <button onClick={close} style={{ flex: 1, padding: "10px", background: "#16a34a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.close8d")}</button>
+              <button onClick={close} style={{ flex: 1, padding: "10px", background: "var(--ok)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>{t("qms.close8d")}</button>
             )}
           </div>
         </div>

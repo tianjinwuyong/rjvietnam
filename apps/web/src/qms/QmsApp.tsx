@@ -31,7 +31,7 @@ export function QmsApp({ locale = "zh-CN" }: { locale?: string }) {
     { key: "andon",       label: t("qms.andon")                || "⚡ Andon预警", Component: QmsIqcAndon },
     { key: "pda",         label: t("qms.pda")                  || "PDA检验", Component: QmsPdaIqc },
     { key: "cockpit",     label: t("qms.cockpit")              || "📊 驾驶舱", Component: QmsIqcCockpit },
-    { key: "aiInspection",label: "AI Visual / AI 视觉 / AI Ngoại quan", Component: QmsAiInspection },
+    { key: "aiInspection",label: t("qms.aiInspectionTitle"), Component: QmsAiInspection },
     { key: "oqc",         label: t("qms.oqcTitle")             || "OQC出货", Component: QmsOqcBatches },
     { key: "8d",          label: t("qms.8dTitle")             || "8D报告", Component: QmsEightD },
     { key: "ng",          label: t("qms.ngTitle")              || "NG处理", Component: QmsNgCases },
@@ -49,28 +49,30 @@ export function QmsApp({ locale = "zh-CN" }: { locale?: string }) {
   const Component = active.Component;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0f172a" }}>
-      <div style={{ display: "flex", gap: 4, padding: "8px 16px", background: "#1e293b", borderBottom: "1px solid #334155", overflowX: "auto", flexShrink: 0 }}>
-        {tabs.map(t => (
-          <button key={t.key} onClick={() => {
-            setTab(t.key);
-            const url = new URL(window.location.href);
-            url.searchParams.set("view", "qms");
-            url.searchParams.set("qmsTab", t.key);
-            window.history.replaceState({}, "", url);
-          }}
-            style={{
-              padding: "6px 14px", border: "none", borderRadius: 6, cursor: "pointer", fontSize: 13,
-              background: tab === t.key ? "#2563eb" : "transparent",
-              color: tab === t.key ? "#fff" : "#94a3b8", whiteSpace: "nowrap",
-            }}>
-            {t.label}
+    <section className="qms-shell" aria-label={t("nav.qms") || "QMS"} data-testid="qms.page">
+      <nav className="qms-tabs" aria-label={t("qms.dashboard") || "QMS"} data-testid="qms.tabs">
+        {tabs.map(item => (
+          <button
+            key={item.key}
+            type="button"
+            className={tab === item.key ? "active" : ""}
+            data-testid={`qms.tab.${item.key}`}
+            title={item.label}
+            onClick={() => {
+              setTab(item.key);
+              const url = new URL(window.location.href);
+              url.searchParams.set("view", "qms");
+              url.searchParams.set("qmsTab", item.key);
+              window.history.replaceState({}, "", url);
+            }}
+          >
+            {item.label}
           </button>
         ))}
-      </div>
-      <div style={{ flex: 1, overflow: "auto" }}>
+      </nav>
+      <div>
         <Component locale={locale} />
       </div>
-    </div>
+    </section>
   );
 }

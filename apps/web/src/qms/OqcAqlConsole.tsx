@@ -208,7 +208,7 @@ export function OqcAqlConsole({ locale }: { locale: Locale }) {
       <section className="surface-panel" style={{ padding: 20 }}>
         <div className="section-header">
           <div>
-            <div style={{ color: "var(--state-active,#18c6d9)", fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>
+            <div style={{ color: "var(--state-active,var(--info))", fontSize: 12, fontWeight: 800, letterSpacing: 1 }}>
               {t("mes.oqcAql.eyebrow", locale)}
             </div>
             <h2 style={{ margin: "6px 0" }}>{t("mes.oqcAql.title", locale)}</h2>
@@ -288,7 +288,7 @@ export function OqcAqlConsole({ locale }: { locale: Locale }) {
                   display: "grid",
                   gap: 4,
                   textAlign: "left",
-                  border: selectedId === batch.id ? "1px solid var(--state-active,#18c6d9)" : undefined,
+                  border: selectedId === batch.id ? "1px solid var(--state-active,var(--info))" : undefined,
                 }}
                 onClick={() => setSelectedId(batch.id)}
                 title={batch.batchNo}
@@ -328,7 +328,7 @@ export function OqcAqlConsole({ locale }: { locale: Locale }) {
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 8 }}>
                 <div className="surface-panel" style={{ padding: 10 }}>
                   <div style={{ fontSize: 11, color: "var(--muted)" }}>CR</div>
-                  <div style={{ fontSize: 18, fontWeight: 800, color: detail.counts.cr > 0 ? "var(--state-danger,#dc2626)" : undefined }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: detail.counts.cr > 0 ? "var(--state-danger,var(--danger))" : undefined }}>
                     {detail.counts.cr} <span style={{ fontSize: 11, color: "var(--muted)" }}>Ac 0</span>
                   </div>
                 </div>

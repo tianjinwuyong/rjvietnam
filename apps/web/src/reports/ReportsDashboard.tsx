@@ -16,8 +16,8 @@ import { IctFlintDemo, FlintDemo, StationReports } from "./index";
 // ── Helpers ───────────────────────────────────────────────────────
 
 const STATUS_TONES: Record<string, string> = {
-  running: "ok", released: "info", draft: "muted", closed: "muted", hold: "warning",
-  voided: "danger", pending: "info", rejected: "danger", completed: "ok",
+  running: "ok", released: "info", draft: "warning", closed: "muted", hold: "warning",
+  voided: "danger", pending: "warning", rejected: "danger", completed: "ok",
   low: "ok", medium: "warning", high: "danger", critical: "danger",
 };
 
@@ -71,8 +71,8 @@ function ReportFilterBar({
   const reset = () => onChange({});
 
   return (
-    <div className="report-filter-bar" style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 16, padding: "12px 16px", background: "var(--surface)", borderRadius: 8, border: "1px solid var(--border)" }}>
-      <span style={{ fontWeight: 600, fontSize: 13, color: "var(--muted)", marginRight: 4 }}>{t("report.filter.title", locale)}</span>
+    <div className="report-filter-bar" data-testid="reports.filters">
+      <span className="filter-label">{t("report.filter.title", locale)}</span>
       <input type="date" value={filters.dateFrom ?? ""} onChange={(e) => set("dateFrom", e.target.value)} style={inputStyle} title={t("report.filter.dateFrom", locale)} />
       <input type="date" value={filters.dateTo ?? ""} onChange={(e) => set("dateTo", e.target.value)} style={inputStyle} title={t("report.filter.dateTo", locale)} />
       {hasLine && <input value={filters.lineCode ?? ""} onChange={(e) => set("lineCode", e.target.value)} placeholder={t("report.filter.lineCode", locale)} style={inputStyle} />}
@@ -420,66 +420,66 @@ export function ReportsDashboard({ locale }: { locale: Locale }) {
   const domainTabs = (domain: ReportDomain | "dashboard") =>
     reportTabKeys.filter((k) => k !== "dashboard" && reportDomainOf[k] === domain);
 
+  // activeTab is only rendered as a report when it is a real ReportKey; the
+  // export link falls back to "#" for the demo/memory tabs.
+  const exportKey = reportKeys.find((k) => k === activeTab);
+  const exportUrl = exportKey ? reportsApi.getExportUrl(exportKey) : "#";
+
   return (
-    <div className="screen-stack">
+    <section className="screen-stack" aria-label={t("nav.reports", locale)} data-testid="reports.page">
       {/* Domain navigation bar */}
-      <div style={{ display: "flex", gap: 4, overflowX: "auto", marginBottom: 12, padding: "8px 0", borderBottom: "1px solid var(--border)" }}>
+      <nav className="toolbar" aria-label={t("reports.subtitle", locale)} data-testid="reports.domains" style={{ borderBottom: "1px solid var(--border)", paddingBottom: 8 }}>
         {domains.map((domain) => {
           const tabs = domainTabs(domain);
           if (tabs.length === 0) return null;
           const isActive = activeDomain === domain;
           return (
-            <div key={domain} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <button
-                onClick={() => { setActiveDomain(domain); setActiveTab(domain === "dashboard" ? "dashboard" : tabs[0]); }}
-                style={{
-                  padding: "4px 12px", fontSize: 12, fontWeight: isActive ? 700 : 500,
-                  border: "none", borderBottom: isActive ? "2px solid var(--accent)" : "2px solid transparent",
-                  background: "transparent", color: isActive ? "var(--accent)" : "var(--muted)",
-                  cursor: "pointer", whiteSpace: "nowrap",
-                }}
-              >
-                {domain === "dashboard" ? t("reports.subtitle", locale) : t(reportDomainI18nKey[domain] as any, locale)}
-              </button>
-            </div>
+            <button
+              key={domain}
+              type="button"
+              className={isActive ? "active" : ""}
+              data-testid={`reports.domain.${domain}`}
+              title={domain === "dashboard" ? t("reports.subtitle", locale) : t(reportDomainI18nKey[domain], locale)}
+              onClick={() => { setActiveDomain(domain); setActiveTab(domain === "dashboard" ? "dashboard" : tabs[0]); }}
+            >
+              {domain === "dashboard" ? t("reports.subtitle", locale) : t(reportDomainI18nKey[domain], locale)}
+            </button>
           );
         })}
-      </div>
+      </nav>
 
       {/* Tab bar — only show tabs for active domain */}
-      <div className="tab-bar" style={{ display: "flex", gap: 2, overflowX: "auto", borderBottom: "2px solid var(--border)", marginBottom: 16 }}>
+      <nav className="toolbar" aria-label={t("section.reportPanel", locale)} data-testid="reports.tabs">
         {(activeDomain === "dashboard" ? reportTabKeys : domainTabs(activeDomain)).map((key) => (
           <button
             key={key}
+            type="button"
+            className={activeTab === key ? "active" : ""}
+            data-testid={`reports.tab.${key}`}
+            title={t(reportTabI18nKey[key], locale)}
             onClick={() => { setActiveTab(key); if (key !== "dashboard") setFilters({}); }}
-            style={{
-              padding: "8px 16px", fontSize: 13, fontWeight: activeTab === key ? 700 : 400,
-              border: "none", borderBottom: activeTab === key ? "2px solid var(--accent)" : "2px solid transparent",
-              background: "transparent", color: activeTab === key ? "var(--accent)" : "var(--text)",
-              cursor: "pointer", whiteSpace: "nowrap", transition: "all 0.15s",
-            }}
           >
-            {t(reportTabI18nKey[key] as any, locale)}
+            {t(reportTabI18nKey[key], locale)}
           </button>
         ))}
-      </div>
+      </nav>
 
       {reportSessions.length > 0 && (
-        <section className="surface-panel" style={{ marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <section className="surface-panel" aria-label={t("report.sessions.title", locale)}>
+          <div className="page-header">
             <div>
-              <h3 style={{ margin: 0 }}>Report sessions</h3>
-              <small style={{ color: "var(--muted)" }}>Immutable client-side snapshots of generated report results; source records remain in MES.</small>
+              <h2>{t("report.sessions.title", locale)}</h2>
+              <p>{t("report.sessions.desc", locale)}</p>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button type="button" className="btn btn-sm" onClick={exportReportHistory}>Export session history</button>
-              <button type="button" className="btn btn-sm" onClick={archiveAllReportsInMes}>Archive all in MES</button>
+              <button type="button" className="action-button" data-testid="reports.sessions-export" title={t("report.sessions.exportHistory", locale)} onClick={exportReportHistory}>{t("report.sessions.exportHistory", locale)}</button>
+              <button type="button" className="action-button" data-testid="reports.sessions-archive" title={t("report.sessions.archiveAll", locale)} onClick={archiveAllReportsInMes}>{t("report.sessions.archiveAll", locale)}</button>
             </div>
           </div>
           {archiveStatus && <div role="status" style={{ color: "var(--muted)", fontSize: 12, marginTop: 8 }}>{archiveStatus}</div>}
           <div className="table-shell" style={{ marginTop: 10 }}>
-            <table>
-              <thead><tr><th>Report</th><th>Generated</th><th>Rows</th><th>Filters</th></tr></thead>
+            <table className="data-table" data-testid="reports.sessions-table">
+              <thead><tr><th>{t("report.sessions.col.report", locale)}</th><th>{t("report.sessions.col.generated", locale)}</th><th>{t("report.sessions.col.rows", locale)}</th><th>{t("report.sessions.col.filters", locale)}</th></tr></thead>
               <tbody>{reportSessions.slice(-5).reverse().map((session, index) => (
                 <tr key={`${session.key}-${session.generatedAt}-${index}`}>
                   <td><code>{session.key}</code><div style={{ color: "var(--muted)", fontSize: 11 }}>{session.title}</div></td>
@@ -513,45 +513,41 @@ export function ReportsDashboard({ locale }: { locale: Locale }) {
 
       {activeTab !== "dashboard" && activeTab !== "memory-query" && activeTab !== "ict-flint-demo" && activeTab !== "flint-demo" && activeTab !== "station-reports" && (
         <>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
+          <div className="page-header" style={{ marginBottom: 4 }}>
             <div>
-              <h2 style={{ margin: 0 }}>{t(reportTabI18nKey[activeTab] as any, locale)}</h2>
+              <h2 data-testid="reports.active-title">{t(reportTabI18nKey[activeTab], locale)}</h2>
               {currentData?.meta && (
-                <small style={{ color: "var(--muted)", fontSize: 12 }}>
+                <p>
                   {t("report.generatedAt", locale)}: {new Date(currentData.meta.generatedAt).toLocaleString()}
-                  {" | "}{t("report.totalRows", locale).replace("{n}", String(currentData.meta.totalRows))}
-                </small>
+                  {" · "}{t("report.totalRows", locale).replace("{n}", String(currentData.meta.totalRows))}
+                </p>
               )}
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               {/* Period switcher for time-aware reports */}
               {isPeriodReport && (
-                <div style={{ display: "flex", gap: 2, padding: "2px", background: "var(--surface)", borderRadius: 6, border: "1px solid var(--border)" }}>
+                <div className="toolbar" role="group" aria-label={t("report.period", locale)} data-testid="reports.period" style={{ gap: 6 }}>
                   {(["daily", "weekly", "monthly"] as ReportPeriod[]).map((p) => (
                     <button
                       key={p}
+                      type="button"
+                      className={period === p ? "active" : ""}
+                      title={t(`report.period.${p}`, locale)}
                       onClick={() => setPeriod(p)}
-                      style={{
-                        padding: "4px 10px", fontSize: 12, fontWeight: period === p ? 700 : 400,
-                        border: "none", borderRadius: 4,
-                        background: period === p ? "var(--accent)" : "transparent",
-                        color: period === p ? "#fff" : "var(--text)",
-                        cursor: "pointer",
-                      }}
                     >
-                      {t(`report.period.${p}` as any, locale)}
+                      {t(`report.period.${p}`, locale)}
                     </button>
                   ))}
                 </div>
               )}
-              <a href={reportsApi.getExportUrl(activeTab as any)} download className="btn btn-sm" style={{ textDecoration: "none" }}>
+              <a href={exportUrl} download className="action-button" style={{ textDecoration: "none" }} data-testid="reports.export-csv" title={t("report.export.csv", locale)}>
                 {t("report.export.csv", locale)}
               </a>
-              <button type="button" className="btn btn-sm" onClick={exportAllReports} disabled={exportingAllReports}>
-                {exportingAllReports ? "Preparing..." : "Export all reports"}
+              <button type="button" className="action-button" data-testid="reports.export-all" onClick={exportAllReports} disabled={exportingAllReports} title={t("report.export.all", locale)}>
+                {exportingAllReports ? t("report.export.preparing", locale) : t("report.export.all", locale)}
               </button>
-              <button type="button" className="btn btn-sm" onClick={exportReportHistory} disabled={reportSessions.length === 0} title="Export saved report sessions">
-                Export sessions ({reportSessions.length})
+              <button type="button" className="action-button" data-testid="reports.export-sessions" onClick={exportReportHistory} disabled={reportSessions.length === 0} title={t("report.export.sessionsTooltip", locale)}>
+                {t("report.export.sessions", locale)} ({reportSessions.length})
               </button>
             </div>
           </div>
@@ -559,15 +555,15 @@ export function ReportsDashboard({ locale }: { locale: Locale }) {
           <ReportFilterBar reportKey={activeTab} filters={filters} onChange={(f) => setFilters(f)} locale={locale} />
 
           {loading[activeTab] ? (
-            <p style={{ color: "var(--muted)", textAlign: "center", padding: 32 }}>{t("report.loading", locale)}</p>
+            <div className="empty-state" role="status" data-testid="reports.loading">{t("report.loading", locale)}</div>
           ) : currentData ? (
             <ReportTable data={currentData} locale={locale} />
           ) : (
-            <p style={{ color: "var(--muted)", textAlign: "center", padding: 32 }}>{t("report.noData", locale)}</p>
+            <div className="empty-state" data-testid="reports.empty"><strong>{t("report.noData", locale)}</strong></div>
           )}
         </>
       )}
-    </div>
+    </section>
   );
 }
 // @ts-nocheck

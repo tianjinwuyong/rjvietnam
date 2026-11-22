@@ -10,7 +10,7 @@ interface QmsQualityCost {
 interface CostSummary { byType: { cost_type: string; total: number; count: number }[]; grandTotal: number; }
 
 const COST_TYPE_COLOR: Record<string,string> = {
-  prevention: "#34d399", appraisal: "#38bdf8", internal_failure: "#fbbf24", external_failure: "#f87171",
+  prevention: "var(--ok)", appraisal: "var(--info)", internal_failure: "var(--warn)", external_failure: "var(--danger)",
 };
 
 export function QmsQualityCosts({ locale }: { locale: string }) {
@@ -64,25 +64,25 @@ export function QmsQualityCosts({ locale }: { locale: string }) {
   };
 
   return (
-    <div style={{ padding: 24 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h2 style={{ color: "#e2e8f0", fontSize: 20, margin: 0 }}>{t("qms.qualityCostsTitle")}</h2>
-        <button onClick={() => setShowCreate(true)} style={{ padding: "8px 20px", background: "#0891b2", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
+    <div className="surface-panel" style={{ padding: 16 }} role="region" aria-label={t("qms.qualityCostsTitle")} data-testid="qms.quality-costs">
+      <div className="page-header">
+        <h2>{t("qms.qualityCostsTitle")}</h2>
+        <button onClick={() => setShowCreate(true)} style={{ padding: "8px 20px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
           + {t("qms.newCost")}
         </button>
       </div>
 
       {summary && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 16 }}>
-          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: 12, textAlign: "center" }}>
-            <div style={{ color: "#f87171", fontSize: 24, fontWeight: 700 }}>{formatCurrency(summary.grandTotal, "VND")}</div>
-            <div style={{ color: "#64748b", fontSize: 12 }}>Grand Total</div>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, textAlign: "center" }}>
+            <div style={{ color: "var(--danger)", fontSize: 24, fontWeight: 700 }}>{formatCurrency(summary.grandTotal, "VND")}</div>
+            <div style={{ color: 'var(--muted)', fontSize: 12 }}>Grand Total</div>
           </div>
           {summary.byType.map(t => (
-            <div key={t.cost_type} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: 12, textAlign: "center" }}>
-              <div style={{ color: COST_TYPE_COLOR[t.cost_type] || "#94a3b8", fontSize: 20, fontWeight: 700 }}>{formatCurrency(t.total, "VND")}</div>
-              <div style={{ color: "#64748b", fontSize: 12 }}>{TYPE_LABELS[t.cost_type] || t.cost_type}</div>
-              <div style={{ color: "#475569", fontSize: 11 }}>{t.count} records</div>
+            <div key={t.cost_type} style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: 12, textAlign: "center" }}>
+              <div style={{ color: COST_TYPE_COLOR[t.cost_type] || "var(--muted)", fontSize: 20, fontWeight: 700 }}>{formatCurrency(t.total, "VND")}</div>
+              <div style={{ color: 'var(--muted)', fontSize: 12 }}>{TYPE_LABELS[t.cost_type] || t.cost_type}</div>
+              <div style={{ color: 'var(--muted)', fontSize: 11 }}>{t.count} records</div>
             </div>
           ))}
         </div>
@@ -91,86 +91,86 @@ export function QmsQualityCosts({ locale }: { locale: string }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         {["prevention","appraisal","internal_failure","external_failure"].map(type => (
           <button key={type} onClick={() => setFilter({ ...filter, cost_type: filter.cost_type === type ? "" : type })}
-            style={{ padding: "4px 12px", background: filter.cost_type === type ? COST_TYPE_COLOR[type] : "#334155", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>
+            style={{ padding: "4px 12px", background: filter.cost_type === type ? COST_TYPE_COLOR[type] : "var(--nav)", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 12 }}>
             {TYPE_LABELS[type]}
           </button>
         ))}
         <input type="date" value={filter.start_date} onChange={e => setFilter({ ...filter, start_date: e.target.value })} placeholder="Start"
-          style={{ padding: "4px 8px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 12 }} />
+          style={{ padding: "4px 8px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', fontSize: 12 }} />
         <input type="date" value={filter.end_date} onChange={e => setFilter({ ...filter, end_date: e.target.value })} placeholder="End"
-          style={{ padding: "4px 8px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", fontSize: 12 }} />
+          style={{ padding: "4px 8px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', fontSize: 12 }} />
       </div>
 
-      {loading ? <div style={{ color: "#64748b" }}>Loading…</div> : (
+      {loading ? <div style={{ color: 'var(--muted)' }}>Loading…</div> : (
         <div style={{ display: "grid", gap: 10 }}>
           {costs.map(c => (
-            <div key={c.id} style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div key={c.id} style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 8, padding: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <div style={{ color: "#e2e8f0", fontWeight: 500, fontSize: 14 }}>{c.description}</div>
-                <div style={{ color: "#64748b", fontSize: 12, marginTop: 4 }}>
-                  <span style={{ background: COST_TYPE_COLOR[c.cost_type] || "#334155", padding: "2px 8px", borderRadius: 4, color: "#fff", fontSize: 11 }}>{TYPE_LABELS[c.cost_type] || c.cost_type}</span>
+                <div style={{ color: 'var(--text)', fontWeight: 500, fontSize: 14 }}>{c.description}</div>
+                <div style={{ color: 'var(--muted)', fontSize: 12, marginTop: 4 }}>
+                  <span style={{ background: COST_TYPE_COLOR[c.cost_type] || "var(--nav)", padding: "2px 8px", borderRadius: 4, color: "#fff", fontSize: 11 }}>{TYPE_LABELS[c.cost_type] || c.cost_type}</span>
                   {c.category && <span style={{ marginLeft: 8 }}>{c.category}</span>}
                   {c.related_order_no && <span style={{ marginLeft: 8 }}>Order: {c.related_order_no}</span>}
                 </div>
-                <div style={{ color: "#475569", fontSize: 11, marginTop: 4 }}>{c.recorder_name} | {c.cost_date ? new Date(c.cost_date).toLocaleDateString() : "-"}</div>
+                <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 4 }}>{c.recorder_name} | {c.cost_date ? new Date(c.cost_date).toLocaleDateString() : "-"}</div>
               </div>
-              <div style={{ color: COST_TYPE_COLOR[c.cost_type] || "#e2e8f0", fontSize: 18, fontWeight: 700 }}>
+              <div style={{ color: COST_TYPE_COLOR[c.cost_type] || "var(--text)", fontSize: 18, fontWeight: 700 }}>
                 {formatCurrency(c.amount, c.currency)}
               </div>
             </div>
           ))}
-          {costs.length === 0 && <div style={{ color: "#475569", textAlign: "center", padding: 40 }}>No cost records found</div>}
+          {costs.length === 0 && <div style={{ color: 'var(--muted)', textAlign: "center", padding: 40 }}>No cost records found</div>}
         </div>
       )}
 
       {showCreate && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-          <div style={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 12, padding: 24, width: 480 }}>
-            <h3 style={{ color: "#e2e8f0", marginTop: 0 }}>{t("qms.newCost")}</h3>
+          <div style={{ background: 'var(--panel)', border: '1px solid var(--line)', borderRadius: 12, padding: 24, width: 480 }}>
+            <h3 style={{ color: 'var(--text)', marginTop: 0 }}>{t("qms.newCost")}</h3>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Cost Type</label>
+              <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Cost Type</label>
               <select value={form.cost_type} onChange={e => setForm({ ...form, cost_type: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0" }}>
+                style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)' }}>
                 {Object.entries(TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Category</label>
+              <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Category</label>
               <input value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", boxSizing: "border-box" }} />
+                style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 10 }}>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Amount</label>
+                <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Amount</label>
                 <input type="number" value={form.amount} onChange={e => setForm({ ...form, amount: Number(e.target.value) })}
-                  style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", boxSizing: "border-box" }} />
+                  style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', boxSizing: "border-box" }} />
               </div>
               <div>
-                <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Currency</label>
+                <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Currency</label>
                 <select value={form.currency} onChange={e => setForm({ ...form, currency: e.target.value })}
-                  style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0" }}>
+                  style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)' }}>
                   {["VND","USD","CNY"].map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
             </div>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Cost Date</label>
+              <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Cost Date</label>
               <input type="date" value={form.cost_date} onChange={e => setForm({ ...form, cost_date: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", boxSizing: "border-box" }} />
+                style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', boxSizing: "border-box" }} />
             </div>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Description</label>
+              <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Description</label>
               <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} rows={3}
-                style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", boxSizing: "border-box", resize: "vertical" }} />
+                style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', boxSizing: "border-box", resize: "vertical" }} />
             </div>
             <div style={{ marginBottom: 10 }}>
-              <label style={{ color: "#94a3b8", fontSize: 12, display: "block", marginBottom: 4 }}>Related Order No</label>
+              <label style={{ color: 'var(--muted)', fontSize: 12, display: "block", marginBottom: 4 }}>Related Order No</label>
               <input value={form.related_order_no} onChange={e => setForm({ ...form, related_order_no: e.target.value })}
-                style={{ width: "100%", padding: "8px 12px", background: "#0f172a", border: "1px solid #334155", borderRadius: 6, color: "#e2e8f0", boxSizing: "border-box" }} />
+                style={{ width: "100%", padding: "8px 12px", background: 'var(--surface-2)', border: '1px solid var(--line)', borderRadius: 6, color: 'var(--text)', boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-              <button onClick={create} style={{ flex: 1, padding: "10px", background: "#0891b2", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>Create</button>
-              <button onClick={() => setShowCreate(false)} style={{ flex: 1, padding: "10px", background: "#334155", color: "#e2e8f0", border: "none", borderRadius: 6, cursor: "pointer" }}>Cancel</button>
+              <button onClick={create} style={{ flex: 1, padding: "10px", background: "var(--info)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>Create</button>
+              <button onClick={() => setShowCreate(false)} style={{ flex: 1, padding: "10px", background: 'var(--nav)', color: '#eef8fa', border: "none", borderRadius: 6, cursor: "pointer" }}>Cancel</button>
             </div>
           </div>
         </div>

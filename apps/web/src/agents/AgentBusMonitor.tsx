@@ -60,18 +60,18 @@ const STATUS_ICON: Record<string, typeof CheckCircle> = {
 };
 
 const STATUS_COLOR: Record<string, string> = {
-  completed: "#22c55e",
-  pending:   "#f59e0b",
-  processing:"#3b82f6",
-  failed:    "#ef4444",
-  dead:      "#6b7280",
+  completed: "var(--ok)",
+  pending:   "var(--warn)",
+  processing:"var(--info)",
+  failed:    "var(--danger)",
+  dead:      "var(--danger)",
 };
 
 const PRIORITY_COLOR: Record<string, string> = {
-  critical: "#ef4444",
-  high:     "#f97316",
-  normal:   "#6b7280",
-  low:      "#9ca3af",
+  critical: "var(--danger)",
+  high:     "var(--warn)",
+  normal:   "var(--text-2)",
+  low:      "var(--text-3)",
 };
 
 const DOMAIN_COLORS: Record<string, string> = {
@@ -302,40 +302,47 @@ function MessageFeed({ messages, locale, onFilterChange, filter }: MessageFeedPr
         display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap",
         alignItems: "center",
       }}>
-        <Filter size={13} style={{ color: "var(--muted)" }}/>
+        <Filter size={13} style={{ color: "var(--muted)" }} aria-hidden="true"/>
         <select value={localFilter.source}
+          aria-label={t("agents.bus.filter.source", locale)}
+          title={t("agents.bus.filter.source", locale)}
           onChange={e => setLocalFilter(f => ({ ...f, source: e.target.value }))}
           style={selectStyle}>
           <option value="">← {t("agents.bus.filter.source", locale)}</option>
           {agents.map(a => <option key={a} value={a}>{getAgentLabel(a, locale)}</option>)}
         </select>
-        <ArrowRight size={12} style={{ color: "var(--muted)" }}/>
+        <ArrowRight size={12} style={{ color: "var(--muted)" }} aria-hidden="true"/>
         <select value={localFilter.target}
+          aria-label={t("agents.bus.filter.target", locale)}
+          title={t("agents.bus.filter.target", locale)}
           onChange={e => setLocalFilter(f => ({ ...f, target: e.target.value }))}
           style={selectStyle}>
           <option value="">→ {t("agents.bus.filter.target", locale)}</option>
           {agents.map(a => <option key={a} value={a}>{getAgentLabel(a, locale)}</option>)}
         </select>
         <select value={localFilter.status}
+          aria-label={t("agents.bus.filter.status", locale)}
+          title={t("agents.bus.filter.status", locale)}
           onChange={e => setLocalFilter(f => ({ ...f, status: e.target.value }))}
           style={selectStyle}>
           <option value="">* {t("agents.bus.filter.status", locale)}</option>
-          {statuses.map(s => <option key={s} value={s}>{s || "all"}</option>)}
+          {statuses.map(s => <option key={s} value={s}>{s || t("pmc.all", locale)}</option>)}
         </select>
-        <button onClick={apply} style={{ ...btnStyle, background: "var(--info)", color: "#fff", fontSize: 11, padding: "4px 10px" }}>
+        <button type="button" onClick={apply} title={t("agents.bus.filter.apply", locale)} data-testid="agents.bus.filter-apply" style={{ ...btnStyle, background: "var(--info)", color: "#fff", fontSize: 11, padding: "4px 10px" }}>
           {t("agents.bus.filter.apply", locale)}
         </button>
-        <button onClick={() => { const f = { source:"",target:"",status:"" }; setLocalFilter(f); onFilterChange(f); }}
+        <button type="button" onClick={() => { const f = { source:"",target:"",status:"" }; setLocalFilter(f); onFilterChange(f); }}
+          title={t("agents.bus.filter.reset", locale)} data-testid="agents.bus.filter-reset"
           style={{ ...btnStyle, fontSize: 11, padding: "4px 10px" }}>
           {t("agents.bus.filter.reset", locale)}
         </button>
       </div>
 
       {/* Table */}
-      <div style={{ overflowX: "auto", border: "1px solid var(--border)", borderRadius: 8 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      <div className="table-shell" style={{ border: "1px solid var(--border)", borderRadius: 8 }}>
+        <table className="data-table" data-testid="agents.bus-table" aria-label={t("agents.bus.panel.messages", locale)}>
           <thead>
-            <tr style={{ background: "var(--bg-2)" }}>
+            <tr>
               {[
                 t("agents.bus.col.time", locale),
                 t("agents.bus.col.from", locale),
@@ -354,8 +361,8 @@ function MessageFeed({ messages, locale, onFilterChange, filter }: MessageFeedPr
           <tbody>
             {messages.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: "center", padding: "24px", color: "var(--muted)" }}>
-                  {t("agents.bus.noMessages", locale)}
+                <td colSpan={9}>
+                  <div className="empty-state" data-testid="agents.bus-empty"><strong>{t("agents.bus.noMessages", locale)}</strong></div>
                 </td>
               </tr>
             ) : messages.map((msg, i) => {
@@ -387,9 +394,9 @@ function MessageFeed({ messages, locale, onFilterChange, filter }: MessageFeedPr
                   <td style={tdStyle}>
                     <span style={{
                       fontSize: 9, fontWeight: 700, textTransform: "uppercase",
-                      color: msg.message_type === "broadcast" ? "#8b5cf6"
-                           : msg.message_type === "request" ? "#f59e0b"
-                           : "#6b7280",
+                      color: msg.message_type === "broadcast" ? "var(--info)"
+                           : msg.message_type === "request" ? "var(--warn)"
+                           : "var(--text-3)",
                     }}>
                       {msg.message_type}
                     </span>
@@ -409,7 +416,7 @@ function MessageFeed({ messages, locale, onFilterChange, filter }: MessageFeedPr
                   </td>
                   <td style={tdStyle}>
                     {latency != null ? (
-                      <span style={{ color: latency > 60 ? "#ef4444" : latency > 10 ? "#f59e0b" : "#22c55e", fontSize: 11, fontFamily: "monospace" }}>
+                      <span style={{ color: latency > 60 ? "var(--danger)" : latency > 10 ? "var(--warn)" : "var(--ok)", fontSize: 11, fontFamily: "monospace" }}>
                         {latency}s
                       </span>
                     ) : <span style={{ color: "var(--muted)", fontSize: 11 }}>—</span>}
@@ -595,54 +602,55 @@ export function AgentBusMonitor({ locale }: Props) {
   ] as const;
 
   return (
-    <div>
+    <section aria-label={t("agents.tab.bus", locale)} data-testid="agents.bus">
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      <div className="page-header" style={{ marginBottom: 16 }}>
+        <nav className="toolbar" aria-label={t("agents.bus.panel.messages", locale)} data-testid="agents.bus.panels" style={{ gap: 8 }}>
           {PANELS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
+              type="button"
+              className={activePanel === key ? "active" : ""}
+              data-testid={`agents.bus.panel.${key}`}
+              title={label}
               onClick={() => { setActivePanel(key); if (key === "messages" && messages.length === 0) fetchMessages(filter); }}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "6px 14px", fontSize: 12, fontWeight: activePanel === key ? 700 : 400,
-                background: activePanel === key ? "var(--info)" : "var(--bg-2)",
-                color: activePanel === key ? "#fff" : "var(--text)",
-                border: `1px solid ${activePanel === key ? "var(--info)" : "var(--border)"}`,
-                borderRadius: 8, cursor: "pointer",
-              }}
             >
-              <Icon size={13}/>
+              <Icon size={13} aria-hidden="true"/>
               {label}
             </button>
           ))}
-        </div>
+        </nav>
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           {/* Live indicator */}
           <div style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: "var(--muted)" }}>
             <div style={{
               width: 8, height: 8, borderRadius: "50%",
-              background: autoRefresh ? "#22c55e" : "#6b7280",
-              boxShadow: autoRefresh ? "0 0 6px #22c55e" : undefined,
+              background: autoRefresh ? "var(--ok)" : "var(--text-3)",
+              boxShadow: autoRefresh ? "0 0 6px var(--ok)" : undefined,
               animation: autoRefresh ? "pulse 2s infinite" : undefined,
-            }}/>
-            <span style={{ color: autoRefresh ? "#22c55e" : "var(--muted)", fontWeight: 600 }}>
+            }} aria-hidden="true"/>
+            <span style={{ color: autoRefresh ? "var(--ok)" : "var(--muted)", fontWeight: 600 }}>
               {autoRefresh ? t("agents.bus.live", locale) : t("agents.bus.paused", locale)}
             </span>
           </div>
           <button
+            type="button"
             onClick={() => setAutoRefresh(v => !v)}
-            title={autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh"}
+            title={autoRefresh ? t("agents.bus.pauseRefresh", locale) : t("agents.bus.resumeRefresh", locale)}
+            data-testid="agents.bus.auto-refresh"
             style={{ ...btnStyle, display: "flex", alignItems: "center", gap: 4, padding: "4px 8px" }}
           >
-            <Radio size={11}/> {autoRefresh ? "Pause" : "Resume"}
+            <Radio size={11} aria-hidden="true"/> {autoRefresh ? t("agents.bus.pause", locale) : t("agents.bus.resume", locale)}
           </button>
           <button
+            type="button"
             onClick={load}
             disabled={loading}
+            title={t("agents.bus.refresh", locale)}
+            data-testid="agents.bus.refresh"
             style={{ ...btnStyle, display: "flex", alignItems: "center", gap: 4 }}
           >
-            <RefreshCw size={11} className={loading ? "spin" : ""}/>
+            <RefreshCw size={11} className={loading ? "spin" : ""} aria-hidden="true"/>
             {t("agents.bus.refresh", locale)}
           </button>
         </div>
@@ -662,9 +670,9 @@ export function AgentBusMonitor({ locale }: Props) {
           {/* Legend */}
           <div style={{ display: "flex", gap: 16, marginTop: 12, justifyContent: "center", flexWrap: "wrap" }}>
             {[
-              { color: "#3b82f6", label: t("agents.bus.legend.active", locale) },
-              { color: "#8b5cf6", label: t("agents.bus.legend.broadcast", locale) },
-              { color: "#4b5563", label: t("agents.bus.legend.inactive", locale) },
+              { color: "var(--info)", label: t("agents.bus.legend.active", locale) },
+              { color: "var(--warn)", label: t("agents.bus.legend.broadcast", locale) },
+              { color: "var(--text-3)", label: t("agents.bus.legend.inactive", locale) },
             ].map(l => (
               <div key={l.label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
                 <div style={{ width: 20, height: 2, background: l.color, borderRadius: 2 }}/>
@@ -694,16 +702,16 @@ export function AgentBusMonitor({ locale }: Props) {
 
       {/* Global stats strip when not on performance panel */}
       {activePanel !== "performance" && stats && (
-        <div style={{
+        <div data-testid="agents.bus.kpis" style={{
           display: "flex", gap: 12, marginTop: 16, padding: "10px 14px",
           background: "var(--bg-2)", border: "1px solid var(--border)",
           borderRadius: 8, flexWrap: "wrap",
         }}>
           {[
-            { label: t("agents.bus.kpi.total", locale),    value: stats.stats.total,       color: "#3b82f6" },
-            { label: t("agents.bus.kpi.pending", locale),   value: stats.stats.pending,     color: "#f59e0b" },
-            { label: t("agents.bus.kpi.completed", locale), value: stats.stats.completed,   color: "#22c55e" },
-            { label: t("agents.bus.kpi.failed", locale),   value: stats.stats.failed,      color: "#ef4444" },
+            { label: t("agents.bus.kpi.total", locale),    value: stats.stats.total,       color: "var(--info)" },
+            { label: t("agents.bus.kpi.pending", locale),   value: stats.stats.pending,     color: "var(--warn)" },
+            { label: t("agents.bus.kpi.completed", locale), value: stats.stats.completed,   color: "var(--ok)" },
+            { label: t("agents.bus.kpi.failed", locale),   value: stats.stats.failed,      color: "var(--danger)" },
           ].map(kpi => (
             <div key={kpi.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 11, color: "var(--muted)" }}>{kpi.label}</span>
@@ -724,6 +732,6 @@ export function AgentBusMonitor({ locale }: Props) {
         }
         .spin { animation: spin 1s linear infinite; }
       `}</style>
-    </div>
+    </section>
   );
 }
