@@ -144,6 +144,7 @@ const PG_ERROR_MAP = {
   '42703': { status: 400, msg: '请求参数格式不正确' },   // undefined_column
   '42804': { status: 400, msg: '请求参数格式不正确' },   // datatype_mismatch
   '23505': { status: 409, msg: '数据已存在，请勿重复提交' }, // unique_violation
+  '42501': { status: 409, msg: '该行属于运行中的源系统，SMT 侧只读——请在源系统中操作，同步每 5 分钟生效' }, // insufficient_privilege（399 所有权触发器）
   '23503': { status: 400, msg: '关联数据不存在' },        // foreign_key_violation
   '23502': { status: 400, msg: '缺少必填字段' },          // not_null_violation
   '42P01': { status: 500, msg: GENERIC_500 },            // undefined_table
