@@ -34096,13 +34096,13 @@ registerMaintenanceRoutes(app, { query, getClient, requirePermission, errorEnvel
 
 // External data sources: the provider registry and the table-sync engine. Same reason it sits
 // here — these routes are declared after the app-level auth wrapper, so they are guarded.
-registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope });
+registerDatasourceRoutes(app, { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope, getClient });
 
 // Live-sync adapters: dynamic pull from the RUNNING WMS/OA on the tailnet
 // (100.107.212.49:18080 / :8090). Staging-only landing (sync_stage.live_*),
 // menu-drift snapshots, hub health via itf_api_log. Same lane/audience as the
 // hub above — declared after the auth wrapper, so the routes are guarded.
-registerLiveSyncRoutes(app, { query, requirePermission, errorEnvelope, successEnvelope, listEnvelope });
+registerLiveSyncRoutes(app, { query, requirePermission, errorEnvelope, successEnvelope, listEnvelope, getClient });
 
 // MES v1 read contract (grafted WMS-20261019 modules/mes-api): /api/mes/v1/*
 // read-only stock/picking/returns for MES & third-party clients, X-Api-Key auth

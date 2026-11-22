@@ -10,10 +10,27 @@
 // Mounting: `registerDatasourceRoutes(app, deps)` is called from server.js after the auth
 // wrapper, so every route below is JWT-guarded and permission-checked like the rest of the
 // `api` group.
+//
+// TRANSIENT MODE (2026-11-23, user directive ①「SMT 库里不要有源系统的重复数据库」):
+// providers tagged transient (wms_src / oa_src) do NOT leave a full copy of the source
+// database sitting in SMT. One run = copy→ingest→drop: rows land in ext_<code>, are
+// immediately ingested into the business tables (live-converge backfillFromExt +
+// stampProvenance, under the app.source_sync tx so the 399 column-ownership triggers
+// allow it), then DROP SCHEMA ext_<code> CASCADE. At rest the duplicate is gone; the
+// business tables + data_provenance carry the truth, and parity audits compare
+// source↔business directly. Non-transient providers (e.g. rjms) keep the persistent
+// ext_<code> copy — that is the feature for those.
 import pg from "pg";
+import { backfillFromExt, stampProvenance, withSourceSyncTx } from "./live-converge.js";
+
+// provider code → the live-sync app id stampProvenance/backfill expect, and ext schema.
+const TRANSIENT_PROVIDERS = {
+  wms_src: { code: "wms-rjvn", ext: "ext_wms_src" },
+  oa_src: { code: "oa-portal", ext: "ext_oa_src" },
+};
 
 export function registerDatasourceRoutes(app, deps) {
-  const { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope } = deps;
+  const { query, requirePermission, errorEnvelope, listEnvelope, mutateEnvelope, getClient } = deps;
 
   const adminOnly = requirePermission("wms.execute");
 
@@ -172,7 +189,7 @@ export function registerDatasourceRoutes(app, deps) {
       runningProviders.add(provider.id);
       const batchSize = Math.min(Math.max(Number(process.env.DATASOURCE_BATCH_SIZE || 2000), 100), 10000);
       // Fire and forget: the UI follows /runs/:id.
-      void runSync({ query, provider, runId: run.id, tables: wanted, mode, batchSize });
+      void runSync({ query, provider, runId: run.id, tables: wanted, mode, batchSize, getClient });
       res.status(202).json(mutateEnvelope({ runId: run.id, tables: wanted.length }));
     } catch (err) {
       res.status(502).json(errorEnvelope("SYNC_START_FAILED", err.message));
@@ -206,6 +223,35 @@ export function registerDatasourceRoutes(app, deps) {
       res.status(500).json(errorEnvelope("SERVER_ERROR", err.message));
     }
   });
+
+  // Transient cycle timer: because ext_<code> is dropped at the end of every
+  // transient run, something has to re-open the snapshot periodically or the
+  // business tables go stale between manual triggers. Every DATASOURCE_TRANSIENT_
+  // INTERVAL_MIN (default 30) minutes, kick one all-tables sync per enabled
+  // transient provider — copy→ingest→stamp→drop, self-maintaining, no duplicate
+  // at rest. Unref'd so it never holds the process open; a run already in flight
+  // for that provider is skipped (runningProviders).
+  const transientTimer = setInterval(() => {
+    for (const code of Object.keys(TRANSIENT_PROVIDERS)) {
+      void (async () => {
+        try {
+          const { rows } = await query(`SELECT * FROM data_source_provider WHERE code = $1 AND enabled = TRUE`, [code]);
+          const provider = rows[0];
+          if (!provider || runningProviders.has(provider.id)) return;
+          const wanted = await withRemote(provider, (remote) => listRemoteTables(remote, provider.config || {}));
+          if (!wanted.length) return;
+          const { rows: [run] } = await query(
+            `INSERT INTO data_source_sync_run (provider_id, mode, tables_total) VALUES ($1,'replace',$2) RETURNING id`,
+            [provider.id, wanted.length],
+          );
+          runningProviders.add(provider.id);
+          const batchSize = Math.min(Math.max(Number(process.env.DATASOURCE_BATCH_SIZE || 2000), 100), 10000);
+          void runSync({ query, provider, runId: run.id, tables: wanted.map((t) => t.name), mode: "replace", batchSize, getClient });
+        } catch { /* 下一轮再试;失败不影响主服务 */ }
+      })();
+    }
+  }, Math.min(1440, Math.max(5, Number(process.env.DATASOURCE_TRANSIENT_INTERVAL_MIN || 30) || 30)) * 60_000);
+  if (typeof transientTimer.unref === "function") transientTimer.unref();
 }
 
 // Runs are asynchronous (a 3 GB source must not hold an HTTP request open); this keeps one
@@ -467,8 +513,9 @@ async function copyTable({ query, provider, code, runId, table, mode, batchSize 
   });
 }
 
-async function runSync({ query, provider, runId, tables, mode, batchSize }) {
+async function runSync({ query, provider, runId, tables, mode, batchSize, getClient }) {
   const code = provider.code;
+  const transient = TRANSIENT_PROVIDERS[code];
   try {
     let total = 0;
     for (const table of tables) {
@@ -503,9 +550,23 @@ async function runSync({ query, provider, runId, tables, mode, batchSize }) {
         [runId, total],
       );
     }
+    // Transient pipeline: the whole ext_<code> schema is now a faithful snapshot of
+    // the source. Ingest it into the business tables (under the app.source_sync tx
+    // so the 399 column-ownership triggers permit the writes), stamp provenance,
+    // then DROP the duplicate — at rest SMT holds no copy of the source database.
+    let ingested = 0;
+    if (transient) {
+      ingested = await withSourceSyncTx(getClient, async (q) => {
+        const res = await backfillFromExt(q, transient.ext);
+        await stampProvenance(q, transient.code);
+        return Object.values(res).reduce((a, x) => a + (x.created || 0) + (x.updated || 0), 0);
+      });
+      // Drop only after a clean ingest; a failed ingest leaves the snapshot for retry.
+      await query(`DROP SCHEMA IF EXISTS "${transient.ext}" CASCADE`);
+    }
     await query(
-      `UPDATE data_source_sync_run SET status = 'done', finished_at = now(), rows_copied = $2 WHERE id = $1`,
-      [runId, total],
+      `UPDATE data_source_sync_run SET status = 'done', finished_at = now(), rows_copied = $2, message = $3 WHERE id = $1`,
+      [runId, total, transient ? `transient: ingested ${ingested} rows into business tables, ext schema dropped` : null],
     );
   } catch (err) {
     await query(

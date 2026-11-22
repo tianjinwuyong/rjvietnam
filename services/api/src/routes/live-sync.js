@@ -26,7 +26,7 @@
 // registerHubRoutes — after the app-level auth wrapper, so JWT-guarded.
 // ============================================================================
 import { createHash } from "node:crypto";
-import { convergeTask, CONVERGE_TASKS } from "./live-converge.js";
+import { convergeTask, CONVERGE_TASKS, withSourceSyncTx } from "./live-converge.js";
 
 const APPS = {
   "wms-rjvn": {
@@ -60,7 +60,7 @@ const PARAM_KEYS = Object.values(APPS).flatMap((a) => [
 ]);
 
 export function registerLiveSyncRoutes(app, deps) {
-  const { query, requirePermission, errorEnvelope, successEnvelope, listEnvelope } = deps;
+  const { query, requirePermission, errorEnvelope, successEnvelope, listEnvelope, getClient } = deps;
 
   const adminOnly = requirePermission("wms.execute");
   const timers = {};
@@ -301,7 +301,10 @@ export function registerLiveSyncRoutes(app, deps) {
           // failure degrades the round to partial but keeps the pulled data.
           if (CONVERGE_TASKS.has(task)) {
             try {
-              r.converge = await convergeTask(query, code, task);
+              // 399: 源拥有行的防写触发器只认会话标志 app.source_sync='on'。
+              // 摄取必须跑在专用 client 的事务里（SET LOCAL 不泄漏回池），
+              // 整个 converge 单事务提交 —— 半途失败不留“改了一半”的 canonical 行。
+              r.converge = await withSourceSyncTx(getClient, (q) => convergeTask(q, code, task));
             } catch (e) {
               r.converge = { error: errText(e) };
               status = "partial";
@@ -453,7 +456,7 @@ export function registerLiveSyncRoutes(app, deps) {
       const results = {};
       for (const task of tasks) {
         try {
-          results[task] = await convergeTask(query, code, task);
+          results[task] = await withSourceSyncTx(getClient, (q) => convergeTask(q, code, task));
         } catch (e) {
           results[task] = { error: errText(e) };
         }

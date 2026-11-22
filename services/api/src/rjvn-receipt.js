@@ -75,7 +75,7 @@ function wrap(handler) {
     try { await handler(req, res); }
     catch (e) {
       if (res.headersSent) return;
-      const status = e instanceof HttpError ? e.status : 500;
+      const status = e instanceof HttpError ? e.status : (e.code === "42501" ? 409 : 500);
       if (status === 500) console.error("[rjvn-receipt]", e);
       res.status(status).json({ success: false, error: e.message || "Internal error" });
     }

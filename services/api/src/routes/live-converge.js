@@ -38,6 +38,70 @@ export const CONVERGE_TASKS = new Set([
 
 const mapLotStatus = (s) => (s === "pass" ? "released" : s === "rejected" ? "rejected" : "pending");
 
+// 399 防写触发器只认会话标志 app.source_sync='on'。摄取必须跑在专用 client
+// 的事务里(SET LOCAL 不会泄漏回连接池),整轮单事务提交:半途失败不留
+// “改了一半”的 canonical 行。fn 收到的 q 与 server.js 的 query 同形({rows})。
+export async function withSourceSyncTx(getClient, fn) {
+  const client = await getClient();
+  const q = async (sql, params) => { const r = await client.query(sql, params); return { rows: r.rows, rowCount: r.rowCount }; };
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL app.source_sync = 'on'");
+    const out = await fn(q);
+    await client.query("COMMIT");
+    return out;
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// provenance 盖章:凡是 live-sync/staging 里能对上的行,标 'wms-rjvn' / 'oa-portal'。
+// 在摄取事务内跑(标志已开),幂等:只补 NULL 行。
+export async function stampProvenance(q, code) {
+  if (code === "wms-rjvn") {
+    await q(`UPDATE material_lots m SET data_provenance='wms-rjvn'
+              FROM sync_stage.live_wms_rjvn__iqc s
+             WHERE s.payload->>'lotNo' = m.lot_no AND m.data_provenance IS NULL`);
+    await q(`UPDATE iqc_inspections i SET data_provenance='wms-rjvn'
+              FROM sync_stage.live_wms_rjvn__iqc s
+             WHERE s.payload->>'inspectionNo' = i.inspection_no AND i.data_provenance IS NULL`);
+    await q(`UPDATE inventory_transactions t SET data_provenance='wms-rjvn'
+              FROM material_lots m
+             WHERE m.id = t.material_lot_id AND m.data_provenance = 'wms-rjvn' AND t.data_provenance IS NULL`);
+    await q(`UPDATE wms_picking_orders w SET data_provenance='wms-rjvn'
+              FROM sync_stage.live_wms_rjvn__picking s
+             WHERE w.rjvn_id::text = s.source_id AND w.data_provenance IS NULL`);
+  } else {
+    await q(`UPDATE oa.flow_instance fi SET data_provenance='oa-portal'
+              FROM sync_stage.live_oa_portal__instances s
+             WHERE fi.instance_no = s.payload->>'instance_no' AND fi.data_provenance IS NULL`);
+    await q(`UPDATE oa.flow_definition fd SET data_provenance='oa-portal'
+              FROM sync_stage.live_oa_portal__flows s
+             WHERE fd.code = s.payload->>'code' AND fd.data_provenance IS NULL`);
+    // OA 文档/审批/组织族只有 ext(id bigint 共享)能对上的,按 ext 盖章;
+    // ext 缺席(瞬态模式已 DROP)时这些是 no-op,to_regclass 兜住。
+    const stampFromExt = async (tbl, idCol = "id") => {
+      const ex = await q(`SELECT to_regclass('ext_oa_src.${tbl}') AS t`);
+      if (!ex.rows[0].t) return;
+      await q(`UPDATE oa.${tbl} o SET data_provenance='oa-portal'
+                 FROM ext_oa_src.${tbl} e
+                WHERE e.${idCol}::bigint = o.${idCol} AND o.data_provenance IS NULL`);
+    };
+    await stampFromExt("flow_instance");
+    await stampFromExt("flow_task");
+    await stampFromExt("flow_log");
+    await stampFromExt("flow_definition");
+    await stampFromExt("org_user");
+    await stampFromExt("org_department");
+    await stampFromExt("doc_system");
+    await stampFromExt("attachment");
+    await stampFromExt("doc_change_log");
+  }
+}
+
 /**
  * @param {Function} query pg query helper (server.js pool)
  * @param {string} code wms-rjvn | oa-portal
@@ -45,6 +109,13 @@ const mapLotStatus = (s) => (s === "pass" ? "released" : s === "rejected" ? "rej
  * @returns {Promise<{created:number,updated:number,skipped:number,note?:string}>}
  */
 export async function convergeTask(query, code, task) {
+  const out = await convergeTaskInner(query, code, task);
+  // 399: 每轮摄取后给对得上的行补 provenance(幂等,只补 NULL)。
+  await stampProvenance(query, code);
+  return out;
+}
+
+async function convergeTaskInner(query, code, task) {
   if (code === "wms-rjvn" && task === "iqc") {
     const canon = await convergeIqc(query);
     const mirror = await convergeIqcLotMirror(query);
@@ -364,7 +435,7 @@ const EXT_BACKFILL = [
     match: [`t.param_key = e.param_key`] },
 ];
 
-async function backfillFromExt(query, extPrefix) {
+export async function backfillFromExt(query, extPrefix) {
   const out = {};
   for (const spec of EXT_BACKFILL) {
     if (spec.ext !== extPrefix) continue;

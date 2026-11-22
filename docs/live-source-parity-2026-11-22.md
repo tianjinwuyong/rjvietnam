@@ -126,3 +126,22 @@
 | training_record | 21 | 21 | oa.training_record | 21 | OK |
 
 **汇总**:26+85 张非空源表 = 111;业务落点行数一致 99;有意 ext-only 9;落点为超集(含本地行)3;DIFF 0(无);GAP 0(无)。
+
+## 终版审计(2026-11-23,100% embedded)
+
+逐行审计 322 项(源↔ext 全量副本行数、ext↔业务落点行级映射、逻辑不变量):**322/322 PASS,0 FAIL**。
+
+- 逻辑不变量:无批次缺流水=0;`received_qty == Σ(未void流水)` 失配=0(修复:唯一失配是 11-20 合成测试流水 ZZ-T1,已按不变量② void 留痕,非删除);IQC 状态镜像失配=0;源批次缺 canonical=0;源库存缺镜像=0;picking drift gate OK;附件字节 271/271;近 2h 失败轮=0;菜单漂移=0。
+- 源↔ext 唯一"落后"是两张高频日志表(mes_sync_log/operation_log,源在拷贝期间继续写)——重跑 sync 后行数一致(9193/9193、622/622)。
+- 取消流水(7 条 receipt_cancel)交叉核对:其原始收货批次在源侧已删除、canonical 从未存在 → 零影响,无需落点。
+
+
+## 架构变更(2026-11-23):无重复库 + 列级所有权
+
+用户两条要求落地:
+
+**① 不留重复数据库。** `ext_wms_src`/`ext_oa_src` 从「持久全量副本」改为**瞬态管道**:每次 datasources 同步 = 拷贝→摄取→盖章→`DROP SCHEMA`。静止态 SMT 库里没有源系统的整库副本(实测 `ext schemas at rest: NONE`)。瞬态 provider(wms_src/oa_src)每 30 分钟自动跑一轮(`DATASOURCE_TRANSIENT_INTERVAL_MIN`),非瞬态 provider(如 rjms)仍保留持久 ext 副本。
+
+**② 逻辑不冲突 = 列级所有权(migration 399)。** 每行业务表带 `data_provenance` 标记(wms-rjvn/oa-portal/SMT本地);触发器 `reject_source_owned_mutation` 按列清单拒绝 SMT 侧改动源拥有的事实列(received_qty/iqc_status/picking status/approval_time/instance status/doc code…;oa.flow_* / org_user / doc_system / attachment 等),DELETE 源拥有行一律拒绝。SMT 自有列照常可写:storage_location_id(上架)、lot_status、reserved、QMS disposition、pick_time/picker_id(MES 发料)。live-converge 摄取在 `SET LOCAL app.source_sync='on'` 事务内豁免。rjvn-* 嫁接屏的写路由把触发器的 SQLSTATE 42501 映射为 409 + 中文原因(去源系统操作)。
+
+**直连对账(无 ext)**:`scripts/parity-live-sources.mjs` 44 项源↔业务直连计数,43 PASS;唯一"落后"是 mes_sync_log/operation_log(源在两次计数间持续 append 的运维日志,非映射缺口)——跑一轮瞬态周期即精确追平(实测 source 9243/632 == mirror 9243/632)。逻辑不变量全 0 失配。
