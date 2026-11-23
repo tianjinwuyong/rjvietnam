@@ -1,7 +1,9 @@
 import { lazy, useCallback, useEffect, useMemo, useRef, useState, type ReactNode, Suspense } from "react";
+import { toneForStatus, Badge, Progress, SectionHeader, StatCard, SurfacePanel, TableShell } from "./components/primitives";
 
 // Three.js components — isolated via React.lazy to prevent react-three-fiber
 // React instance mismatch from corrupting the main app bundle
+const LazyWms = lazy(() => import("./wms/WmsModule").then(m => ({ default: m.Wms })));
 const LazyHrOrgChart = lazy(() => import("./hr/HrOrgChart").then(m => ({ default: m.HrOrgChart })));
 const LazyFactory3D = lazy(() => import("./maintenance/Factory3D").then(m => ({ default: m.default })));
 const LazyIctStationMonitor = lazy(() => import("./mes/IctStationMonitor").then(m => ({ default: m.IctStationMonitor })));
@@ -16,8 +18,6 @@ const LazyManualLineDashboard = lazy(() => import("./mes/ManualLineDashboard").t
 const LazySmtLineDashboard = lazy(() => import("./mes/SmtStationAgents3d").then(m => ({ default: m.SmtStationAgents3d })));
 const LazyWarehouseScene3d = lazy(() => import("./mes/WarehouseScene3d").then(m => ({ default: m.WarehouseScene3d })));
 const LazyProductWarehouseScene3d = lazy(() => import("./mes/ProductWarehouseScene3d").then(m => ({ default: m.ProductWarehouseScene3d })));
-const LazyWms3dFlow = lazy(() => import("./wms/Wms3dFlow").then(m => ({ default: m.Wms3dFlow })));
-const LazyWmsInventoryControlCenter = lazy(() => import("./wms/WmsInventoryControlCenter").then(m => ({ default: m.WmsInventoryControlCenter })));
 const LazyAoiStationMonitor = lazy(() => import("./mes/AoiStationMonitor").then(m => ({ default: m.AoiStationMonitor })));
 const LazyAssemblyAteStationMonitor = lazy(() => import("./mes/AssemblyAteStationMonitor").then(m => ({ default: m.AssemblyAteStationMonitor })));
 const LazyHighVoltAteStationMonitor = lazy(() => import("./mes/HighVoltAteStationMonitor").then(m => ({ default: m.HighVoltAteStationMonitor })));
@@ -29,46 +29,7 @@ import { FctStation } from "./quality/stations/FctStation";
 import { AutoLineStation } from "./quality/stations/AutoLineStation";
 import { authApi, authStorage, wmsApi, pmcApi, bomApi, mesApi, qualityApi } from "./api";
 import { apiClient, apiBase } from "./api/client";
-import {
-  PanelLeft,
-  PanelLeftClose,
-  ArrowRight,
-  Barcode,
-  Bell,
-  Box,
-  Boxes,
-  CalendarClock,
-  ClipboardCheck,
-  ClipboardList,
-  Factory,
-  Gauge,
-  Languages,
-  LineChart,
-  PackageCheck,
-  ScanBarcode,
-  Search,
-  Settings,
-  Shield,
-  ShieldCheck,
-  Sparkles,
-  Truck,
-  Users,
-  Wallet,
-  Wrench,
-  Briefcase,
-  Activity,
-  Headphones,
-  FolderTree,
-  Bot,
-  Monitor,
-  TrendingUp,
-  Zap,
-  Rocket,
-  LayoutDashboard,
-  FileText,
-  Receipt,
-  Palette,
-} from "lucide-react";
+import { PanelLeft, PanelLeftClose, ArrowRight, Barcode, Bell, Box, Boxes, CalendarClock, ClipboardCheck, ClipboardList, Factory, Gauge, Languages, LineChart, PackageCheck, ScanBarcode, Search, Settings, Shield, ShieldCheck, Sparkles, Truck, Users, Wallet, Wrench, Briefcase, Activity, Headphones, FolderTree, Bot, Monitor, TrendingUp, Zap, Rocket, LayoutDashboard, FileText, Receipt, Palette } from "lucide-react";
 import type { CustomerPo, FactoryLine, InspectionRecord, Locale, MaterialLot, QuoteConversionRow, RmaRequest, ServiceTicket, StatusTone, TraceEvent, WorkOrder } from "../../../packages/shared-types/src/factory";
 
 import type { TranslationKey } from "./i18n";
@@ -83,12 +44,7 @@ import { UserPdaAppAssignment } from "./admin/UserPdaAppAssignment";
 import { StationDatabaseManagement } from "./admin/StationDatabaseManagement";
 import { AdminDataSources } from "./admin/AdminDataSources";
 import { AdminIntegrationHub } from "./admin/AdminIntegrationHub";
-import { WmsIqcTemplates } from "./wms/WmsIqcTemplates";
-import { WmsGraftedOps } from "./wms/WmsGraftedOps";
-import { WmsMaterialSubstitution } from "./wms/WmsMaterialSubstitution";
-import type { WmsTabKey } from "./wms";
 import { QmsApp } from "./qms";
-import { WmsNonIqcClosedLoop } from "./wms/WmsNonIqcClosedLoop";
 import { MobileCheckin } from "./MobileCheckin";
 import MobileLeave from "./MobileLeave";
 import { default as EmergencyManagement } from './maintenance/EmergencyManagement';
@@ -97,21 +53,9 @@ import { GroupLeaderPda } from "./GroupLeaderPda";
 import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
-import { wmsMenuGroups, wmsTabTranslationKeys, WmsDashboard, WmsMenuPage, WmsIncoming, WmsMaterialReceiving, WmsMaterialLoading, WmsSmtClosedLoop, WmsNonSmtClosedLoop, WmsFinishedGoods, WmsReceiving, WmsReturnReceiving, WmsSupplierReturn, WmsSalesReturn, WmsIqc, WmsIqcClosedLoop, WmsIqcDefectLoop, WmsIqcInspection, WmsIqcReport, WmsIqcStandards, WmsSupplierKpi, WmsSupplierManagement, WmsQualityTrend, WmsPutAway, WmsInventory, WmsPicking, WmsIssue, WmsWoHandover, WmsTransactions, WmsMaterialConsumption, WmsSmartShelfTester, WmsShelfApiTester, WmsShelfSimulator, WmsShelfOperations, WmsSqlConsole, WmsRackSimulator, WmsSmartRackManager, SmartRackWorkflow, WmsMaterialMaster, WmsLocationManagement, WmsBatchManagement, WmsBasicData, WmsRjvnData, WmsRjvnIqc, WmsRjvnReceipt, WmsRjvnInventory, WmsRjvnPicking, WmsRjvnDocFlow, WmsCanonicalData, WmsRjvnClassic, WmsCycleCount, WmsTransferAdjust, WmsExpiryControl, WmsFifoMonitor, WmsTraceability, WmsMaterialTraceRoute, WmsMsd, WmsSolderPaste, WmsAuxiliary, WmsCollaborationDashboard, WmsClosureDashboard, WmsLifecycleDashboard, WmsFifoSimulation, WmsPdaReceiving, WmsPdaReceivingMobile, WmsPdaConsumption, WmsPdaCycleCount, WmsPdaIqc, WmsPdaHistory, WmsInboundOrders, WmsOutboundOrders, WmsRequisitions, WmsReturnSlips, WmsReplenishments, WmsSyncHealth, WmsProductionInbound, WmsProductionOutbound, WmsSlips, WmsOverPicking, WmsRework, WmsSupplierDebt, WmsDefectiveMove, WmsMrb, WmsSupplierReturnOrder, WmsNotices, WmsMesSync } from "./wms";
-import { WmsMaterialBarcodeLoop } from "./wms/WmsMaterialBarcodeLoop";
-import { WmsMaterialDistribution } from "./wms/WmsMaterialDistribution";
-import { WmsIqcFlowPages } from "./wms/WmsIqcFlowPages";
-import { WmsIqcInspectionLevels } from "./wms/WmsIqcInspectionLevels";
-import { QmsDashboard, QmsOqcBatches, QmsNgCases, QmsEightD } from "./qms";
+import { WmsPdaReceiving } from "./wms";
 import type { PmcTabKey } from "./pmc";
-import { pmcTabKeys, pmcTabTranslationKeys, PmcDashboard, PmcWorkOrderList, PmcWorkOrderDetail, PmcCreateWorkOrder,
-  PmcProductionReporting, PmcMaterialIssue, PmcWipTracking, PmcAlertDashboard,
-  PmcGanttView, PmcAndonBoard, PmcStationCheckin, PmcWoFreeze, PmcWoQualityReport,
-  PmcAlertHistory,
-  PmcNgReview,
-  PmcCompensationApproval,
-  PmcPoList, PmcCustomerProductMaster, PmcMaterialStatus, PmcSupplementaryMaterial, BomList, BomHistory, BomPatrol, BomAlerts, BomAiChat, BomChangeControl, bomTabKeys, bomTabTranslationKeys, type BomTabKey,
-  PmcPatrolDashboard, PmcDeliveryWatch, PmcClosedLoop } from "./pmc";
+import { pmcTabKeys, pmcTabTranslationKeys, PmcDashboard, PmcWorkOrderList, PmcWorkOrderDetail, PmcCreateWorkOrder, PmcProductionReporting, PmcMaterialIssue, PmcWipTracking, PmcAlertDashboard, PmcGanttView, PmcAndonBoard, PmcStationCheckin, PmcWoFreeze, PmcWoQualityReport, PmcAlertHistory, PmcNgReview, PmcCompensationApproval, PmcPoList, PmcCustomerProductMaster, PmcMaterialStatus, PmcSupplementaryMaterial, BomList, BomHistory, BomPatrol, BomAlerts, BomAiChat, BomChangeControl, bomTabKeys, bomTabTranslationKeys, type BomTabKey, PmcPatrolDashboard, PmcDeliveryWatch, PmcClosedLoop } from "./pmc";
 import type { HrTabKey } from "./hr";
 import { hrTabKeys, hrTabTranslationKeys, HrDashboard, HrGovernance, HrPayroll, HrEmployeeList, HrProfileUpdates, HrAttendance, HrLeave, HrPerformance, HrPromotionAppraisals, HrSalary, HrTraining, HrLifecycle, HrAttendanceStats, HrSwap, HrOtPay, HrSkillRating, HrTeamwork, HrRewardPrograms, HrGrievanceCases, HrPdaDomains } from "./hr";
 import type { MaintenanceTabKey } from "./maintenance";
@@ -289,102 +233,11 @@ const riskLabelMap: Record<NonNullable<CustomerPo["risk"]>, TranslationKey> = {
   high: "risk.high",
 };
 
-function toneForStatus(status: string): StatusTone {
-  if (
-    status === "running" ||
-    status === "released" ||
-    status === "PASS" ||
-    status === "CLOSED" ||
-    status === "confirmed" ||
-    status === "received" ||
-    status === "stored" ||
-    status === "picked" ||
-    status === "issued" ||
-    status === "bound" ||
-    status === "mounted" ||
-    status === "packed" ||
-    status === "shipped" ||
-    status === "approved"
-  ) {
-    return "ok";
-  }
-  if (status === "changeover" || status === "pending" || status === "hold" || status === "REPAIRING" || status === "draft") {
-    return "warning";
-  }
-  if (status === "down" || status === "FAIL" || status === "rejected" || status === "fail" || status === "blocked") {
-    return "danger";
-  }
-  return "info";
-}
 
 function toneForRisk(risk: CustomerPo["risk"]): StatusTone {
   if (risk === "high") return "danger";
   if (risk === "medium") return "warning";
   return "ok";
-}
-
-function Badge({ tone, children, title }: { tone: StatusTone; children: ReactNode; title?: string }) {
-  return (
-    <span className={`badge badge-${tone}`} title={title ?? (typeof children === "string" ? children : undefined)}>
-      {children}
-    </span>
-  );
-}
-
-function Progress({ value, title }: { value: number; title?: string }) {
-  return (
-    <div className="progress" aria-label={title ?? `${Math.round(value)}%`} title={title ?? `${Math.round(value)}%`}>
-      <span style={{ width: `${Math.max(0, Math.min(value, 100))}%` }} />
-    </div>
-  );
-}
-
-function SectionHeader({
-  title,
-  subtitle,
-  action,
-}: {
-  title: string;
-  subtitle?: string;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="section-header">
-      <div>
-        <h2>{title}</h2>
-        {subtitle ? <p>{subtitle}</p> : null}
-      </div>
-      {action ? <div className="section-action">{action}</div> : null}
-    </div>
-  );
-}
-
-function StatCard({
-  label,
-  value,
-  trend,
-  tone,
-}: {
-  label: string;
-  value: string;
-  trend: string;
-  tone: StatusTone;
-}) {
-  return (
-    <article className="stat-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <Badge tone={tone}>{trend}</Badge>
-    </article>
-  );
-}
-
-function SurfacePanel({ children, style }: { children: ReactNode; style?: React.CSSProperties }) {
-  return <section className="surface-panel" style={style}>{children}</section>;
-}
-
-function TableShell({ children }: { children: ReactNode }) {
-  return <div className="table-shell">{children}</div>;
 }
 
 
@@ -1771,230 +1624,6 @@ function Maintenance({ locale }: { locale: Locale }) {
   );
 }
 
-// 评审 N4:仓库组里偏工程/管理的 tab(非日常作业),用于弱化显示 + tooltip 前缀。
-const WMS_ENGINEERING_TABS: Partial<Record<WmsTabKey, true>> = {
-  batchManagement: true, locationManagement: true, fifoSimulation: true, transactions: true,
-};
-
-function Wms({ locale, permissions, roleKey }: { locale: Locale; permissions: string[]; roleKey: string }) {
-  const [activeTab, setActiveTab] = useState<WmsTabKey>(() => {
-    const requested = new URLSearchParams(window.location.search).get("wmsTab") as WmsTabKey | null;
-    return requested && Object.prototype.hasOwnProperty.call(wmsTabTranslationKeys, requested)
-      ? requested
-      : "dashboard";
-  });
-
-  useEffect(() => {
-    const onFactoryNavigate = (event: Event) => {
-      const detail = (event as CustomEvent<{ view?: string; wmsTab?: string }>).detail;
-      if (detail?.view === "wms" && detail.wmsTab && Object.prototype.hasOwnProperty.call(wmsTabTranslationKeys, detail.wmsTab)) {
-        setActiveTab(detail.wmsTab as WmsTabKey);
-      }
-    };
-    window.addEventListener("factory:navigate", onFactoryNavigate);
-    return () => window.removeEventListener("factory:navigate", onFactoryNavigate);
-  }, []);
-
-  const navigateWms = (tab: WmsTabKey) => {
-    setActiveTab(tab);
-    const url = new URL(window.location.href);
-    url.searchParams.set("view", "wms");
-    url.searchParams.set("wmsTab", tab);
-    window.history.replaceState({}, "", url);
-  };
-
-  const renderActiveView = () => {
-    switch (activeTab) {
-      case "dashboard": return <WmsDashboard locale={locale} />;
-      case "rjvnData": return <WmsRjvnData locale={locale} />;
-      case "rjvnIqc": return <WmsRjvnIqc locale={locale} />;
-      case "rjvnReceipt": return <WmsRjvnReceipt locale={locale} />;
-      case "rjvnInventory": return <WmsRjvnInventory locale={locale} />;
-      case "rjvnPicking": return <WmsRjvnPicking locale={locale} />;
-      case "rjvnDocFlow": return <WmsRjvnDocFlow locale={locale} />;
-      case "rjvnCanonical": return <WmsCanonicalData locale={locale} />;
-      case "rjvnClassic": return <WmsRjvnClassic locale={locale} roleKey={roleKey} />;
-      case "receiving": return <WmsReceiving locale={locale} />;
-      case "returnReceive": return <WmsReturnReceiving locale={locale} />;
-      case "supplierReturn": return <WmsSupplierReturn locale={locale} />;
-      case "salesReturn": return <WmsSalesReturn locale={locale} />;
-      case "iqc": return <WmsIqc locale={locale} />;
-      case "iqcClosedLoop": return <WmsIqcClosedLoop locale={locale} />;
-      case "iqcDefectLoop": return <WmsIqcDefectLoop locale={locale} />;
-      case "iqcInspectionLevels": return <WmsIqcInspectionLevels locale={locale} />;
-      case "poReceipt": return <WmsIqcFlowPages page="poReceipt" locale={locale} />;
-      case "lineReturn": return <WmsIqcFlowPages page="lineReturn" locale={locale} />;
-      case "subcontractReturn": return <WmsIqcFlowPages page="subcontractReturn" locale={locale} />;
-      case "mrbReworkReturn": return <WmsIqcFlowPages page="mrbReworkReturn" locale={locale} />;
-      case "qrBinding": return <WmsIqcFlowPages page="qrBinding" locale={locale} />;
-      case "iqcPassMaintenance": return <WmsIqcFlowPages page="iqcPassMaintenance" locale={locale} />;
-      case "defectArchive": return <WmsIqcFlowPages page="defectArchive" locale={locale} />;
-      case "mrbApproval": return <WmsIqcFlowPages page="mrbApproval" locale={locale} />;
-      case "scrapFinanceApproval": return <WmsIqcFlowPages page="scrapFinanceApproval" locale={locale} />;
-      case "reworkComplete": return <WmsIqcFlowPages page="reworkComplete" locale={locale} />;
-      case "iqcReinspection": return <WmsIqcFlowPages page="iqcReinspection" locale={locale} />;
-      case "iqcInspect": return <WmsIqcInspection locale={locale} />;
-      case "iqcReport": return <WmsIqcReport locale={locale} />;
-      case "iqcStandards": return <WmsIqcStandards locale={locale} />;
-      case "supplierKpi": return <WmsSupplierKpi locale={locale} />;
-      case "supplierManagement": return <WmsSupplierManagement locale={locale} roleKey={roleKey} />;
-      case "qualityTrend": return <WmsQualityTrend locale={locale} />;
-      case "putaway": return <WmsPutAway locale={locale} />;
-      case "inventory": return <WmsInventory locale={locale} />;
-      case "picking": return <WmsPicking locale={locale} />;
-      case "issue": return <WmsIssue locale={locale} />;
-      case "woHandover": return <WmsWoHandover locale={locale} />;
-      case "slips": return <WmsSlips locale={locale} />;
-      case "cycleCount": return <WmsCycleCount locale={locale} />;
-      case "transferAdjust": return <WmsTransferAdjust locale={locale} />;
-      case "expiryControl": return <WmsExpiryControl locale={locale} />;
-      case "iqcTemplates": return <WmsIqcTemplates locale={locale} />;
-      case "graftOps": return <WmsGraftedOps locale={locale} />;
-      case "substitution": return <WmsMaterialSubstitution locale={locale} />;
-      case "fifoMonitor": return <WmsFifoMonitor locale={locale} />;
-      case "transactions": return <WmsTransactions locale={locale} />;
-      case "materialConsumption": return <WmsMaterialConsumption locale={locale} />;
-      case "materialDistribution": return <WmsMaterialDistribution locale={locale} />;
-      case "traceability": return <WmsTraceability locale={locale} />;
-      case "materialTrace": return <WmsMaterialTraceRoute locale={locale} />;
-      case "wms3dFlow": return <Suspense fallback={<div className="surface-panel"><div className="placeholder-view">Loading 3D WMS flow...</div></div>}><LazyWms3dFlow locale={locale} /></Suspense>;
-      case "inventoryControl": return <Suspense fallback={<div className="surface-panel"><div className="placeholder-view">Loading inventory control...</div></div>}><LazyWmsInventoryControlCenter locale={locale} /></Suspense>;
-      case "msd": return <WmsMsd locale={locale} />;
-      case "solderPaste": return <WmsSolderPaste locale={locale} />;
-      case "auxiliary": return <WmsAuxiliary locale={locale} />;
-      case "collaboration": return <WmsCollaborationDashboard locale={locale} />;
-      case "closure": return <WmsClosureDashboard locale={locale} />;
-      case "smartShelf": return <WmsSmartShelfTester locale={locale} />;
-      case "shelfApi": return <WmsShelfApiTester locale={locale} />;
-      case "shelfSim": return <WmsShelfSimulator locale={locale} />;
-      case "shelfSim3d": return <div className="surface-panel"><div className="placeholder-view"><p>🏭 3D 货架模拟器 — 入口：主厂房 → 视图 → 原材料仓库</p><p style={{fontSize:12,color:"#64748b",marginTop:8}}>Smart shelf 3D view is integrated in the Manual Line 3D dashboard (主厂房 → 视图 → 原材料仓库)</p></div></div>;
-      case "shelfOps": return <WmsShelfOperations />;
-      case "sqlConsole": return <WmsSqlConsole />;
-      case "rackSim": return <WmsRackSimulator />;
-      case "smartRack": return <WmsSmartRackManager locale={locale} />;
-      case "smartRackWorkflow": return <SmartRackWorkflow locale={locale} />;
-      case "lifecycle": return <WmsLifecycleDashboard permissions={permissions} locale={locale} />;
-      case "fifoSimulation": return <WmsFifoSimulation locale={locale} />;
-      case "materialMaster": return <WmsMaterialMaster locale={locale} />;
-      case "materialBarcodeLoop": return <WmsMaterialBarcodeLoop locale={locale} />;
-      case "locationManagement": return <WmsLocationManagement locale={locale} />;
-      case "basicData": return <WmsBasicData locale={locale} onNavigate={setActiveTab} />;
-      case "batchManagement": return <WmsBatchManagement locale={locale} />;
-      // PDA receiving intentionally uses the same full receiving workspace as
-      // the management system. This keeps QR/label printing, material-code
-      // mapping, pallet/box binding, OA and IQC state on one API-backed flow.
-      case "pdaReceiving": return <WmsMaterialReceiving locale={locale} />;
-      case "pdaReceivingMobile": return <WmsPdaReceivingMobile locale={locale} />;
-      case "pdaConsumption": return <WmsPdaConsumption locale={locale} />;
-      case "pdaMsd": return <WmsMsd locale={locale} initialTab="pdaSync" />;
-      case "pdaCycleCount": return <WmsPdaCycleCount locale={locale} />;
-      case "pdaIqc": return <WmsPdaIqc locale={locale} />;
-      case "pdaHistory": return <WmsPdaHistory locale={locale} />;
-      case "inboundOrders": return <WmsInboundOrders />;
-      case "outboundOrders": return <WmsOutboundOrders />;
-      case "requisitions": return <WmsRequisitions locale={locale} />;
-      case "returnSlips": return <WmsReturnSlips />;
-      case "replenishments": return <WmsReplenishments locale={locale} />;
-      case "syncHealth": return <WmsSyncHealth locale={locale} />;
-      case "incoming": return <WmsIncoming locale={locale} />;
-      case "materialReceiving": return <WmsMaterialReceiving locale={locale} />;
-      case "materialLoading": return <WmsMaterialLoading locale={locale} />;
-      case "smtClosedLoop": return <WmsSmtClosedLoop locale={locale} />;
-      case "nonSmtClosedLoop": return <WmsNonSmtClosedLoop locale={locale} />;
-      case "nonIqcClosedLoop": return <WmsNonIqcClosedLoop locale={locale} />;
-      case "finishedGoods": return <WmsFinishedGoods locale={locale} />;
-      case "productionInbound": return <WmsProductionInbound locale={locale} />;
-      case "productionOutbound": return <WmsProductionOutbound locale={locale} />;
-      case "qualityDashboard": return <QmsDashboard locale={locale} />;
-      case "oqc": return <QmsOqcBatches locale={locale} />;
-      case "ngManagement": return <QmsNgCases locale={locale} />;
-      case "eightD": return <QmsEightD locale={locale} />;
-      case "overPicking": return <WmsOverPicking locale={locale} />;
-      case "rework": return <WmsRework locale={locale} />;
-      case "supplierDebt": return <WmsSupplierDebt locale={locale} />;
-      case "defectiveMove": return <WmsDefectiveMove locale={locale} />;
-      case "mrb": return <WmsMrb locale={locale} />;
-      case "supplierReturnOrder": return <WmsSupplierReturnOrder locale={locale} />;
-      case "notices": return <WmsNotices locale={locale} />;
-      case "mesSync": return <WmsMesSync locale={locale} />;
-      default:
-        return (
-          <SurfacePanel>
-            <div className="placeholder-view">
-              {t("common.open", locale)}
-            </div>
-          </SurfacePanel>
-        );
-    }
-  };
-
-  const activeGroup = wmsMenuGroups.find((group) => group.tabs.includes(activeTab)) ?? wmsMenuGroups[0];
-
-  const isMenuPage = activeTab === "dashboard";
-
-  return (
-    <div className="screen-stack">
-      {isMenuPage ? (
-        <WmsMenuPage locale={locale} onNavigate={navigateWms} />
-      ) : (
-        <>
-          <SurfacePanel>
-            <SectionHeader title={t("nav.wms", locale)} subtitle={t("page.wms", locale)} />
-            <div className="toolbar" style={{ flexWrap: "wrap", overflowX: "visible" }} data-testid="wms.groups">
-              <button
-                className="action-button"
-                type="button"
-                title={t("wms.backToMenu", locale)}
-                style={{ background: "var(--nav)", marginRight: 8 }}
-                onClick={() => navigateWms("dashboard")}
-              >
-                ← {t("wms.menuPage", locale)}
-              </button>
-              {wmsMenuGroups.map((group) => (
-                <button
-                  className="action-button"
-                  key={group.key}
-                  type="button"
-                  data-testid={`wms.group.${group.key}`}
-                  title={t(group.translationKey as TranslationKey, locale)}
-                  style={{ background: activeGroup.key === group.key ? "var(--info)" : "var(--nav)" }}
-                  onClick={() => { if (!group.tabs.includes(activeTab)) navigateWms(group.tabs[0]); }}
-                >
-                  {t(group.translationKey as TranslationKey, locale)}
-                </button>
-              ))}
-            </div>
-          </SurfacePanel>
-
-          <SurfacePanel>
-            <div className="toolbar" style={{ flexWrap: "wrap", overflowX: "visible" }} data-testid="wms.tabs">
-              {activeGroup.tabs.map((subKey) => (
-                <button
-                  key={subKey}
-                  type="button"
-                  className={activeTab === subKey ? "active" : ""}
-                  data-testid={`wms.tab.${subKey}`}
-                  // 评审 N4:仓库组 13 个 tab 平铺时,工程/管理类(批次序列号、库位精细化、
-                  // FIFO 模拟、履历)与日常作业同权重。tooltip 里加"管理/工程"前缀标注,
-                  // 不增加点击深度、不改路由。
-                  title={(activeGroup.key === "warehouse" && WMS_ENGINEERING_TABS[subKey]
-                    ? `${t("wms.engineeringTabHint" as TranslationKey, locale)} · ` : "")
-                    + t(wmsTabTranslationKeys[subKey] as TranslationKey, locale)}
-                  onClick={() => navigateWms(subKey)}
-                  style={activeGroup.key === "warehouse" && WMS_ENGINEERING_TABS[subKey] ? { opacity: 0.78 } : undefined}
-                >
-                  {t(wmsTabTranslationKeys[subKey] as TranslationKey, locale)}
-                </button>
-              ))}
-            </div>
-          </SurfacePanel>
-        </>
-      )}
-
-      {!isMenuPage && renderActiveView()}
-    </div>
-  );
-}
 
 function Mes({ locale }: { locale: Locale }) {
   const [activeTab, setActiveTab] = useState<MesTabKey>(() => {
@@ -3142,7 +2771,7 @@ export function App() {
     pmc: <Pmc locale={locale} permissions={currentUser.permissions} />,
     mobile: <MobileCheckin locale={locale} />,
     qms: <QmsApp locale={locale} />,
-    wms: <Wms locale={locale} permissions={currentUser.permissions} roleKey={currentUser.roleKey} />,
+    wms: <LazyWms locale={locale} permissions={currentUser.permissions} roleKey={currentUser.roleKey} />,
     bom: <Bom locale={locale} />,
     mes: <Mes locale={locale} />,
     quality: <Quality locale={locale} />,
@@ -3281,7 +2910,9 @@ export function App() {
         setCurrentUser(null);
       }
     }}>
-      {content}
+      <Suspense fallback={<div style={{ padding: 40, textAlign: "center", color: "var(--muted)" }}>{t("common.loading", locale)}...</div>}>
+        {content}
+      </Suspense>
       <GlobalVirtualEmployeeGuide moduleKey={active} locale={locale} />
       <MirrorFreshnessPill moduleKey={active} locale={locale} />
     </Shell>
