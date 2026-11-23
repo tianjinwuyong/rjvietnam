@@ -295,6 +295,21 @@ warehouse(VN_WH_001)登录只渲染 总览/WMS物料/质量/追溯(= roleModuleA
 **未做**(按计划仍属阶段4后续步,风险更高、收益独立):模块懒加载(App.tsx 只留路由分发)、
 i18n.ts 按域切 namespace。
 
+**[OK] 阶段 4 步 2 · WMS 域懒加载(2026-11-23)**:先抽出共享 UI 基元(`toneForStatus`/
+`Badge`/`Progress`/`SectionHeader`/`StatCard`/`SurfacePanel`/`TableShell`)到
+`apps/web/src/components/primitives.tsx`(逐字搬迁,仅 `React.CSSProperties` 改显式
+`import type { CSSProperties }`;死码 `toneForRisk`/`riskLabelMap` 原样留)。再把最大
+dispatcher `Wms`(原 1689-1907)连同其**97 个独占页面组件 import** + `WMS_ENGINEERING_TABS`
+常量整段搬入 `apps/web/src/wms/WmsModule.tsx`,App.tsx 改 `lazy()` 加载、content map 渲
+`<LazyWms>`。`{content}` 外加独立 `<Suspense>`(原唯一边界在 main.tsx 根级,懒加载会整壳
+白屏——现只在内容区显示 loading,侧边栏不动)。
+**效果**:`vite build` main chunk **8,291 → 6,630 KB(−1.66 MB)**,WmsModule 独立成
+1,281 KB 懒加载 chunk。typecheck 0 错、build 绿;活站 :5178 实测:ADMIN_VN_01 登录→点
+WMS 物料→WmsModule 完整工作区(收料/IQC/仓库/发料 tabs)经新 lazy+Suspense 路径渲染。
+**其余 dispatcher 本轮不动**:Mes 经分析**不可干净分离**——引用 App 本地 helper
+(MesDashboard/MaterialLoadingPage)与 content map 共享的 lazy 常量,直接搬会循环依赖,
+需先迁那些 helper(后续步)。Wms 是单域最大头(97 页),先吃下它。i18n 切 namespace 未动。
+
 ## 阶段 5 — 人工门分级(1 天)
 
 三档(可批量/逐条必看/双人复核)照原稿。落点修正:`humanGates` 定义在
