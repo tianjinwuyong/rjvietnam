@@ -27,6 +27,16 @@ import { DwellView } from "./views-w13";
 import { BindView, DecodeView } from "./views-w14";
 import { ShiftBoardView } from "./views-w15";
 import { LaserView } from "./views-w16";
+import { CalibView, FixtureView, UltraBoardView, UltraParamView, TeardownView,
+  AgingCtlView, LaserCheckView, ShelfLifeView, StationBoardView, DeptView } from "./views-w17";
+import { GenericScreen, JumpCard } from "./GenericScreen";
+import { SCREENS } from "./screens";
+import { ERP_JUMP } from "./erpJump";
+import { ParamView, AqlStdView } from "./views-w19";
+import { OqcInspectView, OqcCheckEntryView } from "./views-w20-oqc";
+import { DipPassView, TraceBindView } from "./views-w20-dip";
+import { BasicDataView, SysInfoView } from "./views-w20-sys";
+import { LoadingGuardView, FaCheckView } from "./views-w20-smt";
 import { ItfWmsView } from "./itf";
 
 interface SysInfo {
@@ -86,6 +96,8 @@ export function MesrjModule({ locale, groups }: { locale: Locale; groups?: strin
   const [menu, setMenu] = useState<MesrjMenuGroup[] | null>(null);
   const [error, setError] = useState("");
   const [active, setActive] = useState("home");
+  // 「去维修」这类跨叶跳转带的行内主键（如 SN）；切叶子时清掉
+  const [seedSn, setSeedSn] = useState("");
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
@@ -103,9 +115,23 @@ export function MesrjModule({ locale, groups }: { locale: Locale; groups?: strin
   }, [groupKey, onlyHome]);
 
   const views = crudViews(locale);
-  const activeView = views.find(v => v.code === active);
+  // 源菜单码 → 本仓已接线的同一屏（同一功能、不同 code，不是新屏）：
+  // 过站记录 exec.pass≙exec.passlist、SN 追溯 exec.trace≙exec.tracesn、
+  // 工单物料反追溯 exec.momaterial≙exec.momaterials、PCBA 良率 report.yield≙exec.yield、
+  // OQC 出货报告 qlt.oqcreport≙report.tpl、员工资质 exec.empcert≙emp.cert。
+  const LEAF_ALIAS: Record<string, string> = {
+    "exec.pass": "exec.passlist",
+    "exec.trace": "exec.tracesn",
+    "exec.momaterial": "exec.momaterials",
+    "report.yield": "exec.yield",
+    "qlt.oqcreport": "report.tpl",
+    "exec.empcert": "emp.cert",
+  };
+  const viewCode = LEAF_ALIAS[active] ?? active;
+  const activeView = views.find(v => v.code === viewCode);
 
   const renderView = useCallback(() => {
+    const active = viewCode;
     if (active === "home") return <HomeView locale={locale} />;
     // W4 自定义页面（有业务流的）
     if (active === "bom.tree") return <BomTreeView locale={locale} />;
@@ -136,7 +162,7 @@ export function MesrjModule({ locale, groups }: { locale: Locale; groups?: strin
     if (active === "exec.repairhandover") return <RepairHandoverView locale={locale} />;
     if (active === "exec.scraprelease") return <ScrapReleaseView locale={locale} />;
     if (active === "qlt.repairboard") return <RepairBoardView locale={locale} />;
-    if (active === "qlt.repairdesk") return <RepairDeskView locale={locale} />;
+    if (active === "qlt.repairdesk") return <RepairDeskView key={seedSn || "desk"} locale={locale} initialSn={seedSn} />;
     if (active === "report.oee") return <OeeView locale={locale} />;
     if (active === "report.spc") return <SpcView locale={locale} />;
     if (active === "report.output") return <OutputView locale={locale} />;
@@ -175,6 +201,17 @@ export function MesrjModule({ locale, groups }: { locale: Locale; groups?: strin
     if (active === "exec.shiftreport") return <ShiftBoardView locale={locale} />;
     // W16 镭雕发码台账
     if (active === "exec.laser") return <LaserView locale={locale} />;
+    // W17 ruijing-mes 残余 10 屏（源 web/pages.js；后端均已存在）
+    if (active === "exec.ultra") return <UltraBoardView locale={locale} />;
+    if (active === "exec.ultraparam") return <UltraParamView locale={locale} />;
+    if (active === "exec.teardown") return <TeardownView locale={locale} />;
+    if (active === "exec.agingctl") return <AgingCtlView locale={locale} />;
+    if (active === "exec.lasercheck") return <LaserCheckView locale={locale} />;
+    if (active === "prod.shelflife") return <ShelfLifeView locale={locale} />;
+    if (active === "cfg.calib") return <CalibView locale={locale} />;
+    if (active === "md.fixture") return <FixtureView locale={locale} />;
+    if (active === "report.stboard") return <StationBoardView locale={locale} />;
+    if (active === "sys.dept") return <DeptView locale={locale} />;
     // W7 设备接口：DeviceConfig / StationPass / MachineData / Packing / itf 日志
     if (active === "dev.deviceconfig") return <DeviceConfigView locale={locale} />;
     if (active === "dev.stationpass") return <StationPassView locale={locale} />;
@@ -200,8 +237,34 @@ export function MesrjModule({ locale, groups }: { locale: Locale; groups?: strin
         />
       );
     }
+    // W19：后端已有但形状不是平表的两屏（分组参数编辑器 / AQL 标准+速查）
+    if (active === "sys.param") return <ParamView locale={locale} />;
+    if (active === "qlt.aqlstd") return <AqlStdView locale={locale} />;
+    // W20：OQC 出货抽检工作流 + 逐项检验录入（源 qlt.oqc / qlt.oqccheck）
+    if (active === "qlt.oqc") return <OqcInspectView locale={locale} />;
+    if (active === "qlt.oqccheck") return <OqcCheckEntryView locale={locale} />;
+    // W20：DIP 整版过站 + SN 绑定追溯（源 exec.dippass / exec.tracebind）
+    if (active === "exec.dippass") return <DipPassView locale={locale} />;
+    if (active === "exec.tracebind") return <TraceBindView locale={locale} />;
+    // W20：基础数据维护 + 系统信息（源 cfg.basic / sys.info）
+    if (active === "cfg.basic") return <BasicDataView locale={locale} />;
+    if (active === "sys.info") return <SysInfoView locale={locale} />;
+    // W20：上料防错 + 首件与点检（源 exec.loading / exec.fa）
+    if (active === "exec.loading") return <LoadingGuardView locale={locale} />;
+    if (active === "exec.fa") return <FaCheckView locale={locale} />;
+    // W18：登记式通用列表屏（同一后端数据、只是缺入口的菜单叶子）
+    if (SCREENS[active]) return (
+      <GenericScreen key={active} locale={locale} def={SCREENS[active]}
+        onGoto={(code, row) => { setSeedSn(String(row.sn || "")); setActive(code); }} />
+    );
+    // W18 决策 b：ERP 叶子不复制表格，指向 SMT 唯一规范屏（hash 深链，模块选择本就 hash 驱动）
+    if (ERP_JUMP[active]) {
+      const j = ERP_JUMP[active];
+      const entity = t(`menu.${active}`, locale) !== `menu.${active}` ? t(`menu.${active}`, locale) : active;
+      return <JumpCard key={active} locale={locale} module={j.module} label={t(j.labelKey, locale)} entity={entity} />;
+    }
     return <WipView locale={locale} />;
-  }, [active, activeView, locale]);
+  }, [active, activeView, locale, seedSn]);
 
   if (onlyHome) return <HomeView locale={locale} />;
 

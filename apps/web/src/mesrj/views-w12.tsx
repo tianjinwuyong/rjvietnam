@@ -1269,8 +1269,8 @@ interface RepairDetailRow {
 interface DispositionRow { code: string; name_cn: string; name_en: string; name_vi: string; need_part: number; }
 interface DesignatorRow { designator: string; material_code: string; material_name: string; part_no?: string; [key: string]: unknown; }
 
-export function RepairDeskView({ locale }: { locale: Locale }) {
-  const [sn, setSn] = useState("");
+export function RepairDeskView({ locale, initialSn }: { locale: Locale; initialSn?: string }) {
+  const [sn, setSn] = useState(initialSn || "");
   const [ctx, setCtx] = useState<SnContext | null>(null);
   const [details, setDetails] = useState<RepairDetailRow[]>([]);
   const [disps, setDisps] = useState<DispositionRow[]>([]);
@@ -1309,6 +1309,8 @@ export function RepairDeskView({ locale }: { locale: Locale }) {
     setDisps(d?.rows || []);
   }, []);
   useEffect(() => { void loadDisps(); }, [loadDisps]);
+  // 从不良记录页「去维修」带 SN 进来时，直接查一次上下文（否则输入框有值但不加载）
+  useEffect(() => { if (initialSn) void loadSn(); }, [initialSn]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadStats = useCallback(async () => {
     const [d, e] = await call(() => mesrjApi.get<{ stats: Record<string, unknown> }>("/repair/stats", { days: 14 }));
