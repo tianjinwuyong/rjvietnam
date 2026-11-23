@@ -21,7 +21,7 @@
 // source↔business directly. Non-transient providers (e.g. rjms) keep the persistent
 // ext_<code> copy — that is the feature for those.
 import pg from "pg";
-import { backfillFromExt, stampProvenance, withSourceSyncTx } from "./live-converge.js";
+import { backfillFromExt, convergeExtWmsBackfill, stampProvenance, withSourceSyncTx } from "./live-converge.js";
 
 // provider code → the live-sync app id stampProvenance/backfill expect, and ext schema.
 const TRANSIENT_PROVIDERS = {
@@ -558,8 +558,15 @@ async function runSync({ query, provider, runId, tables, mode, batchSize, getCli
     if (transient) {
       ingested = await withSourceSyncTx(getClient, async (q) => {
         const res = await backfillFromExt(q, transient.ext);
+        // WMS also needs the receipt/iqc_lot_receipt/inventory_transaction trio,
+        // which keys off ext too — run it before the DROP or it never fires
+        // (live-sync rounds can't see ext in transient mode). No-op for OA.
+        if (transient.ext === "ext_wms_src") {
+          const trio = await convergeExtWmsBackfill(q);
+          Object.assign(res, { trio });
+        }
         await stampProvenance(q, transient.code);
-        return Object.values(res).reduce((a, x) => a + (x.created || 0) + (x.updated || 0), 0);
+        return Object.values(res).reduce((a, x) => a + ((x && (x.created || 0) + (x.updated || 0)) || 0), 0);
       });
       // Drop only after a clean ingest; a failed ingest leaves the snapshot for retry.
       await query(`DROP SCHEMA IF EXISTS "${transient.ext}" CASCADE`);

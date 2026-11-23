@@ -552,7 +552,7 @@ export async function backfillFromExt(query, extPrefix) {
 // every uuid/numeric/date binding casts explicitly. keeper/_by columns are the
 // composite domain rjvn_user_profile — left NULL. Runs every converge round;
 // when ext_wms_src is refreshed (datasources sync), new rows land next round.
-async function convergeExtWmsBackfill(query) {
+export async function convergeExtWmsBackfill(query) {
   // Fresh installs never ran the datasources sync — no ext copy, nothing to
   // backfill. Report it instead of throwing and marking the round partial.
   const ext = await query(`SELECT to_regclass('ext_wms_src.receipt_order') AS t`, []);
