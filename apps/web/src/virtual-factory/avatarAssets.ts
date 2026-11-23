@@ -11,6 +11,9 @@ export const AVATAR_MODELS = [
   "/virtual-factory/models/worker-slate.glb",
   "/virtual-factory/models/worker-teal.glb",
   "/virtual-factory/models/worker-amber.glb",
+  "/virtual-factory/models/worker-violet.glb",
+  "/virtual-factory/models/worker-emerald.glb",
+  "/virtual-factory/models/worker-ochre.glb",
 ] as const;
 
 /** Start every variant download as soon as this module is imported (before avatars mount). */
