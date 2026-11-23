@@ -11350,6 +11350,19 @@ const REQUIRED_PERMISSION_ROLE_MAP = {
   "sales.manage": ["admin", "customer_service", "management"],
   "sales.view": ["admin", "customer_service", "management", "pmc"],
   "wms.write": ["admin", "warehouse"],
+  // Seven codes are guarded by live routes but no migration ever granted them to
+  // any role, so those features 403 for everyone in a clean deploy (verified by a
+  // real /api/auth/login: admin's 63 perms lack all seven). Grant audiences mirror
+  // the seeded sibling of each family exactly — bom.view→bom.edit, pmc.view→
+  // pmc.edit/execute, qms.execute→quality.execute, wms.write→wms.edit, admin.view→
+  // admin.users/roles. Same mechanism the qms/wms.warehouse gaps were closed with.
+  "bom.edit": ["admin", "plant_manager", "pmc"],
+  "pmc.edit": ["admin", "plant_manager", "pmc"],
+  "pmc.execute": ["admin", "plant_manager", "pmc"],
+  "quality.execute": ["admin", "quality"],
+  "wms.edit": ["admin", "warehouse"],
+  "admin.users": ["admin"],
+  "admin.roles": ["admin"],
 };
 
 const permissionCatalogReady = (async () => {
