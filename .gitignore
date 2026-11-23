@@ -66,6 +66,20 @@ coverage/
 *.csv
 *.mp4
 *.html
+# ...but the Vite app entry points are source, not artifacts. Without these the
+# blanket *.html rule (which correctly ignores dist-factory3d/, android build
+# intermediates, and *.visual-check.html) also swallowed index.html, so a fresh
+# clone had no entry file and `vite build` died on "Could not resolve entry module".
+# Exact paths only — apps/dist-factory3d/index.html and the pdas/android build
+# copies stay ignored. This is EVERY rollupOptions.input across the workspace:
+# apps/web (main, manual-line-video-3d, auto-line-video-3d; supplier-label.html
+# was already tracked) and apps/display-board (main, index-topology).
+!apps/web/index.html
+!apps/web/manual-line-video-3d.html
+!apps/web/auto-line-video-3d.html
+!apps/display-board/index.html
+!apps/display-board/index-topology.html
+!apps/website/index.html
 
 # Local scripts that may contain credentials, diagnostics, or machine paths
 _*.js
