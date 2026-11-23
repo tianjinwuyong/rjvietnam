@@ -3,6 +3,7 @@ import { toneForStatus, Badge, Progress, SectionHeader, StatCard, SurfacePanel, 
 
 // Three.js components — isolated via React.lazy to prevent react-three-fiber
 // React instance mismatch from corrupting the main app bundle
+const LazyPmc = lazy(() => import("./pmc/PmcModule").then(m => ({ default: m.Pmc })));
 const LazyWms = lazy(() => import("./wms/WmsModule").then(m => ({ default: m.Wms })));
 const LazyHrOrgChart = lazy(() => import("./hr/HrOrgChart").then(m => ({ default: m.HrOrgChart })));
 const LazyFactory3D = lazy(() => import("./maintenance/Factory3D").then(m => ({ default: m.default })));
@@ -54,8 +55,7 @@ import { PdaUiDesigner } from "./PdaUiDesigner";
 import { ManagementUiDesigner } from "./ManagementUiDesigner";
 import { SmtReelConsumptionPage } from "./mes/SmtReelConsumptionPage";
 import { WmsPdaReceiving } from "./wms";
-import type { PmcTabKey } from "./pmc";
-import { pmcTabKeys, pmcTabTranslationKeys, PmcDashboard, PmcWorkOrderList, PmcWorkOrderDetail, PmcCreateWorkOrder, PmcProductionReporting, PmcMaterialIssue, PmcWipTracking, PmcAlertDashboard, PmcGanttView, PmcAndonBoard, PmcStationCheckin, PmcWoFreeze, PmcWoQualityReport, PmcAlertHistory, PmcNgReview, PmcCompensationApproval, PmcPoList, PmcCustomerProductMaster, PmcMaterialStatus, PmcSupplementaryMaterial, BomList, BomHistory, BomPatrol, BomAlerts, BomAiChat, BomChangeControl, bomTabKeys, bomTabTranslationKeys, type BomTabKey, PmcPatrolDashboard, PmcDeliveryWatch, PmcClosedLoop } from "./pmc";
+import { PmcAndonBoard, BomList, BomHistory, BomPatrol, BomAlerts, BomAiChat, BomChangeControl, bomTabKeys, bomTabTranslationKeys, type BomTabKey } from "./pmc";
 import type { HrTabKey } from "./hr";
 import { hrTabKeys, hrTabTranslationKeys, HrDashboard, HrGovernance, HrPayroll, HrEmployeeList, HrProfileUpdates, HrAttendance, HrLeave, HrPerformance, HrPromotionAppraisals, HrSalary, HrTraining, HrLifecycle, HrAttendanceStats, HrSwap, HrOtPay, HrSkillRating, HrTeamwork, HrRewardPrograms, HrGrievanceCases, HrPdaDomains } from "./hr";
 import type { MaintenanceTabKey } from "./maintenance";
@@ -665,65 +665,6 @@ function Dashboard({ locale, setActive }: { locale: Locale; setActive: (module: 
   );
 }
 
-function Pmc({ locale, permissions }: { locale: Locale; permissions: string[] }) {
-  const [activeTab, setActiveTab] = useState<PmcTabKey>("dashboard");
-  // Rule 6.1: Only roles with pmc.manage or pmc.create permission can create work orders
-  const canCreate = permissions.includes("pmc.manage") || permissions.includes("pmc.create");
-  const visibleTabs = pmcTabKeys.filter((k) => k !== "createWorkOrder" || canCreate);
-
-  const renderActiveView = () => {
-    switch (activeTab) {
-      case "dashboard": return <PmcDashboard locale={locale} />;
-      case "workOrders": return <PmcWorkOrderList locale={locale} />;
-      case "workOrderDetail": return <PmcWorkOrderDetail locale={locale} />;
-      case "createWorkOrder": return <PmcCreateWorkOrder locale={locale} />;
-      case "productionReporting": return <PmcProductionReporting locale={locale} />;
-      case "materialIssue": return <PmcMaterialIssue locale={locale} />;
-      case "wipTracking": return <PmcWipTracking locale={locale} />;
-      case "alertDashboard": return <PmcAlertDashboard locale={locale} />;
-      case "alertHistory": return <PmcAlertHistory locale={locale} />;
-      case "ngReview": return <PmcNgReview locale={locale} />;
-      case "compensationApproval": return <PmcCompensationApproval locale={locale} />;
-      case "ganttView": return <PmcGanttView locale={locale} />;
-      case "andonBoard": return <PmcAndonBoard locale={locale} />;
-      case "stationCheckin": return <PmcStationCheckin locale={locale} />;
-      case "woFreeze": return <PmcWoFreeze locale={locale} />;
-      case "woQualityReport": return <PmcWoQualityReport locale={locale} />;
-      case "poList": return <PmcPoList locale={locale} />;
-      case "masterData": return <PmcCustomerProductMaster locale={locale} />;
-      case "materialStatus": return <PmcMaterialStatus locale={locale} />;
-      case "supplementaryMaterial": return <PmcSupplementaryMaterial locale={locale} />;
-      case "bom": return <BomList locale={locale} />;
-      case "patrolDashboard": return <PmcPatrolDashboard locale={locale} />;
-      case "deliveryWatch": return <PmcDeliveryWatch locale={locale} />;
-      case "closedLoop": return <PmcClosedLoop locale={locale} />;
-      case "mobile": return <MobileCheckin locale={locale} />;
-    }
-  };
-
-  return (
-    <div className="screen-stack">
-      <SurfacePanel>
-        <SectionHeader title={t("nav.pmc", locale)} subtitle={t("page.pmc", locale)} />
-        <div className="toolbar" data-testid="pmc.tabs">
-          {visibleTabs.map((tabKey) => (
-            <button
-              key={tabKey}
-              type="button"
-              className={activeTab === tabKey ? "active" : ""}
-              data-testid={`pmc.tab.${tabKey}`}
-              title={t(pmcTabTranslationKeys[tabKey], locale)}
-              onClick={() => setActiveTab(tabKey)}
-            >
-              {t(pmcTabTranslationKeys[tabKey], locale)}
-            </button>
-          ))}
-        </div>
-      </SurfacePanel>
-      {renderActiveView()}
-    </div>
-  );
-}
 
 function Hr({ locale }: { locale: Locale }) {
   const requestedHrTab = typeof window !== "undefined"
@@ -2768,7 +2709,7 @@ export function App() {
   const content = {
     smtLine3d: <LazySmtLineDashboard />,
     dashboard: <Dashboard locale={locale} setActive={setActive} />,
-    pmc: <Pmc locale={locale} permissions={currentUser.permissions} />,
+    pmc: <LazyPmc locale={locale} permissions={currentUser.permissions} />,
     mobile: <MobileCheckin locale={locale} />,
     qms: <QmsApp locale={locale} />,
     wms: <LazyWms locale={locale} permissions={currentUser.permissions} roleKey={currentUser.roleKey} />,
