@@ -61,26 +61,37 @@ export async function withSourceSyncTx(getClient, fn) {
 // provenance 盖章:凡是 live-sync/staging 里能对上的行,标 'wms-rjvn' / 'oa-portal'。
 // 在摄取事务内跑(标志已开),幂等:只补 NULL 行。
 export async function stampProvenance(q, code) {
+  // staging 表由各自任务的 pull 才创建;stamp 可能在别的任务首轮前跑
+  // (首轮 partial 的根因)。to_regclass 守卫,缺席即跳过,下轮补上。
+  const hasTable = async (t) => (await q(`SELECT to_regclass($1) AS x`, [t])).rows[0].x;
   if (code === "wms-rjvn") {
-    await q(`UPDATE material_lots m SET data_provenance='wms-rjvn'
-              FROM sync_stage.live_wms_rjvn__iqc s
-             WHERE s.payload->>'lotNo' = m.lot_no AND m.data_provenance IS NULL`);
-    await q(`UPDATE iqc_inspections i SET data_provenance='wms-rjvn'
-              FROM sync_stage.live_wms_rjvn__iqc s
-             WHERE s.payload->>'inspectionNo' = i.inspection_no AND i.data_provenance IS NULL`);
+    if (await hasTable("sync_stage.live_wms_rjvn__iqc")) {
+      await q(`UPDATE material_lots m SET data_provenance='wms-rjvn'
+                FROM sync_stage.live_wms_rjvn__iqc s
+               WHERE s.payload->>'lotNo' = m.lot_no AND m.data_provenance IS NULL`);
+      await q(`UPDATE iqc_inspections i SET data_provenance='wms-rjvn'
+                FROM sync_stage.live_wms_rjvn__iqc s
+               WHERE s.payload->>'inspectionNo' = i.inspection_no AND i.data_provenance IS NULL`);
+    }
     await q(`UPDATE inventory_transactions t SET data_provenance='wms-rjvn'
               FROM material_lots m
              WHERE m.id = t.material_lot_id AND m.data_provenance = 'wms-rjvn' AND t.data_provenance IS NULL`);
-    await q(`UPDATE wms_picking_orders w SET data_provenance='wms-rjvn'
-              FROM sync_stage.live_wms_rjvn__picking s
-             WHERE w.rjvn_id::text = s.source_id AND w.data_provenance IS NULL`);
+    if (await hasTable("sync_stage.live_wms_rjvn__picking")) {
+      await q(`UPDATE wms_picking_orders w SET data_provenance='wms-rjvn'
+                FROM sync_stage.live_wms_rjvn__picking s
+               WHERE w.rjvn_id::text = s.source_id AND w.data_provenance IS NULL`);
+    }
   } else {
-    await q(`UPDATE oa.flow_instance fi SET data_provenance='oa-portal'
-              FROM sync_stage.live_oa_portal__instances s
-             WHERE fi.instance_no = s.payload->>'instance_no' AND fi.data_provenance IS NULL`);
-    await q(`UPDATE oa.flow_definition fd SET data_provenance='oa-portal'
-              FROM sync_stage.live_oa_portal__flows s
-             WHERE fd.code = s.payload->>'code' AND fd.data_provenance IS NULL`);
+    if (await hasTable("sync_stage.live_oa_portal__instances")) {
+      await q(`UPDATE oa.flow_instance fi SET data_provenance='oa-portal'
+                FROM sync_stage.live_oa_portal__instances s
+               WHERE fi.instance_no = s.payload->>'instance_no' AND fi.data_provenance IS NULL`);
+    }
+    if (await hasTable("sync_stage.live_oa_portal__flows")) {
+      await q(`UPDATE oa.flow_definition fd SET data_provenance='oa-portal'
+                FROM sync_stage.live_oa_portal__flows s
+               WHERE fd.code = s.payload->>'code' AND fd.data_provenance IS NULL`);
+    }
     // OA 文档/审批/组织族只有 ext(id bigint 共享)能对上的,按 ext 盖章;
     // ext 缺席(瞬态模式已 DROP)时这些是 no-op,to_regclass 兜住。
     const stampFromExt = async (tbl, idCol = "id") => {
