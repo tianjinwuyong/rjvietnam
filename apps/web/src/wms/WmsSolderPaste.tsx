@@ -4,6 +4,7 @@ import {
   Scan, Flame, TrendingDown, Lock, ChevronDown, ChevronRight
 } from "lucide-react";
 import { t } from "../i18n";
+import { authHeaders } from "../api/client";
 import type { Locale } from "../../../../packages/shared-types/src/factory";
 
 const API = "/api";
@@ -129,8 +130,9 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
   const fetchLots = useCallback(async () => {
     setLoadingLots(true);
     try {
-      const r = await fetch(`${API}/solder-paste/lots?limit=200&offset=0`);
+      const r = await fetch(`${API}/solder-paste/lots?limit=200&offset=0`, { headers: authHeaders() });
       const j = await r.json();
+      if (!r.ok) throw new Error(j?.error?.message || j?.message || `HTTP ${r.status}`);
       setLots(j.items || []);
     } catch (e: any) { setErr(e.message); }
     finally { setLoadingLots(false); }
@@ -139,8 +141,9 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
   const fetchOpenings = useCallback(async () => {
     setLoadingOpenings(true);
     try {
-      const r = await fetch(`${API}/solder-paste/openings?limit=200&offset=0`);
+      const r = await fetch(`${API}/solder-paste/openings?limit=200&offset=0`, { headers: authHeaders() });
       const j = await r.json();
+      if (!r.ok) throw new Error(j?.error?.message || j?.message || `HTTP ${r.status}`);
       setOpenings(j.items || []);
     } catch (e: any) { setErr(e.message); }
     finally { setLoadingOpenings(false); }
@@ -149,8 +152,9 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
   const fetchConsumption = useCallback(async () => {
     setLoadingConsumption(true);
     try {
-      const r = await fetch(`${API}/solder-paste/consumption?limit=200&offset=0`);
+      const r = await fetch(`${API}/solder-paste/consumption?limit=200&offset=0`, { headers: authHeaders() });
       const j = await r.json();
+      if (!r.ok) throw new Error(j?.error?.message || j?.message || `HTTP ${r.status}`);
       setConsumptions(j.items || []);
     } catch (e: any) { setErr(e.message); }
     finally { setLoadingConsumption(false); }
@@ -158,9 +162,13 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
 
   const fetchSummary = useCallback(async () => {
     try {
-      const r = await fetch(`${API}/solder-paste/summary`);
+      const r = await fetch(`${API}/solder-paste/summary`, { headers: authHeaders() });
       const j = await r.json();
-      setSummary(j);
+      if (!r.ok) throw new Error(j?.error?.message || j?.message || `HTTP ${r.status}`);
+      // Merge, never replace: an error envelope or a partial payload used to
+      // land here wholesale, and summary.todayConsumptionKg.toFixed() crashed
+      // the whole WMS module into the ErrorBoundary (deep link ?view=wms&wmsTab=solderPaste).
+      setSummary(prev => ({ ...prev, ...j }));
     } catch (e: any) { setErr(e.message); }
   }, []);
 
@@ -180,7 +188,7 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
     setRegSubmitting(true);
     try {
       const r = await fetch(`${API}/solder-paste/lots`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           lotNo: regLotNo.trim(), materialCode: regMatCode.trim(),
           materialNameZh: regMatName || undefined, supplier: regSupplier || undefined,
@@ -203,7 +211,7 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
     setOpenSubmitting(true);
     try {
       const r = await fetch(`${API}/solder-paste/openings`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           lotId: openLotId, shelfLifeHours: parseInt(openShelfHours),
           openTemp: openTemp ? parseFloat(openTemp) : undefined,
@@ -226,7 +234,7 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
     setConsumeSubmitting(true);
     try {
       const r = await fetch(`${API}/solder-paste/openings/${consumeOpening.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           action: "consume", qtyKg: parseFloat(consumeQty),
           workOrderCode: consumeWo || undefined, lineCode: consumeLine || undefined,
@@ -244,7 +252,7 @@ export function WmsSolderPaste({ locale }: { locale: Locale }) {
   async function handleCloseOpening(opening: SolderPasteOpening, reason: string) {
     try {
       await fetch(`${API}/solder-paste/openings/${opening.id}`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" },
+        method: "PATCH", headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ action: "close", reason }),
       });
       fetchOpenings(); fetchSummary();

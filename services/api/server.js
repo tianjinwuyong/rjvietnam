@@ -11339,6 +11339,14 @@ const REQUIRED_PERMISSION_ROLE_MAP = {
   // quality) plus warehouse (WMS production screens) and plant_manager.
   "wms.warehouse.read": ["admin", "quality", "engineering", "management", "plant_manager", "warehouse"],
   "wms.warehouse.write": ["admin", "quality", "warehouse"],
+  // Migration 401: four codes were referenced by requirePermission() but never
+  // seeded, so their routes 403'd for every role (solder-paste deep link,
+  // GET /api/reports, finance invoices, po-adjustments). Keep the bootstrap
+  // map in sync with the migration's mirrored holders.
+  "wms.read": ["admin", "material_receiver", "plant_manager", "production_transport", "quality", "warehouse"],
+  "finance.view": ["admin", "finance"],
+  "reports.view": ["admin", "plant_manager", "management", "pmc", "finance", "purchasing", "customer_service", "hr_manager", "reports_admin", "reports_viewer", "line_manager_smt", "line_manager_manual", "line_manager_auto"],
+  "procurement.purchaseOrders": ["admin", "finance", "management", "pmc", "warehouse"],
   "pda.manage": ["admin", "warehouse"],
   "pda.view": ["admin", "quality", "smt_operator", "smt_loader", "warehouse", "management", "plant_manager", "factory_manager", "line_leader"],
   "procurement.manage": ["admin", "finance", "pmc", "warehouse"],
